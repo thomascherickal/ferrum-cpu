@@ -973,6 +973,16 @@ fn finetune_threads(est: usize, avail: Option<usize>, requested: usize) -> usize
     (budget / per_thread.max(1)).clamp(1, requested.max(1))
 }
 
+/// The notice printed when [`finetune_threads`] lowered the request.
+fn thread_cap_note(capped: usize, requested: usize) -> Option<String> {
+    (capped < requested).then(|| {
+        format!(
+            "  note: using {capped} of {requested} threads (each holds a full gradient copy; \
+             keeps training under half of the available RAM)"
+        )
+    })
+}
+
 fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     use ferrum_core::{Gguf, GgufTokenizer, QKind, Rng, SamplingParams};
 
@@ -1301,11 +1311,8 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let capped = finetune_threads(est, available_memory_bytes(), threads);
-    if capped < threads {
-        println!(
-            "  note: using {capped} of {threads} threads (each holds a full gradient copy; \
-             keeps training under half of the available RAM)"
-        );
+    if let Some(note) = thread_cap_note(capped, threads) {
+        println!("{note}");
     }
     let threads = capped;
 
@@ -1957,6 +1964,9 @@ mod tests {
         assert_eq!(finetune_threads(est, Some(3 * GB), 8), 1);
         assert_eq!(finetune_threads(0, Some(GB), 8), 8);
         assert_eq!(finetune_threads(usize::MAX, Some(GB), 8), 1);
+        assert_eq!(thread_cap_note(8, 8), None);
+        let note = thread_cap_note(3, 8).unwrap();
+        assert!(note.contains("using 3 of 8 threads"), "{note}");
         // The checkpoint save dominates the peak: 12x the f32 weights.
         assert_eq!(finetune_peak_bytes(est), 6_480_000_000);
         assert_eq!(finetune_peak_bytes(usize::MAX), usize::MAX);
