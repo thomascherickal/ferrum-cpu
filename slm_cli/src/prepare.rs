@@ -9,7 +9,7 @@ use ferrum_core::{
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 const JOIN: &str = "\n<|endoftext|>\n";
@@ -85,9 +85,11 @@ impl Split {
 }
 
 /// Every regular, non-hidden file under each input (directories walked
-/// recursively), sorted by path.
+/// recursively; FIFOs, devices and sockets inside them are skipped), sorted by
+/// path. A non-regular file named directly is an error: `/dev/zero` or a pipe
+/// would otherwise be read forever.
 fn expand_inputs(inputs: &[String]) -> std::io::Result<Vec<PathBuf>> {
-    fn walk(p: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    fn walk(p: &Path, top: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
         if p.is_dir() {
             for e in std::fs::read_dir(p)? {
                 let e = e?.path();
@@ -95,11 +97,16 @@ fn expand_inputs(inputs: &[String]) -> std::io::Result<Vec<PathBuf>> {
                     .file_name()
                     .is_some_and(|n| n.to_string_lossy().starts_with('.'))
                 {
-                    walk(&e, out)?;
+                    walk(&e, false, out)?;
                 }
             }
-        } else {
+        } else if p.is_file() {
             out.push(p.to_path_buf());
+        } else if top {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("input {} is not a regular file or directory", p.display()),
+            ));
         }
         Ok(())
     }
@@ -112,14 +119,21 @@ fn expand_inputs(inputs: &[String]) -> std::io::Result<Vec<PathBuf>> {
                 format!("input {i} does not exist"),
             ));
         }
-        walk(p, &mut out)?;
+        walk(p, true, &mut out)?;
     }
     out.sort();
     Ok(out)
 }
 
+/// Bytes read per `read` call (memory is the largest document plus this).
+const CHUNK: usize = 1 << 20;
+
 /// Stream `path` as raw documents split on `sep` (byte-exact). An empty
 /// separator yields the whole file as one document. Calls `f(bytes, offset)`.
+///
+/// Reads fixed-size chunks (not lines), so a file with no newlines costs one
+/// chunk of buffer rather than doubling the document, and walks each chunk's
+/// separators once (no per-document memmove of the rest of the chunk).
 fn for_each_raw_doc(
     path: &Path,
     sep: &str,
@@ -127,36 +141,41 @@ fn for_each_raw_doc(
     total: &mut u64,
     mut f: impl FnMut(&[u8], u64) -> Result<(), String>,
 ) -> Result<(), String> {
-    let file =
+    let mut file =
         std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
-    let mut r = BufReader::with_capacity(1 << 20, file);
     let sep = sep.as_bytes();
     let mut doc: Vec<u8> = Vec::new();
     let mut doc_start = 0u64;
-    let mut line = Vec::new();
+    let mut buf = vec![0u8; CHUNK];
     loop {
-        line.clear();
-        let n = r.read_until(b'\n', &mut line).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&line);
+        let n = match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
+        };
+        hasher.update(&buf[..n]);
         *total += n as u64;
-        doc.extend_from_slice(&line);
-        if !sep.is_empty() {
-            // A separator can only complete inside the bytes just appended.
-            let mut from = doc.len().saturating_sub(line.len() + sep.len() - 1);
-            while let Some(i) = doc[from..]
-                .windows(sep.len())
-                .position(|w| w == sep)
-                .map(|i| from + i)
-            {
-                f(&doc[..i], doc_start)?;
-                doc_start += (i + sep.len()) as u64;
-                doc.drain(..i + sep.len());
-                from = 0; // what remains is the short tail of this line
-            }
+        let old_len = doc.len();
+        doc.extend_from_slice(&buf[..n]);
+        if sep.is_empty() {
+            continue;
         }
+        // A separator can only complete inside the bytes just appended (it may
+        // start up to `sep.len() - 1` bytes before them).
+        let mut from = old_len.saturating_sub(sep.len() - 1);
+        let mut consumed = 0;
+        while let Some(i) = doc[from..]
+            .windows(sep.len())
+            .position(|w| w == sep)
+            .map(|i| from + i)
+        {
+            f(&doc[consumed..i], doc_start)?;
+            doc_start += (i + sep.len() - consumed) as u64;
+            consumed = i + sep.len();
+            from = consumed;
+        }
+        doc.drain(..consumed);
     }
     f(&doc, doc_start)
 }
@@ -312,4 +331,143 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
         manifest["rejected"]
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmpdir(name: &str) -> PathBuf {
+        let d =
+            std::env::temp_dir().join(format!("ferrum_prep_unit_{}_{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// (documents, offsets, hash hex, total) from `for_each_raw_doc`.
+    fn split(path: &Path, sep: &str) -> (Vec<Vec<u8>>, Vec<u64>, String, u64) {
+        let (mut docs, mut offs) = (Vec::new(), Vec::new());
+        let (mut h, mut total) = (Sha256::new(), 0);
+        for_each_raw_doc(path, sep, &mut h, &mut total, |d, o| {
+            docs.push(d.to_vec());
+            offs.push(o);
+            Ok(())
+        })
+        .unwrap();
+        (docs, offs, hex(&h.finalize()), total)
+    }
+
+    #[test]
+    fn separator_straddling_the_chunk_boundary_is_found_once() {
+        let sep = "<|endoftext|>";
+        let d = tmpdir("straddle");
+        // The separator starts 5 bytes before the end of the first chunk.
+        let mut data = vec![b'a'; CHUNK - 5];
+        data.extend_from_slice(sep.as_bytes());
+        data.extend_from_slice(b"tail");
+        let p = d.join("f.txt");
+        std::fs::write(&p, &data).unwrap();
+        let (docs, offs, hash, total) = split(&p, sep);
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].len(), CHUNK - 5);
+        assert_eq!(docs[1], b"tail");
+        assert_eq!(offs, vec![0, (CHUNK - 5 + sep.len()) as u64]);
+        assert_eq!(total, data.len() as u64);
+        assert_eq!(hash, hex(&Sha256::digest(&data)));
+        // A separator split across *every* possible chunk-edge offset still counts once.
+        for back in 1..sep.len() {
+            let mut data = vec![b'b'; CHUNK - back];
+            data.extend_from_slice(sep.as_bytes());
+            std::fs::write(&p, &data).unwrap();
+            let (docs, _, _, _) = split(&p, sep);
+            assert_eq!(docs.len(), 2, "back={back}");
+            assert_eq!(docs[0].len(), CHUNK - back);
+            assert!(docs[1].is_empty());
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_single_huge_line_with_many_separators_splits_in_linear_time() {
+        // 60k documents on one 800 KB line: draining the line per separator was quadratic.
+        let sep = "<|endoftext|>";
+        let d = tmpdir("manysep");
+        let data = format!("doc{sep}").repeat(60_000);
+        let p = d.join("f.txt");
+        std::fs::write(&p, &data).unwrap();
+        let t = std::time::Instant::now();
+        let (docs, offs, _, _) = split(&p, sep);
+        assert!(t.elapsed().as_secs() < 5, "took {:?}", t.elapsed());
+        assert_eq!(docs.len(), 60_001); // 60k separators -> 60k docs + the empty tail
+        assert!(docs[..60_000].iter().all(|x| x == b"doc"));
+        assert_eq!(offs[1], (3 + sep.len()) as u64);
+        assert_eq!(offs[60_000], data.len() as u64);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn newline_free_file_is_one_document_and_empty_file_is_one_empty_document() {
+        let d = tmpdir("nonl");
+        let data = vec![b'x'; 2 * CHUNK + 17];
+        let p = d.join("f.txt");
+        std::fs::write(&p, &data).unwrap();
+        let (docs, offs, hash, total) = split(&p, "");
+        assert_eq!((docs.len(), docs[0].len(), offs[0]), (1, data.len(), 0));
+        assert_eq!(
+            (total, hash),
+            (data.len() as u64, hex(&Sha256::digest(&data)))
+        );
+        std::fs::write(&p, b"").unwrap();
+        let (docs, _, _, total) = split(&p, "<|endoftext|>");
+        assert_eq!((docs, total), (vec![Vec::<u8>::new()], 0));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn callback_errors_and_missing_files_propagate() {
+        let d = tmpdir("err");
+        let p = d.join("f.txt");
+        std::fs::write(&p, b"a<|endoftext|>b").unwrap();
+        let (mut h, mut t) = (Sha256::new(), 0);
+        let e = for_each_raw_doc(&p, "<|endoftext|>", &mut h, &mut t, |_, _| {
+            Err("stop".into())
+        })
+        .unwrap_err();
+        assert_eq!(e, "stop");
+        let e = for_each_raw_doc(&d.join("nope"), "", &mut h, &mut t, |_, _| Ok(())).unwrap_err();
+        assert!(e.contains("cannot open"), "{e}");
+        // A directory opens on Linux but cannot be read: a clean error, not a hang.
+        let e = for_each_raw_doc(&d, "", &mut h, &mut t, |_, _| Ok(()));
+        assert!(e.is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_regular_inputs_are_rejected_or_skipped_not_read_forever() {
+        // Named directly: refused (reading /dev/zero would never end).
+        let e = expand_inputs(&["/dev/zero".to_string()]).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(e.to_string().contains("/dev/zero"), "{e}");
+        // Inside a walked directory: skipped silently, regular files kept, hidden ignored.
+        let d = tmpdir("walk");
+        std::fs::write(d.join("a.txt"), b"a").unwrap();
+        std::fs::write(d.join(".hidden"), b"h").unwrap();
+        if std::process::Command::new("mkfifo")
+            .arg(d.join("pipe"))
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            let got = expand_inputs(&[d.to_string_lossy().into()]).unwrap();
+            assert_eq!(got, vec![d.join("a.txt")]);
+        }
+        // A dangling symlink is not a regular file: skipped inside a directory.
+        std::os::unix::fs::symlink(d.join("missing"), d.join("dangling")).unwrap();
+        assert_eq!(
+            expand_inputs(&[d.to_string_lossy().into()]).unwrap(),
+            vec![d.join("a.txt")]
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

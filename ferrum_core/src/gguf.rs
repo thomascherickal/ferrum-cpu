@@ -176,16 +176,28 @@ pub struct Gguf {
 struct Cur<'a> {
     b: &'a [u8],
     pos: usize,
+    /// Size of the whole file `b` is (a prefix of). A read past it is final
+    /// ("truncated"); a read past `b` but within it means "need a longer prefix".
+    total: usize,
 }
 impl<'a> Cur<'a> {
     fn new(b: &'a [u8]) -> Self {
-        Self { b, pos: 0 }
+        Self::with_total(b, b.len())
+    }
+    fn with_total(b: &'a [u8], total: usize) -> Self {
+        Self { b, pos: 0, total }
     }
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .pos
             .checked_add(n)
             .ok_or_else(|| fmt("offset overflow"))?;
+        if end > self.total {
+            return Err(fmt(&format!(
+                "GGUF truncated at +{}: need {n} bytes, file has {}",
+                self.pos, self.total
+            )));
+        }
         if end > self.b.len() {
             return Err(fmt(&format!("GGUF EOF at +{}: need {n}", self.pos)));
         }
@@ -261,9 +273,12 @@ fn read_value(c: &mut Cur, vtype: u32) -> Result<MetaValue> {
             }
             let count = c.u64()? as usize;
             // Guard against absurd counts before reserving. Every element takes
-            // at least one byte, so a count beyond the bytes read means "read
-            // more" (the "GGUF EOF" prefix lets `Gguf::open` grow its prefix;
-            // on the whole file it is final).
+            // at least one byte, so a count beyond the file is final, and one
+            // beyond the bytes read so far means "read more" (the "GGUF EOF"
+            // prefix lets `Gguf::open` grow its prefix).
+            if count > c.total {
+                return Err(fmt("GGUF array count exceeds the file size"));
+            }
             if count > c.b.len() {
                 return Err(fmt("GGUF EOF: array count exceeds the bytes read"));
             }
@@ -366,9 +381,9 @@ type ParsedHeader = (u32, BTreeMap<String, MetaValue>, Vec<TensorInfo>, usize);
 
 /// Parse the header, metadata table, and tensor directory from a buffer that
 /// contains at least the whole header region (it may be a prefix of a larger
-/// file — tensor data after `data_offset` is not required).
-fn parse_header(b: &[u8]) -> Result<ParsedHeader> {
-    let mut c = Cur::new(b);
+/// file of `total` bytes — tensor data after `data_offset` is not required).
+fn parse_header(b: &[u8], total: usize) -> Result<ParsedHeader> {
+    let mut c = Cur::with_total(b, total);
     if c.u32()? != GGUF_MAGIC {
         return Err(fmt("not a GGUF file (bad magic)"));
     }
@@ -537,7 +552,7 @@ impl Gguf {
             let mut prefix = vec![0u8; cap];
             let got = read_fully(&mut file, &mut prefix)?;
             prefix.truncate(got);
-            match parse_header(&prefix) {
+            match parse_header(&prefix, len) {
                 Ok((version, metadata, tensors, data_offset)) => {
                     if data_offset > len {
                         return Err(fmt("GGUF tensor-data section begins past EOF"));
@@ -566,7 +581,7 @@ impl Gguf {
     /// Parse GGUF from an owned byte buffer (held resident; see [`Self::open`]
     /// for the streamed alternative).
     pub fn parse(bytes: Vec<u8>) -> Result<Self> {
-        let (version, metadata, tensors, data_offset) = parse_header(&bytes)?;
+        let (version, metadata, tensors, data_offset) = parse_header(&bytes, bytes.len())?;
         if data_offset > bytes.len() {
             return Err(fmt("GGUF tensor-data section begins past EOF"));
         }
@@ -2618,5 +2633,70 @@ mod tests {
             g.tensors.iter().map(|t| t.offset).collect::<Vec<_>>(),
             [0, 16]
         );
+    }
+
+    #[test]
+    fn claims_beyond_the_file_are_final_but_within_it_ask_for_more_bytes() {
+        // Header prefix whose first key claims `len` bytes (a 1-byte "k" follows).
+        let with_key_len = |len: u64| {
+            let mut o = Vec::new();
+            put_u32(&mut o, GGUF_MAGIC);
+            put_u32(&mut o, 3);
+            put_u64(&mut o, 0);
+            put_u64(&mut o, 1);
+            put_u64(&mut o, len);
+            o.push(b'k');
+            o
+        };
+        let prefix = with_key_len(1 << 40);
+        // The file is only 1 MiB: the claim can never be satisfied, so `open` must not
+        // grow its prefix (it would read the whole file) -- the error is not a "need more".
+        let e = parse_header(&prefix, 1 << 20).err().unwrap();
+        assert!(!is_truncation(&e), "{e}");
+        assert!(e.to_string().contains("truncated"), "{e}");
+        // The same claim in a file big enough to hold it is a genuine "read more".
+        let e = parse_header(&prefix, 1 << 41).err().unwrap();
+        assert!(is_truncation(&e), "{e}");
+        // Same split for array counts.
+        let arr = |count: u64| {
+            let mut o = with_key_len(1);
+            put_u32(&mut o, VT_ARRAY);
+            put_u32(&mut o, VT_U8);
+            put_u64(&mut o, count);
+            o
+        };
+        let e = parse_header(&arr(1 << 40), 1 << 20).err().unwrap();
+        assert!(
+            !is_truncation(&e) && e.to_string().contains("array count exceeds"),
+            "{e}"
+        );
+        let e = parse_header(&arr(5000), 1 << 20).err().unwrap();
+        assert!(is_truncation(&e), "{e}");
+    }
+
+    #[test]
+    fn open_rejects_an_absurd_length_claim_without_reading_the_whole_file() {
+        // A sparse 64 MiB file whose header claims a 2^40-byte key: rejected from the
+        // first 1 MiB read (before this fix `open` doubled its prefix to the file size).
+        let path =
+            std::env::temp_dir().join(format!("ferrum_gguf_claim_{}.gguf", std::process::id()));
+        let mut hdr = Vec::new();
+        put_u32(&mut hdr, GGUF_MAGIC);
+        put_u32(&mut hdr, 3);
+        put_u64(&mut hdr, 0);
+        put_u64(&mut hdr, 1);
+        put_u64(&mut hdr, 1 << 40);
+        {
+            use std::io::Write;
+            let mut f = File::create(&path).unwrap();
+            f.write_all(&hdr).unwrap();
+            f.set_len(64 << 20).unwrap();
+        }
+        let e = Gguf::open(path.to_str().unwrap())
+            .err()
+            .unwrap()
+            .to_string();
+        let _ = std::fs::remove_file(&path);
+        assert!(e.contains("truncated"), "{e}");
     }
 }

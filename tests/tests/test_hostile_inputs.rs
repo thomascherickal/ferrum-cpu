@@ -56,7 +56,7 @@ fn mutate(seed: &[u8], r: &mut Xs) -> Vec<u8> {
     let hdr = b.len().min(if r.below(4) == 0 { b.len() } else { 4096 });
     for _ in 0..1 + r.below(3) {
         let pos = r.below(hdr.max(1));
-        match r.below(9) {
+        match r.below(10) {
             0 | 1 => {
                 let v = U64S[r.below(U64S.len())];
                 for (i, x) in v.to_le_bytes().iter().enumerate() {
@@ -99,6 +99,17 @@ fn mutate(seed: &[u8], r: &mut Xs) -> Vec<u8> {
                         b[i] = b'9';
                         i += 1;
                     }
+                }
+            }
+            // Structural character injection (JSON / state-string delimiters).
+            9 => {
+                let at = (0..b.len())
+                    .cycle()
+                    .skip(pos)
+                    .take(b.len())
+                    .find(|&i| b[i].is_ascii_graphic());
+                if let Some(i) = at {
+                    b[i] = b"\"[]{},:;\n\\<"[r.below(10)];
                 }
             }
             // A single digit run -> '0's.
@@ -278,6 +289,60 @@ fn fuzz_child() {
         })) {
             let msg = p.downcast_ref::<String>().cloned().unwrap_or_default();
             failures.push(format!("state {:?}: panic: {msg}", &s[..s.len().min(40)]));
+        }
+    }
+    // Text cleaners: random mixes of invisible / combining / marker / multi-byte pieces.
+    let pieces = [
+        "a",
+        " ",
+        "\n",
+        "\r\n",
+        "\u{feff}",
+        "\u{200b}",
+        "\u{200d}",
+        "\u{301}",
+        "\u{ff21}",
+        "\u{fb01}",
+        "\u{1f600}",
+        "\t",
+        "é",
+        "\u{0}",
+        "*** START OF THE PROJECT GUTENBERG EBOOK X ***",
+        "*** END OF THE PROJECT GUTENBERG EBOOK X ***",
+        "<|endoftext|>",
+        "\"",
+        "\\",
+    ];
+    let mut tr = Xs(77);
+    for case in 0..n * 4 {
+        let text: String = (0..tr.below(60))
+            .map(|_| pieces[tr.below(pieces.len())])
+            .collect();
+        let opts = ferrum_core::CleanOptions {
+            strip_gutenberg: tr.below(2) == 0,
+            lowercase: tr.below(2) == 0,
+            collapse_whitespace: tr.below(2) == 0,
+            normalize_punctuation: tr.below(2) == 0,
+            strip_control_chars: tr.below(2) == 0,
+            max_chars: if tr.below(2) == 0 {
+                None
+            } else {
+                Some(tr.below(40))
+            },
+        };
+        if let Err(p) = catch_unwind(AssertUnwindSafe(|| {
+            let c = ferrum_core::clean_corpus(&text, &opts);
+            let _ = ferrum_core::corpus_stats(&c);
+            let _ = ferrum_core::validate_for_training(&c, tr.below(10));
+            let _ = ferrum_core::squeeze_spaces(&ferrum_core::strip_invisible(&text));
+            let _ = ferrum_core::normalize_nfkc(&text);
+            for b in ferrum_core::gutenberg_bodies(&text) {
+                let _ = ferrum_core::clean_corpus(b, &opts);
+            }
+        })) {
+            let msg = p.downcast_ref::<String>().cloned().unwrap_or_default();
+            failures.push(format!("text case {case} {text:?}: panic: {msg}"));
+            break;
         }
     }
     if !failures.is_empty() {
