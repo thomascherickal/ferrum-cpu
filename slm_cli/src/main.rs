@@ -973,6 +973,18 @@ fn finetune_threads(est: usize, avail: Option<usize>, requested: usize) -> usize
     (budget / per_thread.max(1)).clamp(1, requested.max(1))
 }
 
+/// The refusal when the fine-tune peak exceeds 90% of the free RAM (unless forced).
+fn finetune_memory_error(peak: usize, avail: usize, force: bool) -> Option<String> {
+    ((peak as f64) > 0.9 * avail as f64 && !force).then(|| {
+        format!(
+            "estimated training memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
+             fine-tune a smaller model, or pass --force to attempt it anyway.",
+            peak as f64 / 1e9,
+            avail as f64 / 1e9
+        )
+    })
+}
+
 /// The notice printed when [`finetune_threads`] lowered the request.
 fn thread_cap_note(capped: usize, requested: usize) -> Option<String> {
     (capped < requested).then(|| {
@@ -1205,14 +1217,8 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             "  estimated training RAM   ≈ {:.2} GB (weights + grad + Adam m/v + checkpoint save)",
             train_est as f64 / 1e9
         );
-        if (train_est as f64) > 0.9 * avail as f64 && !args.has("force") {
-            return Err(format!(
-                "estimated training memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 fine-tune a smaller model, or pass --force to attempt it anyway.",
-                train_est as f64 / 1e9,
-                avail as f64 / 1e9
-            )
-            .into());
+        if let Some(e) = finetune_memory_error(train_est, avail, args.has("force")) {
+            return Err(e.into());
         }
     }
 
@@ -1964,6 +1970,20 @@ mod tests {
         assert_eq!(finetune_threads(est, Some(3 * GB), 8), 1);
         assert_eq!(finetune_threads(0, Some(GB), 8), 8);
         assert_eq!(finetune_threads(usize::MAX, Some(GB), 8), 1);
+        // Qwen2.5-0.5B (2 GB f32 weights) on this 15 GB machine is refused; --force overrides.
+        let e = finetune_memory_error(finetune_peak_bytes(2 * GB), 9 * GB, false).unwrap();
+        assert!(
+            e.contains("24.00 GB") && e.contains("9.00 GB") && e.contains("--force"),
+            "{e}"
+        );
+        assert_eq!(
+            finetune_memory_error(finetune_peak_bytes(2 * GB), 9 * GB, true),
+            None
+        );
+        assert_eq!(
+            finetune_memory_error(finetune_peak_bytes(540_000_000), 10 * GB, false),
+            None
+        );
         assert_eq!(thread_cap_note(8, 8), None);
         let note = thread_cap_note(3, 8).unwrap();
         assert!(note.contains("using 3 of 8 threads"), "{note}");
