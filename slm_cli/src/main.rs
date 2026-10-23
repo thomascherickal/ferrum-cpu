@@ -754,6 +754,17 @@ fn check_lr(lr: f32) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// `--resume` must name an existing file; checked before any multi-GB model
+/// load. Blank means "none" (as in `export-gguf`).
+fn require_resume_file(resume: Option<&str>) -> Result<(), String> {
+    match resume.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(p) if !std::path::Path::new(p).is_file() => Err(format!(
+            "checkpoint {p} does not exist (--resume needs an existing .flck file)"
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn generate_text(
     slm: &GenerativeSLM,
     seed_text: &str,
@@ -1004,6 +1015,7 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     [--top-k N] [--top-p F] [--rep F] [--ids \"1 2 3\"] [--raw]"
             .into());
     }
+    require_resume_file(args.value("resume"))?;
     let path = &args.positional[0];
     let prompt_text = args.positional[1..].join(" ");
 
@@ -1196,6 +1208,7 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                 .into(),
         );
     }
+    require_resume_file(args.value("resume"))?;
     let gguf_path = &args.positional[0];
     let corpus_path = &args.positional[1];
     let out_path = &args.positional[2];
@@ -1393,6 +1406,7 @@ fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     [--resume tuned.flck] [--force]"
             .into());
     }
+    require_resume_file(args.value("resume"))?;
     let in_path = &args.positional[0];
     let out_path = &args.positional[1];
     let quant_name = args.value("quant").unwrap_or("q8_0");
@@ -2011,5 +2025,25 @@ mod tests {
         assert_eq!(reused_tokenizer_with_val(&no_tok), None);
         assert_eq!(reused_tokenizer_with_val(&absent), None);
         assert_eq!(reused_tokenizer_with_val(&both), Some(tok_s.as_str()));
+    }
+
+    #[test]
+    fn require_resume_file_names_the_missing_checkpoint() {
+        assert!(require_resume_file(None).is_ok());
+        assert!(require_resume_file(Some("   ")).is_ok(), "blank = none");
+        let e = require_resume_file(Some("/nonexistent/x.flck")).unwrap_err();
+        assert!(
+            e.contains("/nonexistent/x.flck") && e.contains("does not exist"),
+            "{e}"
+        );
+        let dir = std::env::temp_dir().join(format!("ferrum_resume_chk_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(
+            require_resume_file(Some(dir.to_str().unwrap())).is_err(),
+            "a directory is not a file"
+        );
+        let f = dir.join("c.flck");
+        std::fs::write(&f, b"x").unwrap();
+        assert!(require_resume_file(Some(f.to_str().unwrap())).is_ok());
     }
 }

@@ -192,3 +192,38 @@ fn info_reports_gguf_format_and_rejects_non_gguf() {
         "{text}"
     );
 }
+
+#[test]
+fn gguf_commands_name_a_missing_resume_checkpoint_before_loading_anything() {
+    for args in [
+        vec![
+            "run-gguf",
+            "/nonexistent/m.gguf",
+            "hi",
+            "--resume",
+            "/nonexistent/r.flck",
+        ],
+        vec![
+            "export-gguf",
+            "/nonexistent/m.gguf",
+            "/tmp/o.gguf",
+            "--resume",
+            "/nonexistent/r.flck",
+        ],
+        vec![
+            "finetune-gguf",
+            "/nonexistent/m.gguf",
+            "c.txt",
+            "o.flck",
+            "--resume",
+            "/nonexistent/r.flck",
+        ],
+    ] {
+        let (code, text) = run(&args);
+        assert_eq!(code, 1, "{text}");
+        assert!(
+            text.contains("checkpoint /nonexistent/r.flck does not exist"),
+            "{args:?}: {text}"
+        );
+    }
+}

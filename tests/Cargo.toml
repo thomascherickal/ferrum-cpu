@@ -50,3 +50,7 @@ path = "tests/gap_gguf.rs"
 [[test]]
 name = "gap_eos"
 path = "tests/gap_eos.rs"
+
+[[test]]
+name = "test_runtime_compat"
+path = "tests/test_runtime_compat.rs"
