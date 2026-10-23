@@ -30,7 +30,7 @@
 use crate::activation::Activation;
 use crate::error::{InferError, Result};
 use crate::gguf::{bounded, transpose_2d, Gguf, MetaValue, GGML_F32, GGML_Q4_0, GGML_Q8_0};
-use crate::gguf_write::{encode_tensor, GgufBuilder};
+use crate::gguf_write::{encode_tensor, size_label, GgufBuilder};
 use crate::layer::Layer;
 use crate::layer::{ActivationLayer, Embedding, Flatten, LayerNorm, Linear, TransformerBlock};
 use crate::meta::TaskType;
@@ -411,6 +411,9 @@ pub fn to_gguf(
         if gpt2.is_some() { "gpt2" } else { "ferrum" },
     );
     o.str("general.name", &meta.dataset_name);
+    if let Some(label) = size_label(model.num_params() as u64) {
+        o.str("general.size_label", &label);
+    }
     o.u32("ferrum.format", 1);
     o.str("ferrum.quant", prec.name());
     o.str("ferrum.metadata", &stored.to_json());
@@ -1552,6 +1555,10 @@ mod tests {
             let s = |x: &str| Some(MetaValue::String(x.into()));
             assert_eq!(u("general.architecture"), s("gpt2"));
             assert_eq!(u("general.name"), s("gguf test"));
+            assert_eq!(
+                u("general.size_label"),
+                size_label(m.num_params() as u64).map(MetaValue::String)
+            );
             assert_eq!(u("gpt2.context_length"), Some(MetaValue::U32(8)));
             assert_eq!(u("gpt2.embedding_length"), Some(MetaValue::U32(64)));
             assert_eq!(u("gpt2.block_count"), Some(MetaValue::U32(2)));
@@ -1710,6 +1717,12 @@ mod tests {
             let bytes = to_gguf(&model, &norm, &meta, prec).unwrap();
             let g = parse(&bytes);
             assert_eq!(g.architecture(), Some("ferrum"));
+            assert_eq!(
+                g.meta("general.size_label"),
+                size_label(model.num_params() as u64)
+                    .map(MetaValue::String)
+                    .as_ref()
+            );
             assert_eq!(g.tensor("l1.ffn1.weight").unwrap().dims, vec![64, 128]);
             assert_eq!(g.tensor("l1.ffn2.weight").unwrap().ggml_type, ty);
             assert_eq!(g.tensor("l0.token").unwrap().ggml_type, ty);
@@ -1819,6 +1832,13 @@ mod tests {
             assert_eq!(arch(&bytes), "ferrum", "{why}");
             from_gguf(&bytes).unwrap_or_else(|e| panic!("{why}: {e}"));
         }
+    }
+
+    #[test]
+    fn parameterless_model_has_no_size_label() {
+        let (_, norm, meta) = make_bundle();
+        let bytes = to_gguf(&Sequential::new(), &norm, &meta, QPrec::F32).unwrap();
+        assert!(parse(&bytes).meta("general.size_label").is_none());
     }
 
     #[test]

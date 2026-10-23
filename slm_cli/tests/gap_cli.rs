@@ -148,3 +148,54 @@ fn cli_generate_stops_at_eos() {
         text.trim().len()
     );
 }
+
+fn stderr(o: &std::process::Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+#[test]
+fn char_level_train_warns_that_runtimes_cannot_load_it_but_bpe_does_not() {
+    let d = tmp("warn_char");
+    let out = tiny_train(&d, &["--vocab", "0"]);
+    assert!(out.status.success());
+    let e = stderr(&out);
+    assert_eq!(e.matches("warning:").count(), 1, "{e}");
+    assert!(e.contains("--vocab 1024") && e.contains("llama.cpp"), "{e}");
+    // The plain file still loads back in Ferrum.
+    let m = d.join("m.bin");
+    assert!(tt(&["info", m.to_str().unwrap()]).status.success());
+
+    let d = tmp("warn_bpe");
+    let out = tiny_train(&d, &["--vocab", "300"]);
+    assert!(out.status.success());
+    assert!(!stderr(&out).contains("warning:"), "{}", stderr(&out));
+}
+
+#[test]
+fn runtime_exports_refuse_char_level_models_naming_the_fix() {
+    let d = tmp("refuse_char");
+    assert!(tiny_train(&d, &["--vocab", "0"]).status.success());
+    let m = d.join("m.bin");
+    let m = m.to_str().unwrap();
+    let mf = d.join("out.Modelfile");
+    for args in [
+        vec!["export-ollama", m, "x"],
+        vec![
+            "export-ollama",
+            m,
+            "x",
+            "--modelfile-only",
+            mf.to_str().unwrap(),
+        ],
+        vec!["export-lmstudio", m, "--repo", "ferrum/x"],
+    ] {
+        let out = tt(&args);
+        assert!(!out.status.success(), "{args:?}");
+        let e = stderr(&out);
+        assert!(
+            e.contains("'ferrum'") && e.contains("retrain with a BPE vocabulary"),
+            "{e}"
+        );
+    }
+    assert!(!mf.exists());
+}

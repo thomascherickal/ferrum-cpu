@@ -84,6 +84,39 @@ impl GgufQuant {
     }
 }
 
+/// llama.cpp-style `general.size_label` for a parameter count: two significant
+/// digits below 10 ("1.5B"), whole numbers otherwise ("124M", "507K"). Counts
+/// under 1000 are the plain integer; 0 has no label.
+pub fn size_label(params: u64) -> Option<String> {
+    if params == 0 {
+        return None;
+    }
+    if params < 1000 {
+        return Some(params.to_string());
+    }
+    let units = [(1e3, 'K'), (1e6, 'M'), (1e9, 'B'), (1e12, 'T')];
+    let mut i = units.iter().rposition(|&(u, _)| params as f64 >= u)?;
+    loop {
+        let scaled = params as f64 / units[i].0;
+        let r = if scaled < 10.0 {
+            (scaled * 10.0).round() / 10.0
+        } else {
+            scaled.round()
+        };
+        // 999.6K rounds to 1000K: carry into the next unit.
+        if r >= 1000.0 && i + 1 < units.len() {
+            i += 1;
+            continue;
+        }
+        let u = units[i].1;
+        return Some(if r.fract() == 0.0 {
+            format!("{r:.0}{u}")
+        } else {
+            format!("{r:.1}{u}")
+        });
+    }
+}
+
 /// Encode an `f32` as an IEEE-754 half (`u16`), round-to-nearest-ties-to-even.
 /// Inf/NaN, subnormals, and overflow-to-Inf are all handled. Exact inverse of
 /// [`crate::gguf::f16_to_f32`] on values representable as f16.
@@ -998,6 +1031,38 @@ fn add_tensor(
 mod tests {
     use super::*;
     use crate::gguf::f16_to_f32;
+
+    #[test]
+    fn size_label_table() {
+        let cases: &[(u64, Option<&str>)] = &[
+            (0, None),
+            (1, Some("1")),
+            (999, Some("999")),
+            (1_000, Some("1K")),
+            (1_049, Some("1K")),
+            (1_050, Some("1.1K")),
+            (9_949, Some("9.9K")),
+            (9_950, Some("10K")),
+            (507_552, Some("508K")),
+            (999_499, Some("999K")),
+            (999_500, Some("1M")),
+            (1_000_000, Some("1M")),
+            (1_500_000, Some("1.5M")),
+            (124_439_808, Some("124M")),
+            (999_999_999, Some("1B")),
+            (1_000_000_000, Some("1B")),
+            (1_540_000_000, Some("1.5B")),
+            (8_030_000_000, Some("8B")),
+            (70_550_000_000, Some("71B")),
+            (999_500_000_000, Some("1T")),
+            (1_000_000_000_000, Some("1T")),
+            // No unit above T: the number just grows.
+            (2_000_000_000_000_000, Some("2000T")),
+        ];
+        for &(n, want) in cases {
+            assert_eq!(size_label(n).as_deref(), want, "{n}");
+        }
+    }
 
     #[test]
     fn f32_to_f16_is_exact_inverse_of_f16_to_f32() {

@@ -15,18 +15,40 @@ pub struct GgufSummary {
     pub name: String,
 }
 
+const BPE_FIX: &str = "retrain with a BPE vocabulary (`train ... --vocab 1024`; \
+                       `--vocab 0` is character-level) to get a 'gpt2' GGUF";
+
+fn not_runnable(path: &str, arch: &str) -> String {
+    let arch = if arch.is_empty() { "?" } else { arch };
+    format!(
+        "{path}: architecture '{arch}' is not runnable in llama.cpp (Ollama / LM Studio run only \
+         'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no \
+         llama.cpp architecture). To run a Ferrum SLM there, {BPE_FIX}"
+    )
+}
+
+/// One-line warning for a freshly written model file that llama.cpp / Ollama /
+/// LM Studio cannot load (any architecture but `gpt2`); `None` when it is fine
+/// or unreadable (the caller's own reload check reports that).
+pub fn plain_gguf_warning(path: &Path) -> Option<String> {
+    let g = Gguf::open(&path.to_string_lossy()).ok()?;
+    let arch = g.architecture().unwrap_or("");
+    (arch != "gpt2").then(|| {
+        format!(
+            "warning: {} is a plain Ferrum GGUF (architecture '{arch}'): only Ferrum can load it, \
+             not llama.cpp / Ollama / LM Studio; {BPE_FIX}",
+            path.display()
+        )
+    })
+}
+
 /// Errors unless `path` is a runnable (gpt2-architecture) GGUF file.
 pub fn runnable_summary(path: &Path) -> Result<GgufSummary, String> {
     let p = path.to_string_lossy();
     let g = Gguf::open(&p).map_err(|e| format!("cannot read GGUF {p}: {e}"))?;
     let arch = g.architecture().unwrap_or("").to_string();
     if arch != "gpt2" {
-        return Err(format!(
-            "{p}: architecture '{}' is not runnable in llama.cpp (Ollama / LM Studio run only \
-             'gpt2' GGUF files; generic, character-level and tabular Ferrum models have no \
-             llama.cpp architecture)",
-            if arch.is_empty() { "?" } else { &arch }
-        ));
+        return Err(not_runnable(&p, &arch));
     }
     let context_len = g
         .meta("gpt2.context_length")
@@ -422,6 +444,33 @@ mod tests {
             e.contains("not runnable in llama.cpp") && e.contains("'?'"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn refusal_names_the_bpe_fix() {
+        let d = tmp("sum_fix");
+        let e = runnable_summary(&gguf(&d, "m.gguf", Some("ferrum"), Some(8)))
+            .err()
+            .unwrap();
+        assert!(e.contains("retrain with a BPE vocabulary"), "{e}");
+        assert!(e.contains("--vocab 1024") && e.contains("--vocab 0"), "{e}");
+    }
+
+    #[test]
+    fn plain_gguf_warning_only_for_non_gpt2() {
+        let d = tmp("warn");
+        let w = plain_gguf_warning(&gguf(&d, "f.gguf", Some("ferrum"), None)).unwrap();
+        assert!(!w.contains('\n'), "must be one line: {w}");
+        assert!(w.starts_with("warning:") && w.contains("'ferrum'"), "{w}");
+        assert!(w.contains("llama.cpp") && w.contains("--vocab 1024"), "{w}");
+        // No architecture key at all is still not runnable.
+        assert!(plain_gguf_warning(&gguf(&d, "n.gguf", None, None)).is_some());
+        // A gpt2 file is fine; an unreadable or missing file is left to the caller.
+        assert!(plain_gguf_warning(&gguf(&d, "g.gguf", Some("gpt2"), Some(8))).is_none());
+        let junk = d.join("junk.gguf");
+        std::fs::write(&junk, b"nope").unwrap();
+        assert!(plain_gguf_warning(&junk).is_none());
+        assert!(plain_gguf_warning(&d.join("missing.gguf")).is_none());
     }
 
     #[test]

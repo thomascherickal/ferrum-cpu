@@ -253,6 +253,12 @@ These are directions, not commitments.
   CLI and GUI): the window is left-padded with token 0 (cached path primes a
   partial window), as BPE models already did. Output for seeds at least
   `context_len` long is unchanged.
+- **GGUF writers add `general.size_label`** (e.g. `507K`, `124M`, `1.5B`; the
+  parameter count, llama.cpp style) so LM Studio shows a size; older files
+  without it load unchanged. `train` prints a one-line warning when it writes a
+  plain `ferrum`-architecture GGUF (`--vocab 0`) that llama.cpp / Ollama /
+  LM Studio cannot load, and `export-ollama` / `export-lmstudio` refuse such
+  files with the fix (retrain with a BPE vocabulary).
 - The GUI `train_slm` command ignores the removed `momentum` field. New fields
   are optional and default sensibly, so older front-ends keep working.
 

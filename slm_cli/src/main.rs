@@ -651,6 +651,9 @@ fn train_and_save(
     }
     let size = std::fs::metadata(model_path)?.len();
     println!("Saved {size} bytes → {model_path} ({quant} GGUF)");
+    if let Some(w) = runtime_export::plain_gguf_warning(std::path::Path::new(model_path)) {
+        eprintln!("{w}");
+    }
 
     // Verify the file roundtrips.
     let reloaded = GenerativeSLM::load(model_path)?;
