@@ -50,12 +50,6 @@ pub struct Info {
     pub model_sha256: String,
 }
 
-/// Parameter count of `model`.
-// ponytail: real count after Phase 1A merge (Sequential::num_params).
-fn num_params(_model: &GenerativeSLM) -> usize {
-    0
-}
-
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -66,7 +60,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Describe `model`, loaded from `bytes` (hashed for `model_sha256`).
 pub fn info_for(model: &GenerativeSLM, bytes: &[u8]) -> Info {
     Info {
-        params: num_params(model),
+        params: model.model.num_params(),
         context_len: model.meta.input_dim,
         vocab: model.meta.output_dim,
         quant: ferrum_core::loader::gguf_quant(bytes).unwrap_or_else(|_| "unknown".into()),
@@ -467,8 +461,11 @@ mod tests {
     }
 
     #[test]
-    fn num_params_placeholder_is_zero() {
-        assert_eq!(num_params(&model(0)), 0);
+    fn info_params_is_the_real_parameter_count() {
+        let m = model(0);
+        let i = info_for(&m, &m.to_bytes_quantized().unwrap());
+        assert_eq!(i.params, m.model.num_params());
+        assert!(i.params > 0);
     }
 
     #[test]

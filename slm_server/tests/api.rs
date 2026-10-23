@@ -89,8 +89,7 @@ async fn health_and_info() {
     assert_eq!(v["vocab"], reference().meta.output_dim);
     assert_eq!(v["tokenizer"], "bpe");
     assert_eq!(v["model_sha256"].as_str().unwrap().len(), 64);
-    // ponytail: `> 0` once Sequential::num_params lands (Phase 1A).
-    assert!(v["params"].is_u64());
+    assert!(v["params"].as_u64().unwrap() > 0);
     assert!(v["quant"].is_string());
 }
 
