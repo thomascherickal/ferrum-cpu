@@ -6,8 +6,9 @@
 
 pub mod cli;
 
-use axum::extract::{rejection::JsonRejection, DefaultBodyLimit, State};
+use axum::extract::{rejection::JsonRejection, DefaultBodyLimit, Request, State};
 use axum::http::StatusCode;
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -17,7 +18,18 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{mpsc, Arc, Weak};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Semaphore};
+
+/// Most POST requests the server holds at once (running, queued, or still being
+/// read); more get an immediate 503 before their body is read, so a flood
+/// cannot pile up parsed bodies or queued jobs in memory.
+// ponytail: fixed; make it a `Limits` field if a multi-client deployment needs more.
+const MAX_INFLIGHT: usize = 32;
+/// Most stop strings per generate request, and the longest one (bytes). Every
+/// generated token rescans the tail for each stop, so unbounded stops are a
+/// CPU-exhaustion lever.
+const MAX_STOPS: usize = 16;
+const MAX_STOP_BYTES: usize = 1024;
 
 /// Request limits, enforced before any model compute.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +105,7 @@ struct AppState {
     max_batch: usize,
     max_chars: usize,
     max_tokens: usize,
+    inflight: Arc<Semaphore>,
 }
 
 /// Apply `f` to every item, stopping at the first model error.
@@ -223,16 +236,23 @@ pub fn app(bytes: Vec<u8>, limits: Limits) -> Result<(Router, Info), String> {
         max_batch: limits.max_batch,
         max_chars: limits.max_chars,
         max_tokens: limits.max_tokens,
+        inflight: Arc::new(Semaphore::new(MAX_INFLIGHT)),
     };
+    let posts = Router::new()
+        .route("/v1/loglikelihood", post(loglikelihood))
+        .route("/v1/loglikelihood_rolling", post(loglikelihood_rolling))
+        .route("/v1/generate", post(generate))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            limit_inflight,
+        ));
     let router = Router::new()
         .route("/health", get(health))
         .route(
             "/v1/info",
             get(|State(s): State<AppState>| async move { Json((*s.info).clone()) }),
         )
-        .route("/v1/loglikelihood", post(loglikelihood))
-        .route("/v1/loglikelihood_rolling", post(loglikelihood_rolling))
-        .route("/v1/generate", post(generate))
+        .merge(posts)
         .layer(DefaultBodyLimit::max(limits.max_body))
         .fallback(|| async { ApiError(StatusCode::NOT_FOUND, "not found".into()) })
         .method_not_allowed_fallback(|| async {
@@ -240,6 +260,18 @@ pub fn app(bytes: Vec<u8>, limits: Limits) -> Result<(Router, Info), String> {
         })
         .with_state(state);
     Ok((router, info))
+}
+
+/// Admit a POST only while fewer than [`MAX_INFLIGHT`] are in flight.
+async fn limit_inflight(State(s): State<AppState>, req: Request, next: Next) -> Response {
+    match s.inflight.clone().try_acquire_owned() {
+        Ok(_permit) => next.run(req).await,
+        Err(_) => ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("too many requests in flight (max {MAX_INFLIGHT})"),
+        )
+        .into_response(),
+    }
 }
 
 /// Liveness: 503 once the model thread is gone.
@@ -395,6 +427,18 @@ fn validate_gen(r: &GenRequest, max_tokens: usize) -> Result<(), ApiError> {
     if !(r.top_p > 0.0 && r.top_p <= 1.0) {
         return bad(format!("top_p must be in (0, 1], got {}", r.top_p));
     }
+    if r.stop.len() > MAX_STOPS {
+        return bad(format!(
+            "{} stop strings exceed the limit of {MAX_STOPS}",
+            r.stop.len()
+        ));
+    }
+    if let Some(s) = r.stop.iter().find(|s| s.len() > MAX_STOP_BYTES) {
+        return bad(format!(
+            "a stop string of {} bytes exceeds the limit of {MAX_STOP_BYTES}",
+            s.len()
+        ));
+    }
     Ok(())
 }
 
@@ -513,6 +557,7 @@ mod tests {
             max_batch: 2,
             max_chars: 3,
             max_tokens: 5,
+            inflight: Arc::new(Semaphore::new(MAX_INFLIGHT)),
         }
     }
 
@@ -751,5 +796,58 @@ mod tests {
             assert_eq!(e.0, StatusCode::BAD_REQUEST);
             assert!(e.1.contains("top_p"), "{}", e.1);
         }
+    }
+
+    #[test]
+    fn validate_gen_bounds_stop_strings() {
+        let mut r = gen_req(1, 0.0, 1.0);
+        r.stop = vec!["s".repeat(MAX_STOP_BYTES); MAX_STOPS];
+        assert!(validate_gen(&r, 5).is_ok(), "exactly at both limits");
+        r.stop.push("x".into());
+        let e = validate_gen(&r, 5).unwrap_err();
+        assert!(
+            e.1.contains("17 stop strings") && e.1.contains("16"),
+            "{}",
+            e.1
+        );
+        r.stop = vec!["s".repeat(MAX_STOP_BYTES + 1)];
+        let e = validate_gen(&r, 5).unwrap_err();
+        assert_eq!(e.0, StatusCode::BAD_REQUEST);
+        assert!(e.1.contains("1025 bytes"), "{}", e.1);
+    }
+
+    #[tokio::test]
+    async fn limit_inflight_sheds_load_and_releases_permits() {
+        use tower::ServiceExt;
+        let (tx, _rx) = mpsc::channel();
+        let mk = |permits: usize| {
+            let mut st = state(tx.clone());
+            st.inflight = Arc::new(Semaphore::new(permits));
+            let r = Router::new()
+                .route("/x", post(|| async { "ok" }))
+                .route_layer(axum::middleware::from_fn_with_state(
+                    st.clone(),
+                    limit_inflight,
+                ));
+            (r, st)
+        };
+        let req = || {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/x")
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        let (r, st) = mk(0);
+        let resp = r.oneshot(req()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let (r, st1) = mk(1);
+        // One permit serves any number of sequential requests (it is returned each time).
+        for _ in 0..3 {
+            let resp = r.clone().oneshot(req()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+        assert_eq!(st1.inflight.available_permits(), 1);
+        assert_eq!(st.inflight.available_permits(), 0);
     }
 }

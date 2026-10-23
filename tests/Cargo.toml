@@ -54,3 +54,7 @@ path = "tests/gap_eos.rs"
 [[test]]
 name = "test_runtime_compat"
 path = "tests/test_runtime_compat.rs"
+
+[[test]]
+name = "test_hostile_inputs"
+path = "tests/test_hostile_inputs.rs"

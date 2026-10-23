@@ -725,6 +725,7 @@ impl GenerativeSLM {
             bytes.len()
         );
         let (model, norm, meta) = from_bytes(bytes)?;
+        crate::loader::check_slm_consistency(&model, &meta)?;
         vprintln!(
             "[slm::GenerativeSLM::from_bytes] Loaded: {} layers, input_dim={}, output_dim={}",
             model.len(),
@@ -3952,5 +3953,43 @@ mod tests {
             ..cfg
         };
         assert_eq!(epoch_ends(&corpus, &budget), vec![6]);
+    }
+
+    #[test]
+    fn from_bytes_rejects_metadata_that_disagrees_with_the_layers() {
+        // Regression (fuzz): a char-level file whose metadata said input_dim 0 loaded fine
+        // and then asked score() for a 1.6 GB buffer.
+        let corpus = "abcabc abc\n".repeat(30);
+        let cfg = TransformerConfig {
+            context_len: 8,
+            embed_dim: 8,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 16,
+            epochs: 1,
+            vocab_size: 0,
+            ..TransformerConfig::default()
+        };
+        let slm =
+            GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(1), |_, _| {})
+                .unwrap();
+        assert!(GenerativeSLM::from_bytes(&slm.to_bytes().unwrap()).is_ok());
+        let GenerativeSLM { model, norm, meta } = slm;
+        for edit in [
+            |m: &mut ModelMetadata| m.input_dim = 0,
+            |m: &mut ModelMetadata| m.input_dim = 1 << 30,
+            |m: &mut ModelMetadata| m.output_dim += 1,
+            |m: &mut ModelMetadata| {
+                m.class_names.pop();
+            },
+        ] {
+            let mut bad = meta.clone();
+            edit(&mut bad);
+            let bytes = crate::loader::to_bytes(&model, &norm, &bad).unwrap();
+            let e = GenerativeSLM::from_bytes(&bytes)
+                .err()
+                .expect("must be rejected");
+            assert!(e.to_string().contains("disagrees"), "{e}");
+        }
     }
 }

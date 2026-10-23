@@ -373,3 +373,40 @@ async fn model_error_is_422_and_server_survives() {
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
 }
+
+#[tokio::test]
+async fn hostile_generate_parameters_are_rejected_or_harmless() {
+    let r = router();
+    let gen = |req: Value| post(&r, "/v1/generate", json!({ "requests": [req] }));
+    // Too many / too long stop strings: 400 before any compute.
+    let (s, v) = gen(json!({"prompt": "a", "stop": vec!["x"; 17]})).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("stop strings"));
+    let (s, _) = gen(json!({"prompt": "a", "stop": ["y".repeat(1025)]})).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    // Absurd numbers that do not fit the field type are JSON errors (400), not panics.
+    for body in [
+        json!({"prompt": "a", "max_tokens": 1e30}),
+        json!({"prompt": "a", "max_tokens": -1}),
+        json!({"prompt": "a", "top_k": -3}),
+        json!({"prompt": "a", "seed": -1}),
+        json!({"prompt": "a", "max_tokens": u64::MAX}),
+    ] {
+        let (s, v) = gen(body.clone()).await;
+        assert!(s == StatusCode::BAD_REQUEST, "{body} -> {s} {v}");
+    }
+    // top_k far beyond the vocabulary is simply "no top-k".
+    let (s, v) =
+        gen(json!({"prompt": "the", "max_tokens": 3, "top_k": u64::MAX, "temperature": 1.0})).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    // Deeply nested / garbage bodies are 400s.
+    let nested = "[".repeat(100_000);
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/generate")
+        .header("content-type", "application/json")
+        .body(Body::from(nested))
+        .unwrap();
+    assert_eq!(send(&r, req).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(call(&r, "GET", "/health", None).await.0, StatusCode::OK);
+}
