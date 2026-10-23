@@ -1,6 +1,6 @@
 # Ferrum
 
-A zero-dependency, pure-Rust engine for training, running, and shipping small
+A Rust engine for training, running, and shipping small
 causal Transformer language models (SLMs) on the CPU, plus GGUF import,
 fine-tuning, and export for Llama/Qwen checkpoints. Overview in `ReadMe.md`,
 usage in `Manual.md`, current state / known issues / roadmap in `Status.md`.
