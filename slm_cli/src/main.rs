@@ -951,6 +951,28 @@ fn available_memory_bytes() -> Option<usize> {
     None
 }
 
+/// Peak resident bytes of a fine-tune of f32 weights `est`: weights, gradient
+/// and two Adam moments (4x), plus the checkpoint save, which serializes the
+/// weights and both moments (3x) into the builder and again into the final
+/// buffer (measured 6.4 GB for SmolLM2-135M, est 0.54 GB).
+fn finetune_peak_bytes(est: usize) -> usize {
+    est.saturating_mul(12)
+}
+
+/// Worker threads a fine-tune can afford. Every shard holds its own flat f32
+/// gradient (about the size of the weights) on top of the weights, shared
+/// gradient and two Adam moments (4x the weights), so an 8-thread run of a
+/// 135M model peaks near 9 GB. Cap the shards so the total stays within half
+/// of the available RAM; always at least one, never above `requested`.
+fn finetune_threads(est: usize, avail: Option<usize>, requested: usize) -> usize {
+    let Some(avail) = avail else {
+        return requested;
+    };
+    let budget = (avail / 2).saturating_sub(est.saturating_mul(4));
+    let per_thread = est.saturating_mul(3) / 2;
+    (budget / per_thread.max(1)).clamp(1, requested.max(1))
+}
+
 fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     use ferrum_core::{Gguf, GgufTokenizer, QKind, Rng, SamplingParams};
 
@@ -1168,10 +1190,9 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     println!("  estimated resident (f32) ≈ {:.2} GB", est as f64 / 1e9);
     if let Some(avail) = available_memory_bytes() {
         println!("  available memory         ≈ {:.2} GB", avail as f64 / 1e9);
-        // Training also needs grads + 2 Adam moments (≈4× the f32 weights again).
-        let train_est = est.saturating_mul(4);
+        let train_est = finetune_peak_bytes(est);
         println!(
-            "  estimated training RAM   ≈ {:.2} GB (weights + grad + Adam m/v)",
+            "  estimated training RAM   ≈ {:.2} GB (weights + grad + Adam m/v + checkpoint save)",
             train_est as f64 / 1e9
         );
         if (train_est as f64) > 0.9 * avail as f64 && !args.has("force") {
@@ -1278,6 +1299,15 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             total.max(warmup + 1),
         )));
     }
+
+    let capped = finetune_threads(est, available_memory_bytes(), threads);
+    if capped < threads {
+        println!(
+            "  note: using {capped} of {threads} threads (each holds a full gradient copy; \
+             keeps training under half of the available RAM)"
+        );
+    }
+    let threads = capped;
 
     println!(
         "\nFine-tuning: {epochs} epochs · seq {seq} · batch {batch} · lr {lr} · \
@@ -1910,6 +1940,26 @@ mod tests {
             assert!(!engine_debug(cmd, &plain), "{cmd}");
             assert!(engine_debug(cmd, &v), "{cmd} -v keeps the old meaning");
         }
+    }
+
+    #[test]
+    fn finetune_threads_fit_the_memory_budget() {
+        const GB: usize = 1_000_000_000;
+        let est = 540_000_000; // SmolLM2-135M at f32
+                               // Unknown RAM: trust the request.
+        assert_eq!(finetune_threads(est, None, 8), 8);
+        // 9.5 GB free: (4.75 - 2.16) / 0.81 = 3 shards.
+        assert_eq!(finetune_threads(est, Some(95 * GB / 10), 8), 3);
+        // Plenty of RAM: the request wins; never zero threads.
+        assert_eq!(finetune_threads(est, Some(64 * GB), 4), 4);
+        assert_eq!(finetune_threads(est, Some(64 * GB), 0), 1);
+        // Weights alone already use the budget: still one thread.
+        assert_eq!(finetune_threads(est, Some(3 * GB), 8), 1);
+        assert_eq!(finetune_threads(0, Some(GB), 8), 8);
+        assert_eq!(finetune_threads(usize::MAX, Some(GB), 8), 1);
+        // The checkpoint save dominates the peak: 12x the f32 weights.
+        assert_eq!(finetune_peak_bytes(est), 6_480_000_000);
+        assert_eq!(finetune_peak_bytes(usize::MAX), usize::MAX);
     }
 
     #[test]

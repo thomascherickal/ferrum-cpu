@@ -848,11 +848,15 @@ train_transformer finetune-gguf <model.gguf> <corpus.txt> <out.flck> [options]
 | `--sample` | — | Print a sample afterwards |
 
 The model loads at f32, because training needs full-precision masters.
-Full-parameter AdamW needs about **16 bytes per parameter**, so SmolLM2-135M
-(about 2.2 GB) is comfortable on 16 GB, Qwen2.5-0.5B (about 8 GB plus
-activations) is tight, and 1.5B and above do not fit. The output `.flck`
-checkpoint is applied with `run-gguf --resume` or exported with `export-gguf
---resume`.
+Full-parameter AdamW needs about **16 bytes per parameter** for the training
+state, but two things add to that. Each worker thread holds a full gradient
+copy, so the tool caps `--threads` to keep training under half of the free
+RAM. The checkpoint save serializes weights and both moments twice, so the
+peak is about **12 bytes per f32 weight byte**: SmolLM2-135M measured 6.4 GB
+(3 threads) and 9.6 GB with 8 uncapped threads. Qwen2.5-0.5B (about 8 GB of
+training state) and 1.5B and above do not fit. Speed is about 6 tokens/s on
+135M with 3 threads, so use a small corpus. The output `.flck` checkpoint is
+applied with `run-gguf --resume` or exported with `export-gguf --resume`.
 
 ### 9.3 Exporting (`export-gguf`)
 
