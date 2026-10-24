@@ -707,6 +707,7 @@ fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             "usage: train_transformer run <corpus.txt> <model.gguf> <seed text> [options]".into(),
         );
     }
+    sampling_params(args, 0.8, "repetition-penalty")?; // fail before training starts
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
     let seed_text = args.positional[2..].join(" ");
@@ -731,6 +732,7 @@ fn cmd_generate(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.positional.len() < 2 {
         return Err("usage: train_transformer generate <model.gguf> <seed text> [options]".into());
     }
+    sampling_params(args, 0.8, "repetition-penalty")?; // fail before the model loads
     let model_path = &args.positional[0];
     // Join remaining positionals so multi-word seeds work without quoting.
     let seed_text = args.positional[1..].join(" ");
@@ -754,6 +756,48 @@ fn check_lr(lr: f32) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// `--temp` must be a finite number >= 0 (0 = greedy). `nan`/`inf` parse as floats, and a
+/// negative or NaN value would silently turn into greedy / near-greedy decoding.
+fn check_temp(temp: f32) -> Result<(), String> {
+    if temp.is_finite() && temp >= 0.0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "--temp must be a finite number >= 0 (0 = greedy), got {temp}"
+        ))
+    }
+}
+
+/// The sampler flags shared by `generate`/`run` and `run-gguf`, validated: `--temp` (default
+/// `temp_default`), `--top-k`, `--top-p` in [0, 1] and a positive finite repetition penalty
+/// read from `rep_flag` (a value <= 0 or NaN would silently disable it).
+fn sampling_params(
+    args: &Args,
+    temp_default: f32,
+    rep_flag: &str,
+) -> Result<ferrum_core::SamplingParams, String> {
+    let params = ferrum_core::SamplingParams {
+        temperature: args.get("temp", temp_default),
+        top_k: args.get("top-k", 0),
+        top_p: args.get("top-p", 1.0),
+        repetition_penalty: args.get(rep_flag, 1.0),
+    };
+    check_temp(params.temperature)?;
+    if !(params.top_p.is_finite() && (0.0..=1.0).contains(&params.top_p)) {
+        return Err(format!(
+            "--top-p must be a number in [0, 1], got {}",
+            params.top_p
+        ));
+    }
+    if !(params.repetition_penalty.is_finite() && params.repetition_penalty > 0.0) {
+        return Err(format!(
+            "--{rep_flag} must be a positive, finite number, got {}",
+            params.repetition_penalty
+        ));
+    }
+    Ok(params)
+}
+
 /// `--resume` must name an existing file; checked before any multi-GB model
 /// load. Blank means "none" (as in `export-gguf`).
 fn require_resume_file(resume: Option<&str>) -> Result<(), String> {
@@ -771,12 +815,7 @@ fn generate_text(
     args: &Args,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let num_chars: usize = args.get("chars", 200);
-    let params = ferrum_core::SamplingParams {
-        temperature: args.get("temp", 0.8),
-        top_k: args.get("top-k", 0),
-        top_p: args.get("top-p", 1.0),
-        repetition_penalty: args.get("repetition-penalty", 1.0),
-    };
+    let params = sampling_params(args, 0.8, "repetition-penalty")?;
     let seed: u64 = args.get("gen-seed", time_seed());
 
     let stops = args.get_all("stop");
@@ -1007,7 +1046,7 @@ fn thread_cap_note(capped: usize, requested: usize) -> Option<String> {
 }
 
 fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    use ferrum_core::{Gguf, GgufTokenizer, QKind, Rng, SamplingParams};
+    use ferrum_core::{Gguf, GgufTokenizer, QKind, Rng};
 
     if args.positional.is_empty() {
         return Err("usage: train_transformer run-gguf <model.gguf> [prompt] \
@@ -1016,6 +1055,7 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             .into());
     }
     require_resume_file(args.value("resume"))?;
+    let params = sampling_params(args, 0.8, "rep")?; // fail before the model loads
     let path = &args.positional[0];
     let prompt_text = args.positional[1..].join(" ");
 
@@ -1140,7 +1180,7 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let max_new: usize = args.get("max", 64);
-    let temp: f32 = args.get("temp", 0.8);
+    let temp = params.temperature;
     let gen_seed: u64 = args.get("gen-seed", time_seed());
     let mut stops: Vec<usize> = tok
         .as_ref()
@@ -1155,12 +1195,6 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             stops.push(id);
         }
     }
-    let params = SamplingParams {
-        temperature: temp,
-        top_k: args.get("top-k", 0usize),
-        top_p: args.get("top-p", 1.0f32),
-        repetition_penalty: args.get("rep", 1.0f32),
-    };
     let mut rng = Rng::new(gen_seed);
 
     println!(
@@ -1209,6 +1243,9 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     require_resume_file(args.value("resume"))?;
+    if args.has("sample") {
+        check_temp(args.get("temp", 0.8))?; // before hours of training, not after
+    }
     let gguf_path = &args.positional[0];
     let corpus_path = &args.positional[1];
     let out_path = &args.positional[2];
@@ -2045,5 +2082,58 @@ mod tests {
         let f = dir.join("c.flck");
         std::fs::write(&f, b"x").unwrap();
         assert!(require_resume_file(Some(f.to_str().unwrap())).is_ok());
+    }
+
+    #[test]
+    fn sampling_flags_are_validated_with_per_command_names() {
+        let spec_g = spec_for("generate").unwrap();
+        let spec_r = spec_for("run-gguf").unwrap();
+        let g = |a: &[&str]| Args::parse(&s(a), spec_g).unwrap();
+        let r = |a: &[&str]| Args::parse(&s(a), spec_r).unwrap();
+        // Defaults, and explicit valid values (0 = greedy, top-p 0 and 1 are the edges).
+        let p = sampling_params(&g(&[]), 0.8, "repetition-penalty").unwrap();
+        assert_eq!(
+            (p.temperature, p.top_k, p.top_p, p.repetition_penalty),
+            (0.8, 0, 1.0, 1.0)
+        );
+        let ok = g(&[
+            "--temp",
+            "0",
+            "--top-p",
+            "0",
+            "--top-k",
+            "5",
+            "--repetition-penalty",
+            "1.3",
+        ]);
+        let p = sampling_params(&ok, 0.8, "repetition-penalty").unwrap();
+        assert_eq!(
+            (p.temperature, p.top_p, p.top_k, p.repetition_penalty),
+            (0.0, 0.0, 5, 1.3)
+        );
+        assert!(sampling_params(&g(&["--top-p", "1"]), 0.8, "repetition-penalty").is_ok());
+        // run-gguf names its flag --rep.
+        let p = sampling_params(&r(&["--rep", "2"]), 0.8, "rep").unwrap();
+        assert_eq!(p.repetition_penalty, 2.0);
+        // Bad values name the flag.
+        for (a, flag) in [
+            (&["--temp", "-0.5"][..], "--temp"),
+            (&["--temp", "nan"], "--temp"),
+            (&["--temp", "inf"], "--temp"),
+            (&["--top-p", "1.5"], "--top-p"),
+            (&["--top-p", "-0.1"], "--top-p"),
+            (&["--top-p", "nan"], "--top-p"),
+            (&["--repetition-penalty", "0"], "--repetition-penalty"),
+            (&["--repetition-penalty", "-1"], "--repetition-penalty"),
+            (&["--repetition-penalty", "nan"], "--repetition-penalty"),
+            (&["--repetition-penalty", "inf"], "--repetition-penalty"),
+        ] {
+            let e = sampling_params(&g(a), 0.8, "repetition-penalty").unwrap_err();
+            assert!(e.contains(flag), "{a:?}: {e}");
+        }
+        let e = sampling_params(&r(&["--rep", "0"]), 0.8, "rep").unwrap_err();
+        assert!(e.contains("--rep "), "{e}");
+        assert!(check_temp(0.0).is_ok() && check_temp(1e9).is_ok());
+        assert!(check_temp(f32::NEG_INFINITY).is_err());
     }
 }

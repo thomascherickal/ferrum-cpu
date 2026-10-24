@@ -227,3 +227,53 @@ fn gguf_commands_name_a_missing_resume_checkpoint_before_loading_anything() {
         );
     }
 }
+
+#[test]
+fn bad_sampling_values_are_rejected_before_any_model_is_loaded() {
+    for (args, want) in [
+        (
+            vec!["generate", "/nope.gguf", "hi", "--temp", "-1"],
+            "--temp must be",
+        ),
+        (
+            vec!["generate", "/nope.gguf", "hi", "--temp", "nan"],
+            "--temp must be",
+        ),
+        (
+            vec!["generate", "/nope.gguf", "hi", "--top-p", "2"],
+            "--top-p must be",
+        ),
+        (
+            vec!["generate", "/nope.gguf", "hi", "--repetition-penalty", "0"],
+            "--repetition-penalty must be",
+        ),
+        (
+            vec!["run-gguf", "/nope.gguf", "hi", "--rep", "-3"],
+            "--rep must be",
+        ),
+        (
+            vec!["run", "/nope.txt", "/nope.gguf", "hi", "--top-p", "9"],
+            "--top-p must be",
+        ),
+        (
+            vec!["run-gguf", "/nope.gguf", "hi", "--temp", "inf"],
+            "--temp must be",
+        ),
+        (
+            vec![
+                "finetune-gguf",
+                "/nope.gguf",
+                "c.txt",
+                "o.flck",
+                "--sample",
+                "--temp",
+                "-2",
+            ],
+            "--temp must be",
+        ),
+    ] {
+        let (code, text) = run(&args);
+        assert_eq!(code, 1, "{args:?}: {text}");
+        assert!(text.contains(want), "{args:?}: {text}");
+    }
+}
