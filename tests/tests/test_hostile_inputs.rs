@@ -183,8 +183,20 @@ fn stage(name: &str) {
 fn exercise(bytes: &[u8], flck_base: &dyn Fn() -> LlamaTrainer) {
     stage("parse+import");
     let _ = Gguf::parse(bytes.to_vec()).map(|g| {
-        let _ = GgufTokenizer::from_gguf(&g);
-        let _ = g.load_llama_prec(None);
+        if let Ok(t) = GgufTokenizer::from_gguf(&g) {
+            stage("tokenizer-use");
+            let ids = t.encode("Hello, wörld! 123  <|endoftext|>\n");
+            let _ = t.decode(&ids);
+            let _ = t.decode(&[0, 1, usize::MAX, 99_999]);
+            let _ = t.token_id("h");
+        }
+        stage("load_llama");
+        if let Ok(m) = g.load_llama_prec(None) {
+            stage("llama-use");
+            let p = ferrum_core::SamplingParams::with_temperature(0.0);
+            let _ = m.generate(&[1, 2], 3, &p, &[], &mut Rng::new(1));
+            let _ = m.forward_tokens(&[0, 1, 2]);
+        }
         let _ = g.load_llama_prec(Some(QKind::Int4));
         for t in g.tensors.clone() {
             let _ = g.dequantize(&t);
