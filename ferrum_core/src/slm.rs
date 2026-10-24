@@ -1140,7 +1140,7 @@ impl GenerativeSLM {
 
         // Bound the loop: every step adds ≥1 byte, but guard against a model
         // that keeps emitting zero-width or repeated control tokens.
-        let max_steps = num_chars * 8 + 64;
+        let max_steps = num_chars.saturating_mul(8).saturating_add(64);
 
         if let Some(mut cached) = CachedTransformer::try_new(&self.model) {
             // Fast path: KV-cached incremental decoding over a rolling window.
@@ -1221,7 +1221,7 @@ impl GenerativeSLM {
         // is tiny and legacy. Port the incremental decode above if it matters.
         let mut ids = ids;
         let seed_chars = seed.chars().count();
-        let target_chars = seed_chars + num_chars;
+        let target_chars = seed_chars.saturating_add(num_chars);
         let mut emitted_cont = 0usize;
         let mut budget = num_chars;
         let mut flush = |full: &str, budget: usize, on_text: &mut F| {
@@ -1818,6 +1818,37 @@ fn write_checkpoint(path: &str, net: &TransformerNet, rng: &Rng) -> Result<()> {
     Ok(())
 }
 
+/// Memory the machine can still hand out (`MemAvailable`), where the OS says.
+fn available_memory_bytes() -> Option<usize> {
+    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kb: usize = info
+        .lines()
+        .find_map(|l| l.strip_prefix("MemAvailable:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    kb.checked_mul(1024)
+}
+
+/// Training peaks above this, or above three quarters of the available RAM,
+/// are refused up front: `--batch`/`--context` far beyond the machine would
+/// otherwise abort inside the allocator mid-run.
+const MAX_TRAIN_BYTES: usize = 16 << 30;
+
+fn check_train_memory(need: usize, avail: Option<usize>) -> Result<()> {
+    let cap = avail.map_or(MAX_TRAIN_BYTES, |a| (a / 4 * 3).min(MAX_TRAIN_BYTES));
+    if need > cap {
+        return Err(InferError::DimMismatch(format!(
+            "training would need about {:.1} GB (weights, optimizer state, activations) but only {:.1} GB \
+             may be used; lower --batch, --context, --embed or --blocks",
+            need as f64 / 1e9,
+            cap as f64 / 1e9
+        )));
+    }
+    Ok(())
+}
+
 /// The training loop shared by every config-driven trainer: runs `cfg.epochs`
 /// epochs, or until `cfg.max_tokens` is spent, checkpointing as configured.
 /// `on_epoch(net, epoch, mean_loss)` runs after each (possibly partial) epoch
@@ -1836,6 +1867,10 @@ where
     let t = net.context_len();
     let batch = cfg.batch_size.max(1);
     let windows = tokens.len().saturating_sub(t + 1) / net.window_stride() + 1;
+    check_train_memory(
+        net.train_peak_bytes(windows, batch, threads.max(1).min(batch)),
+        available_memory_bytes(),
+    )?;
     let steps_per_epoch = windows.div_ceil(batch).max(1) as u64;
     let budgeted = cfg.max_tokens > 0;
     let total_steps = if budgeted {
@@ -3991,5 +4026,95 @@ mod tests {
                 .expect("must be rejected");
             assert!(e.to_string().contains("disagrees"), "{e}");
         }
+    }
+
+    #[test]
+    fn check_train_memory_caps_at_16_gb_and_three_quarters_of_available() {
+        assert!(check_train_memory(1 << 30, None).is_ok());
+        assert!(check_train_memory(MAX_TRAIN_BYTES, None).is_ok());
+        let e = check_train_memory(MAX_TRAIN_BYTES + 1, None)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("lower --batch"), "{e}");
+        // Available RAM below the 16 GB cap tightens it to 3/4 of what is free.
+        assert!(check_train_memory(7 << 30, Some(10 << 30)).is_ok());
+        assert!(check_train_memory(8 << 30, Some(10 << 30)).is_err());
+        // Plenty of RAM never lifts the 16 GB cap.
+        assert!(check_train_memory(17 << 30, Some(usize::MAX)).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn available_memory_is_reported_on_linux() {
+        assert!(available_memory_bytes().is_some_and(|b| b > (1 << 20)));
+    }
+
+    #[test]
+    fn absurd_context_or_batch_is_refused_before_training_allocates() {
+        // Regression: --context 100000 asked the allocator for 160 GB (ctx^2 attention
+        // scores) and aborted; a huge --batch likewise.
+        let corpus = "abcde fghij ".repeat(12_000); // 144k chars
+        let huge_ctx = TransformerConfig {
+            context_len: 100_000,
+            embed_dim: 8,
+            num_heads: 1,
+            num_blocks: 1,
+            hidden_dim: 8,
+            epochs: 1,
+            vocab_size: 0,
+            ..TransformerConfig::default()
+        };
+        let e = GenerativeSLM::train_transformer_config(
+            &corpus,
+            &huge_ctx,
+            &mut Rng::new(1),
+            |_, _| {},
+        )
+        .err()
+        .expect("must refuse");
+        assert!(e.to_string().contains("training would need"), "{e}");
+        let huge_batch = TransformerConfig {
+            context_len: 512,
+            embed_dim: 64,
+            num_heads: 4,
+            num_blocks: 4,
+            hidden_dim: 256,
+            batch_size: usize::MAX,
+            epochs: 1,
+            vocab_size: 0,
+            ..TransformerConfig::default()
+        };
+        let e = GenerativeSLM::train_transformer_config(
+            &corpus,
+            &huge_batch,
+            &mut Rng::new(1),
+            |_, _| {},
+        )
+        .err()
+        .expect("must refuse");
+        assert!(e.to_string().contains("training would need"), "{e}");
+    }
+
+    #[test]
+    fn absurd_char_budgets_do_not_overflow() {
+        // Regression: `num_chars * 8 + 64` wrapped (release) or panicked (debug) near usize::MAX.
+        let slm = tiny_bpe_slm();
+        let p = SamplingParams::with_temperature(0.0);
+        // A stop string greedy decoding is known to produce ends each run early.
+        let free = slm
+            .generate_tokens("the cat", 40, &[], &p, &mut Rng::new(1))
+            .unwrap();
+        let stop: String = free.text.chars().skip(10).take(2).collect();
+        assert_eq!(stop.chars().count(), 2, "{free:?}");
+        for budget in [usize::MAX, usize::MAX / 8, usize::MAX / 8 + 1] {
+            let out = slm
+                .generate_until("the cat", budget, &stop, &p, &mut Rng::new(1))
+                .unwrap();
+            assert!(out.starts_with("the cat") && out.len() < 100, "{out:?}");
+        }
+        let g = slm
+            .generate_tokens("the cat", usize::MAX, &[stop], &p, &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(g.stop_reason, StopReason::Stop);
     }
 }

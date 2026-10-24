@@ -158,9 +158,14 @@ pub fn save_corpus(text: String, path: String) -> Result<usize, String> {
 /// Read a UTF-8 text file (lossy), capped at `max_bytes` (default 16 MiB).
 #[tauri::command]
 pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, String> {
-    let data = std::fs::read(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    let cap = max_bytes.unwrap_or(16 * 1024 * 1024).min(data.len());
-    Ok(String::from_utf8_lossy(&data[..cap]).into_owned())
+    // Read at most the cap (not the whole file, which may be huge or endless like /dev/zero).
+    let cap = max_bytes.unwrap_or(16 * 1024 * 1024) as u64;
+    let file = std::fs::File::open(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let mut data = Vec::new();
+    file.take(cap)
+        .read_to_end(&mut data)
+        .map_err(|e| format!("cannot read {path}: {e}"))?;
+    Ok(String::from_utf8_lossy(&data).into_owned())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1334,6 +1339,36 @@ mod tests {
     }
 
     // ── G2: download timeouts + URL validation ────────────────────────────────
+
+    #[test]
+    fn read_text_file_caps_the_read_and_survives_endless_files() {
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_read_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("t.txt");
+        std::fs::write(&f, "héllo wörld, this is text").unwrap();
+        let p = f.to_str().unwrap().to_string();
+        assert_eq!(
+            read_text_file(p.clone(), None).unwrap(),
+            "héllo wörld, this is text"
+        );
+        assert_eq!(read_text_file(p.clone(), Some(5)).unwrap(), "héll");
+        // A cap that splits a multi-byte char decodes lossily instead of failing.
+        assert_eq!(read_text_file(p.clone(), Some(2)).unwrap(), "h\u{fffd}");
+        assert_eq!(read_text_file(p.clone(), Some(0)).unwrap(), "");
+        assert_eq!(
+            read_text_file(p.clone(), Some(usize::MAX)).unwrap().len(),
+            27
+        );
+        let e = read_text_file(dir.join("nope").to_str().unwrap().into(), None).unwrap_err();
+        assert!(e.contains("cannot read"), "{e}");
+        #[cfg(unix)]
+        {
+            // Regression: std::fs::read on /dev/zero never returns (and eats all RAM).
+            let z = read_text_file("/dev/zero".into(), Some(1000)).unwrap();
+            assert_eq!(z.len(), 1000);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn http_agent_builds() {

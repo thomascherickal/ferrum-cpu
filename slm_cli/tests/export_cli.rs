@@ -354,7 +354,7 @@ fn finetune_gguf_cli_rejects_bad_input() {
         "/no/such.flck",
     ]);
     assert!(
-        text(&res).contains("cannot read checkpoint"),
+        text(&res).contains("checkpoint /no/such.flck does not exist"),
         "{}",
         text(&res)
     );
