@@ -106,8 +106,8 @@ impl MetaValue {
             MetaValue::I16(v) if v >= 0 => Some(v as usize),
             MetaValue::U32(v) => Some(v as usize),
             MetaValue::I32(v) if v >= 0 => Some(v as usize),
-            MetaValue::U64(v) => Some(v as usize),
-            MetaValue::I64(v) if v >= 0 => Some(v as usize),
+            MetaValue::U64(v) => usize::try_from(v).ok(),
+            MetaValue::I64(v) if v >= 0 => usize::try_from(v).ok(),
             _ => None,
         }
     }
@@ -242,10 +242,16 @@ impl<'a> Cur<'a> {
     }
     /// A GGUF string: `u64` byte length followed by UTF-8 bytes.
     fn string(&mut self) -> Result<String> {
-        let n = self.u64()? as usize;
+        let n = to_usize(self.u64()?);
         let s = self.take(n)?;
         Ok(String::from_utf8_lossy(s).into_owned())
     }
+}
+
+/// A file-supplied `u64` as a `usize`, saturating: on a 32-bit target (wasm32) `as usize` would
+/// wrap a hostile 2^32 + 5 into 5 and parse garbage instead of failing as "too large".
+fn to_usize(v: u64) -> usize {
+    usize::try_from(v).unwrap_or(usize::MAX)
 }
 
 fn fmt(msg: &str) -> InferError {
@@ -271,7 +277,7 @@ fn read_value(c: &mut Cur, vtype: u32) -> Result<MetaValue> {
             if elem_type == VT_ARRAY {
                 return Err(fmt("GGUF nested arrays are not supported"));
             }
-            let count = c.u64()? as usize;
+            let count = to_usize(c.u64()?);
             // Guard against absurd counts before reserving. Every element takes
             // at least one byte, so a count beyond the file is final, and one
             // beyond the bytes read so far means "read more" (the "GGUF EOF"
@@ -393,8 +399,8 @@ fn parse_header(b: &[u8], total: usize) -> Result<ParsedHeader> {
             "unsupported GGUF version {version} (need 2 or 3)"
         )));
     }
-    let tensor_count = c.u64()? as usize;
-    let kv_count = c.u64()? as usize;
+    let tensor_count = to_usize(c.u64()?);
+    let kv_count = to_usize(c.u64()?);
 
     let mut metadata = BTreeMap::new();
     for _ in 0..kv_count {
@@ -430,8 +436,7 @@ fn parse_header(b: &[u8], total: usize) -> Result<ParsedHeader> {
     let alignment = metadata
         .get("general.alignment")
         .and_then(|v| v.as_usize())
-        .map(|a| a as u64)
-        .unwrap_or(DEFAULT_ALIGNMENT) as usize;
+        .unwrap_or(to_usize(DEFAULT_ALIGNMENT));
     let data_offset = align_up(c.pos, alignment);
     Ok((version, metadata, tensors, data_offset))
 }
@@ -545,7 +550,7 @@ impl Gguf {
     /// fits, so tensor *data* is never read here.
     pub fn open(path: &str) -> Result<Self> {
         let mut file = File::open(path)?;
-        let len = file.metadata()?.len() as usize;
+        let len = to_usize(file.metadata()?.len());
         let mut cap = (1usize << 20).min(len.max(1)); // start at 1 MiB
         loop {
             file.seek(SeekFrom::Start(0))?;
@@ -628,7 +633,7 @@ impl Gguf {
         let len = type_nbytes(t.ggml_type, n)?;
         let start = self
             .data_offset
-            .checked_add(t.offset as usize)
+            .checked_add(to_usize(t.offset))
             .ok_or_else(|| fmt("tensor offset overflow"))?;
         let end = start
             .checked_add(len)
@@ -2698,5 +2703,19 @@ mod tests {
             .to_string();
         let _ = std::fs::remove_file(&path);
         assert!(e.contains("truncated"), "{e}");
+    }
+
+    #[test]
+    fn to_usize_passes_values_through_and_saturates() {
+        assert_eq!(to_usize(0), 0);
+        assert_eq!(to_usize(12345), 12345);
+        assert_eq!(
+            to_usize(u64::MAX),
+            usize::try_from(u64::MAX).unwrap_or(usize::MAX)
+        );
+        // as_usize on 64-bit integers uses the same checked conversion.
+        assert_eq!(MetaValue::U64(7).as_usize(), Some(7));
+        assert_eq!(MetaValue::I64(7).as_usize(), Some(7));
+        assert_eq!(MetaValue::I64(-7).as_usize(), None);
     }
 }

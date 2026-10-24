@@ -259,6 +259,21 @@ These are directions, not commitments.
   plain `ferrum`-architecture GGUF (`--vocab 0`) that llama.cpp / Ollama /
   LM Studio cannot load, and `export-ollama` / `export-lmstudio` refuse such
   files with the fix (retrain with a BPE vocabulary).
+- **Hostile-input hardening (review pass).** Behaviour changes, all errors instead of
+  aborts or silent garbage: `GenerativeSLM::from_bytes` rejects a token-ID model whose
+  metadata (`input_dim`, `output_dim`, char table or BPE vocabulary) disagrees with its
+  layers; training refuses models above 2^29 parameters or 4096 blocks and runs whose
+  estimated peak (weights, optimizer, activations) exceeds the smaller of 16 GB and 3/4 of
+  available RAM; imported-model `generate` stops at the model's context window (a prompt
+  that fills it is an error); `--temp` (finite, >= 0), `--top-p` ([0, 1]),
+  `--rep`/`--repetition-penalty` (> 0), `--dropout` ([0, 1)), `--weight_decay`, `--clip`
+  and `--tokens` are validated before anything loads or trains; `--resume` names a missing
+  checkpoint up front for `run-gguf`, `finetune-gguf` and `export-gguf`; `prepare` refuses
+  a non-regular file named as input (and skips FIFOs/devices inside directories);
+  `ferrum-serve` caps stop strings (16 x 1024 bytes) and in-flight POSTs (32).
+  Greedy decoding (`temperature <= 0`) now returns the first maximum on exact ties
+  (llama.cpp / `torch.argmax`), and `generate` on a char-level model with an empty seed
+  starts from token 0 like the BPE path.
 - The GUI `train_slm` command ignores the removed `momentum` field. New fields
   are optional and default sensibly, so older front-ends keep working.
 
