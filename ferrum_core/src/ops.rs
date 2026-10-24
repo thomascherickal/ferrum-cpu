@@ -12,6 +12,9 @@ use std::sync::Arc;
 /// i-k-j kernel hit once `B` overflowed cache at ≥2048² (see Manual.md §13.3).
 const KC: usize = 256;
 const NC: usize = 256;
+/// Register-tile shape (output rows × columns held in registers).
+const MR: usize = 4;
+const NR: usize = 8;
 
 /// Accumulate rows `r0..r1` of an `[m, n]` matmul `A·B` (A is `[m, k]`, B is
 /// `[k, n]`) into `out`, which holds those rows indexed locally (row `i` at
@@ -30,22 +33,95 @@ fn matmul_block(a: &[f32], b: &[f32], k: usize, n: usize, r0: usize, r1: usize, 
         let mut pp = 0;
         while pp < k {
             let p1 = (pp + KC).min(k);
-            for i in r0..r1 {
-                let a_row = i * k;
-                let o_base = (i - r0) * n;
-                for p in pp..p1 {
-                    let a_ip = a[a_row + p];
-                    let b_row = p * n;
-                    let o = &mut out[o_base + jj..o_base + j1];
-                    let bs = &b[b_row + jj..b_row + j1];
-                    for (ov, &bv) in o.iter_mut().zip(bs) {
-                        *ov += a_ip * bv;
-                    }
+            let mut i = r0;
+            while i + MR <= r1 {
+                let mut j = jj;
+                while j + NR <= j1 {
+                    micro_tile(a, b, k, n, i, r0, j, pp, p1, out);
+                    j += NR;
                 }
+                if j < j1 {
+                    edge_rows(a, b, k, n, i, i + MR, r0, j, j1, pp, p1, out);
+                }
+                i += MR;
+            }
+            if i < r1 {
+                edge_rows(a, b, k, n, i, r1, r0, jj, j1, pp, p1, out);
             }
             pp = p1;
         }
         jj = j1;
+    }
+}
+
+/// Register tile: `MR` rows × `NR` columns of the output accumulate in local
+/// arrays (so each loaded `B` vector serves `MR` rows) over `p in pp..p1`, in
+/// ascending order, onto the values already in `out`: the same additions in the
+/// same order as [`edge_rows`], so the result is bit-for-bit unchanged.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn micro_tile(
+    a: &[f32],
+    b: &[f32],
+    k: usize,
+    n: usize,
+    i: usize,
+    r0: usize,
+    j: usize,
+    pp: usize,
+    p1: usize,
+    out: &mut [f32],
+) {
+    let mut acc = [[0.0f32; NR]; MR];
+    for (r, row) in acc.iter_mut().enumerate() {
+        let o = (i + r - r0) * n + j;
+        row.copy_from_slice(&out[o..o + NR]);
+    }
+    let a_rows: [&[f32]; MR] = std::array::from_fn(|r| &a[(i + r) * k + pp..(i + r) * k + p1]);
+    for (q, p) in (pp..p1).enumerate() {
+        let bs: &[f32; NR] = b[p * n + j..p * n + j + NR].try_into().unwrap();
+        for r in 0..MR {
+            let av = a_rows[r][q];
+            for c in 0..NR {
+                acc[r][c] += av * bs[c];
+            }
+        }
+    }
+    for (r, row) in acc.iter().enumerate() {
+        let o = (i + r - r0) * n + j;
+        out[o..o + NR].copy_from_slice(row);
+    }
+}
+
+/// Plain i-p-j accumulation for the rows `ia..ib` and columns `ja..jb` that do
+/// not fill a register tile.
+#[allow(clippy::too_many_arguments)]
+fn edge_rows(
+    a: &[f32],
+    b: &[f32],
+    k: usize,
+    n: usize,
+    ia: usize,
+    ib: usize,
+    r0: usize,
+    ja: usize,
+    jb: usize,
+    pp: usize,
+    p1: usize,
+    out: &mut [f32],
+) {
+    for i in ia..ib {
+        let a_row = i * k;
+        let o_base = (i - r0) * n;
+        for p in pp..p1 {
+            let a_ip = a[a_row + p];
+            let b_row = p * n;
+            let o = &mut out[o_base + ja..o_base + jb];
+            let bs = &b[b_row + ja..b_row + jb];
+            for (ov, &bv) in o.iter_mut().zip(bs) {
+                *ov += a_ip * bv;
+            }
+        }
     }
 }
 
@@ -395,6 +471,79 @@ pub fn softmax_rows(m: &Tensor) -> Result<Tensor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Untiled i-p-j reference: `out += A[r0..r1]·B`, ascending `p` per element.
+    fn block_reference(
+        a: &[f32],
+        b: &[f32],
+        k: usize,
+        n: usize,
+        r0: usize,
+        r1: usize,
+        out: &mut [f32],
+    ) {
+        for i in r0..r1 {
+            for p in 0..k {
+                let a_ip = a[i * k + p];
+                for j in 0..n {
+                    out[(i - r0) * n + j] += a_ip * b[p * n + j];
+                }
+            }
+        }
+    }
+
+    fn pseudo(len: usize, seed: u32) -> Vec<f32> {
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                (x >> 8) as f32 / 16777216.0 - 0.5
+            })
+            .collect()
+    }
+
+    #[test]
+    fn matmul_block_is_bitwise_the_untiled_reference_for_every_edge_shape() {
+        // Rows/cols below, at and above the register tile, and k/n beyond the
+        // KC/NC panels (with partial last panels), on a block that starts at r0 > 0
+        // and onto a non-zero (bias-like) output.
+        let shapes = [
+            (1, 1, 1),
+            (1, 7, 5),
+            (MR - 1, 3, NR - 1),
+            (MR, 5, NR),
+            (MR + 1, 9, NR + 1),
+            (2 * MR + 3, 11, 2 * NR + 5),
+            (MR + 2, KC + 17, NC + 9),
+            (3, 2 * KC + 1, 2 * NC + 3),
+        ];
+        for (rows, k, n) in shapes {
+            let r0 = 2;
+            let m = r0 + rows;
+            let a = pseudo(m * k, 7 + rows as u32);
+            let b = pseudo(k * n, 99 + n as u32);
+            let init = pseudo(rows * n, 5);
+            let (mut got, mut want) = (init.clone(), init);
+            matmul_block(&a, &b, k, n, r0, m, &mut got);
+            block_reference(&a, &b, k, n, r0, m, &mut want);
+            assert!(got == want, "rows {rows} k {k} n {n}: tiled kernel differs");
+        }
+    }
+
+    #[test]
+    fn matmul_block_is_invariant_to_how_rows_are_split() {
+        let (m, k, n) = (37usize, 61usize, 53usize);
+        let (a, b) = (pseudo(m * k, 1), pseudo(k * n, 2));
+        let mut whole = vec![0.25f32; m * n];
+        matmul_block(&a, &b, k, n, 0, m, &mut whole);
+        for cuts in [vec![0, 1, m], vec![0, 3, 4, 5, 6, 30, m], vec![0, 17, m]] {
+            let mut got = vec![0.25f32; m * n];
+            for w in cuts.windows(2) {
+                matmul_block(&a, &b, k, n, w[0], w[1], &mut got[w[0] * n..w[1] * n]);
+            }
+            assert!(got == whole, "split {cuts:?} differs");
+        }
+    }
 
     #[test]
     fn matmul_1x3_by_3x1() {
