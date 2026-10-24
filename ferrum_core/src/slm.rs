@@ -1043,10 +1043,13 @@ impl GenerativeSLM {
         // The window holds the token IDs currently represented in the cache.
         let mut window: Vec<usize> = seed.chars().map(char_idx).collect();
         // A seed shorter than the context window primes a partial window
-        // (positions 0..len), exactly like the BPE cached path. Only an empty
-        // seed has nothing to condition on.
-        if window.is_empty() || num_chars == 0 {
+        // (positions 0..len), exactly like the BPE cached path. An empty seed
+        // is conditioned on token 0 (`bos_id`), as in `generate_tokens`.
+        if num_chars == 0 {
             return Ok(generated);
+        }
+        if window.is_empty() {
+            window.push(0);
         }
         // Prime with the most recent `cap` tokens (positions 0..cap-1).
         if window.len() > cap {
@@ -4232,5 +4235,26 @@ mod tests {
         assert_eq!(pick_by_mass(&[0.2, 0.3, 0.5], 1.0), 2);
         // r = 0 must not pick a token with no mass.
         assert_eq!(pick_by_mass(&[0.0, 1.0], 0.0), 1);
+    }
+
+    #[test]
+    fn char_level_empty_seed_generates_like_the_token_path() {
+        let slm = tiny_char_slm();
+        let p = SamplingParams::with_temperature(0.0);
+        let streamed = std::cell::RefCell::new(String::new());
+        let out = slm
+            .generate_stream_with("", 12, &p, &mut Rng::new(1), |f| {
+                streamed.borrow_mut().push_str(f)
+            })
+            .unwrap();
+        assert_eq!(out.chars().count(), 12, "{out:?}");
+        assert_eq!(*streamed.borrow(), out);
+        // Same greedy text as the token-budgeted path, which also starts from token 0.
+        let g = slm
+            .generate_tokens("", 12, &[], &p, &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(g.text, out);
+        // A zero budget returns the (empty) seed untouched.
+        assert_eq!(slm.generate_with("", 0, &p, &mut Rng::new(1)).unwrap(), "");
     }
 }

@@ -535,6 +535,8 @@ fn train_and_save(
     }
     let cfg = args.config();
     check_lr(cfg.lr)?;
+    check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;
+    check_token_budget(args.get("tokens", 0.0f64))?;
     let seed: u64 = args.get("seed", 1337);
     // 0 = auto-detect the machine's parallelism; 1 = serial.
     let threads: usize = args.get("threads", 0);
@@ -753,6 +755,35 @@ fn check_lr(lr: f32) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     } else {
         Err(format!("--lr must be a positive, finite number (got {lr})").into())
+    }
+}
+
+/// Regularisation / clipping flags: dropout in [0, 1), weight decay and gradient clip finite and
+/// >= 0. NaN or out-of-range values otherwise train garbage that is only noticed at the end.
+fn check_regularizers(dropout: f32, weight_decay: f32, clip: f32) -> Result<(), String> {
+    if !(dropout.is_finite() && (0.0..1.0).contains(&dropout)) {
+        return Err(format!("--dropout must be in [0, 1), got {dropout}"));
+    }
+    if !(weight_decay.is_finite() && weight_decay >= 0.0) {
+        return Err(format!(
+            "--weight_decay must be a finite number >= 0, got {weight_decay}"
+        ));
+    }
+    if !(clip.is_finite() && clip >= 0.0) {
+        return Err(format!("--clip must be a finite number >= 0, got {clip}"));
+    }
+    Ok(())
+}
+
+/// `--tokens` is a budget: a finite number >= 0 (0 = use --epochs). `nan`, `-5` and `inf` parse
+/// but would mean "no budget" or "train forever".
+fn check_token_budget(tokens: f64) -> Result<(), String> {
+    if tokens.is_finite() && tokens >= 0.0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "--tokens must be a finite number >= 0, got {tokens}"
+        ))
     }
 }
 
@@ -1246,6 +1277,12 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.has("sample") {
         check_temp(args.get("temp", 0.8))?; // before hours of training, not after
     }
+    check_lr(args.get("lr", 1e-4))?;
+    check_regularizers(
+        args.get("dropout", 0.0),
+        args.get("weight_decay", 0.0),
+        args.get("clip", 1.0),
+    )?;
     let gguf_path = &args.positional[0];
     let corpus_path = &args.positional[1];
     let out_path = &args.positional[2];
@@ -2135,5 +2172,28 @@ mod tests {
         assert!(e.contains("--rep "), "{e}");
         assert!(check_temp(0.0).is_ok() && check_temp(1e9).is_ok());
         assert!(check_temp(f32::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn regularizer_and_budget_flags_reject_nonsense() {
+        assert!(check_regularizers(0.0, 0.0, 0.0).is_ok());
+        assert!(check_regularizers(0.5, 0.01, 1.0).is_ok());
+        for (d, w, c, flag) in [
+            (1.0, 0.0, 0.0, "--dropout"),
+            (-0.1, 0.0, 0.0, "--dropout"),
+            (f32::NAN, 0.0, 0.0, "--dropout"),
+            (0.0, -1.0, 0.0, "--weight_decay"),
+            (0.0, f32::NAN, 0.0, "--weight_decay"),
+            (0.0, f32::INFINITY, 0.0, "--weight_decay"),
+            (0.0, 0.0, -1.0, "--clip"),
+            (0.0, 0.0, f32::NAN, "--clip"),
+        ] {
+            let e = check_regularizers(d, w, c).unwrap_err();
+            assert!(e.contains(flag), "{flag}: {e}");
+        }
+        assert!(check_token_budget(0.0).is_ok() && check_token_budget(5e7).is_ok());
+        for t in [f64::NAN, -5.0, f64::INFINITY] {
+            assert!(check_token_budget(t).unwrap_err().contains("--tokens"));
+        }
     }
 }

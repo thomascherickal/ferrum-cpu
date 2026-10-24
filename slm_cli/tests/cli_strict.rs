@@ -277,3 +277,44 @@ fn bad_sampling_values_are_rejected_before_any_model_is_loaded() {
         assert!(text.contains(want), "{args:?}: {text}");
     }
 }
+
+#[test]
+fn nonsense_training_hyperparameters_fail_before_training_starts() {
+    let c = corpus();
+    let m = std::env::temp_dir().join(format!("ferrum_strict_hp_{}.gguf", std::process::id()));
+    let _ = std::fs::remove_file(&m);
+    for (extra, want) in [
+        (vec!["--dropout", "5"], "--dropout must be"),
+        (vec!["--dropout", "nan"], "--dropout must be"),
+        (vec!["--weight_decay", "-1"], "--weight_decay must be"),
+        (vec!["--clip", "nan"], "--clip must be"),
+        (vec!["--tokens", "inf"], "--tokens must be"),
+        (vec!["--tokens", "-5"], "--tokens must be"),
+        (vec!["--embed", "0", "--heads", "1"], "must be > 0"),
+        (vec!["--hidden", "0"], "must be > 0"),
+        (
+            vec!["--embed", "100000000", "--heads", "1", "--hidden", "1"],
+            "model too large",
+        ),
+    ] {
+        let mut args = vec!["train", c.to_str().unwrap(), m.to_str().unwrap(), "--force"];
+        args.extend(["--vocab", "300"]);
+        args.extend(&extra);
+        let (code, text) = run(&args);
+        assert_eq!(code, 1, "{extra:?}: {text}");
+        assert!(text.contains(want), "{extra:?}: {text}");
+        assert!(!m.exists(), "{extra:?} must not save a model");
+    }
+    // finetune validates its hyperparameters before opening the (missing) model.
+    for (extra, want) in [
+        (vec!["--dropout", "1"], "--dropout must be"),
+        (vec!["--clip", "-1"], "--clip must be"),
+        (vec!["--lr", "0"], "--lr must be"),
+    ] {
+        let mut args = vec!["finetune-gguf", "/nope.gguf", "c.txt", "o.flck"];
+        args.extend(&extra);
+        let (code, text) = run(&args);
+        assert_eq!(code, 1, "{extra:?}: {text}");
+        assert!(text.contains(want), "{extra:?}: {text}");
+    }
+}

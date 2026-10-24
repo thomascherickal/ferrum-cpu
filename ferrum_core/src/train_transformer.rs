@@ -553,9 +553,15 @@ impl TransformerNet {
                 "embedding_dim {embed_dim} must be divisible by num_heads {num_heads}"
             )));
         }
-        if vocab_size == 0 || context_len == 0 || num_blocks == 0 {
+        if vocab_size == 0
+            || context_len == 0
+            || num_blocks == 0
+            || embed_dim == 0
+            || hidden_dim == 0
+        {
+            // (A zero embed/hidden width otherwise trained fine, then failed to save.)
             return Err(InferError::DimMismatch(
-                "vocab_size, context_len and num_blocks must be > 0".into(),
+                "vocab_size, context_len, embed_dim, hidden_dim and num_blocks must be > 0".into(),
             ));
         }
         Self::check_size(vocab_size, context_len, embed_dim, hidden_dim, num_blocks)?;
@@ -2739,6 +2745,23 @@ mod tests {
         assert!(
             long.train_peak_bytes(10_000, 1, 1) > 64 * short.train_peak_bytes(10_000, 1, 1) / 4
         );
+    }
+
+    #[test]
+    fn zero_width_dims_are_rejected_up_front() {
+        let mut r = Rng::new(1);
+        for (v, c, e, h, hid, b) in [
+            (8, 4, 0, 1, 16, 1), // embed 0 (heads 1 divides 0)
+            (8, 4, 8, 2, 0, 1),  // hidden 0
+            (0, 4, 8, 2, 16, 1),
+            (8, 0, 8, 2, 16, 1),
+            (8, 4, 8, 2, 16, 0),
+        ] {
+            let err = TransformerNet::new(v, c, e, h, hid, b, &mut r)
+                .err()
+                .unwrap();
+            assert!(err.to_string().contains("must be > 0"), "{err}");
+        }
     }
 
     #[test]
