@@ -182,7 +182,7 @@ fn cli_generate_stops_at_end_of_document() {
 
 fn train_quant(name: &str, quant: &[&str], extra: &[&str]) -> (PathBuf, Output) {
     let dir = scratch();
-    let c = dir.join("q.txt");
+    let c = dir.join(format!("{name}.txt"));
     std::fs::write(&c, "the cat sat on the mat. ".repeat(60)).unwrap();
     let m = dir.join(format!("{name}.gguf"));
     let o = bin()
@@ -282,7 +282,7 @@ fn train_rejects_an_unknown_quant_before_training() {
 
 fn train_with(name: &str, extra: &[&str]) -> (PathBuf, Output) {
     let dir = scratch();
-    let c = dir.join("q.txt");
+    let c = dir.join(format!("{name}.txt"));
     std::fs::write(
         &c,
         "the cat sat on the mat. the dog sat on the log. ".repeat(60),
