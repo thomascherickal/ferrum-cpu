@@ -516,7 +516,8 @@ impl LlamaModel {
     /// (stopping once a token in `stops` is produced) using the full
     /// [`SamplingParams`] sampler — repetition penalty, temperature, top-k, and
     /// top-p (see [`sample_with_params`]). Returns the newly generated token
-    /// IDs (excluding the prompt).
+    /// IDs (excluding the prompt). Generation also stops when the model's
+    /// context window is full; a prompt that already fills it is an error.
     pub fn generate(
         &self,
         prompt: &[usize],
@@ -528,6 +529,17 @@ impl LlamaModel {
         if prompt.is_empty() {
             return Err(InferError::DimMismatch("prompt must be non-empty".into()));
         }
+        // The KV cache grows with every token, so the declared context window
+        // bounds both the prompt and the generation (like llama.cpp's n_ctx);
+        // otherwise a huge `max_new` would only end when memory does.
+        let ctx = self.cfg.context_len;
+        if prompt.len() >= ctx {
+            return Err(InferError::DimMismatch(format!(
+                "prompt of {} tokens does not fit the model's {ctx}-token context window",
+                prompt.len()
+            )));
+        }
+        let max_new = max_new.min(ctx - prompt.len());
         let mut cache = LlamaCache::new(self.blocks.len());
         let mut logits = vec![0.0f32; self.cfg.vocab_size];
         for &tok in prompt {
@@ -941,6 +953,37 @@ mod tests {
         let model = tiny_model();
         let p = SamplingParams::with_temperature(1.0);
         assert!(model.generate(&[], 4, &p, &[], &mut Rng::new(1)).is_err());
+    }
+
+    #[test]
+    fn generation_stops_at_the_context_window_and_rejects_a_prompt_that_fills_it() {
+        let model = tiny_model(); // context_len 32
+        let p = SamplingParams::with_temperature(0.0);
+        let ctx = model.cfg.context_len;
+        // An absurd budget is clamped to the room left: ctx - prompt tokens.
+        let out = model
+            .generate(&[1, 2, 3], usize::MAX, &p, &[], &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(out.len(), ctx - 3);
+        // The last free slot is usable; one more prompt token leaves none.
+        let prompt: Vec<usize> = (0..ctx - 1).map(|i| i % 5).collect();
+        assert_eq!(
+            model
+                .generate(&prompt, 10, &p, &[], &mut Rng::new(1))
+                .unwrap()
+                .len(),
+            1
+        );
+        let full: Vec<usize> = (0..ctx).map(|i| i % 5).collect();
+        let e = model
+            .generate(&full, 1, &p, &[], &mut Rng::new(1))
+            .unwrap_err();
+        assert!(e.to_string().contains("does not fit"), "{e}");
+        // A zero budget still returns nothing, without error.
+        assert!(model
+            .generate(&[1], 0, &p, &[], &mut Rng::new(1))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
