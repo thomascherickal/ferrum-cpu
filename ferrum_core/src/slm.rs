@@ -1832,13 +1832,17 @@ fn available_memory_bytes() -> Option<usize> {
     kb.checked_mul(1024)
 }
 
-/// Training peaks above this, or above three quarters of the available RAM,
+/// Training peaks above 16 GB, or above three quarters of the available RAM,
 /// are refused up front: `--batch`/`--context` far beyond the machine would
-/// otherwise abort inside the allocator mid-run.
-const MAX_TRAIN_BYTES: usize = 16 << 30;
+/// otherwise abort inside the allocator mid-run. (A function, not a `usize`
+/// constant: 16 GB does not fit a 32-bit `usize`, where the cap is `usize::MAX`.)
+fn max_train_bytes() -> usize {
+    usize::try_from(16u64 << 30).unwrap_or(usize::MAX)
+}
 
 fn check_train_memory(need: usize, avail: Option<usize>) -> Result<()> {
-    let cap = avail.map_or(MAX_TRAIN_BYTES, |a| (a / 4 * 3).min(MAX_TRAIN_BYTES));
+    let max = max_train_bytes();
+    let cap = avail.map_or(max, |a| (a / 4 * 3).min(max));
     if need > cap {
         return Err(InferError::DimMismatch(format!(
             "training would need about {:.1} GB (weights, optimizer state, activations) but only {:.1} GB \
@@ -4052,8 +4056,8 @@ mod tests {
     #[test]
     fn check_train_memory_caps_at_16_gb_and_three_quarters_of_available() {
         assert!(check_train_memory(1 << 30, None).is_ok());
-        assert!(check_train_memory(MAX_TRAIN_BYTES, None).is_ok());
-        let e = check_train_memory(MAX_TRAIN_BYTES + 1, None)
+        assert!(check_train_memory(max_train_bytes(), None).is_ok());
+        let e = check_train_memory(max_train_bytes() + 1, None)
             .unwrap_err()
             .to_string();
         assert!(e.contains("lower --batch"), "{e}");
@@ -4161,7 +4165,7 @@ mod tests {
                         for &r in &reps {
                             case += 1;
                             // Thin the 7*5*6*6 grid deterministically but keep every value hit.
-                            if case % 7 != 0 && !(k == 3 && p == 0.5 && r == 1.5) {
+                            if !(case.is_multiple_of(7) || k == 3 && p == 0.5 && r == 1.5) {
                                 continue;
                             }
                             let params = SamplingParams {
@@ -4281,7 +4285,13 @@ mod tests {
                     let stop: String = chars[k..k + len].iter().collect();
                     let want: String = free[..free.find(&stop).unwrap()].to_string();
                     let g = slm
-                        .generate_tokens(seed, 48, &[stop.clone()], &p, &mut Rng::new(1))
+                        .generate_tokens(
+                            seed,
+                            48,
+                            std::slice::from_ref(&stop),
+                            &p,
+                            &mut Rng::new(1),
+                        )
                         .unwrap();
                     assert_eq!(g.text, want, "stop {stop:?} at {k}");
                     assert_eq!(g.stop_reason, StopReason::Stop);
