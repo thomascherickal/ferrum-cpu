@@ -1562,9 +1562,7 @@ impl GenerativeSLM {
         let transformer = CachedTransformer::try_new(&self.model).is_some();
         let mut add = |row: &[f32], target: usize| {
             let p = row[target].max(1e-12) as f64;
-            let argmax = (0..row.len())
-                .max_by(|&a, &b| row[a].total_cmp(&row[b]))
-                .unwrap_or(0);
+            let argmax = argmax_first(row);
             score.logprob += p.ln();
             score.n_tokens += 1;
             score.greedy &= argmax == target;
@@ -2136,6 +2134,36 @@ impl<'a> CachedTransformer<'a> {
 /// `SamplingParams::with_temperature` (top_k=0, top_p=1, penalty=1, recent
 /// ignored) this draws exactly one `rng.next_f32()` from the temperature softmax
 /// — bit-identical to the pre-I2 sampler.
+/// Index of the largest value, the **first** on ties (what llama.cpp's greedy
+/// sampler and `torch.argmax` return); `0` for an empty slice.
+fn argmax_first(xs: &[f32]) -> usize {
+    let mut best = 0;
+    for (i, x) in xs.iter().enumerate() {
+        if x.total_cmp(&xs[best]).is_gt() {
+            best = i;
+        }
+    }
+    best
+}
+
+/// Inverse-CDF draw: the first index whose running mass reaches `r`. Rounding can leave the
+/// total a hair under `r`; fall back to the last index that has any mass, and never pick a
+/// token that top-k / top-p zeroed out (not even for `r == 0`).
+fn pick_by_mass(probs: &[f32], r: f32) -> usize {
+    let mut cumsum = 0.0f32;
+    let mut last = 0;
+    for (i, &p) in probs.iter().enumerate() {
+        if p > 0.0 {
+            last = i;
+            cumsum += p;
+            if r <= cumsum {
+                return i;
+            }
+        }
+    }
+    last
+}
+
 pub(crate) fn sample_with_params(
     logits: &[f32],
     params: &SamplingParams,
@@ -2160,9 +2188,7 @@ pub(crate) fn sample_with_params(
 
     // Temperature <= 0 is exact argmax (greedy decoding); no RNG draw.
     if params.temperature <= 0.0 {
-        return (0..n)
-            .max_by(|&a, &b| work[a].total_cmp(&work[b]))
-            .unwrap_or(0);
+        return argmax_first(&work);
     }
     let t = params.temperature.max(0.01);
 
@@ -2224,15 +2250,7 @@ pub(crate) fn sample_with_params(
     for p in &mut probs {
         *p /= sum2;
     }
-    let r = rng.next_f32();
-    let mut cumsum = 0.0f32;
-    for (i, &p) in probs.iter().enumerate() {
-        cumsum += p;
-        if r <= cumsum {
-            return i;
-        }
-    }
-    n - 1
+    pick_by_mass(&probs, rng.next_f32())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4116,5 +4134,103 @@ mod tests {
             .generate_tokens("the cat", usize::MAX, &[stop], &p, &mut Rng::new(1))
             .unwrap();
         assert_eq!(g.stop_reason, StopReason::Stop);
+    }
+
+    /// Every generation entry point survives every odd sampling knob and seed shape.
+    #[test]
+    fn generation_matrix_never_panics_and_honours_budgets() {
+        let nan = f32::NAN;
+        let inf = f32::INFINITY;
+        let temps = [0.0, 1e-9, 1.0, 50.0, inf, nan, -1.0];
+        let top_ks = [0usize, 1, 3, 10_000, usize::MAX];
+        let top_ps = [0.0f32, 0.5, 1.0, 2.0, -1.0, nan];
+        let reps = [0.0f32, -1.0, 1.0, 1.5, nan, inf];
+        for (name, slm, long_seed) in [
+            ("bpe", tiny_bpe_slm(), "the dog sat on the log. ".repeat(10)),
+            ("char", tiny_char_slm(), "abc abc\n".repeat(10)),
+        ] {
+            let seeds = ["", "a", "ab", long_seed.as_str()];
+            let mut rng = Rng::new(9);
+            let mut case = 0usize;
+            for &t in &temps {
+                for &k in &top_ks {
+                    for &p in &top_ps {
+                        for &r in &reps {
+                            case += 1;
+                            // Thin the 7*5*6*6 grid deterministically but keep every value hit.
+                            if case % 7 != 0 && !(k == 3 && p == 0.5 && r == 1.5) {
+                                continue;
+                            }
+                            let params = SamplingParams {
+                                temperature: t,
+                                top_k: k,
+                                top_p: p,
+                                repetition_penalty: r,
+                            };
+                            for seed in seeds {
+                                for n in [0usize, 1, 5] {
+                                    let ctx = format!("{name} {params:?} seed={seed:?} n={n}");
+                                    let out = slm
+                                        .generate_with(seed, n, &params, &mut rng)
+                                        .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+                                    assert!(out.starts_with(seed), "{ctx}: {out:?}");
+                                    assert!(
+                                        out.chars().count() <= seed.chars().count() + n,
+                                        "{ctx}: {out:?}"
+                                    );
+                                    let g = slm
+                                        .generate_tokens(
+                                            seed,
+                                            n,
+                                            &["a".into(), "".into()],
+                                            &params,
+                                            &mut rng,
+                                        )
+                                        .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+                                    assert!(g.n_tokens <= n, "{ctx}: {g:?}");
+                                    if n == 0 {
+                                        assert_eq!(g.stop_reason, StopReason::MaxTokens, "{ctx}");
+                                        assert!(g.text.is_empty(), "{ctx}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn argmax_first_takes_the_first_of_equal_maxima() {
+        assert_eq!(argmax_first(&[]), 0);
+        assert_eq!(argmax_first(&[1.0]), 0);
+        assert_eq!(argmax_first(&[0.1, 2.0, 2.0, 1.0]), 1);
+        assert_eq!(argmax_first(&[3.0, 3.0, 3.0]), 0);
+        assert_eq!(argmax_first(&[-1.0, -0.5, -0.5]), 1);
+        assert_eq!(argmax_first(&[f32::NEG_INFINITY, f32::NEG_INFINITY]), 0);
+        // Greedy decoding uses it, regardless of the RNG.
+        let p = SamplingParams::with_temperature(0.0);
+        assert_eq!(
+            sample_with_params(&[1.0, 5.0, 5.0], &p, &[], &mut Rng::new(1)),
+            1
+        );
+    }
+
+    #[test]
+    fn pick_by_mass_never_returns_a_zeroed_token() {
+        // Probabilities summing below r (rounding): the old fallback was the last index.
+        assert_eq!(pick_by_mass(&[0.5, 0.4, 0.0, 0.0], 0.95), 1);
+        assert_eq!(
+            pick_by_mass(&[0.0, 0.0, 0.0], 0.5),
+            0,
+            "no mass at all: index 0"
+        );
+        assert_eq!(pick_by_mass(&[0.2, 0.3, 0.5], 0.0), 0);
+        assert_eq!(pick_by_mass(&[0.2, 0.3, 0.5], 0.2), 0);
+        assert_eq!(pick_by_mass(&[0.2, 0.3, 0.5], 0.21), 1);
+        assert_eq!(pick_by_mass(&[0.2, 0.3, 0.5], 1.0), 2);
+        // r = 0 must not pick a token with no mass.
+        assert_eq!(pick_by_mass(&[0.0, 1.0], 0.0), 1);
     }
 }
