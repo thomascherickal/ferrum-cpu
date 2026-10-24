@@ -939,7 +939,15 @@ impl TransformerNet {
     /// training resumes deterministically. Pre-GGUF (`FCKP`) checkpoints are
     /// rejected with a pointed error.
     pub fn load_checkpoint(bytes: &[u8]) -> Result<(Self, Rng)> {
-        let g = ckpt::open(bytes, b"FCKP", "ferrum-checkpoint")?;
+        Self::from_checkpoint(ckpt::open(bytes, b"FCKP", "ferrum-checkpoint")?)
+    }
+
+    /// [`TransformerNet::load_checkpoint`] taking ownership of the bytes (no copy).
+    pub fn load_checkpoint_from_vec(bytes: Vec<u8>) -> Result<(Self, Rng)> {
+        Self::from_checkpoint(ckpt::open_owned(bytes, b"FCKP", "ferrum-checkpoint")?)
+    }
+
+    fn from_checkpoint(g: crate::gguf::Gguf) -> Result<(Self, Rng)> {
         let n = |k| ckpt::get_usize(&g, k);
         let (vocab, ctx, embed) = (n("vocab")?, n("context")?, n("embed")?);
         let (heads, hidden, blocks) = (n("heads")?, n("hidden")?, n("blocks")?);
@@ -2546,6 +2554,13 @@ mod tests {
         assert_eq!(g.architecture(), Some("ferrum-checkpoint"));
         let (net2, rng2) = TransformerNet::load_checkpoint(&bytes).unwrap();
         assert_eq!(net2.save_checkpoint(&rng2), bytes);
+        // The owning variant parses in place and yields the same net; errors are the same.
+        let (net3, rng3) = TransformerNet::load_checkpoint_from_vec(bytes.clone()).unwrap();
+        assert_eq!(net3.save_checkpoint(&rng3), bytes);
+        let e = TransformerNet::load_checkpoint_from_vec(b"FCKP\x01\x00\x00\x00".to_vec())
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("pre-GGUF checkpoint (FCKP)"), "{e}");
     }
 
     #[test]

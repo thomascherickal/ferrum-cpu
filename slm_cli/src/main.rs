@@ -1032,6 +1032,21 @@ fn available_memory_bytes() -> Option<usize> {
     None
 }
 
+/// Peak resident bytes of applying a fine-tune checkpoint (`--resume`) to an f32 model of size
+/// `est`: the trainer wrapper holds the weights, gradients and both Adam moments (4x), and the
+/// checkpoint is resident as its raw bytes plus the flat f32 vectors rebuilt from it (about its
+/// size again). Measured on SmolLM2-135M: est 0.54 GB, a 1.96 GB .flck peaked at 7.7 GB before
+/// the buffer was handed over instead of copied (7.7 - 1.96 = 5.7 vs 4 x 0.54 + 2 x 1.96 = 6.1).
+fn resume_peak_bytes(est: usize, ckpt_len: usize) -> usize {
+    est.saturating_mul(4)
+        .saturating_add(ckpt_len.saturating_mul(2))
+}
+
+/// Size of the `--resume` checkpoint in bytes (0 if unreadable; the load reports that).
+fn file_len(path: &str) -> usize {
+    std::fs::metadata(path).map_or(0, |m| usize::try_from(m.len()).unwrap_or(usize::MAX))
+}
+
 /// Peak resident bytes of a fine-tune of f32 weights `est`: weights, gradient
 /// and two Adam moments (4x), plus the checkpoint save, which serializes the
 /// weights and both moments (3x) into the builder and again into the final
@@ -1118,11 +1133,24 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Memory guard before the (potentially multi-GB) load.
-    let est = estimate_resident_bytes(&g, prec);
+    let mut est = estimate_resident_bytes(&g, prec);
     println!(
-        "  estimated resident ≈ {:.2} GB  (--quant {quant})",
-        est as f64 / 1e9
+        "  estimated resident ≈ {:.2} GB  ({})",
+        est as f64 / 1e9,
+        if resume.is_some() {
+            "f32, because --resume applies f32 weights".to_string()
+        } else {
+            format!("--quant {quant}")
+        }
     );
+    if let Some(ckpt) = &resume {
+        // Applying a checkpoint peaks well above the resident model.
+        est = est.max(resume_peak_bytes(est, file_len(ckpt)));
+        println!(
+            "  estimated peak while applying {ckpt} ≈ {:.2} GB",
+            est as f64 / 1e9
+        );
+    }
     if let Some(avail) = available_memory_bytes() {
         println!("  available memory   ≈ {:.2} GB", avail as f64 / 1e9);
         if (est as f64) > 0.9 * avail as f64 && !args.has("force") {
@@ -1163,7 +1191,7 @@ fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         let bytes =
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
         let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_into(&bytes)
+        tr.load_checkpoint_from_vec(bytes)
             .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
         model = tr.model;
         println!("  applied fine-tuned checkpoint {ckpt}");
@@ -1384,7 +1412,7 @@ fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         let bytes =
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
         let r = tr
-            .load_checkpoint_into(&bytes)
+            .load_checkpoint_from_vec(bytes)
             .map_err(|e| format!("cannot resume from {ckpt}: {e}"))?;
         println!("  resumed from {ckpt} at step {}", tr.step_count());
         r
@@ -1513,14 +1541,13 @@ fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         _ => est_model / 3, // quantized outputs are smaller; /3 is conservative
     };
     let write_peak = est_model.saturating_add(est_out);
-    let est = if resume.is_some() {
-        est_model.saturating_mul(4).max(write_peak)
-    } else {
-        write_peak
+    let est = match resume {
+        Some(ckpt) => resume_peak_bytes(est_model, file_len(ckpt)).max(write_peak),
+        None => write_peak,
     };
     if resume.is_some() {
         println!(
-            "  estimated peak ≈ {:.2} GB  (checkpoint apply: weights + grad + Adam m/v)",
+            "  estimated peak ≈ {:.2} GB  (checkpoint apply: weights + grad + Adam m/v + checkpoint buffers)",
             est as f64 / 1e9
         );
     } else {
@@ -1553,7 +1580,7 @@ fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         println!("Applying fine-tune checkpoint {ckpt}…");
         let bytes = std::fs::read(ckpt)?;
         let mut trainer = LlamaTrainer::new(model)?;
-        trainer.load_checkpoint_into(&bytes)?;
+        trainer.load_checkpoint_from_vec(bytes)?;
         model = trainer.model;
     }
 
@@ -2195,5 +2222,25 @@ mod tests {
         for t in [f64::NAN, -5.0, f64::INFINITY] {
             assert!(check_token_budget(t).unwrap_err().contains("--tokens"));
         }
+    }
+
+    #[test]
+    fn resume_peak_accounts_for_trainer_state_and_checkpoint_buffers() {
+        // SmolLM2-135M: est 0.54 GB, 1.96 GB checkpoint -> about 6.1 GB (measured 5.7-7.7).
+        let gb = 1_000_000_000usize;
+        let peak = resume_peak_bytes(540_000_000, 1_960_000_000);
+        assert_eq!(peak, 4 * 540_000_000 + 2 * 1_960_000_000);
+        assert!(peak > 5 * gb && peak < 7 * gb, "{peak}");
+        assert_eq!(resume_peak_bytes(0, 0), 0);
+        assert_eq!(resume_peak_bytes(usize::MAX, usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn file_len_reads_size_and_tolerates_missing_files() {
+        let f = std::env::temp_dir().join(format!("ferrum_filelen_{}", std::process::id()));
+        std::fs::write(&f, [0u8; 123]).unwrap();
+        assert_eq!(file_len(f.to_str().unwrap()), 123);
+        let _ = std::fs::remove_file(&f);
+        assert_eq!(file_len(f.to_str().unwrap()), 0);
     }
 }

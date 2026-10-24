@@ -1429,7 +1429,17 @@ impl LlamaTrainer {
     /// hold a model of the matching shape). Returns the restored RNG. Nothing is
     /// modified unless the whole checkpoint validates.
     pub fn load_checkpoint_into(&mut self, bytes: &[u8]) -> Result<Rng> {
-        let g = ckpt::open(bytes, b"FLCK", "ferrum-llama-checkpoint")?;
+        self.apply_checkpoint(ckpt::open(bytes, b"FLCK", "ferrum-llama-checkpoint")?)
+    }
+
+    /// [`LlamaTrainer::load_checkpoint_into`] taking ownership of the bytes: a
+    /// checkpoint just read from disk is parsed in place instead of copied
+    /// (a 2 GB `.flck` otherwise peaks one file's size higher).
+    pub fn load_checkpoint_from_vec(&mut self, bytes: Vec<u8>) -> Result<Rng> {
+        self.apply_checkpoint(ckpt::open_owned(bytes, b"FLCK", "ferrum-llama-checkpoint")?)
+    }
+
+    fn apply_checkpoint(&mut self, g: crate::gguf::Gguf) -> Result<Rng> {
         for (k, want) in self.shape_keys() {
             if ckpt::get_usize(&g, k)? != want {
                 return Err(InferError::Format(
@@ -2035,6 +2045,11 @@ mod tests {
             assert_eq!(bits(u.v.to_flat()), bits(t.v.to_flat()));
             assert!(t.m.to_flat().iter().any(|&x| x != 0.0), "moments exercised");
             assert_eq!(u.save_checkpoint(&rng2), bytes);
+            // The owning variant (no copy of the file) restores the same state.
+            let mut w = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 2)).unwrap();
+            let rng3 = w.load_checkpoint_from_vec(bytes.clone()).unwrap();
+            assert_eq!(w.save_checkpoint(&rng3), bytes);
+            assert!(w.load_checkpoint_from_vec(Vec::new()).is_err());
         }
     }
 

@@ -1754,7 +1754,7 @@ fn tokenize_for_lm_cfg(corpus: &str, cfg: &TransformerConfig) -> Result<LmTokens
 fn prepare_net(cfg: &TransformerConfig, vocab: usize, rng: &mut Rng) -> Result<TransformerNet> {
     let ckpt = std::path::Path::new(&cfg.checkpoint_path);
     let mut net = if cfg.resume && !cfg.checkpoint_path.is_empty() && ckpt.exists() {
-        let (net, ckpt_rng) = TransformerNet::load_checkpoint(&std::fs::read(ckpt)?)?;
+        let (net, ckpt_rng) = TransformerNet::load_checkpoint_from_vec(std::fs::read(ckpt)?)?;
         if net.vocab_size() != vocab || net.context_len() != cfg.context_len {
             return Err(InferError::DimMismatch(format!(
                 "checkpoint has vocab {} / context {}, this run needs vocab {vocab} / context {}",
@@ -4256,5 +4256,68 @@ mod tests {
         assert_eq!(g.text, out);
         // A zero budget returns the (empty) seed untouched.
         assert_eq!(slm.generate_with("", 0, &p, &mut Rng::new(1)).unwrap(), "");
+    }
+
+    /// A stop string may start in one token and end in a later one; whatever the alignment, the
+    /// output is cut exactly at its first occurrence (both generation paths), and with several
+    /// stops at whichever occurs first.
+    #[test]
+    fn stop_strings_cut_at_the_first_occurrence_at_every_alignment() {
+        for slm in [tiny_bpe_slm(), tiny_char_slm()] {
+            let p = SamplingParams::with_temperature(0.0);
+            let seed = if slm.meta.tokenizer_state.is_empty() {
+                "abc"
+            } else {
+                "the cat"
+            };
+            let free = slm
+                .generate_tokens(seed, 48, &[], &p, &mut Rng::new(1))
+                .unwrap()
+                .text;
+            let chars: Vec<char> = free.chars().collect();
+            assert!(chars.len() >= 20, "{free:?}");
+            for len in [1usize, 2, 3, 5] {
+                for k in 0..chars.len() - len {
+                    let stop: String = chars[k..k + len].iter().collect();
+                    let want: String = free[..free.find(&stop).unwrap()].to_string();
+                    let g = slm
+                        .generate_tokens(seed, 48, &[stop.clone()], &p, &mut Rng::new(1))
+                        .unwrap();
+                    assert_eq!(g.text, want, "stop {stop:?} at {k}");
+                    assert_eq!(g.stop_reason, StopReason::Stop);
+                    let legacy = slm
+                        .generate_until(seed, 48, &stop, &p, &mut Rng::new(1))
+                        .unwrap();
+                    assert!(
+                        legacy.starts_with(&format!("{seed}{want}")),
+                        "legacy {legacy:?} vs {seed}{want}"
+                    );
+                    // With several stops, generation halts when the first one completes and the
+                    // text is cut at the earliest start among those present then (HF / lm-eval).
+                    let other: String = chars[(k + len).min(chars.len() - 1)..]
+                        .iter()
+                        .take(2)
+                        .collect();
+                    for stops in [
+                        vec![stop.clone(), other.clone()],
+                        vec![other.clone(), stop.clone()],
+                    ] {
+                        let both = slm
+                            .generate_tokens(seed, 48, &stops, &p, &mut Rng::new(1))
+                            .unwrap();
+                        let halt = (1..=chars.len())
+                            .map(|n| chars[..n].iter().collect::<String>())
+                            .find(|pre| stops.iter().any(|s| pre.contains(s.as_str())))
+                            .unwrap();
+                        let cut = stops
+                            .iter()
+                            .filter_map(|s| halt.find(s.as_str()))
+                            .min()
+                            .unwrap();
+                        assert_eq!(both.text, halt[..cut], "{stops:?}");
+                    }
+                }
+            }
+        }
     }
 }

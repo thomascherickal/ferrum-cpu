@@ -780,7 +780,7 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
         let bytes =
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
         let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_into(&bytes)
+        tr.load_checkpoint_from_vec(bytes)
             .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
         model = tr.model;
     }
@@ -1000,7 +1000,7 @@ fn finetune_inner(app: AppHandle, p: FinetuneParams) -> Result<FinetuneResult, S
             cleanup();
             format!("cannot read checkpoint {ckpt}: {e}")
         })?;
-        tr.load_checkpoint_into(&bytes).map_err(|e| {
+        tr.load_checkpoint_from_vec(bytes).map_err(|e| {
             cleanup();
             format!("cannot resume from {ckpt}: {e}")
         })?
@@ -1183,7 +1183,7 @@ pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<Exp
         let bytes =
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
         let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_into(&bytes)
+        tr.load_checkpoint_from_vec(bytes)
             .map_err(|e| format!("cannot apply checkpoint: {e}"))?;
         model = tr.model;
     }

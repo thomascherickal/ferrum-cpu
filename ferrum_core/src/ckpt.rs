@@ -53,17 +53,22 @@ pub(crate) fn put_param(b: &mut GgufBuilder, i: usize, data: &[f32], m: &[f32], 
 }
 
 /// Parse checkpoint bytes and validate the container: old-format magic ->
-/// pointed error, GGUF parse, architecture, layout version.
+/// pointed error, GGUF parse, architecture, layout version. Copies `bytes`;
+/// callers that own the buffer use [`open_owned`] and skip the copy.
 pub(crate) fn open(bytes: &[u8], old_magic: &[u8; 4], arch: &str) -> Result<Gguf> {
+    open_owned(bytes.to_vec(), old_magic, arch)
+}
+
+/// [`open`] taking ownership of the checkpoint bytes, so a multi-GB `.flck`
+/// that was just read from disk is parsed in place (no second copy).
+pub(crate) fn open_owned(bytes: Vec<u8>, old_magic: &[u8; 4], arch: &str) -> Result<Gguf> {
     if bytes.starts_with(old_magic) {
         return Err(bad(format!(
             "pre-GGUF checkpoint ({}); it cannot be resumed — retrain or start a new checkpoint",
             String::from_utf8_lossy(old_magic)
         )));
     }
-    // ponytail: parse() copies the bytes (peak memory ~3x the file); stream the
-    // tensors via Gguf::open if checkpoints ever outgrow RAM.
-    let g = Gguf::parse(bytes.to_vec())?;
+    let g = Gguf::parse(bytes)?;
     match g.architecture() {
         Some(a) if a == arch => {}
         other => {
@@ -284,5 +289,26 @@ mod tests {
         put_param(&mut b, 0, &[], &[], &[]);
         let g = open(&b.into_bytes(), b"OLDM", ARCH).unwrap();
         assert!(get_f32(&g, "p0.data", 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn open_owned_parses_in_place_and_matches_the_copying_open() {
+        let bytes = sample();
+        let (a, b) = (
+            open(&bytes, b"OLDM", ARCH).unwrap(),
+            open_owned(bytes.clone(), b"OLDM", ARCH).unwrap(),
+        );
+        assert_eq!(
+            get_f32(&a, "p0.data", 2).unwrap(),
+            get_f32(&b, "p0.data", 2).unwrap()
+        );
+        assert_eq!(get_usize(&a, "dim").unwrap(), get_usize(&b, "dim").unwrap());
+        // Same pointed errors.
+        let e = open_owned(b"OLDM\x01\x00\x00\x00".to_vec(), b"OLDM", ARCH)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("pre-GGUF checkpoint (OLDM)"), "{e}");
+        assert!(open_owned(Vec::new(), b"OLDM", ARCH).is_err());
+        assert!(open_owned(bytes, b"OLDM", "other").is_err());
     }
 }
