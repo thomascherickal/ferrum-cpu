@@ -211,56 +211,30 @@ pub fn export_ollama(model: &Path, name: &str, bin: Option<&str>) -> Result<(), 
     ))
 }
 
-/// First `"key": "value"` string value in `obj` (whitespace after the colon is optional).
-fn json_str<'a>(obj: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\":");
-    let rest = obj[obj.find(&pat)? + pat.len()..].trim_start();
-    let rest = rest.strip_prefix('"')?;
-    Some(&rest[..rest.find('"')?])
-}
-
 /// `path` ends with `suffix` on a `/` boundary (`xferrum/m` does not match `ferrum/m`).
 fn path_matches(path: &str, suffix: &str) -> bool {
     path.strip_suffix(suffix)
         .is_some_and(|head| head.is_empty() || head.ends_with('/'))
 }
 
-/// `modelKey` of the `lms ls --json` entry whose `path` ends with `suffix`.
-// ponytail: string scan, not a JSON parser — assumes unescaped quotes in `path`/`modelKey`
-// (true for LM Studio's output); use serde_json if slm_cli ever gains it.
+/// `modelKey` of the `lms ls --json` entry whose `path` ends with `suffix`. The JSON may be
+/// preceded by a banner line ("Waking up LM Studio service..."), so parsing starts at the first
+/// `[` or `{`; trailing text is ignored.
 fn model_key_for(json: &str, suffix: &str) -> Option<String> {
-    let (mut depth, mut start, mut in_str, mut esc) = (0usize, 0usize, false, false);
-    for (i, c) in json.char_indices() {
-        if in_str {
-            match (esc, c) {
-                (true, _) => esc = false,
-                (false, '\\') => esc = true,
-                (false, '"') => in_str = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_str = true,
-            '{' => {
-                if depth == 0 {
-                    start = i;
-                }
-                depth += 1;
-            }
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    let obj = &json[start..=i];
-                    if json_str(obj, "path").is_some_and(|p| path_matches(p, suffix)) {
-                        return json_str(obj, "modelKey").map(String::from);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+    let json = &json[json.find(['[', '{'])?..];
+    let value: serde_json::Value = serde_json::Deserializer::from_str(json)
+        .into_iter()
+        .next()?
+        .ok()?;
+    let entries = match &value {
+        serde_json::Value::Array(a) => a.as_slice(),
+        one => std::slice::from_ref(one),
+    };
+    entries
+        .iter()
+        .find(|e| e["path"].as_str().is_some_and(|p| path_matches(p, suffix)))
+        .and_then(|e| e["modelKey"].as_str())
+        .map(String::from)
 }
 
 /// How long to wait for LM Studio to list a fresh import: a running desktop app indexes its
@@ -682,6 +656,31 @@ mod tests {
         assert_eq!(model_key_for("[]", "x"), None);
         assert_eq!(model_key_for("} stray", "x"), None);
         assert_eq!(model_key_for(r#"{"path":"unterminated"#, "x"), None);
+        // A top-level object, and trailing text after the JSON.
+        assert_eq!(
+            model_key_for(r#"{"path":"a/m.gguf","modelKey":"k"} done"#, "m.gguf").as_deref(),
+            Some("k")
+        );
+    }
+
+    /// Regression (deferred minor): the old string scan cut a value at an escaped quote
+    /// and read keys out of nested objects; a real parser does neither.
+    #[test]
+    fn model_key_scan_handles_escapes_and_nesting() {
+        let json = r#"[{"modelKey":"p/k\"q","path":"pub/r/f.gguf"}]"#;
+        assert_eq!(model_key_for(json, "r/f.gguf").as_deref(), Some("p/k\"q"));
+        let esc_path = r#"[{"modelKey":"e","path":"pub/we\"ird/f.gguf"}]"#;
+        assert_eq!(
+            model_key_for(esc_path, "we\"ird/f.gguf").as_deref(),
+            Some("e")
+        );
+        // A nested object's "path" must not be mistaken for the entry's own.
+        let nested = r#"[{"meta":{"path":"pub/r/f.gguf","modelKey":"wrong"},"path":"other/g.gguf","modelKey":"right"}]"#;
+        assert_eq!(model_key_for(nested, "r/f.gguf"), None);
+        assert_eq!(
+            model_key_for(nested, "other/g.gguf").as_deref(),
+            Some("right")
+        );
     }
 
     // ---- export_ollama ----
