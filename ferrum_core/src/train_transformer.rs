@@ -50,6 +50,17 @@ impl Param {
         let n: usize = shape.iter().product();
         Self::new(shape, vec![value; n]).unwrap()
     }
+    /// A copy of the weights alone: gradient and Adam moments are empty, so it
+    /// costs 4 B/param instead of 16.
+    fn weights_only(&self) -> Self {
+        let empty = || Tensor::zeros(vec![0]);
+        Self {
+            data: self.data.clone(),
+            grad: empty(),
+            m: empty(),
+            v: empty(),
+        }
+    }
     fn zero_grad(&mut self) {
         for g in &mut self.grad.data {
             *g = 0.0;
@@ -382,6 +393,27 @@ impl BlockT {
             f1_b: Param::constant(vec![hidden], 0.0),
             f2_w: Param::randn(vec![hidden, c], scale, rng),
             f2_b: Param::constant(vec![c], 0.0),
+        }
+    }
+
+    fn weights_only(&self) -> Self {
+        Self {
+            ln1_g: self.ln1_g.weights_only(),
+            ln1_b: self.ln1_b.weights_only(),
+            q_w: self.q_w.weights_only(),
+            q_b: self.q_b.weights_only(),
+            k_w: self.k_w.weights_only(),
+            k_b: self.k_b.weights_only(),
+            v_w: self.v_w.weights_only(),
+            v_b: self.v_b.weights_only(),
+            o_w: self.o_w.weights_only(),
+            o_b: self.o_b.weights_only(),
+            ln2_g: self.ln2_g.weights_only(),
+            ln2_b: self.ln2_b.weights_only(),
+            f1_w: self.f1_w.weights_only(),
+            f1_b: self.f1_b.weights_only(),
+            f2_w: self.f2_w.weights_only(),
+            f2_b: self.f2_b.weights_only(),
         }
     }
 
@@ -1421,6 +1453,45 @@ impl TransformerNet {
     /// Export to an inference `Sequential`:
     /// `Embedding → blocks → LayerNorm → Linear → Softmax`.
     /// Serializes to GGUF v3 and is compatible with `TransformerSLMModel`.
+    /// A copy holding only the weights (no gradients or Adam moments): enough
+    /// to snap, mirror the tied head and export, never to train.
+    fn weights_only(&self) -> Self {
+        Self {
+            vocab_size: self.vocab_size,
+            context_len: self.context_len,
+            embed_dim: self.embed_dim,
+            num_heads: self.num_heads,
+            tok_emb: self.tok_emb.weights_only(),
+            pos_emb: self.pos_emb.weights_only(),
+            blocks: self.blocks.iter().map(BlockT::weights_only).collect(),
+            lnf_g: self.lnf_g.weights_only(),
+            lnf_b: self.lnf_b.weights_only(),
+            head_w: self.head_w.weights_only(),
+            step_t: self.step_t,
+            qat: self.qat,
+            grad_clip: self.grad_clip,
+            lr_schedule: self.lr_schedule.clone(),
+            tie_weights: self.tie_weights,
+            weight_decay: self.weight_decay,
+            dropout: self.dropout,
+            window_stride: self.window_stride,
+        }
+    }
+
+    /// [`TransformerNet::to_inference`] for shipping: a QAT net is exported at
+    /// its Q8_0-snapped values (what the training saw), so an int8 export
+    /// changes nothing. Snaps a weights-only copy, leaving `self` (the
+    /// full-precision masters) untouched, without cloning gradients or Adam
+    /// state (4 B/param instead of 16).
+    pub(crate) fn to_inference_snapped(&self) -> Result<Sequential> {
+        if !self.qat {
+            return self.to_inference();
+        }
+        let mut snapped = self.weights_only();
+        snapped.fake_quantize_weights();
+        snapped.to_inference()
+    }
+
     pub fn to_inference(&self) -> Result<Sequential> {
         let mut m = Sequential::new();
         m.push(Box::new(Embedding::new(
@@ -2081,6 +2152,57 @@ mod tests {
             logits.data,
             ops::matmul(&cache.norm_f, &net.head_w.data).unwrap().data
         );
+    }
+
+    /// `to_inference_snapped` must equal the old clone-then-snap export bit for
+    /// bit, leave the masters alone, and not carry gradients or Adam state.
+    #[test]
+    fn snapped_export_matches_full_clone_and_keeps_masters() {
+        for tie in [false, true] {
+            let mut rng = Rng::new(17);
+            let mut net = TransformerNet::new(8, 4, 32, 2, 64, 2, &mut rng).unwrap();
+            net.set_weight_tying(tie);
+            net.set_qat(true);
+            let tokens: Vec<usize> = (0..120).map(|i| (i * 7) % 8).collect();
+            let adam = Adam::new(0.01);
+            for _ in 0..3 {
+                train_transformer_epoch(&mut net, &tokens, 4, &adam, &mut rng).unwrap();
+            }
+            let masters = net.snapshot_weights();
+            let mut full = net.clone();
+            full.fake_quantize_weights();
+            let want = full.to_inference().unwrap();
+            let got = net.to_inference_snapped().unwrap();
+            let x = Tensor::matrix(1, 4, vec![0.0, 3.0, 5.0, 7.0]).unwrap();
+            assert_eq!(
+                got.forward(&x).unwrap().data,
+                want.forward(&x).unwrap().data
+            );
+            assert_eq!(
+                net.snapshot_weights(),
+                masters,
+                "masters must not be snapped"
+            );
+            // Without QAT it is a plain export.
+            net.set_qat(false);
+            let plain = net.to_inference().unwrap();
+            assert_eq!(
+                net.to_inference_snapped()
+                    .unwrap()
+                    .forward(&x)
+                    .unwrap()
+                    .data,
+                plain.forward(&x).unwrap().data
+            );
+        }
+        // The copy really is weights-only.
+        let mut rng = Rng::new(1);
+        let net = TransformerNet::new(8, 4, 32, 2, 64, 1, &mut rng).unwrap();
+        let mut w = net.weights_only();
+        for p in w.params_mut_all() {
+            assert_eq!((p.grad.numel(), p.m.numel(), p.v.numel()), (0, 0, 0));
+            assert!(p.data.numel() > 0);
+        }
     }
 
     #[test]

@@ -451,17 +451,8 @@ impl GenerativeSLM {
         let model_vocab = tc.vocab_size;
         let context_len = net.context_len();
         // QAT: ship exactly the Q8_0 values the training saw, so an int8 export
-        // changes nothing.
-        let snapped;
-        let net = if net.qat_enabled() {
-            let mut n = net.clone();
-            n.fake_quantize_weights();
-            snapped = n;
-            &snapped
-        } else {
-            net
-        };
-        let model = net.to_inference()?;
+        // changes nothing (snapped on a weights-only copy, see `to_inference_snapped`).
+        let model = net.to_inference_snapped()?;
         let meta = ModelMetadata {
             dataset_name: "GenerativeSLM Transformer".into(),
             task: TaskType::TransformerSLM,
