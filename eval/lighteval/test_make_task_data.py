@@ -91,6 +91,19 @@ class MainTest(unittest.TestCase):
         self.assertIn("2 heldout docs", r.stdout)
         self.assertTrue((tmp / "o/cloze/test.jsonl").exists())
 
+    def test_main_guard_in_process(self):
+        # same as the subprocess test, but in-process so line coverage sees the `__main__` branch
+        import runpy
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "t.txt").write_text(story(0) + SEP + story(1), encoding="utf-8")
+        old = sys.argv
+        sys.argv = ["make_task_data.py", str(tmp / "t.txt"), str(tmp / "o")]
+        try:
+            runpy.run_path(os.path.join(HERE, "make_task_data.py"), run_name="__main__")
+        finally:
+            sys.argv = old
+        self.assertTrue((tmp / "o/heldout/test.jsonl").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -60,6 +60,18 @@ class SummarizeTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 summarize.main(bad)
 
+    def test_main_guard_in_process(self):
+        import runpy
+        write_results(self.res, "results_1.json", {"t|0": {"acc": 1}}, 1)
+        old = sys.argv
+        sys.argv = ["summarize.py", str(self.res), str(self.out), "m"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "summarize.py"), run_name="__main__")
+        finally:
+            sys.argv = old
+        self.assertTrue(self.out.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
