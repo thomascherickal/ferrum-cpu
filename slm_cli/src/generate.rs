@@ -13,6 +13,7 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     sampling_params(args, 0.8, "repetition-penalty")?; // fail before training starts
+    require_resume_file(args.value("resume"))?; // also when the model exists and training is skipped
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
     let seed_text = args.positional[2..].join(" ");

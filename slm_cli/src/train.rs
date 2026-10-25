@@ -14,11 +14,6 @@ pub(crate) fn train_and_save(
     model_path: &str,
     args: &Args,
 ) -> Result<GenerativeSLM, Box<dyn std::error::Error>> {
-    if let Some(ckpt) = args.value("resume") {
-        if !std::path::Path::new(ckpt).exists() {
-            return Err(format!("checkpoint {ckpt} does not exist (--resume needs an existing file; use --checkpoint to start a new one)").into());
-        }
-    }
     // Check before spending time training.
     let quant = args.value("quant").unwrap_or("int8");
     if !matches!(quant, "int8" | "int4" | "f32") {
@@ -179,6 +174,8 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.positional.len() < 2 {
         return Err("usage: train_transformer train <corpus.txt> <model.gguf> [options]".into());
     }
+    // Before the model-exists shortcut too, so a typo'd --resume never goes unnoticed.
+    require_resume_file(args.value("resume"))?;
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
     let corpus = read_corpus(corpus_path)?;

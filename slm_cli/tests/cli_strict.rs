@@ -81,6 +81,27 @@ fn missing_resume_checkpoint_is_an_error() {
     );
 }
 
+/// Regression (deferred minor): when the model file already exists, `train`/`run` skipped
+/// training and never looked at `--resume`, so a typo'd checkpoint went unnoticed.
+#[test]
+fn missing_resume_checkpoint_is_an_error_even_when_the_model_exists() {
+    let c = corpus();
+    let existing = c.to_str().unwrap(); // any existing file: the check runs before it is loaded
+    for cmd in ["train", "run"] {
+        let mut args = vec![cmd, existing, existing];
+        if cmd == "run" {
+            args.push("seed");
+        }
+        args.extend(["--resume", "/nonexistent/nope.flck"]);
+        let (code, text) = run(&args);
+        assert_eq!(code, 1, "{cmd}: {text}");
+        assert!(
+            text.contains("checkpoint /nonexistent/nope.flck does not exist"),
+            "{cmd}: {text}"
+        );
+    }
+}
+
 #[test]
 fn flag_valid_elsewhere_is_rejected_for_this_command() {
     let (code, text) = run(&["info", "m.gguf", "--epochs", "3"]);
