@@ -29,7 +29,11 @@ pub(crate) fn estimate_resident_bytes(
 /// Best-effort available RAM in bytes (Linux `/proc/meminfo` `MemAvailable`);
 /// `None` where it cannot be determined, in which case the guard is skipped.
 pub(crate) fn available_memory_bytes() -> Option<usize> {
-    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    available_memory_from(&std::fs::read_to_string("/proc/meminfo").ok()?)
+}
+
+/// `MemAvailable` (bytes) from the text of `/proc/meminfo`.
+pub(crate) fn available_memory_from(info: &str) -> Option<usize> {
     for line in info.lines() {
         if let Some(rest) = line.strip_prefix("MemAvailable:") {
             let kb: usize = rest.split_whitespace().next()?.parse().ok()?;
@@ -76,16 +80,33 @@ pub(crate) fn finetune_threads(est: usize, avail: Option<usize>, requested: usiz
     (budget / per_thread.max(1)).clamp(1, requested.max(1))
 }
 
-/// The refusal when the fine-tune peak exceeds 90% of the free RAM (unless forced).
-pub(crate) fn finetune_memory_error(peak: usize, avail: usize, force: bool) -> Option<String> {
-    ((peak as f64) > 0.9 * avail as f64 && !force).then(|| {
+/// The refusal when an estimate of `what` exceeds 90% of the free RAM (unless forced); `advice`
+/// is appended after the numbers.
+pub(crate) fn memory_error(
+    what: &str,
+    est: usize,
+    avail: usize,
+    force: bool,
+    advice: &str,
+) -> Option<String> {
+    ((est as f64) > 0.9 * avail as f64 && !force).then(|| {
         format!(
-            "estimated training memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-             fine-tune a smaller model, or pass --force to attempt it anyway.",
-            peak as f64 / 1e9,
+            "estimated {what} ({:.2} GB) exceeds 90% of available ({:.2} GB) — {advice}",
+            est as f64 / 1e9,
             avail as f64 / 1e9
         )
     })
+}
+
+/// The refusal when the fine-tune peak exceeds 90% of the free RAM (unless forced).
+pub(crate) fn finetune_memory_error(peak: usize, avail: usize, force: bool) -> Option<String> {
+    memory_error(
+        "training memory",
+        peak,
+        avail,
+        force,
+        "fine-tune a smaller model, or pass --force to attempt it anyway.",
+    )
 }
 
 /// The notice printed when [`finetune_threads`] lowered the request.
@@ -156,5 +177,37 @@ mod tests {
         assert_eq!(file_len(f.to_str().unwrap()), 123);
         let _ = std::fs::remove_file(&f);
         assert_eq!(file_len(f.to_str().unwrap()), 0);
+    }
+
+    #[test]
+    fn memory_error_formats_the_numbers_and_honours_force() {
+        let gb = 1_000_000_000;
+        // 9.5 of 10 GB is over the 90% line.
+        let e = memory_error("peak memory", 95 * gb / 10, 10 * gb, false, "do X.").unwrap();
+        assert_eq!(
+            e,
+            "estimated peak memory (9.50 GB) exceeds 90% of available (10.00 GB) — do X."
+        );
+        // Exactly 90% and below passes; --force always passes.
+        assert_eq!(memory_error("m", 9 * gb, 10 * gb, false, "a"), None);
+        assert_eq!(memory_error("m", 100 * gb, 10 * gb, true, "a"), None);
+        // The fine-tune wrapper keeps its wording.
+        let e = finetune_memory_error(20 * gb, 10 * gb, false).unwrap();
+        assert!(e.starts_with("estimated training memory (20.00 GB)"), "{e}");
+        assert!(e.ends_with("fine-tune a smaller model, or pass --force to attempt it anyway."));
+        assert_eq!(finetune_memory_error(20 * gb, 10 * gb, true), None);
+    }
+
+    #[test]
+    fn available_memory_is_parsed_from_proc_meminfo_text() {
+        let info = "MemTotal:       16000000 kB\nMemFree:  100 kB\nMemAvailable:    2048 kB\n";
+        assert_eq!(available_memory_from(info), Some(2048 * 1024));
+        assert_eq!(available_memory_from("MemTotal: 1 kB\n"), None);
+        assert_eq!(available_memory_from("MemAvailable: lots kB\n"), None);
+        assert_eq!(available_memory_from(""), None);
+        // The real reader agrees with the parser on this machine's /proc (Linux only).
+        if std::path::Path::new("/proc/meminfo").exists() {
+            assert!(available_memory_bytes().is_some_and(|b| b > 0));
+        }
     }
 }

@@ -18,3 +18,34 @@ pub(crate) fn read_corpus(path: &str) -> Result<String, Box<dyn std::error::Erro
     }
     Ok(corpus)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn time_seed_is_never_zero() {
+        // `| 1` keeps an RNG seeded from it away from the all-zero state.
+        assert_eq!(time_seed() & 1, 1);
+    }
+
+    #[test]
+    fn read_corpus_returns_text_and_names_the_problem_otherwise() {
+        let d = std::env::temp_dir().join(format!("ferrum_util_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let good = d.join("good.txt");
+        std::fs::write(&good, "hello\n").unwrap();
+        assert_eq!(read_corpus(good.to_str().unwrap()).unwrap(), "hello\n");
+        let blank = d.join("blank.txt");
+        std::fs::write(&blank, " \n\t\n").unwrap();
+        let e = read_corpus(blank.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("is empty"), "{e}");
+        let e = read_corpus(d.join("nope.txt").to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(e.starts_with("cannot read corpus "), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

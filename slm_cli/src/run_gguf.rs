@@ -68,14 +68,14 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     }
     if let Some(avail) = available_memory_bytes() {
         println!("  available memory   ≈ {:.2} GB", avail as f64 / 1e9);
-        if (est as f64) > 0.9 * avail as f64 && !args.has("force") {
-            return Err(format!(
-                "estimated resident memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 try a smaller --quant, or pass --force to attempt it anyway.",
-                est as f64 / 1e9,
-                avail as f64 / 1e9
-            )
-            .into());
+        if let Some(e) = memory_error(
+            "resident memory",
+            est,
+            avail,
+            args.has("force"),
+            "try a smaller --quant, or pass --force to attempt it anyway.",
+        ) {
+            return Err(e.into());
         }
     }
 

@@ -64,14 +64,14 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
         );
     }
     if let Some(avail) = available_memory_bytes() {
-        if (est as f64) > 0.9 * avail as f64 && !args.has("force") {
-            return Err(format!(
-                "estimated peak memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 pass --force to attempt it anyway.",
-                est as f64 / 1e9,
-                avail as f64 / 1e9
-            )
-            .into());
+        if let Some(e) = memory_error(
+            "peak memory",
+            est,
+            avail,
+            args.has("force"),
+            "pass --force to attempt it anyway.",
+        ) {
+            return Err(e.into());
         }
     }
 
@@ -127,5 +127,32 @@ pub(crate) fn ggml_type_name(t: u32) -> String {
         13 => "Q5_K".into(),
         14 => "Q6_K".into(),
         other => format!("type{other}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ggml_type_names_cover_every_exportable_type_and_fall_back() {
+        let want = [
+            (0, "F32"),
+            (1, "F16"),
+            (2, "Q4_0"),
+            (3, "Q4_1"),
+            (6, "Q5_0"),
+            (7, "Q5_1"),
+            (8, "Q8_0"),
+            (9, "Q8_1"),
+            (12, "Q4_K"),
+            (13, "Q5_K"),
+            (14, "Q6_K"),
+            (4, "type4"),
+            (999, "type999"),
+        ];
+        for (id, name) in want {
+            assert_eq!(ggml_type_name(id), name, "id {id}");
+        }
     }
 }
