@@ -34,8 +34,8 @@ stages:
       size: 22502601
     - path: ferrum_core/src
       hash: md5
-      md5: 7521a70d3c1e98a1926849034123ab1c.dir
-      size: 1046839
+      md5: 4c68c230e11cf84bbc5111d6a33aacee.dir
+      size: 1048895
       nfiles: 26
     - path: slm_cli/src
       hash: md5
@@ -80,8 +80,8 @@ stages:
       size: 20190677
     - path: ferrum_core/src
       hash: md5
-      md5: 7521a70d3c1e98a1926849034123ab1c.dir
-      size: 1046839
+      md5: 4c68c230e11cf84bbc5111d6a33aacee.dir
+      size: 1048895
       nfiles: 26
     - path: slm_cli/src
       hash: md5
