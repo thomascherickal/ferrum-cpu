@@ -2,6 +2,7 @@
 use crate::error::{InferError, Result};
 use crate::optim::Adam;
 use crate::rng::Rng;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::train_transformer::threaded::epoch_sharded;
 use crate::train_transformer::TransformerNet;
 use crate::verbose;

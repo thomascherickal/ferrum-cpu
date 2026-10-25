@@ -2,8 +2,11 @@
 use crate::error::Result;
 use crate::optim::Adam;
 use crate::rng::Rng;
-use crate::train_transformer::epoch::{train_transformer_steps, StepHook};
+use crate::train_transformer::epoch::train_transformer_steps;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::train_transformer::epoch::StepHook;
 use crate::train_transformer::TransformerNet;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::verbose;
 
 /// Data-parallel version of [`train_transformer_epoch`]: each minibatch is split

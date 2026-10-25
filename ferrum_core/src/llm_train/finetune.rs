@@ -1,5 +1,6 @@
 //! Training steps, batches and (threaded) fine-tuning epochs.
 use crate::error::{InferError, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::llm::LlamaModel;
 use crate::llm_train::passes::seq_grad_flat;
 use crate::llm_train::LlamaTrainer;
