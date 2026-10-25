@@ -9,7 +9,7 @@
 //! quantized.
 
 use crate::error::{InferError, Result};
-use crate::gguf::{Gguf, MetaValue, GGML_F32};
+use crate::gguf::{Gguf, MetaValue, TensorInfo, GGML_F32};
 use crate::gguf_write::GgufBuilder;
 
 /// Checkpoint layout version written under `ferrum.ckpt.version`.
@@ -115,8 +115,8 @@ pub(crate) fn get_bool(g: &Gguf, name: &str) -> Result<bool> {
     }
 }
 
-/// Tensor `name` as exactly `n` F32 values (checks type and shape).
-pub(crate) fn get_f32(g: &Gguf, name: &str, n: usize) -> Result<Vec<f32>> {
+/// Tensor `name`, checked to be exactly `n` F32 values (type and shape).
+pub(crate) fn f32_tensor<'a>(g: &'a Gguf, name: &str, n: usize) -> Result<&'a TensorInfo> {
     let t = g
         .tensor(name)
         .ok_or_else(|| bad(format!("checkpoint is missing tensor '{name}'")))?;
@@ -126,7 +126,12 @@ pub(crate) fn get_f32(g: &Gguf, name: &str, n: usize) -> Result<Vec<f32>> {
             t.dims, t.ggml_type
         )));
     }
-    g.dequantize(t)
+    Ok(t)
+}
+
+/// Tensor `name` as exactly `n` F32 values (checks type and shape).
+pub(crate) fn get_f32(g: &Gguf, name: &str, n: usize) -> Result<Vec<f32>> {
+    g.dequantize(f32_tensor(g, name, n)?)
 }
 
 /// Test helper: re-emit a GGUF container after `edit` has mutated its

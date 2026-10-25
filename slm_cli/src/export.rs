@@ -5,7 +5,7 @@ use crate::memory::*;
 use crate::validate::*;
 
 pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    use ferrum_core::{Gguf, GgufQuant, LlamaTrainer};
+    use ferrum_core::{Gguf, GgufQuant};
 
     if args.positional.len() < 2 {
         return Err("usage: train_transformer export-gguf <in.gguf> <out.gguf> \
@@ -37,8 +37,8 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     // Export loads f32 masters AND builds the whole encoded output in memory
     // before the atomic write, so peak ≈ model + output buffer (which for a
     // lossless f32 target is another full model's worth). Applying a --resume
-    // checkpoint has its own, separate transient peak: LlamaTrainer allocates
-    // grads + both Adam moments (≈4× the f32 model), freed before the write.
+    // checkpoint has its own, separate transient peak: the checkpoint bytes
+    // plus one decoded parameter on top of the model, freed before the write.
     let est_model = estimate_resident_bytes(&g, None);
     let est_out = match quant {
         GgufQuant::F32 => est_model,
@@ -52,7 +52,7 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     };
     if resume.is_some() {
         println!(
-            "  estimated peak ≈ {:.2} GB  (checkpoint apply: weights + grad + Adam m/v + checkpoint buffers)",
+            "  estimated peak ≈ {:.2} GB  (checkpoint apply: model + checkpoint bytes + one parameter)",
             est as f64 / 1e9
         );
     } else {
@@ -84,9 +84,7 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     if let Some(ckpt) = resume {
         println!("Applying fine-tune checkpoint {ckpt}…");
         let bytes = std::fs::read(ckpt)?;
-        let mut trainer = LlamaTrainer::new(model)?;
-        trainer.load_checkpoint_from_vec(bytes)?;
-        model = trainer.model;
+        ferrum_core::apply_checkpoint_weights(&mut model, bytes)?;
     }
 
     println!("Writing {out_path}  (--quant {quant_name})…");

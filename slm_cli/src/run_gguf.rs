@@ -102,13 +102,10 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
-        use ferrum_core::LlamaTrainer;
         let bytes =
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_from_vec(bytes)
+        ferrum_core::apply_checkpoint_weights(&mut model, bytes)
             .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
-        model = tr.model;
         println!("  applied fine-tuned checkpoint {ckpt}");
     }
 

@@ -44,13 +44,14 @@ pub(crate) fn available_memory_from(info: &str) -> Option<usize> {
 }
 
 /// Peak resident bytes of applying a fine-tune checkpoint (`--resume`) to an f32 model of size
-/// `est`: the trainer wrapper holds the weights, gradients and both Adam moments (4x), and the
-/// checkpoint is resident as its raw bytes plus the flat f32 vectors rebuilt from it (about its
-/// size again). Measured on SmolLM2-135M: est 0.54 GB, a 1.96 GB .flck peaked at 7.7 GB before
-/// the buffer was handed over instead of copied (7.7 - 1.96 = 5.7 vs 4 x 0.54 + 2 x 1.96 = 6.1).
+/// `est` with `apply_checkpoint_weights`: the model, the checkpoint's raw bytes (parsed in
+/// place), and one decoded parameter at a time (the embedding table is the largest, 21-27% of
+/// the model for SmolLM2/Qwen2.5; budgeted at half). Measured on SmolLM2-135M (est 0.54 GB,
+/// 1.96 GB .flck): 2.70 GB peak, down from 5.77 GB when a LlamaTrainer wrapper (4x the model)
+/// and flat f32 copies of the weights and both Adam moments were built (and 7.7 GB before the
+/// bytes were handed over instead of copied).
 pub(crate) fn resume_peak_bytes(est: usize, ckpt_len: usize) -> usize {
-    est.saturating_mul(4)
-        .saturating_add(ckpt_len.saturating_mul(2))
+    est.saturating_add(ckpt_len).saturating_add(est / 2)
 }
 
 /// Size of the `--resume` checkpoint in bytes (0 if unreadable; the load reports that).
@@ -160,12 +161,12 @@ mod tests {
     }
 
     #[test]
-    fn resume_peak_accounts_for_trainer_state_and_checkpoint_buffers() {
-        // SmolLM2-135M: est 0.54 GB, 1.96 GB checkpoint -> about 6.1 GB (measured 5.7-7.7).
+    fn resume_peak_is_model_plus_checkpoint_plus_one_parameter() {
+        // SmolLM2-135M: est 0.54 GB, 1.96 GB checkpoint -> 2.77 GB estimate (measured 2.70).
         let gb = 1_000_000_000usize;
         let peak = resume_peak_bytes(540_000_000, 1_960_000_000);
-        assert_eq!(peak, 4 * 540_000_000 + 2 * 1_960_000_000);
-        assert!(peak > 5 * gb && peak < 7 * gb, "{peak}");
+        assert_eq!(peak, 540_000_000 + 1_960_000_000 + 270_000_000);
+        assert!(peak > 2_700_000_000 && peak < 3 * gb, "{peak}");
         assert_eq!(resume_peak_bytes(0, 0), 0);
         assert_eq!(resume_peak_bytes(usize::MAX, usize::MAX), usize::MAX);
     }

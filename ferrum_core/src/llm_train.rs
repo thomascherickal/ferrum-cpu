@@ -227,6 +227,82 @@ impl Buffers {
     }
 }
 
+/// Training (and applying a checkpoint's f32 masters) needs f32 projections:
+/// errors naming the first quantized one.
+fn ensure_f32_weights(model: &LlamaModel) -> Result<()> {
+    for (i, b) in model.blocks.iter().enumerate() {
+        for (name, lin) in [
+            ("attn_q", &b.attn.wq),
+            ("attn_k", &b.attn.wk),
+            ("attn_v", &b.attn.wv),
+            ("attn_output", &b.attn.wo),
+            ("ffn_gate", &b.ffn.gate),
+            ("ffn_up", &b.ffn.up),
+            ("ffn_down", &b.ffn.down),
+        ] {
+            if lin.qweight().is_some() {
+                return Err(InferError::DimMismatch(format!(
+                    "block {i} {name} is quantized; training needs f32 weights \
+                     (load with load_llama_prec(None))"
+                )));
+            }
+        }
+    }
+    if model.lm_head.qweight().is_some() {
+        return Err(InferError::DimMismatch(
+            "lm_head is quantized; training needs f32 weights".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The model shape recorded in (and checked against) a checkpoint.
+fn shape_keys_of(c: &LlamaConfig) -> [(&'static str, usize); 7] {
+    [
+        ("vocab", c.vocab_size),
+        ("model_dim", c.model_dim),
+        ("layers", c.n_layers),
+        ("heads", c.n_heads),
+        ("kv_heads", c.n_kv_heads),
+        ("head_dim", c.head_dim),
+        ("ffn", c.ffn_dim),
+    ]
+}
+
+/// Overlay a fine-tune checkpoint's f32 master **weights** onto `model` without
+/// a [`LlamaTrainer`]: no gradient buffers or Adam-moment copies are allocated
+/// and no flat f32 vectors are built (the optimizer state in the file is
+/// skipped), so applying a checkpoint for inference or export peaks at the
+/// model plus the checkpoint bytes plus one parameter, instead of 4x the model
+/// plus twice the checkpoint. The bytes are parsed in place. The shape, the
+/// scalars a trainer would restore, and every weight tensor are validated
+/// before the first weight is written, so a bad checkpoint leaves `model`
+/// untouched. Like the trainer, it needs f32 projections.
+pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Result<()> {
+    ensure_f32_weights(model)?;
+    let g = ckpt::open_owned(bytes, b"FLCK", "ferrum-llama-checkpoint")?;
+    for (k, want) in shape_keys_of(&model.cfg) {
+        if ckpt::get_usize(&g, k)? != want {
+            return Err(InferError::Format(
+                "checkpoint shape does not match this model".into(),
+            ));
+        }
+    }
+    // The same scalars a full restore reads: a malformed file fails alike.
+    ckpt::get_bool(&g, "qat")?;
+    ckpt::get_u64(&g, "step")?;
+    ckpt::get_u64(&g, "rng")?;
+    let mut targets = param_data_mut(model);
+    for (i, s) in targets.iter().enumerate() {
+        ckpt::f32_tensor(&g, &format!("p{i}.data"), s.len())?;
+    }
+    for (i, s) in targets.iter_mut().enumerate() {
+        let t = ckpt::f32_tensor(&g, &format!("p{i}.data"), s.len())?;
+        s.copy_from_slice(&g.dequantize(t)?);
+    }
+    Ok(())
+}
+
 // ── Canonical views into the live model weights ───────────────────────────────
 
 /// `(rows, is_matrix)` per parameter in canonical order. `rows` is the number of
@@ -931,29 +1007,7 @@ impl LlamaTrainer {
     /// Defaults to AdamW with `lr = 1e-4` and no weight decay; tune with the
     /// setters before training.
     pub fn new(model: LlamaModel) -> Result<Self> {
-        for (i, b) in model.blocks.iter().enumerate() {
-            for (name, lin) in [
-                ("attn_q", &b.attn.wq),
-                ("attn_k", &b.attn.wk),
-                ("attn_v", &b.attn.wv),
-                ("attn_output", &b.attn.wo),
-                ("ffn_gate", &b.ffn.gate),
-                ("ffn_up", &b.ffn.up),
-                ("ffn_down", &b.ffn.down),
-            ] {
-                if lin.qweight().is_some() {
-                    return Err(InferError::DimMismatch(format!(
-                        "block {i} {name} is quantized; training needs f32 weights \
-                         (load with load_llama_prec(None))"
-                    )));
-                }
-            }
-        }
-        if model.lm_head.qweight().is_some() {
-            return Err(InferError::DimMismatch(
-                "lm_head is quantized; training needs f32 weights".into(),
-            ));
-        }
+        ensure_f32_weights(&model)?;
         let grads = Buffers::zeros(&model);
         let m = Buffers::zeros(&model);
         let v = Buffers::zeros(&model);
@@ -1404,16 +1458,7 @@ impl LlamaTrainer {
 
     /// The model shape recorded in (and checked against) a checkpoint.
     fn shape_keys(&self) -> [(&'static str, usize); 7] {
-        let c = &self.model.cfg;
-        [
-            ("vocab", c.vocab_size),
-            ("model_dim", c.model_dim),
-            ("layers", c.n_layers),
-            ("heads", c.n_heads),
-            ("kv_heads", c.n_kv_heads),
-            ("head_dim", c.head_dim),
-            ("ffn", c.ffn_dim),
-        ]
+        shape_keys_of(&self.model.cfg)
     }
 
     #[cfg(test)]
@@ -2168,6 +2213,103 @@ mod tests {
         }
         assert!(fresh.load_checkpoint_into(&b.into_bytes()).is_err());
         assert_eq!(fresh.step_count(), 0);
+    }
+
+    fn bits_of(m: &LlamaModel) -> Vec<u32> {
+        param_data_ref(m)
+            .into_iter()
+            .flatten()
+            .map(|x| x.to_bits())
+            .collect()
+    }
+
+    /// The weights-only apply (no trainer, no flat vectors, no optimizer-state
+    /// copies) must give the model exactly the weights a full restore does.
+    #[test]
+    fn apply_checkpoint_weights_equals_a_full_restore_bit_for_bit() {
+        for qat in [false, true] {
+            let (t, rng) = trained_trainer(qat);
+            let bytes = t.save_checkpoint(&rng);
+            let mut via_trainer = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 2)).unwrap();
+            via_trainer.load_checkpoint_from_vec(bytes.clone()).unwrap();
+            let mut model = tiny(6, 8, 2, 2, 16, 2);
+            let fresh = bits_of(&model);
+            apply_checkpoint_weights(&mut model, bytes).unwrap();
+            assert_eq!(bits_of(&model), bits_of(&via_trainer.model));
+            assert_eq!(bits_of(&model), bits_of(&t.model));
+            assert_ne!(bits_of(&model), fresh, "training moved the weights");
+        }
+    }
+
+    /// Regression (deferred minor): `--resume` built a LlamaTrainer (4x the
+    /// model) just to copy weights. The weights-only path must reject what the
+    /// trainer rejects and leave the model untouched on every failure.
+    #[test]
+    fn apply_checkpoint_weights_rejects_bad_input_and_leaves_the_model_untouched() {
+        use crate::gguf::MetaValue;
+        let (t, rng) = trained_trainer(false);
+        let bytes = t.save_checkpoint(&rng);
+        let mut model = tiny(6, 8, 2, 2, 16, 2);
+        let before = bits_of(&model);
+        let mut fails = |b: Vec<u8>, want: &str| {
+            let e = apply_checkpoint_weights(&mut model, b)
+                .err()
+                .unwrap()
+                .to_string();
+            assert!(e.contains(want), "{want}: {e}");
+            assert_eq!(bits_of(&model), before, "model modified on failure");
+        };
+        fails(Vec::new(), "");
+        fails(b"XXXXjunk".to_vec(), "");
+        fails(bytes[..bytes.len() / 2].to_vec(), "");
+        let key = |k: &str| format!("ferrum.ckpt.{k}");
+        for k in ["vocab", "ffn", "step", "rng", "qat"] {
+            let kk = key(k);
+            let b = crate::ckpt::rewrite(&bytes, |m| drop(m.remove(&kk)), None);
+            fails(b, &kk);
+        }
+        let b = crate::ckpt::rewrite(
+            &bytes,
+            |m| {
+                m.insert(key("model_dim"), MetaValue::U32(99));
+            },
+            None,
+        );
+        fails(b, "does not match this model");
+        // Even a missing *last* weight tensor changes nothing: all are checked first.
+        let last = param_data_ref(&tiny(6, 8, 2, 2, 16, 2)).len() - 1;
+        let b = crate::ckpt::rewrite(&bytes, |_| {}, Some(&format!("p{last}.data")));
+        fails(b, &format!("missing tensor 'p{last}.data'"));
+        // A checkpoint from another architecture family.
+        let mut r = Rng::new(1);
+        let net = crate::train_transformer::TransformerNet::new(6, 4, 8, 2, 16, 1, &mut r).unwrap();
+        fails(net.save_checkpoint(&r), "not a ferrum-llama-checkpoint");
+    }
+
+    /// Both entry points refuse a quantized model, naming the tensor.
+    #[test]
+    fn f32_weights_are_required_to_train_or_apply_a_checkpoint() {
+        use crate::quant::QKind;
+        let (t, rng) = trained_trainer(false);
+        let bytes = t.save_checkpoint(&rng);
+        let mut block = tiny(6, 8, 2, 2, 16, 2);
+        let wq = std::mem::replace(&mut block.blocks[1].attn.wq, lin(8, 8, 1));
+        block.blocks[1].attn.wq = wq.quantize(QKind::Int8);
+        let e = apply_checkpoint_weights(&mut block, bytes.clone())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(e.contains("block 1 attn_q is quantized"), "{e}");
+        assert!(LlamaTrainer::new(block).is_err());
+        let mut head = tiny(6, 8, 2, 2, 16, 2);
+        let h = std::mem::replace(&mut head.lm_head, lin(8, 6, 1));
+        head.lm_head = h.quantize(QKind::Int4);
+        let e = apply_checkpoint_weights(&mut head, bytes)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(e.contains("lm_head is quantized"), "{e}");
+        assert!(LlamaTrainer::new(head).is_err());
     }
 
     #[test]

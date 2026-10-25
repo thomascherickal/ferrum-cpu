@@ -94,7 +94,7 @@ pub use llm::{
     apply_rope, Attention, FeedForward, LlamaBlock, LlamaCache, LlamaConfig, LlamaModel, RmsNorm,
     RopeType,
 };
-pub use llm_train::LlamaTrainer;
+pub use llm_train::{apply_checkpoint_weights, LlamaTrainer};
 pub use loader::{
     from_bytes, from_gguf, gguf_format, gguf_quant, load, save, save_quantized,
     save_quantized_int4, to_bytes, to_bytes_quantized, to_bytes_quantized_int4, to_gguf, QPrec,

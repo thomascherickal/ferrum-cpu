@@ -280,7 +280,13 @@ These are directions, not commitments.
   seed is still tolerated); `generate_tokens` checks stop strings against the bytes
   flushed at the token budget or EOS (a stop of `U+FFFD` now fires on a dangling lead
   byte); BPE models build their tokenizer once per model instead of per call
-  (bit-identical output).
+  (bit-identical output). `run-gguf --resume` and `export-gguf --resume` apply the
+  checkpoint's weights with the new `ferrum_core::apply_checkpoint_weights` instead of
+  building a `LlamaTrainer` (peak on SmolLM2-135M with a 1.96 GB `.flck`: 5.77 GB ->
+  2.70 GB, identical outputs; the printed estimate is now model + checkpoint + half a
+  model). `train` and `run` reject a missing `--resume` file even when the model
+  already exists. Training output is unchanged bit for bit (head bias and
+  export-clone removals).
 - The GUI `train_slm` command ignores the removed `momentum` field. New fields
   are optional and default sensibly, so older front-ends keep working.
 
