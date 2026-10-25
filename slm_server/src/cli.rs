@@ -57,7 +57,7 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
         }
         let v = it
             .next()
-            .filter(|v| !v.starts_with("--"))
+            .filter(|v| !v.starts_with('-'))
             .ok_or(format!("{name} needs a value"))?;
         match name.as_str() {
             "--model" => model = v.clone(),
@@ -223,6 +223,17 @@ mod tests {
         }
         // out of range for u16
         assert!(parse_args(&a(&["--model", "m", "--port", "70000"])).is_err());
+    }
+
+    #[test]
+    fn model_dash_h_is_not_a_path() {
+        // regression: `--model -h` used to load a model file named "-h" (and `-h` is never help there)
+        for f in ["--model", "--host"] {
+            let e = parse_args(&a(&[f, "-h"])).unwrap_err();
+            assert_eq!(e, format!("{f} needs a value"));
+        }
+        let e = parse_args(&a(&["--model", "m", "--port", "-1"])).unwrap_err();
+        assert_eq!(e, "--port needs a value");
     }
 
     #[test]
