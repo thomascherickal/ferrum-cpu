@@ -666,4 +666,30 @@ mod tests {
         .unwrap();
         assert_eq!(auto.to_bytes().unwrap(), explicit.to_bytes().unwrap());
     }
+
+    #[test]
+    fn positional_threaded_trainer_treats_zero_threads_as_auto() {
+        let corpus = "the cat sat on the mat. ".repeat(30);
+        let train = |threads: usize| {
+            GenerativeSLM::train_transformer_threaded_with_callback(
+                &corpus,
+                8,
+                16,
+                2,
+                1,
+                32,
+                1,
+                0.01,
+                4,
+                0,
+                threads,
+                &mut Rng::new(5),
+                |_, _| {},
+            )
+            .unwrap()
+            .to_bytes()
+            .unwrap()
+        };
+        assert_eq!(train(0), train(crate::parallel::num_threads()));
+    }
 }

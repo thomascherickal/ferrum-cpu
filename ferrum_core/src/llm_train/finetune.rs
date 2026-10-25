@@ -344,4 +344,27 @@ mod tests {
             .unwrap()
             .is_finite());
     }
+
+    #[test]
+    fn threaded_qat_finetuning_matches_serial_closely_and_restores_masters() {
+        let base = tiny(6, 8, 2, 2, 16, 1);
+        let tokens: Vec<usize> = (0..80).map(|i| (i * 7) % 6).collect();
+        let run = |threads: usize| {
+            let mut t = LlamaTrainer::new(base_clone(&base)).unwrap();
+            t.set_lr(0.02);
+            t.set_qat(true);
+            let mut rng = Rng::new(1);
+            for _ in 0..2 {
+                assert!(t
+                    .finetune_epoch_threaded(&tokens, 6, 16, &mut rng, threads)
+                    .unwrap()
+                    .is_finite());
+            }
+            t.model_flat()
+        };
+        let (serial, par) = (run(1), run(4));
+        for (x, y) in serial.iter().zip(&par) {
+            assert!((x - y).abs() < 1e-3, "QAT multishard drifted: {x} vs {y}");
+        }
+    }
 }
