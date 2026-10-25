@@ -293,3 +293,86 @@ fn export_gguf_every_quant_and_unknown_quant() {
     assert!(!ok && text.contains("cannot open GGUF"), "{text}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// `--checkpoint` writes one while training; `--resume` continues from it and says so; a corpus
+/// too short for the context window (with or without a validation split) is a clean error.
+#[test]
+fn train_checkpoint_resume_and_short_corpus_errors() {
+    let d = tmp("resume");
+    let corpus = d.join("c.txt");
+    std::fs::write(&corpus, "abcdefghijklmnopqrstuvwxyz ".repeat(2)).unwrap();
+    let ck = d.join("ck.fckp");
+    let small = [
+        "--context",
+        "8",
+        "--embed",
+        "16",
+        "--heads",
+        "2",
+        "--blocks",
+        "1",
+        "--hidden",
+        "32",
+        "--vocab",
+        "0",
+        "--force",
+    ];
+    let train = |model: &str, extra: &[&str]| {
+        let mut v = vec!["train", s(&corpus), model];
+        v.extend(small);
+        v.extend(extra);
+        tt(&v)
+    };
+    let m1 = s(&d.join("m1.gguf")).to_string();
+    let (ok, out) = train(
+        &m1,
+        &[
+            "--epochs",
+            "2",
+            "--checkpoint",
+            s(&ck),
+            "--checkpoint-every",
+            "1",
+        ],
+    );
+    assert!(ok && ck.exists(), "{out}");
+    let m2 = s(&d.join("m2.gguf")).to_string();
+    let (ok, out) = train(&m2, &["--epochs", "3", "--resume", s(&ck)]);
+    assert!(
+        ok && out.contains(&format!("Resume  : {}", s(&ck))),
+        "{out}"
+    );
+    // Too short for the window.
+    std::fs::write(&corpus, "abcdefgh").unwrap();
+    for extra in [&["--epochs", "1"][..], &["--epochs", "1", "--val", "0.5"]] {
+        let (ok, out) = train(&m1, extra);
+        assert!(
+            !ok && out.contains("longer than the context window"),
+            "{extra:?}: {out}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A llama GGUF with no chat template is only wrapped when its vocabulary has the Llama-3
+/// header token (the instruct signal); a plain vocabulary is a base model and stays raw.
+#[test]
+fn run_gguf_detects_llama3_instruct_from_the_vocabulary_alone() {
+    let d = tmp("llama3");
+    let mut vocab = letter_vocab();
+    vocab[28] = "<|start_header_id|>".into();
+    vocab[29] = "<|end_header_id|>".into();
+    vocab[30] = "<|eot_id|>".into();
+    let extra = [("llama.context_length", MetaValue::U32(64))];
+    let model = llama_file(&d, "l3.gguf", tiny_llama_gguf(Some(&vocab), &extra));
+    let (ok, out) = tt(&["run-gguf", s(&model), "abc", "--max", "3", "--temp", "0"]);
+    assert!(ok && out.contains("chat format = Llama3"), "{out}");
+    let base = llama_file(
+        &d,
+        "base.gguf",
+        tiny_llama_gguf(Some(&letter_vocab()), &extra),
+    );
+    let (ok, out) = tt(&["run-gguf", s(&base), "abc", "--max", "3", "--temp", "0"]);
+    assert!(ok && !out.contains("chat format"), "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}
