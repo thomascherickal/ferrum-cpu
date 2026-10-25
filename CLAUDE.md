@@ -11,9 +11,10 @@ usage in `Manual.md`, current state / known issues / roadmap in `Status.md`.
 
 Do not break these; they are the product's selling points.
 
-- **`ferrum_core` has one external dependency**, `unicode-general-category`
-  (the GPT-2 pre-tokenizer's `\p{L}`/`\p{N}` tables); add no others — std only. Benchmarks are std-only too (`harness = false`, no
-  Criterion). Only `slm_wasm` (wasm-bindgen) and `ferrum_gui` (Tauri) pull crates.
+- **`ferrum_core` has two external dependencies**, both pure-Rust Unicode tables:
+  `unicode-general-category` (the GPT-2 pre-tokenizer's `\p{L}`/`\p{N}`) and
+  `unicode-normalization` (NFKC for `prepare`); add no others — std only. Benchmarks are std-only too (`harness = false`, no
+  Criterion). The other crates pull their own (`slm_cli`: sha2/serde_json; `slm_server`: axum/tokio/serde; `slm_wasm`: wasm-bindgen; `ferrum_gui`: Tauri).
 - **`#![forbid(unsafe_code)]`** in `ferrum_core`. No `unsafe`, no SIMD intrinsics.
 - **Deterministic at any thread count.** Matmuls split across the persistent
   worker pool in `parallel.rs`; results must stay bit-for-bit identical

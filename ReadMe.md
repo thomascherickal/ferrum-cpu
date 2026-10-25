@@ -1,8 +1,8 @@
 # Ferrum
 
-**A zero-dependency, pure-Rust engine for training, running, and shipping small
-causal Transformer language models (SLMs) on the CPU, with no GPU and no
-external crates.**
+**A pure-Rust engine for training, running, and shipping small causal
+Transformer language models (SLMs) on the CPU, with no GPU and a tiny
+dependency footprint (two Unicode-table crates in the core).**
 
 Ferrum is `std`-only and `#![forbid(unsafe_code)]` throughout. The project
 contains all of it: tensors, hand-written and gradient-checked backpropagation,
@@ -20,9 +20,9 @@ is a precise tool for small models. It is not a runtime for frontier LLMs.
 
 | Property | What it means |
 |---|---|
-| **No dependencies** | `ferrum_core`'s `[dependencies]` table is empty. Only the WASM crate pulls in `wasm-bindgen`. |
+| **Minimal dependencies** | `ferrum_core` depends only on two pure-Rust Unicode-table crates (`unicode-general-category`, `unicode-normalization`). The WASM crate adds `wasm-bindgen`, the CLI/server/GUI add their own. |
 | **CPU only, deterministic** | Every matmul splits across a persistent worker pool. Results are bit-for-bit identical at any thread count (override with `FERRUM_NUM_THREADS`). |
-| **Self-contained models** | Weights, metadata, and tokenizer travel in one `.bin` file (the FINF format), with no sidecar vocab or config. |
+| **Self-contained models** | Weights, metadata, and tokenizer travel in one GGUF v3 file, with no sidecar vocab or config. |
 | **Quantization-aware** | Train against int8-snapped weights and ship models 4× smaller (int8) or 8× smaller (int4) that behave like what you trained. |
 | **Byte-level BPE** | Any UTF-8 text round-trips, with no unknown-token fallback. Tokenizers train quickly and can be saved and reused across runs. |
 | **A real training pipeline** | Non-overlapping windows, token budgets, warmup plus cosine LR, gradient clipping, weight tying, validation with early stopping, and checkpoint/resume. |
@@ -105,9 +105,9 @@ cargo install --path slm_cli        # installs the `train_transformer` binary
 ferrum_core = { git = "https://github.com/thomascherickal/Ferrum" }
 ```
 
-Because `ferrum_core` is `std`-only and `#![forbid(unsafe_code)]`, it adds no
-transitive dependencies to your project. That makes it easy to use in audited,
-embedded, or air-gapped builds.
+Because `ferrum_core` is `#![forbid(unsafe_code)]` and only pulls two small,
+pure-Rust Unicode-table crates, it adds almost nothing to your dependency tree.
+That makes it easy to use in audited, embedded, or air-gapped builds.
 
 ---
 

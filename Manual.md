@@ -28,7 +28,7 @@ usually decides whether a project succeeds.
 
 **Part I — Foundations**
 1. [Generative AI, SLMs, and Transformers from zero](#1-generative-ai-slms-and-transformers-from-zero)
-2. [Why Rust, and what "zero dependencies" buys](#2-why-rust-and-what-zero-dependencies-buys)
+2. [Why Rust, and what "minimal dependencies" buys](#2-why-rust-and-what-minimal-dependencies-buys)
 3. [Data decides: garbage in, garbage out](#3-data-decides-garbage-in-garbage-out)
 
 **Part II — Using Ferrum**
@@ -182,7 +182,7 @@ variety and more risk.
 
 ---
 
-## 2. Why Rust, and what "zero dependencies" buys
+## 2. Why Rust, and what "minimal dependencies" buys
 
 ### 2.1 Rust in one minute
 
@@ -200,8 +200,8 @@ garbage collector pausing the program.
   compiler-checked. The cost is concrete: reading a downloaded model cannot use
   memory-mapping (which needs `unsafe`), so Ferrum streams files with ordinary
   safe reads instead.
-- **Zero dependencies (`std`-only).** `ferrum_core`'s dependency list is empty.
-  The project writes its own matrix maths, neural-network layers, tokenizer,
+- **Minimal dependencies.** `ferrum_core` depends only on two pure-Rust Unicode-table
+  crates (`unicode-general-category`, `unicode-normalization`). The project writes its own matrix maths, neural-network layers, tokenizer,
   file formats, multi-core parallelism, and GGUF parser.
 
 | Benefit | Why it matters |
@@ -1401,8 +1401,9 @@ enough for a week on battery.
 
 **Does it need a GPU?** No, and it never uses one, even if one is present.
 
-**What dependencies does it have?** None for `ferrum_core` and `slm_cli`.
-`slm_wasm` uses `wasm-bindgen`, and the GUI uses Tauri.
+**What dependencies does it have?** `ferrum_core` has two pure-Rust Unicode-table crates
+(`unicode-general-category`, `unicode-normalization`); `slm_cli` adds `sha2` and `serde_json`,
+`slm_server` adds `axum`/`tokio`/`serde`. `slm_wasm` uses `wasm-bindgen`, and the GUI uses Tauri.
 
 **Character-level or BPE?** BPE (`--vocab 512–4096`) for real text,
 multilingual text, or anything long. Character-level (`--vocab 0`) for tiny
@@ -1484,7 +1485,7 @@ second. That proves capability; it is not a usable chatbot.
 - **CPU only is a hard ceiling.** Compute-optimal training tops out around
   5M parameters per day on a laptop, and generation barely speeds up with more
   cores.
-- **Zero dependencies costs peak speed.** Without explicit SIMD or a tuned
+- **Writing the kernels ourselves costs peak speed.** Without explicit SIMD or a tuned
   BLAS, much of a modern CPU's vector throughput goes unused.
 - **You supply the intelligence ceiling.** Ferrum ships no pretrained weights
   of its own. Quality is bounded by your data and patience

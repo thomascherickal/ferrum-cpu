@@ -1,6 +1,6 @@
 [package]
 name        = "ferrum_core"
-description = "Zero-dependency edge Transformer & MLP engine — CPU-only, std-only, WASM-ready. Hand-build, train, and run causal Transformers and Small Language Models in pure Rust."
+description = "Edge Transformer & MLP engine — CPU-only, WASM-ready, two pure-Rust Unicode-table dependencies. Hand-build, train, and run causal Transformers and Small Language Models in pure Rust."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,7 +18,7 @@ unicode-general-category = "1.1"
 unicode-normalization = "0.1"
 
 # Std-only matmul benchmark (no Criterion): `harness = false` runs its own
-# `fn main()` with `std::time::Instant`, keeping the zero-dependency guarantee.
+# `fn main()` with `std::time::Instant`, keeping the dependency list to the Unicode tables.
 [[bench]]
 name    = "gemm"
 harness = false

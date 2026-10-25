@@ -1,6 +1,6 @@
 //! Dynamic CPU parallelism for the hot numeric kernels — built only on `std`.
 //!
-//! Ferrum has zero external dependencies and is `#![forbid(unsafe_code)]`, so
+//! Ferrum adds no threading crates and is `#![forbid(unsafe_code)]`, so
 //! there is no `rayon`/`num_cpus` and no `unsafe` lifetime tricks. Instead this
 //! module runs a **persistent worker pool**: a fixed set of `'static` threads is
 //! spawned once (lazily, on first use) and reused for every matmul, rather than

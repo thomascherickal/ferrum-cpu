@@ -28,10 +28,10 @@ overview, see [ReadMe.md](ReadMe.md).
 
 | | |
 |---|---|
-| **Scope** | A zero-dependency Rust engine for training, running, and shipping small transformer SLMs on the CPU, plus GGUF import, fine-tuning, and export for Llama/Qwen |
+| **Scope** | A Rust engine for training, running, and shipping small transformer SLMs on the CPU, plus GGUF import, fine-tuning, and export for Llama/Qwen |
 | **Build** | `cargo build --workspace` clean; `ferrum_gui` builds separately and clean |
 | **Tests** | **418 passed, 0 failed** (360 `ferrum_core` unit, 52 integration, 3 `slm_wasm`, 3 doc-tests). **39** `ferrum_gui` backend tests pass. The sibling **Ferrum-ML** project passes **78**. |
-| **Safety** | `#![forbid(unsafe_code)]`; zero external dependencies in `ferrum_core` |
+| **Safety** | `#![forbid(unsafe_code)]`; `ferrum_core` depends only on two Unicode-table crates |
 | **Commits** | `133cdfe` F8 (Q2_K/Q3_K) · `d7ecb3a` pipeline fixes · `ed672d0` restructuring · `6dcb629` docs; each one builds and passes its tests on its own |
 
 ---
