@@ -1003,4 +1003,9 @@ mod tests {
             assert!((x - y).abs() < 1e-6);
         }
     }
+
+    #[test]
+    fn rmsnorm_reports_its_width() {
+        assert_eq!(RmsNorm::new(vec![1.0; 3], 1e-5).dim(), 3);
+    }
 }

@@ -428,4 +428,81 @@ mod tests {
         assert_eq!(meta.output_dim, 2);
         assert_eq!(meta.class_names, vec!["61", "62"]);
     }
+
+    #[test]
+    fn task_type_names_roundtrip_and_unknown_is_none() {
+        for t in [
+            TaskType::Classification,
+            TaskType::Regression,
+            TaskType::TransformerSLM,
+        ] {
+            assert_eq!(TaskType::from_str(t.as_str()), Some(t));
+        }
+        assert_eq!(TaskType::Regression.as_str(), "regression");
+        assert_eq!(TaskType::from_str("clustering"), None);
+    }
+
+    #[test]
+    fn from_json_tolerates_missing_fields_and_rejects_bad_tasks() {
+        // A document with only a task: everything else takes its default, and a
+        // `feature_ranges` that is not an array yields no ranges.
+        let m = ModelMetadata::from_json(r#"{"task":"regression","feature_ranges":5}"#).unwrap();
+        assert_eq!(m.task, TaskType::Regression);
+        assert!(m.feature_ranges.is_empty());
+        assert_eq!((m.input_dim, m.output_dim), (0, 1));
+        assert_eq!(m.target_range, [0.0, 1.0]);
+        assert!(m.tokenizer_state.is_empty());
+        assert!(ModelMetadata::from_json("{}").is_err());
+        let e = ModelMetadata::from_json(r#"{"task":"nope"}"#).unwrap_err();
+        assert!(e.to_string().contains("unknown task"), "{e}");
+    }
+
+    #[test]
+    fn normalizer_fit_transform_and_target_scaling() {
+        // Two features and a regression target in the last column.
+        let x = Tensor::matrix(
+            4,
+            3,
+            vec![
+                1.0, 10.0, 100.0, //
+                2.0, 10.0, 200.0, //
+                3.0, 10.0, 300.0, //
+                4.0, 10.0, 400.0,
+            ],
+        )
+        .unwrap();
+        let n = Normalizer::fit(&x).unwrap();
+        assert_eq!(n.means, vec![2.5, 10.0, 250.0]);
+        // A constant column has std 0, which is replaced by 1 (no division by zero).
+        assert_eq!(n.stds[1], 1.0);
+        assert!((n.stds[0] - 1.118034).abs() < 1e-5);
+
+        let t = n.transform(&x).unwrap();
+        let col0: f32 = (0..4).map(|r| t.at(r, 0)).sum();
+        assert!(col0.abs() < 1e-5);
+        assert_eq!(t.at(0, 1), 0.0);
+
+        // Features only (one column fewer than the fit) is accepted; other widths are not.
+        assert!(n.transform_row(&[2.5, 10.0]).is_ok());
+        assert!(n.transform_row(&[2.5]).is_err());
+        let row = n.transform_row(&[2.5, 10.0, 250.0]).unwrap();
+        assert!(row.data.iter().all(|v| v.abs() < 1e-6));
+
+        let z = n.normalise_target(350.0);
+        assert!((n.denormalise_target(z) - 350.0).abs() < 1e-3);
+        assert!((z - (100.0 / n.stds[2])).abs() < 1e-5);
+
+        // encode/decode keeps the statistics.
+        let back = Normalizer::decode(&n.encode()).unwrap();
+        assert_eq!(back.means, n.means);
+    }
+
+    #[test]
+    fn normalizer_fit_rejects_empty_input_and_decode_rejects_malformed_text() {
+        assert!(Normalizer::fit(&Tensor::matrix(0, 2, vec![]).unwrap()).is_err());
+        // Decode rejects malformed text.
+        assert!(Normalizer::decode("1.0").is_err());
+        assert!(Normalizer::decode("x,1.0").is_err());
+        assert!(Normalizer::decode("1.0,y").is_err());
+    }
 }

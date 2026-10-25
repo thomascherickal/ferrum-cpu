@@ -128,3 +128,27 @@ pub fn tokenize_corpus(corpus: &str, context_len: usize) -> Result<(Vec<char>, V
         .collect();
     Ok((vocab_vec, tokens))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::slm::config::TransformerConfig;
+    use crate::slm::corpus::tokenize_for_lm_cfg;
+
+    #[test]
+    fn a_bare_tokenizer_filename_is_created_in_the_working_directory_and_reused() {
+        let path = format!("ferrum_corpus_tok_{}.gguf", std::process::id());
+        let cfg = TransformerConfig {
+            context_len: 8,
+            vocab_size: 300,
+            tokenizer_path: path.clone(),
+            ..TransformerConfig::default()
+        };
+        let corpus = "the cat sat on the mat. ".repeat(30);
+        let first = tokenize_for_lm_cfg(&corpus, &cfg);
+        let created = std::path::Path::new(&path).exists();
+        let again = tokenize_for_lm_cfg(&corpus, &cfg);
+        let _ = std::fs::remove_file(&path);
+        assert!(created);
+        assert_eq!(first.unwrap().tokens, again.unwrap().tokens);
+    }
+}

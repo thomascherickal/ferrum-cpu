@@ -533,6 +533,8 @@ impl Layer for TransformerBlock {
 mod tests {
     use super::{KvCache, TransformerBlock};
     use crate::error::InferError;
+    use crate::layer::norm::LayerNorm;
+    use crate::layer::test_support::identity_linear;
     use crate::layer::test_support::minimal_block;
     use crate::layer::Layer;
     use crate::tensor::Tensor;
@@ -802,5 +804,55 @@ mod tests {
         let y = block.forward(&x).unwrap();
         // Residual ensures y is not all-zero even with tiny weights
         assert!(y.data.iter().any(|&v| v.abs() > 0.01));
+    }
+
+    #[test]
+    fn kv_cache_accessors_track_fill_state() {
+        let block = minimal_block(2, 1, 4, 8);
+        let mut cache = KvCache::new(2, 4);
+        assert!(cache.is_empty() && !cache.is_full());
+        assert_eq!((cache.len(), cache.capacity()), (0, 2));
+        let row = Tensor::matrix(1, 4, vec![0.1; 4]).unwrap();
+        block.forward_with_cache(&row, &mut cache).unwrap();
+        assert!(!cache.is_empty() && !cache.is_full());
+        assert_eq!(cache.len(), 1);
+        block.forward_with_cache(&row, &mut cache).unwrap();
+        assert!(cache.is_full());
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn forward_with_cache_rejects_bad_shapes_and_a_mismatched_cache() {
+        let block = minimal_block(2, 1, 4, 8);
+        let mut cache = KvCache::new(2, 4);
+        let two_rows = Tensor::matrix(2, 4, vec![0.1; 8]).unwrap();
+        assert!(block.forward_with_cache(&two_rows, &mut cache).is_err());
+        let narrow = Tensor::matrix(1, 3, vec![0.1; 3]).unwrap();
+        assert!(block.forward_with_cache(&narrow, &mut cache).is_err());
+        let row = Tensor::matrix(1, 4, vec![0.1; 4]).unwrap();
+        let mut wrong_dim = KvCache::new(2, 5);
+        let e = block.forward_with_cache(&row, &mut wrong_dim).unwrap_err();
+        assert!(e.to_string().contains("KvCache dim"), "{e}");
+    }
+
+    #[test]
+    fn from_parts_rejects_a_zero_context() {
+        let ln = || LayerNorm::new(4, vec![1.0; 4], vec![0.0; 4]).unwrap();
+        let r = TransformerBlock::from_parts(
+            0,
+            1,
+            4,
+            ln(),
+            identity_linear(4),
+            identity_linear(4),
+            identity_linear(4),
+            identity_linear(4),
+            ln(),
+            identity_linear(4),
+            identity_linear(4),
+        );
+        let e = r.err().expect("zero context must be rejected");
+        assert!(e.to_string().contains("context_len"), "{e}");
     }
 }

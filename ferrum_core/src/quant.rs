@@ -664,4 +664,11 @@ mod tests {
         let mut zero_ch = vec![0.5f32; 100];
         assert!(!fake_quantize_int8_per_channel(&mut zero_ch, 0));
     }
+
+    #[test]
+    fn row_bytes_is_one_byte_per_int8_weight_and_a_nibble_per_int4_weight() {
+        let w = vec![0.5f32; 3 * 5];
+        assert_eq!(QWeight::from_f32(&w, 3, 5, QKind::Int8).row_bytes(), 5);
+        assert_eq!(QWeight::from_f32(&w, 3, 5, QKind::Int4).row_bytes(), 3);
+    }
 }

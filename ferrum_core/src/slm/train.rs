@@ -634,4 +634,36 @@ mod tests {
             .unwrap();
         assert_eq!(g.stop_reason, StopReason::Stop);
     }
+
+    #[test]
+    fn threads_zero_means_auto_and_matches_an_explicit_count() {
+        let corpus = "the cat sat on the mat. ".repeat(30);
+        let cfg = TransformerConfig {
+            context_len: 8,
+            embed_dim: 16,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 32,
+            epochs: 1,
+            batch_size: 4,
+            ..TransformerConfig::default()
+        };
+        let auto = GenerativeSLM::train_transformer_config_threaded(
+            &corpus,
+            &cfg,
+            0,
+            &mut Rng::new(5),
+            |_, _| {},
+        )
+        .unwrap();
+        let explicit = GenerativeSLM::train_transformer_config_threaded(
+            &corpus,
+            &cfg,
+            crate::parallel::num_threads(),
+            &mut Rng::new(5),
+            |_, _| {},
+        )
+        .unwrap();
+        assert_eq!(auto.to_bytes().unwrap(), explicit.to_bytes().unwrap());
+    }
 }

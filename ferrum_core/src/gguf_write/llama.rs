@@ -445,4 +445,21 @@ mod tests {
                 .is_err()
         );
     }
+
+    #[test]
+    fn model_write_gguf_is_the_atomic_file_form_of_llama_gguf_bytes() {
+        let src = Gguf::parse(tiny_llama_gguf_bytes()).unwrap();
+        let model = src.load_llama_prec(None).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("ferrum_model_write_{}.gguf", std::process::id()));
+        model
+            .write_gguf(&src, GgufQuant::F32, path.to_str().unwrap())
+            .unwrap();
+        let on_disk = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            on_disk,
+            llama_gguf_bytes(&model, &src, GgufQuant::F32).unwrap()
+        );
+    }
 }

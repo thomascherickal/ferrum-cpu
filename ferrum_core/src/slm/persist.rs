@@ -279,4 +279,24 @@ mod tests {
             assert!(e.to_string().contains("disagrees"), "{e}");
         }
     }
+
+    #[test]
+    fn saving_to_a_bare_filename_needs_no_parent_directory() {
+        let slm = tiny_bpe_slm();
+        let name = format!("ferrum_persist_bare_{}", std::process::id());
+        for (suffix, save) in [
+            (
+                "q8.gguf",
+                GenerativeSLM::save as fn(&GenerativeSLM, &str) -> crate::error::Result<()>,
+            ),
+            ("q4.gguf", GenerativeSLM::save_int4),
+            ("f32.gguf", GenerativeSLM::save_f32),
+        ] {
+            let path = format!("{name}_{suffix}");
+            save(&slm, &path).unwrap();
+            let loaded = GenerativeSLM::load(&path);
+            let _ = std::fs::remove_file(&path);
+            assert!(loaded.is_ok(), "{suffix}");
+        }
+    }
 }

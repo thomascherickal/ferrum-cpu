@@ -314,4 +314,34 @@ mod tests {
             assert!((x - y).abs() < 1e-4, "multishard drifted: {x} vs {y}");
         }
     }
+
+    #[test]
+    fn empty_batches_and_too_short_corpora_are_errors() {
+        let mut t = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 1)).unwrap();
+        assert!(t.train_batch(&[]).is_err());
+        let mut rng = Rng::new(1);
+        let e = t
+            .finetune_epoch_threaded(&[1, 2], 6, 2, &mut rng, 1)
+            .unwrap_err();
+        assert!(e.to_string().contains("at least seq_len"), "{e}");
+    }
+
+    #[test]
+    fn qat_batches_train_against_snapped_weights_and_keep_f32_masters() {
+        let mut t = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 1)).unwrap();
+        t.set_lr(0.02);
+        t.set_qat(true);
+        let seq: Vec<usize> = (0..12).map(|i| (i * 5) % 6).collect();
+        let before = t.model_snapshot();
+        let loss = t.train_batch(&[&seq, &seq]).unwrap();
+        assert!(loss.is_finite());
+        // Masters moved (the step applied) and are not left int8-snapped.
+        assert_ne!(t.model_snapshot(), before);
+        let tokens: Vec<usize> = (0..60).map(|i| (i * 7) % 6).collect();
+        let mut rng = Rng::new(3);
+        assert!(t
+            .finetune_epoch(&tokens, 6, 16, &mut rng)
+            .unwrap()
+            .is_finite());
+    }
 }

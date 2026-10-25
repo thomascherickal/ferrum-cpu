@@ -132,3 +132,19 @@ pub struct ValidationProgress {
     /// checkpoint that would be returned if training stopped now).
     pub is_best: bool,
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::{TransformerConfig, ValidationConfig};
+
+    #[test]
+    fn validation_defaults_hold_out_a_tenth_without_early_stopping() {
+        let v = ValidationConfig::default();
+        assert_eq!(v.val_fraction, 0.1);
+        assert_eq!(v.patience, 0);
+        // The training defaults the CLI documents.
+        let c = TransformerConfig::default();
+        assert!(c.context_len > 0 && c.embed_dim > 0 && c.epochs > 0);
+    }
+}

@@ -711,4 +711,65 @@ mod tests {
             vec!["a".to_string(), "1".to_string(), "!".to_string()]
         );
     }
+
+    #[test]
+    fn every_llama_cpp_pre_tokenizer_that_defaults_to_bos_is_recognised() {
+        let toks = ["<s>", "a", "b", "\u{2581}"];
+        let build = |pre: &str| {
+            let mut kvs = Vec::new();
+            kv_str(&mut kvs, "tokenizer.ggml.model", "gpt2");
+            kv_str(&mut kvs, "tokenizer.ggml.pre", pre);
+            kv_str_array(&mut kvs, "tokenizer.ggml.tokens", &toks);
+            kv_u32(&mut kvs, "tokenizer.ggml.bos_token_id", 0);
+            GgufTokenizer::from_gguf(&tok_gguf(&kvs, 4)).unwrap()
+        };
+        for pre in [
+            "llama3",
+            "llama-v3",
+            "llama-bpe",
+            "falcon3",
+            "falcon-h1",
+            "pixtral",
+            "midm-2.0",
+            "lfm2",
+            "jina-v5-nano",
+            "tekken",
+            "chameleon",
+        ] {
+            assert_eq!(build(pre).prefix_bos(), Some(0), "{pre}");
+        }
+        assert_eq!(build("gpt2").prefix_bos(), None);
+    }
+
+    #[test]
+    fn bpe_falls_back_to_characters_for_unmergeable_pieces_and_keeps_trailing_space() {
+        // "a"+"b" merge into "ab", which is not itself a vocab entry, so the pair
+        // is emitted as its two characters.
+        let toks = ["a", "b", "\u{0120}"];
+        let mut kvs = Vec::new();
+        kv_str(&mut kvs, "tokenizer.ggml.model", "gpt2");
+        kv_str_array(&mut kvs, "tokenizer.ggml.tokens", &toks);
+        kv_str_array(&mut kvs, "tokenizer.ggml.merges", &["a b"]);
+        let tk = GgufTokenizer::from_gguf(&tok_gguf(&kvs, 3)).unwrap();
+        assert_eq!(tk.encode("ab"), vec![0, 1]);
+        // A lone trailing space is its own chunk (the space marker).
+        assert_eq!(tk.encode("a "), vec![0, 2]);
+        assert!(tk.encode("").is_empty());
+    }
+
+    #[test]
+    fn spm_uses_byte_fallback_for_unknown_characters_and_skips_unknown_ids_on_decode() {
+        // Vocab has the space marker and the byte token for 'A' only.
+        let toks = ["<unk>", "\u{2581}", "<0x41>"];
+        let mut kvs = Vec::new();
+        kv_str(&mut kvs, "tokenizer.ggml.model", "llama");
+        kv_str_array(&mut kvs, "tokenizer.ggml.tokens", &toks);
+        let tk = GgufTokenizer::from_gguf(&tok_gguf(&kvs, 2)).unwrap();
+        // "A" → dummy space "▁" then 'A', which has no piece: byte token <0x41>.
+        assert_eq!(tk.encode("A"), vec![1, 2]);
+        // 'B' has neither a piece nor a byte token: it is dropped, not an error.
+        assert_eq!(tk.encode("B"), vec![1]);
+        // Ids outside the vocabulary are skipped on decode.
+        assert_eq!(tk.decode(&[2, 999]), "A");
+    }
 }

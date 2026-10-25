@@ -211,4 +211,51 @@ mod tests {
         let model = Sequential::new().with(Box::new(linear));
         assert!(CachedTransformer::try_new(&model).is_none());
     }
+
+    fn small_block() -> crate::layer::TransformerBlock {
+        let (c, h) = (4usize, 8usize);
+        crate::layer::TransformerBlock::new(
+            2,
+            1,
+            c,
+            vec![1.0; c],
+            vec![0.0; c],
+            vec![0.01; c * c],
+            vec![0.0; c],
+            vec![0.01; c * c],
+            vec![0.0; c],
+            vec![0.01; c * c],
+            vec![0.0; c],
+            vec![0.01; c * c],
+            vec![0.0; c],
+            vec![1.0; c],
+            vec![0.0; c],
+            vec![0.01; c * h],
+            vec![0.0; h],
+            vec![0.01; h * c],
+            vec![0.0; c],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn prime_rejects_models_that_do_not_start_with_an_embedding() {
+        // A block before any Embedding has nothing to consume.
+        let model = Sequential::new().with(Box::new(small_block()));
+        let mut c = CachedTransformer::try_new(&model).unwrap();
+        let e = c.prime(&[0, 1]).unwrap_err();
+        assert!(e.to_string().contains("Embedding must precede"), "{e}");
+
+        // A plain layer before any Embedding is rejected the same way.
+        let lin = crate::layer::Linear::new(4, 4, vec![0.0; 16], vec![0.0; 4]).unwrap();
+        let model = Sequential::new()
+            .with(Box::new(lin))
+            .with(Box::new(small_block()));
+        let mut c = CachedTransformer::try_new(&model).unwrap();
+        let e = c.prime(&[0]).unwrap_err();
+        assert!(
+            e.to_string().contains("must start with an Embedding"),
+            "{e}"
+        );
+    }
 }

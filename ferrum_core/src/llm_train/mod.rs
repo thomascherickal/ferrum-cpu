@@ -212,9 +212,11 @@ impl LlamaTrainer {
 #[cfg(test)]
 mod tests {
     use super::LlamaTrainer;
+    use crate::llm::RopeType;
     use crate::llm_train::kernels::cross_entropy;
     use crate::llm_train::passes::{backward_into, forward_train};
     use crate::llm_train::test_support::{base_clone, tiny};
+    use crate::optim::Adam;
     use crate::optim::LrSchedule;
     use crate::rng::Rng;
 
@@ -324,5 +326,56 @@ mod tests {
                 "down.w[{i}] fd={fd} got={g}"
             );
         }
+    }
+
+    #[test]
+    fn hyperparameter_setters_and_getters_roundtrip() {
+        let mut t = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 1)).unwrap();
+        t.set_lr(0.25);
+        assert_eq!(t.lr(), 0.25);
+        t.set_weight_decay(0.125);
+        assert_eq!(t.weight_decay(), 0.125);
+        assert_eq!(t.grad_clip(), None);
+        t.set_grad_clip(Some(1.5));
+        assert_eq!(t.grad_clip(), Some(1.5));
+        t.set_grad_clip(None);
+        assert_eq!(t.grad_clip(), None);
+        assert!(t.lr_schedule().is_none());
+        t.set_lr_schedule(Some(LrSchedule::warmup_cosine(0.1, 2, 10)));
+        assert!(t.lr_schedule().is_some());
+        t.set_dropout(0.3);
+        assert_eq!(t.dropout(), 0.3);
+        t.set_dropout(5.0); // clamped below 1
+        assert!(t.dropout() < 1.0);
+        // set_optimizer adopts a non-zero AdamW decay, and keeps the old one otherwise.
+        t.set_optimizer(Adam::with_weight_decay(0.5, 0.2));
+        assert_eq!((t.lr(), t.weight_decay()), (0.5, 0.2));
+        t.set_optimizer(Adam::new(0.75));
+        assert_eq!((t.lr(), t.weight_decay()), (0.75, 0.2));
+    }
+
+    #[test]
+    fn out_of_vocab_tokens_are_an_error() {
+        let mut t = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 1)).unwrap();
+        let e = t.loss(&[0, 1, 99]).unwrap_err();
+        assert!(e.to_string().contains("vocab"), "{e}");
+        assert!(t.loss_and_backward(&[0, 99]).is_err());
+        assert!(t.loss_and_backward(&[0, 1, 2, 3]).unwrap().is_finite());
+    }
+
+    #[test]
+    fn neox_rope_models_train_with_finite_loss() {
+        let mut m = tiny(6, 8, 2, 2, 16, 1);
+        m.cfg.rope_type = RopeType::Neox;
+        let mut t = LlamaTrainer::new(m).unwrap();
+        t.set_lr(0.02);
+        let seq: Vec<usize> = (0..12).map(|i| i % 6).collect();
+        let first = t.train_step(&seq).unwrap();
+        let mut last = first;
+        for _ in 0..20 {
+            last = t.train_step(&seq).unwrap();
+        }
+        assert!(first.is_finite() && last.is_finite());
+        assert!(last < first, "{first} -> {last}");
     }
 }

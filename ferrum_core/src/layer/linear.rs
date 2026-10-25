@@ -253,4 +253,19 @@ mod tests {
         let y = l.forward(&x).unwrap();
         assert_eq!(y.shape, vec![5, 2]);
     }
+
+    #[test]
+    fn quantized_linear_validates_shapes_and_exposes_dequantized_weights() {
+        use crate::quant::{QKind, QWeight};
+        let w = vec![0.5, -0.25, 1.0, 0.75, -0.5, 0.125];
+        let q = || QWeight::from_f32(&w, 3, 2, QKind::Int8);
+        assert!(Linear::quantized(3, 2, q(), vec![0.0]).is_err()); // bias length
+        assert!(Linear::quantized(2, 3, q(), vec![0.0; 3]).is_err()); // weight shape
+        let lin = Linear::quantized(3, 2, q(), vec![0.0; 2]).unwrap();
+        let back = lin.weight_f32();
+        assert_eq!(back.len(), 6);
+        for (a, b) in back.iter().zip(&w) {
+            assert!((a - b).abs() < 0.01, "{a} vs {b}");
+        }
+    }
 }

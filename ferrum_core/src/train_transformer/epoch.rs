@@ -234,4 +234,16 @@ mod tests {
             "an over-sized batch must take exactly one full-corpus step"
         );
     }
+
+    #[test]
+    fn epochs_over_too_few_tokens_are_an_error() {
+        use crate::optim::Adam;
+        use crate::rng::Rng;
+        use crate::train_transformer::{train_transformer_epoch, TransformerNet};
+        let mut net = TransformerNet::new(10, 4, 8, 2, 16, 1, &mut Rng::new(1)).unwrap();
+        let tokens: Vec<usize> = (0..4).collect(); // needs context_len + 1 = 5
+        let e = train_transformer_epoch(&mut net, &tokens, 2, &Adam::new(0.01), &mut Rng::new(2))
+            .unwrap_err();
+        assert!(e.to_string().contains("context_len+1"), "{e}");
+    }
 }
