@@ -1441,18 +1441,7 @@ impl GenerativeSLM {
                 }
                 None => text.push(hex_to_char(&self.meta.class_names[next])),
             }
-            // Only the tail can contain a newly completed stop string.
-            let from = before.saturating_sub(max_stop);
-            let from = (0..=from)
-                .rev()
-                .find(|&i| text.is_char_boundary(i))
-                .unwrap_or(0);
-            if let Some(cut) = stops
-                .iter()
-                .filter(|s| !s.is_empty())
-                .filter_map(|s| text[from..].find(s.as_str()).map(|i| from + i))
-                .min()
-            {
+            if let Some(cut) = earliest_stop(&text, before, max_stop, stops) {
                 text.truncate(cut);
                 reason = StopReason::Stop;
                 break;
@@ -1466,7 +1455,14 @@ impl GenerativeSLM {
             }
         }
         if reason != StopReason::Stop && !pending.is_empty() {
+            // The flushed tail (a dangling lead byte becomes U+FFFD) can also
+            // complete a stop string.
+            let before = text.len();
             text.push_str(&String::from_utf8_lossy(&pending));
+            if let Some(cut) = earliest_stop(&text, before, max_stop, stops) {
+                text.truncate(cut);
+                reason = StopReason::Stop;
+            }
         }
         Ok(Generation {
             text,
@@ -1668,6 +1664,21 @@ fn finish_evaluation(total_nll: f64, count: usize) -> Evaluation {
         bits_per_token: ce / std::f32::consts::LN_2,
         perplexity: ce.exp(),
     }
+}
+
+/// Byte offset of the earliest stop string that ends inside `text[before..]`,
+/// scanning only the tail (`max_stop` bytes before `before`) that could hold a
+/// newly completed match. Empty stop strings never match.
+fn earliest_stop(text: &str, before: usize, max_stop: usize, stops: &[String]) -> Option<usize> {
+    let from = (0..=before.saturating_sub(max_stop))
+        .rev()
+        .find(|&i| text.is_char_boundary(i))
+        .unwrap_or(0);
+    stops
+        .iter()
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| text[from..].find(s.as_str()).map(|i| from + i))
+        .min()
 }
 
 /// Move the longest valid UTF-8 prefix of `pending` onto `out`, replacing
@@ -3458,6 +3469,33 @@ mod tests {
             .unwrap();
         assert_eq!(late.stop_reason, StopReason::Stop);
         assert_eq!(late.text, "");
+    }
+
+    /// Regression (deferred minor): a stop string completed only by the bytes
+    /// flushed at the end of the budget (a dangling lead byte becomes U+FFFD)
+    /// was never checked.
+    #[test]
+    fn generate_tokens_checks_stops_against_the_flushed_tail() {
+        let slm = tiny_utf8_slm();
+        let p = greedy();
+        let stops = ["\u{fffd}".to_string()];
+        let g = slm
+            .generate_tokens("\u{e9}", 3, &stops, &p, &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(g.stop_reason, StopReason::Stop);
+        assert_eq!(g.text, "\u{e9}");
+        assert_eq!(g.n_tokens, 3);
+        // Same budget without the stop still flushes the lossy tail.
+        let plain = slm
+            .generate_tokens("\u{e9}", 3, &[], &p, &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(plain.text, "\u{e9}\u{fffd}");
+        assert_eq!(plain.stop_reason, StopReason::MaxTokens);
+        // A non-matching stop leaves the flushed text alone.
+        let other = slm
+            .generate_tokens("\u{e9}", 3, &["zz".into()], &p, &mut Rng::new(1))
+            .unwrap();
+        assert_eq!(other.text, "\u{e9}\u{fffd}");
     }
 
     #[test]
