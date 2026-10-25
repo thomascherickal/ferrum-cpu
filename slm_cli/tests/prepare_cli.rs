@@ -568,3 +568,234 @@ fn directory_walk_skips_hidden_and_recurses() {
         vec!["deep document".to_string()]
     );
 }
+
+// ---- adversarial inputs (job 3d/3e) ----
+
+fn manifest(out: &Path) -> serde_json::Value {
+    serde_json::from_str(&read(&out.join("manifest.json"))).unwrap()
+}
+
+fn sha_hex(b: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(b)
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect()
+}
+
+/// Regression: `--out` inside `--input` re-ingested the previous run's splits and manifest.
+#[test]
+fn out_inside_input_dir_is_not_reingested_and_rerun_is_idempotent() {
+    let d = tmp("out_in_in");
+    let inp = d.join("in");
+    std::fs::create_dir_all(&inp).unwrap();
+    std::fs::write(inp.join("a.txt"), stories(30)).unwrap();
+    std::fs::write(
+        inp.join("b.txt"),
+        "Another tale about a blue kite and a dog.",
+    )
+    .unwrap();
+    let out = inp.join("out");
+    let run = || {
+        prepare(&[
+            "--input",
+            inp.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--min-chars",
+            "10",
+        ])
+    };
+    let (ok, log) = run();
+    assert!(ok, "{log}");
+    let first: Vec<String> = ["train", "val", "test"]
+        .iter()
+        .map(|s| read(&out.join(format!("{s}.txt"))))
+        .collect();
+    let m1 = manifest(&out);
+    let (ok, log) = run();
+    assert!(ok, "{log}");
+    let second: Vec<String> = ["train", "val", "test"]
+        .iter()
+        .map(|s| read(&out.join(format!("{s}.txt"))))
+        .collect();
+    assert_eq!(first, second, "second run must reproduce the first");
+    let m2 = manifest(&out);
+    assert_eq!(m1, m2);
+    let paths: Vec<&str> = m2["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths.len(), 2, "outputs leaked into the inputs: {paths:?}");
+    assert!(paths.iter().all(|p| !p.contains("/out/")), "{paths:?}");
+}
+
+/// Regression: naming a file inside `--out` as input truncated it before reading it.
+#[test]
+fn input_file_inside_out_is_refused_and_left_untouched() {
+    let d = tmp("in_in_out");
+    let out = d.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let f = out.join("train.txt");
+    std::fs::write(&f, stories(10)).unwrap();
+    let (ok, log) = prepare(&[
+        "--input",
+        f.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert!(!ok && log.contains("inside --out"), "{log}");
+    assert_eq!(
+        read(&f),
+        stories(10),
+        "the named file must not be truncated"
+    );
+}
+
+/// Regression: the summary printed the rejection map with `{:?}` (`Object {"duplicate": Number(1)..`).
+#[test]
+fn summary_line_lists_only_nonzero_rejections_readably() {
+    let d = tmp("summary");
+    let input = d.join("raw.txt");
+    std::fs::write(
+        &input,
+        "Same story here, long enough.<|endoftext|>Same story here, long enough.<|endoftext|>hi",
+    )
+    .unwrap();
+    let o1 = d.join("o");
+    let args = [
+        "--input",
+        input.to_str().unwrap(),
+        "--out",
+        o1.to_str().unwrap(),
+        "--min-chars",
+        "10",
+        "--val-frac",
+        "0",
+        "--test-frac",
+        "0",
+    ];
+    let (ok, log) = prepare(&[&args[..], &["--dedup"]].concat());
+    assert!(ok, "{log}");
+    assert!(
+        log.contains("rejected duplicate=1 too_short=1"),
+        "unexpected summary: {log}"
+    );
+    assert!(!log.contains("Object") && !log.contains("Number"), "{log}");
+    let (ok, log) = prepare(&[
+        "--input",
+        input.to_str().unwrap(),
+        "--out",
+        d.join("o2").to_str().unwrap(),
+        "--min-chars",
+        "1",
+        "--val-frac",
+        "0",
+        "--test-frac",
+        "0",
+    ]);
+    assert!(ok && log.trim_end().ends_with("rejected none"), "{log}");
+}
+
+#[test]
+fn empty_and_whitespace_only_inputs_produce_consistent_empty_outputs() {
+    for (name, raw) in [("empty", ""), ("blank", "  \n\n\t \r\n<|endoftext|>\n  ")] {
+        let (ok, log, d, m) = prep_sep(name, raw.as_bytes(), "<|endoftext|>", &[]);
+        assert!(ok, "{name}: {log}");
+        assert!(d.is_empty(), "{name}: {d:?}");
+        assert_eq!(m["outputs"]["train"]["documents"], 0);
+        assert_eq!(m["outputs"]["train"]["bytes"], 0);
+        assert_eq!(m["outputs"]["train"]["sha256"], sha_hex(b""));
+        assert_eq!(m["train_stats"]["unique_chars"], 0);
+        assert!(m["rejected"]["empty"].as_u64().unwrap() >= 1, "{name}");
+    }
+}
+
+#[test]
+fn huge_single_line_is_rejected_as_too_long_not_buffered_twice() {
+    let big = "x".repeat(3 << 20); // 3 MiB, no newline, spans several read chunks
+    let (ok, log, d, m) = prep_sep(
+        "huge",
+        big.as_bytes(),
+        "<|endoftext|>",
+        &["--max-chars", "1000"],
+    );
+    assert!(ok, "{log}");
+    assert!(d.is_empty());
+    assert_eq!(m["rejected"]["too_long"], 1);
+    assert_eq!(m["inputs"][0]["bytes"], 3 << 20);
+    assert_eq!(m["inputs"][0]["sha256"], sha_hex(big.as_bytes()));
+}
+
+/// Regression: a lone `\r` (classic Mac line ending) was deleted, gluing the words around it.
+#[test]
+fn lone_carriage_returns_separate_words_like_crlf_does() {
+    let raw = "first line.\rsecond line.\r\nthird line.\n\rfourth";
+    let (ok, log, d, _) = prep_sep("cr", raw.as_bytes(), "<|endoftext|>", &[]);
+    assert!(ok, "{log}");
+    assert_eq!(d.len(), 1);
+    let words: Vec<&str> = d[0].split_whitespace().collect();
+    assert_eq!(
+        words,
+        ["first", "line.", "second", "line.", "third", "line.", "fourth"],
+        "{:?}",
+        d[0]
+    );
+}
+
+#[test]
+fn bom_nul_and_control_bytes_are_stripped_everywhere() {
+    let raw = "\u{FEFF}Once\u{0}upon\u{1b}[0m a time.<|endoftext|>\u{FEFF}\u{FEFF}Second\u{200D} tale ok.";
+    let (ok, log, d, _) = prep_sep("ctl", raw.as_bytes(), "<|endoftext|>", &[]);
+    assert!(ok, "{log}");
+    assert_eq!(d, strs(&["Onceupon[0m a time.", "Second tale ok."]));
+}
+
+/// Manifest invariants on a messy run: hashes/sizes match the real files, and
+/// documents + rejections account for every raw document.
+#[test]
+fn manifest_hashes_sizes_and_counts_match_the_files() {
+    let d = tmp("mani");
+    let input = d.join("raw.txt");
+    let mut raw = stories(200);
+    raw.push_str("<|endoftext|>x<|endoftext|><|endoftext|>"); // too_short, empty
+    raw.push_str("Story number 3. Tom had a red ball."); // duplicate
+    std::fs::write(&input, &raw).unwrap();
+    let out = d.join("out");
+    let (ok, log) = prepare(&[
+        "--input",
+        input.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--dedup",
+        "--min-chars",
+        "10",
+        "--doc-sep",
+        "<|endoftext|>",
+    ]);
+    assert!(ok, "{log}");
+    let m = manifest(&out);
+    let mut kept = 0u64;
+    for s in ["train", "val", "test"] {
+        let bytes = std::fs::read(out.join(format!("{s}.txt"))).unwrap();
+        let o = &m["outputs"][s];
+        assert_eq!(o["bytes"], bytes.len() as u64, "{s}");
+        assert_eq!(o["sha256"], sha_hex(&bytes), "{s}");
+        kept += o["documents"].as_u64().unwrap();
+    }
+    assert_eq!(m["inputs"][0]["sha256"], sha_hex(raw.as_bytes()));
+    assert_eq!(m["inputs"][0]["bytes"], raw.len() as u64);
+    let rejected: u64 = m["rejected"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|v| v.as_u64().unwrap())
+        .sum();
+    let raw_docs = raw.split("<|endoftext|>").count() as u64;
+    assert_eq!(kept + rejected, raw_docs);
+    assert_eq!(m["rejected"]["duplicate"], 1);
+    assert_eq!(m["rejected"]["too_short"], 1);
+    assert_eq!(m["rejected"]["empty"], 1);
+}

@@ -88,19 +88,43 @@ impl Split {
 /// recursively; FIFOs, devices and sockets inside them are skipped), sorted by
 /// path. A non-regular file named directly is an error: `/dev/zero` or a pipe
 /// would otherwise be read forever.
-fn expand_inputs(inputs: &[String]) -> std::io::Result<Vec<PathBuf>> {
-    fn walk(p: &Path, top: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+///
+/// Anything under `outdir` (this run's own outputs and manifest, e.g. `--out`
+/// inside `--input`) is skipped when found by walking a directory and an error
+/// when named directly: re-ingesting the outputs would feed them back in (and
+/// they are truncated before any input is read).
+fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let outdir = std::fs::canonicalize(outdir).unwrap_or_else(|_| outdir.to_path_buf());
+    let inside_out = |p: &Path| std::fs::canonicalize(p).is_ok_and(|c| c.starts_with(&outdir));
+    fn walk(
+        p: &Path,
+        top: bool,
+        inside_out: &dyn Fn(&Path) -> bool,
+        out: &mut Vec<PathBuf>,
+    ) -> std::io::Result<()> {
         if p.is_dir() {
+            if !top && inside_out(p) {
+                return Ok(());
+            }
             for e in std::fs::read_dir(p)? {
                 let e = e?.path();
                 if !e
                     .file_name()
                     .is_some_and(|n| n.to_string_lossy().starts_with('.'))
                 {
-                    walk(&e, false, out)?;
+                    walk(&e, false, inside_out, out)?;
                 }
             }
         } else if p.is_file() {
+            if inside_out(p) {
+                if top {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("input {} is inside --out (its own output)", p.display()),
+                    ));
+                }
+                return Ok(());
+            }
             out.push(p.to_path_buf());
         } else if top {
             return Err(std::io::Error::new(
@@ -119,7 +143,7 @@ fn expand_inputs(inputs: &[String]) -> std::io::Result<Vec<PathBuf>> {
                 format!("input {i} does not exist"),
             ));
         }
-        walk(p, true, &mut out)?;
+        walk(p, true, &inside_out, &mut out)?;
     }
     out.sort();
     Ok(out)
@@ -180,6 +204,22 @@ fn for_each_raw_doc(
     f(&doc, doc_start)
 }
 
+/// `duplicate=3 too_short=1` (non-zero reasons only), or `none`.
+fn rejected_summary(rejected: &Value) -> String {
+    let parts: Vec<String> = rejected
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, n)| n.as_u64() != Some(0))
+        .map(|(k, n)| format!("{k}={n}"))
+        .collect();
+    if parts.is_empty() {
+        "none".into()
+    } else {
+        parts.join(" ")
+    }
+}
+
 pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
     if !(0.0..1.0).contains(&o.val_frac)
         || !(0.0..1.0).contains(&o.test_frac)
@@ -194,6 +234,9 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
         _ => {}
     }
+    // Resolve inputs before any split is created (and so truncated): an input that is one of
+    // this run's own outputs is refused here, untouched.
+    let files = expand_inputs(&o.inputs, out)?;
     let mut splits = [
         Split::create(out, "train")?,
         Split::create(out, "val")?,
@@ -223,7 +266,7 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
     let (mut lines, mut words) = (0u64, 0u64);
     let mut inputs = Vec::new();
 
-    for path in expand_inputs(&o.inputs)? {
+    for path in files {
         let mut hasher = Sha256::new();
         let mut total = 0u64;
         for_each_raw_doc(&path, &o.doc_sep, &mut hasher, &mut total, |raw, offset| {
@@ -240,6 +283,13 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
                         offset + e.valid_up_to() as u64
                     ))
                 }
+            };
+            // Every line ending is a newline: CRLF, and the lone CR of classic Mac files
+            // (which `strip_invisible` would otherwise delete, gluing words together).
+            let text = if text.contains('\r') {
+                std::borrow::Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+            } else {
+                text
             };
             let books = if o.strip_gutenberg {
                 gutenberg_bodies(&text)
@@ -324,11 +374,11 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| format!("{s}={}", manifest["outputs"][s]["documents"]))
         .collect();
     println!(
-        "prepared {} → {}  ({})  rejected {:?}",
+        "prepared {} → {}  ({})  rejected {}",
         o.inputs.join(" "),
         o.out,
         docs.join(" "),
-        manifest["rejected"]
+        rejected_summary(&manifest["rejected"])
     );
     Ok(())
 }
@@ -447,7 +497,8 @@ mod tests {
     #[test]
     fn non_regular_inputs_are_rejected_or_skipped_not_read_forever() {
         // Named directly: refused (reading /dev/zero would never end).
-        let e = expand_inputs(&["/dev/zero".to_string()]).unwrap_err();
+        let e =
+            expand_inputs(&["/dev/zero".to_string()], Path::new("/nonexistent-out")).unwrap_err();
         assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
         assert!(e.to_string().contains("/dev/zero"), "{e}");
         // Inside a walked directory: skipped silently, regular files kept, hidden ignored.
@@ -459,15 +510,53 @@ mod tests {
             .status()
             .is_ok_and(|s| s.success())
         {
-            let got = expand_inputs(&[d.to_string_lossy().into()]).unwrap();
+            let got = expand_inputs(&[d.to_string_lossy().into()], Path::new("/nonexistent-out"))
+                .unwrap();
             assert_eq!(got, vec![d.join("a.txt")]);
         }
         // A dangling symlink is not a regular file: skipped inside a directory.
         std::os::unix::fs::symlink(d.join("missing"), d.join("dangling")).unwrap();
         assert_eq!(
-            expand_inputs(&[d.to_string_lossy().into()]).unwrap(),
+            expand_inputs(&[d.to_string_lossy().into()], Path::new("/nonexistent-out")).unwrap(),
             vec![d.join("a.txt")]
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn expand_inputs_skips_the_output_dir_and_refuses_files_inside_it() {
+        let d = tmpdir("outskip");
+        let out = d.join("out");
+        std::fs::create_dir_all(out.join("nested")).unwrap();
+        std::fs::write(d.join("a.txt"), b"a").unwrap();
+        std::fs::write(out.join("train.txt"), b"t").unwrap();
+        std::fs::write(out.join("nested/x.txt"), b"x").unwrap();
+        let dir = d.to_string_lossy().to_string();
+        // Walking the parent finds only the real input.
+        assert_eq!(
+            expand_inputs(&[dir.clone()], &out).unwrap(),
+            vec![d.join("a.txt")]
+        );
+        // The output dir itself as the input: everything in it is an output, so nothing remains.
+        assert!(expand_inputs(&[out.to_string_lossy().into()], &out)
+            .unwrap()
+            .is_empty());
+        // Naming an output file directly is an error that names the problem.
+        let e = expand_inputs(&[out.join("train.txt").to_string_lossy().into()], &out).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(e.to_string().contains("inside --out"), "{e}");
+        // A missing out dir (cannot canonicalize) filters nothing.
+        let got = expand_inputs(&[dir], &d.join("not-yet")).unwrap();
+        assert_eq!(got.len(), 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn rejected_summary_lists_nonzero_reasons_in_key_order() {
+        let none = json!({"duplicate": 0, "empty": 0});
+        assert_eq!(rejected_summary(&none), "none");
+        let some = json!({"duplicate": 3, "empty": 0, "too_short": 1});
+        assert_eq!(rejected_summary(&some), "duplicate=3 too_short=1");
+        assert_eq!(rejected_summary(&Value::Null), "none");
     }
 }
