@@ -3,6 +3,7 @@
 //! content hash, and write a manifest that pins every input and output by
 //! sha256 — a deterministic, DVC-friendly data stage.
 
+use crate::args::Args;
 use ferrum_core::{
     clean_corpus, gutenberg_bodies, normalize_nfkc, squeeze_spaces, strip_invisible, CleanOptions,
 };
@@ -383,9 +384,57 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub(crate) fn cmd_prepare(args: &Args, raw: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let usage =
+        "usage: train_transformer prepare --input <file|dir> [--input ...] --out <dir> [options]";
+    let inputs = args.get_all("input");
+    if inputs.is_empty() {
+        return Err(usage.into());
+    }
+    let out = args.value("out").ok_or(usage)?;
+    run(&PrepareOptions {
+        inputs,
+        out: out.to_string(),
+        doc_sep: args
+            .value("doc-sep")
+            .unwrap_or(ferrum_core::DOC_SEP)
+            .to_string(),
+        lossy: args.has("lossy"),
+        nfkc: args.has("nfkc"),
+        lowercase: args.has("lowercase"),
+        strip_gutenberg: args.has("strip-gutenberg"),
+        min_chars: args.get("min-chars", 1),
+        max_chars: args.get("max-chars", 0),
+        dedup: args.has("dedup"),
+        val_frac: args.get("val-frac", 0.05),
+        test_frac: args.get("test-frac", 0.05),
+        seed: args.get("seed", 42),
+        args: raw.to_vec(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::PREPARE_FLAGS;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn cmd_prepare_requires_input_and_out() {
+        let none = Args::parse_for("prepare", &s(&["--out", "o"]), PREPARE_FLAGS).unwrap();
+        assert!(cmd_prepare(&none, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("usage: train_transformer prepare"));
+        let no_out = Args::parse_for("prepare", &s(&["--input", "x"]), PREPARE_FLAGS).unwrap();
+        assert!(cmd_prepare(&no_out, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("usage: train_transformer prepare"));
+    }
 
     fn tmpdir(name: &str) -> PathBuf {
         let d =
@@ -534,7 +583,7 @@ mod tests {
         let dir = d.to_string_lossy().to_string();
         // Walking the parent finds only the real input.
         assert_eq!(
-            expand_inputs(&[dir.clone()], &out).unwrap(),
+            expand_inputs(std::slice::from_ref(&dir), &out).unwrap(),
             vec![d.join("a.txt")]
         );
         // The output dir itself as the input: everything in it is an output, so nothing remains.
