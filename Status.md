@@ -274,6 +274,13 @@ These are directions, not commitments.
   Greedy decoding (`temperature <= 0`) now returns the first maximum on exact ties
   (llama.cpp / `torch.argmax`), and `generate` on a char-level model with an empty seed
   starts from token 0 like the BPE path.
+- **Deferred-minors pass.** Behaviour changes: `generate` on a char-level model now
+  errors on a seed character outside the vocabulary (`character 'X' is not in the model
+  vocabulary`, as scoring already did) instead of silently using token 0 (a CR in the
+  seed is still tolerated); `generate_tokens` checks stop strings against the bytes
+  flushed at the token budget or EOS (a stop of `U+FFFD` now fires on a dangling lead
+  byte); BPE models build their tokenizer once per model instead of per call
+  (bit-identical output).
 - The GUI `train_slm` command ignores the removed `momentum` field. New fields
   are optional and default sensibly, so older front-ends keep working.
 

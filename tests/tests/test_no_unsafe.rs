@@ -95,9 +95,15 @@ fn blank_non_code(src: &str) -> String {
 }
 
 /// `r"`, `r#"`, `r##"` ... and not part of an identifier (`for"`, `bar`).
+/// A `b`/`c` prefix (`br"..."`, `cr"..."`) is part of the literal, not an
+/// identifier, when that letter itself starts a token.
 fn is_raw_start(b: &[char], i: usize) -> bool {
-    if i > 0 && (b[i - 1].is_alphanumeric() || b[i - 1] == '_') {
-        return false;
+    let is_id = |c: char| c.is_alphanumeric() || c == '_';
+    if i > 0 && is_id(b[i - 1]) {
+        let prefix = matches!(b[i - 1], 'b' | 'c');
+        if !(prefix && (i < 2 || !is_id(b[i - 2]))) {
+            return false;
+        }
     }
     let mut j = i + 1;
     while b.get(j) == Some(&'#') {
@@ -212,6 +218,22 @@ fn ignores_identifiers_containing_the_word() {
     assert!(unsafe_lines("").is_empty());
 }
 
+/// Regression (deferred minor): `br"..."` / `cr"..."` raw strings were scanned
+/// as an identifier followed by an ESCAPING plain string, so a trailing
+/// backslash swallowed the closing quote and the following code.
+#[test]
+fn byte_and_c_raw_strings_are_blanked() {
+    assert!(unsafe_lines("let s = br\"unsafe\";").is_empty());
+    assert!(unsafe_lines("let s = br#\"say \"unsafe\"\"#;").is_empty());
+    assert!(unsafe_lines("let s = cr\"unsafe\";").is_empty());
+    // A raw string ending in a backslash must close at its quote.
+    assert_eq!(unsafe_lines("let s = br\"a\\\";\nunsafe { }"), vec![2]);
+    assert_eq!(unsafe_lines("let s = r\"a\\\";\nunsafe { }"), vec![2]);
+    // `b`/`c` that end an identifier are still not a literal prefix.
+    assert!(unsafe_lines("let s = ab\"unsafe\";").is_empty());
+    assert_eq!(unsafe_lines("let ab = cr; unsafe { }"), vec![1]);
+}
+
 #[test]
 fn raw_string_prefix_requires_a_token_boundary() {
     // `bar"` is an identifier char then a plain string, not a raw string.
@@ -221,25 +243,78 @@ fn raw_string_prefix_requires_a_token_boundary() {
     assert_eq!(unsafe_lines("let r#type = 1; unsafe { }"), vec![1]);
 }
 
+/// Crate roots of the package in `dir`: library, binaries, build script, benches.
+fn crate_roots(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut roots = vec![
+        dir.join("src/lib.rs"),
+        dir.join("src/main.rs"),
+        dir.join("build.rs"),
+    ];
+    for sub in ["src/bin", "benches", "examples"] {
+        if let Ok(rd) = std::fs::read_dir(dir.join(sub)) {
+            roots.extend(
+                rd.map(|e| e.unwrap().path())
+                    .filter(|p| p.extension().is_some_and(|x| x == "rs")),
+            );
+        }
+    }
+    roots.retain(|p| p.is_file());
+    roots.sort();
+    roots
+}
+
+/// Every package (a directory with a `Cargo.toml`, workspace member or not)
+/// must `#![forbid(unsafe_code)]` at each of its crate roots. `forbid` rather
+/// than `deny`: a `deny` can be overridden by a local `#[allow]`.
 #[test]
-fn every_crate_root_forbids_or_denies_unsafe_code() {
+fn every_crate_root_forbids_unsafe_code() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    for rel in [
-        "ferrum_core/src/lib.rs",
-        "ferrum_core/benches/gemm.rs",
-        "slm_cli/src/main.rs",
-        "slm_wasm/src/lib.rs",
-        "slm_server/src/lib.rs",
-        "slm_server/src/main.rs",
-        "ferrum_gui/src/lib.rs",
-        "ferrum_gui/src/main.rs",
-        "ferrum_gui/build.rs",
-    ] {
-        let src = std::fs::read_to_string(root.join(rel)).unwrap();
-        let code = blank_non_code(&src);
+    let mut found = Vec::new();
+    for e in std::fs::read_dir(root).unwrap() {
+        let dir = e.unwrap().path();
+        if dir.join("Cargo.toml").is_file() && dir.file_name().unwrap() != "target" {
+            found.extend(crate_roots(&dir));
+        }
+    }
+    assert!(
+        found.len() >= 9,
+        "found only {} crate roots: {found:?}",
+        found.len()
+    );
+    for path in found {
+        let code = blank_non_code(&std::fs::read_to_string(&path).unwrap());
         assert!(
-            code.contains("#![forbid(unsafe_code)]") || code.contains("#![deny(unsafe_code)]"),
-            "{rel} lacks #![forbid(unsafe_code)] / #![deny(unsafe_code)]"
+            code.contains("#![forbid(unsafe_code)]"),
+            "{} lacks #![forbid(unsafe_code)]",
+            path.display()
         );
     }
+}
+
+#[test]
+fn crate_roots_lists_lib_main_build_and_dirs() {
+    let tmp =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("ferrum_roots_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    for d in ["src/bin", "benches"] {
+        std::fs::create_dir_all(tmp.join(d)).unwrap();
+    }
+    for f in [
+        "src/lib.rs",
+        "build.rs",
+        "src/bin/x.rs",
+        "benches/b.rs",
+        "benches/notes.txt",
+    ] {
+        std::fs::write(tmp.join(f), "").unwrap();
+    }
+    let names: Vec<String> = crate_roots(&tmp)
+        .iter()
+        .map(|p| p.strip_prefix(&tmp).unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        ["benches/b.rs", "build.rs", "src/bin/x.rs", "src/lib.rs"]
+    );
+    std::fs::remove_dir_all(&tmp).unwrap();
 }

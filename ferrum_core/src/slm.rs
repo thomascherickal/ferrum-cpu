@@ -924,6 +924,10 @@ impl GenerativeSLM {
         }
 
         self.require_token_id_model()?;
+        // A seed char outside the vocabulary used to map silently to token 0;
+        // name it instead (scoring has always errored the same way). CR stays
+        // tolerated, as `encode_text` drops it.
+        self.encode_text(seed)?;
         let context_len = self.meta.input_dim;
         vprintln!(
             "[slm::generate] vocab_size={}, context_len={}",
@@ -2996,6 +3000,29 @@ mod tests {
         assert!(err.contains("not in the model vocabulary"), "{err}");
         assert!(slm.score_rolling("abcx").is_err());
         assert!(slm.encode_text("zzz").is_err());
+    }
+
+    /// Regression (deferred minor): an unknown seed char in char-level
+    /// generation silently became token 0; it now errors naming the char.
+    #[test]
+    fn char_level_generate_rejects_an_unknown_seed_char() {
+        let slm = tiny_char_slm();
+        let p = greedy();
+        for chars in [0usize, 5] {
+            let err = slm
+                .generate_with("abcXabc", chars, &p, &mut Rng::new(1))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("'X'") && err.contains("not in the model vocabulary"),
+                "{err}"
+            );
+        }
+        // A valid seed still generates; the error path leaves no state behind.
+        let ok = slm
+            .generate_with("abcabcab", 5, &p, &mut Rng::new(1))
+            .unwrap();
+        assert!(ok.starts_with("abcabcab"));
     }
 
     #[test]
