@@ -33,7 +33,7 @@ stages:
       --blocks ${model.blocks} --hidden ${model.hidden} --vocab ${model.vocab}
       --tokens ${train.tokens} --lr ${train.lr} --cosine --warmup ${train.warmup}
       --clip ${train.clip} --val ${train.val} --patience ${train.patience}
-      --seed ${train.seed}
+      --seed ${train.seed} --quant ${train.quant}
       --tokenizer models/tokenizer.gguf --force
     deps:
       - data/prepared/train.txt
@@ -57,14 +57,4 @@ stages:
       - metrics/val.json:
           cache: false
       - metrics/test.json:
-          cache: false
-  lighteval:
-    frozen: true
-    cmd: eval/lighteval/run.sh --model models/slm.gguf --test data/prepared/test.txt --out metrics/lighteval.json
-    deps:
-      - models/slm.gguf
-      - data/prepared/test.txt
-      - eval/lighteval
-    metrics:
-      - metrics/lighteval.json:
           cache: false

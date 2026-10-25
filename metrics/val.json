@@ -1,0 +1,9 @@
+{
+  "bits_per_byte": 1.3135587291353807,
+  "bits_per_token": 4.19795560836792,
+  "bytes": 1129150,
+  "cross_entropy_nats": 2.9098010063171387,
+  "perplexity": 18.353145599365234,
+  "seconds": 51.530224827,
+  "tokens": 353316
+}

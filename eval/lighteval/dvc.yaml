@@ -1,0 +1,14 @@
+# Opt-in stage (needs the lighteval venv, see ../README or run.sh): kept out of the root
+# pipeline so a plain `dvc repro` does not trip over its missing output.
+#   dvc repro eval/lighteval/dvc.yaml:lighteval
+stages:
+  lighteval:
+    wdir: ../..
+    cmd: eval/lighteval/run.sh --model models/slm.gguf --test data/prepared/test.txt --out metrics/lighteval.json
+    deps:
+      - models/slm.gguf
+      - data/prepared/test.txt
+      - eval/lighteval
+    metrics:
+      - metrics/lighteval.json:
+          cache: false

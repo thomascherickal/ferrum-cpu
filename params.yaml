@@ -22,3 +22,4 @@ train:
   val: 0.02
   patience: 3
   seed: 1337
+  quant: int8       # on-disk precision of models/slm.gguf (int8|int4|f32)

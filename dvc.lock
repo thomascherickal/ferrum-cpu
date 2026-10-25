@@ -8,8 +8,8 @@ stages:
     deps:
     - path: scripts/fetch.sh
       hash: md5
-      md5: 136211f2da70812c599911c72853024b
-      size: 503
+      md5: 894285ffbcf6cfe051fdf006c0565f55
+      size: 513
       isexec: true
     params:
       params.yaml:
@@ -34,14 +34,14 @@ stages:
       size: 22502601
     - path: ferrum_core/src
       hash: md5
-      md5: b726160aabb942f74b89c9be71a44f2a.dir
-      size: 769028
-      nfiles: 25
+      md5: 7521a70d3c1e98a1926849034123ab1c.dir
+      size: 1046839
+      nfiles: 26
     - path: slm_cli/src
       hash: md5
-      md5: 21f62495f0563ce5df0c1f3aa08ef6cb.dir
-      size: 59990
-      nfiles: 2
+      md5: 3aef86d4176907f729775e51b71e08e9.dir
+      size: 143056
+      nfiles: 3
     params:
       params.yaml:
         prepare:
@@ -67,3 +67,78 @@ stages:
       hash: md5
       md5: e7a3d277a1919f3395ed5b800c7b62f7
       size: 1129150
+  train:
+    cmd: cargo run --release -q -p slm_cli -- train data/prepared/train.txt 
+      models/slm.gguf --context 128 --embed 96 --heads 4 --blocks 3 --hidden 320
+      --vocab 1024 --tokens 2000000.0 --lr 0.005 --cosine --warmup 50 --clip 1.0
+      --val 0.02 --patience 3 --seed 1337 --quant int8 --tokenizer 
+      models/tokenizer.gguf --force
+    deps:
+    - path: data/prepared/train.txt
+      hash: md5
+      md5: 06c437596594eb7af262d28e18818295
+      size: 20190677
+    - path: ferrum_core/src
+      hash: md5
+      md5: 7521a70d3c1e98a1926849034123ab1c.dir
+      size: 1046839
+      nfiles: 26
+    - path: slm_cli/src
+      hash: md5
+      md5: 3aef86d4176907f729775e51b71e08e9.dir
+      size: 143056
+      nfiles: 3
+    params:
+      params.yaml:
+        model:
+          context: 128
+          embed: 96
+          heads: 4
+          blocks: 3
+          hidden: 320
+          vocab: 1024
+        train:
+          tokens: 2000000.0
+          lr: 0.005
+          warmup: 50
+          clip: 1.0
+          val: 0.02
+          patience: 3
+          seed: 1337
+          quant: int8
+    outs:
+    - path: models/slm.gguf
+      hash: md5
+      md5: e387fa48f0990e54c603c61015de710f
+      size: 620320
+    - path: models/tokenizer.gguf
+      hash: md5
+      md5: c2ebc991dc85594541ad9852e92db99b
+      size: 32896
+  eval:
+    cmd: cargo run --release -q -p slm_cli -- eval models/slm.gguf 
+      data/prepared/val.txt --json metrics/val.json && cargo run --release -q -p
+      slm_cli -- eval models/slm.gguf data/prepared/test.txt --json 
+      metrics/test.json
+    deps:
+    - path: data/prepared/test.txt
+      hash: md5
+      md5: 70495c3b98c810ec6542ae8615a8e863
+      size: 1154992
+    - path: data/prepared/val.txt
+      hash: md5
+      md5: e7a3d277a1919f3395ed5b800c7b62f7
+      size: 1129150
+    - path: models/slm.gguf
+      hash: md5
+      md5: e387fa48f0990e54c603c61015de710f
+      size: 620320
+    outs:
+    - path: metrics/test.json
+      hash: md5
+      md5: 41f3fa0c4e844dee9eaa0bf5b32333a2
+      size: 225
+    - path: metrics/val.json
+      hash: md5
+      md5: f522535bca950433599da89fafa1dc9a
+      size: 227
