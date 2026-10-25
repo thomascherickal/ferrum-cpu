@@ -267,8 +267,10 @@ mod tests {
 
     #[tokio::test]
     async fn start_help_and_errors_and_serve() {
-        assert_eq!(start(&a(&["--help"]), async {}).await, Ok(()));
-        assert!(start(&a(&["--bogus", "1"]), async {}).await.is_err());
+        assert_eq!(start(&a(&["--help"]), std::future::ready(())).await, Ok(()));
+        assert!(start(&a(&["--bogus", "1"]), std::future::ready(()))
+            .await
+            .is_err());
         let path = model_file("start");
         let r = start(&a(&["--model", &path, "--port", "0"]), async {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await
@@ -324,9 +326,12 @@ mod tests {
 
     #[tokio::test]
     async fn run_missing_model_file() {
-        let e = run(cfg("/nonexistent/m.gguf".into(), "127.0.0.1", 0), async {})
-            .await
-            .unwrap_err();
+        let e = run(
+            cfg("/nonexistent/m.gguf".into(), "127.0.0.1", 0),
+            std::future::ready(()),
+        )
+        .await
+        .unwrap_err();
         assert!(e.starts_with("cannot read /nonexistent/m.gguf"), "{e}");
     }
 
@@ -334,9 +339,12 @@ mod tests {
     async fn run_corrupt_model_file() {
         let p = std::env::temp_dir().join(format!("ferrum-serve-{}-bad", std::process::id()));
         std::fs::write(&p, b"garbage").unwrap();
-        let e = run(cfg(p.to_string_lossy().into(), "127.0.0.1", 0), async {})
-            .await
-            .unwrap_err();
+        let e = run(
+            cfg(p.to_string_lossy().into(), "127.0.0.1", 0),
+            std::future::ready(()),
+        )
+        .await
+        .unwrap_err();
         std::fs::remove_file(p).ok();
         assert!(!e.is_empty());
     }
@@ -344,9 +352,12 @@ mod tests {
     #[tokio::test]
     async fn run_bind_failure() {
         let path = model_file("bind");
-        let e = run(cfg(path.clone(), "256.256.256.256", 0), async {})
-            .await
-            .unwrap_err();
+        let e = run(
+            cfg(path.clone(), "256.256.256.256", 0),
+            std::future::ready(()),
+        )
+        .await
+        .unwrap_err();
         std::fs::remove_file(path).ok();
         assert!(e.starts_with("cannot bind 256.256.256.256:0"), "{e}");
     }

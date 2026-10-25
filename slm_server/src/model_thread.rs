@@ -122,6 +122,14 @@ fn handle(model: &GenerativeSLM, job: Job) {
 pub(crate) type Spawned = (mpsc::Sender<Job>, Info, Weak<()>);
 
 pub(crate) fn spawn_model_thread(bytes: Vec<u8>) -> Result<Spawned, String> {
+    spawn_with(bytes, GenerativeSLM::from_bytes)
+}
+
+/// [`spawn_model_thread`] with the loader injected (a test seam for load failures and panics).
+fn spawn_with(
+    bytes: Vec<u8>,
+    load: impl FnOnce(&[u8]) -> ferrum_core::Result<GenerativeSLM> + Send + 'static,
+) -> Result<Spawned, String> {
     // ponytail: unbounded job queue; fine for a loopback server with one serial
     // client (LightEval). Use a bounded channel + 503 if exposed to many clients.
     let (tx, rx) = mpsc::channel::<Job>();
@@ -132,7 +140,7 @@ pub(crate) fn spawn_model_thread(bytes: Vec<u8>) -> Result<Spawned, String> {
         .name("ferrum-model".into())
         .spawn(move || {
             let _alive = alive;
-            let model = match GenerativeSLM::from_bytes(&bytes) {
+            let model = match load(&bytes) {
                 Ok(m) => m,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e.to_string()));
@@ -194,6 +202,23 @@ mod tests {
         assert!(r[0]["logprob"].as_f64().unwrap() < 0.0);
     }
 
+    /// A loader that panics (corrupt weights tripping an assertion) must surface as a
+    /// startup error, not hang `app()` or abort the process.
+    #[test]
+    fn panicking_loader_is_a_startup_error() {
+        let e = spawn_with(vec![], |_| panic!("corrupt weights")).unwrap_err();
+        assert_eq!(e, "model thread died while loading");
+    }
+
+    #[test]
+    fn failing_loader_reports_its_error() {
+        let e = spawn_with(vec![], |_| {
+            Err(ferrum_core::InferError::Format("no".into()))
+        })
+        .unwrap_err();
+        assert!(e.contains("no"), "{e}");
+    }
+
     #[test]
     fn collect_stops_at_first_error() {
         let ok = collect(&[1, 2], |n| Ok(json!(n))).unwrap();
@@ -207,7 +232,7 @@ mod tests {
         })
         .unwrap_err();
         assert!(!err.is_empty());
-        assert!(collect::<u8>(&[], |_| unreachable!()).unwrap().is_empty());
+        assert!(collect::<u8>(&[], |_| Ok(json!(0))).unwrap().is_empty());
     }
 
     #[test]

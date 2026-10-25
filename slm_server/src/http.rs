@@ -370,6 +370,10 @@ mod tests {
         );
         let e = submit(&s, |r| Job::Generate(vec![], r)).await.unwrap_err();
         assert_eq!(e.0, StatusCode::UNPROCESSABLE_ENTITY);
+        let e = submit(&s, Job::Panic).await.unwrap_err();
+        assert_eq!(e.0, StatusCode::UNPROCESSABLE_ENTITY);
+        let e = submit(&s, |r| Job::Pool(false, r)).await.unwrap_err();
+        assert_eq!(e.0, StatusCode::UNPROCESSABLE_ENTITY);
         drop(s);
         t.join().unwrap();
     }

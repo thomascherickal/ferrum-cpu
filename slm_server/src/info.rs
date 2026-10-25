@@ -95,7 +95,7 @@ mod tests {
     fn info_quant_reported_for_gguf_bytes() {
         let m = model(0);
         let bytes = m.to_bytes_quantized().unwrap();
-        let want = ferrum_core::loader::gguf_quant(&bytes).unwrap_or_else(|_| "unknown".into());
+        let want = ferrum_core::loader::gguf_quant(&bytes).unwrap();
         assert_eq!(info_for(&m, &bytes).quant, want);
     }
 }
