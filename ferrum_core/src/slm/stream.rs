@@ -442,6 +442,7 @@ mod tests {
     use crate::slm::config::TransformerConfig;
     use crate::slm::generate::StopReason;
     use crate::slm::sampling::SamplingParams;
+    use crate::slm::test_support::bias_only_slm;
     use crate::slm::test_support::{
         constant_bpe_slm, feeds, greedy, tiny_bpe_slm, tiny_char_slm, tiny_eos_slm, tiny_utf8_slm,
     };
@@ -659,5 +660,54 @@ mod tests {
             out.chars().count() < 5000 && out.ends_with('\u{FFFD}')
         });
         assert!(hit, "no run ended with an incomplete character");
+    }
+
+    #[test]
+    fn char_level_models_without_blocks_use_the_full_forward_loop() {
+        // bias_only_slm always predicts 'e' (the largest bias), so greedy
+        // decoding is a closed form we can check, streamed and plain.
+        let slm = bias_only_slm();
+        let mut streamed = String::new();
+        let out = slm
+            .generate_stream_with("ab", 3, &greedy(), &mut Rng::new(1), |t| {
+                streamed.push_str(t)
+            })
+            .unwrap();
+        assert_eq!(out, "abeee");
+        assert_eq!(streamed, "eee"); // the seed is never streamed
+
+        // The seed is shorter than the window (left-padded) and longer than it.
+        assert_eq!(
+            slm.generate_with("a", 2, &greedy(), &mut Rng::new(1))
+                .unwrap(),
+            "aee"
+        );
+        assert_eq!(
+            slm.generate_with("abcdabcd", 1, &greedy(), &mut Rng::new(1))
+                .unwrap(),
+            "abcdabcde"
+        );
+
+        // A stop string cuts the continuation as soon as it completes.
+        let mut pieces = Vec::new();
+        let cut = slm
+            .generate_stream_until("ab", 10, "ee", &greedy(), &mut Rng::new(1), |t| {
+                pieces.push(t.to_string())
+            })
+            .unwrap();
+        assert_eq!(cut, "abee");
+        assert_eq!(pieces, ["e", "e"]);
+
+        // With temperature, every sampled char is still one of the vocabulary.
+        let hot = SamplingParams::with_temperature(1.0);
+        let out = slm.generate_with("ab", 30, &hot, &mut Rng::new(9)).unwrap();
+        assert!(out.chars().all(|c| "abcde".contains(c)), "{out}");
+
+        // An empty seed has nothing to condition on.
+        assert_eq!(
+            slm.generate_with("", 5, &greedy(), &mut Rng::new(1))
+                .unwrap(),
+            ""
+        );
     }
 }

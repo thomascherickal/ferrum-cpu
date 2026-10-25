@@ -214,6 +214,49 @@ fn verbose_tracing_covers_every_layer_loss_and_optimizer() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 
+    // Character-level generation, both the KV-cached transformer path and the
+    // full-forward loop used by models without transformer blocks.
+    let char_cfg = TransformerConfig {
+        vocab_size: 0,
+        checkpoint_path: String::new(),
+        tokenizer_path: String::new(),
+        ..cfg.clone()
+    };
+    let chars = GenerativeSLM::train_transformer_config(
+        "abcabcabc abc\n".repeat(20).as_str(),
+        &char_cfg,
+        &mut Rng::new(4),
+        |_, _| {},
+    )
+    .unwrap();
+    assert!(!chars
+        .generate("abc", 6, 0.7, &mut Rng::new(2))
+        .unwrap()
+        .is_empty());
+    assert!(count("generate_cached") >= 1);
+    let head = Linear::new(4, 5, vec![0.0; 20], vec![0.0, 1.0, 2.0, 3.0, 4.0]).unwrap();
+    let flat = GenerativeSLM::new(
+        Sequential::new()
+            .with(Box::new(head))
+            .with(Box::new(ActivationLayer::new(Activation::Softmax))),
+        ferrum_core::Normalizer {
+            means: vec![],
+            stds: vec![],
+        },
+        ferrum_core::ModelMetadata {
+            task: ferrum_core::TaskType::TransformerSLM,
+            class_names: "abcde".chars().map(ferrum_core::slm::char_to_hex).collect(),
+            input_dim: 4,
+            output_dim: 5,
+            ..ferrum_core::ModelMetadata::default()
+        },
+    );
+    assert_eq!(
+        flat.generate("ab", 3, 0.0, &mut Rng::new(1)).unwrap(),
+        "abeee"
+    );
+    assert!(count("logits stats") >= 2);
+
     set_verbose(false);
     clear_log_sink();
     assert!(!ferrum_core::is_verbose());

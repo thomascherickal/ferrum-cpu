@@ -341,4 +341,12 @@ mod tests {
         assert_eq!(g.architecture(), Some("x"));
         assert!(!std::path::Path::new(&format!("{p}.tmp")).exists());
     }
+
+    #[test]
+    fn align_up_rounds_to_the_alignment_and_zero_means_unaligned() {
+        use super::align_up;
+        assert_eq!(align_up(7, 0), 7);
+        assert_eq!(align_up(0, 32), 0);
+        assert_eq!(align_up(33, 32), 64);
+    }
 }
