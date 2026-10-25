@@ -87,6 +87,11 @@ pub fn from_bytes(bytes: &[u8]) -> Result<(Sequential, Normalizer, ModelMetadata
     from_gguf(bytes)
 }
 
+/// [`from_bytes`] taking ownership of the bytes (no copy of the file); see [`from_gguf_vec`].
+pub fn from_vec(bytes: Vec<u8>) -> Result<(Sequential, Normalizer, ModelMetadata)> {
+    from_gguf_vec(bytes)
+}
+
 pub fn save(model: &Sequential, norm: &Normalizer, meta: &ModelMetadata, path: &str) -> Result<()> {
     std::fs::write(path, to_bytes(model, norm, meta)?)?;
     Ok(())
@@ -727,7 +732,14 @@ fn generic_from(r: &GgufIn) -> Result<(Sequential, Normalizer, ModelMetadata)> {
 // ponytail: Q8_0/Q4_0 matrices are expanded to f32 (4×/8× the file's size in
 // RAM); keep them packed once a Q8_0 kernel lands, if large models need it.
 pub fn from_gguf(bytes: &[u8]) -> Result<(Sequential, Normalizer, ModelMetadata)> {
-    let g = parse_gguf(bytes)?;
+    from_gguf_vec(bytes.to_vec())
+}
+
+/// [`from_gguf`] taking ownership of the bytes: a file just read from disk is
+/// parsed in place instead of copied (the borrowed form peaks one file's size
+/// higher).
+pub fn from_gguf_vec(bytes: Vec<u8>) -> Result<(Sequential, Normalizer, ModelMetadata)> {
+    let g = parse_gguf_vec(bytes)?;
     let r = GgufIn(&g);
     match g.architecture() {
         Some("gpt2") => gpt2_from(&r),
@@ -793,13 +805,23 @@ pub(crate) fn check_slm_consistency(model: &Sequential, meta: &ModelMetadata) ->
 
 /// Parse GGUF bytes, with a pointed error for the removed FINF `.bin` format.
 fn parse_gguf(bytes: &[u8]) -> Result<Gguf> {
+    reject_finf(bytes)?;
+    Gguf::parse(bytes.to_vec())
+}
+
+fn parse_gguf_vec(bytes: Vec<u8>) -> Result<Gguf> {
+    reject_finf(&bytes)?;
+    Gguf::parse(bytes)
+}
+
+fn reject_finf(bytes: &[u8]) -> Result<()> {
     if bytes.starts_with(b"FINF") {
         return Err(bad(
             "old Ferrum .bin (FINF) model — this format was removed; retrain to produce a .gguf"
                 .into(),
         ));
     }
-    Gguf::parse(bytes.to_vec())
+    Ok(())
 }
 
 /// The precision a GGUF model was saved at: `ferrum.quant` ("f32" | "int8" |
@@ -2107,6 +2129,41 @@ mod tests {
         assert_eq!(gguf_quant(&mk(Some(15))).unwrap(), "other(15)");
         assert_eq!(gguf_quant(&mk(None)).unwrap(), "unknown");
         assert!(load_err_of(gguf_quant(b"FINF\x05\x00\x00\x00")).contains(FINF_HINT));
+    }
+
+    /// The owning loaders parse the buffer in place and agree with the borrowing ones.
+    #[test]
+    fn owned_loaders_match_the_borrowing_ones() {
+        let slm = trained_slm(false);
+        let bytes = to_gguf(&slm.model, &slm.norm, &slm.meta, QPrec::F32).unwrap();
+        let (m1, n1, meta1) = from_bytes(&bytes).unwrap();
+        let (m2, n2, meta2) = from_vec(bytes.clone()).unwrap();
+        assert_eq!((n1.means, n1.stds), (n2.means, n2.stds));
+        assert_eq!(meta1.class_names, meta2.class_names);
+        assert_eq!(
+            to_gguf(
+                &m1,
+                &Normalizer {
+                    means: vec![],
+                    stds: vec![]
+                },
+                &meta1,
+                QPrec::F32
+            )
+            .unwrap(),
+            to_gguf(
+                &m2,
+                &Normalizer {
+                    means: vec![],
+                    stds: vec![]
+                },
+                &meta2,
+                QPrec::F32
+            )
+            .unwrap()
+        );
+        assert!(load_err_of(from_gguf_vec(b"FINF\x05\x00\x00\x00".to_vec())).contains(FINF_HINT));
+        assert!(from_vec(Vec::new()).is_err());
     }
 
     #[test]

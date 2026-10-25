@@ -1,7 +1,7 @@
 //! Generic offline Edge Generative SLM Library Engine.
 use crate::error::{InferError, Result};
 use crate::layer::{Embedding, KvCache, TransformerBlock};
-use crate::loader::{from_bytes, to_bytes};
+use crate::loader::{from_vec, to_bytes};
 use crate::meta::{ModelMetadata, Normalizer, TaskType};
 use crate::model::Sequential;
 use crate::optim::Adam;
@@ -714,8 +714,7 @@ impl GenerativeSLM {
 
     /// Load a previously saved model (Ferrum GGUF) from `model_path`.
     pub fn load(model_path: &str) -> Result<Self> {
-        let bytes = std::fs::read(model_path)?;
-        Self::from_bytes(&bytes)
+        Self::from_vec(std::fs::read(model_path)?)
     }
 
     /// Load the model from `model_path` if it exists; otherwise train a
@@ -748,11 +747,17 @@ impl GenerativeSLM {
 
     /// Load a trained Generative SLM model from self-contained GGUF bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Self::from_vec(bytes.to_vec())
+    }
+
+    /// [`GenerativeSLM::from_bytes`] taking ownership of the bytes: the file is
+    /// parsed in place instead of copied ([`GenerativeSLM::load`] uses this).
+    pub fn from_vec(bytes: Vec<u8>) -> Result<Self> {
         vprintln!(
             "[slm::GenerativeSLM::from_bytes] Deserializing from {} bytes...",
             bytes.len()
         );
-        let (model, norm, meta) = from_bytes(bytes)?;
+        let (model, norm, meta) = from_vec(bytes)?;
         crate::loader::check_slm_consistency(&model, &meta)?;
         vprintln!(
             "[slm::GenerativeSLM::from_bytes] Loaded: {} layers, input_dim={}, output_dim={}",
@@ -3080,6 +3085,26 @@ mod tests {
     #[test]
     fn char_level_models_have_no_bpe_tokenizer() {
         assert!(tiny_char_slm().bpe().unwrap().is_none());
+    }
+
+    #[test]
+    fn from_vec_loads_like_from_bytes() {
+        let slm = tiny_bpe_slm();
+        let bytes = slm.to_bytes().unwrap();
+        let a = GenerativeSLM::from_bytes(&bytes).unwrap();
+        let b = GenerativeSLM::from_vec(bytes).unwrap();
+        assert_eq!(a.meta.class_names, b.meta.class_names);
+        assert_eq!(a.meta.tokenizer_state, b.meta.tokenizer_state);
+        let p = greedy();
+        assert_eq!(
+            a.generate_tokens("the ", 12, &[], &p, &mut Rng::new(1))
+                .unwrap()
+                .text,
+            b.generate_tokens("the ", 12, &[], &p, &mut Rng::new(1))
+                .unwrap()
+                .text
+        );
+        assert!(GenerativeSLM::from_vec(Vec::new()).is_err());
     }
 
     #[test]
