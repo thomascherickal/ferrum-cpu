@@ -31,7 +31,7 @@ Do not break these; they are the product's selling points.
 
 | Path | What |
 |---|---|
-| `ferrum_core/` | The engine library; everything calls into it |
+| `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs` |
 | `slm_cli/` | Binary `train_transformer`: train, generate, eval, info, run-gguf, finetune-gguf, export-gguf |
 | `slm_wasm/` | wasm-bindgen browser bindings (`TransformerSLMModel`) |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`) |
