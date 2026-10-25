@@ -27,6 +27,8 @@
 //! GPUs are never used: all parallelism is plain CPU threads.
 
 #[cfg(not(target_arch = "wasm32"))]
+use std::panic::{catch_unwind, AssertUnwindSafe};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{channel, Sender};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
@@ -82,6 +84,10 @@ pub fn should_parallelize(rows: usize, cost: usize) -> bool {
 // Persistent worker pool
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Panic message of a caller whose worker job panicked (see the pool loop).
+#[cfg(not(target_arch = "wasm32"))]
+const WORKER_PANICKED: &str = "ferrum: a parallel worker job panicked";
+
 #[cfg(not(target_arch = "wasm32"))]
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
@@ -105,9 +111,13 @@ fn pool() -> &'static Pool {
                 .name(format!("ferrum-worker-{id}"))
                 .spawn(move || {
                     // Park on the channel; run jobs until the sender is dropped
-                    // (only at process shutdown, since `POOL` is 'static).
+                    // (only at process shutdown, since `POOL` is 'static). A
+                    // panicking job must not kill its worker: the job's result
+                    // sender is dropped by the unwind, so the caller's `recv`
+                    // fails (and the caller panics), but the pool stays whole
+                    // for every later call.
                     while let Ok(job) = rx.recv() {
-                        job();
+                        let _ = catch_unwind(AssertUnwindSafe(job));
                     }
                 })
                 .expect("ferrum: failed to spawn worker thread");
@@ -174,7 +184,7 @@ where
 
         let mut out = vec![0.0f32; m * n];
         for _ in 0..blocks {
-            let (r0, block) = rx.recv().expect("ferrum: worker thread disconnected");
+            let (r0, block) = rx.recv().expect(WORKER_PANICKED);
             let start = r0 * n;
             out[start..start + block.len()].copy_from_slice(&block);
         }
@@ -243,7 +253,7 @@ where
 
         let mut out = vec![0.0f32; total];
         for _ in 0..blocks {
-            let (j0, block) = rx.recv().expect("ferrum: worker thread disconnected");
+            let (j0, block) = rx.recv().expect(WORKER_PANICKED);
             out[j0..j0 + block.len()].copy_from_slice(&block);
         }
         out
@@ -332,5 +342,39 @@ mod tests {
         if num_threads() > 1 {
             assert!(should_parallelize_1d(PARALLEL_THRESHOLD, 1));
         }
+    }
+
+    /// Regression: a panicking kernel used to kill its pool worker for good, so
+    /// every later parallel call on that worker failed with "worker thread
+    /// disconnected" (a long-lived server then errored on every request).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn worker_panic_fails_that_call_but_not_the_pool() {
+        let boom = |f: &dyn Fn() -> Vec<f32>| {
+            let r = catch_unwind(AssertUnwindSafe(f));
+            let msg = r.unwrap_err();
+            msg.downcast_ref::<String>().cloned()
+        };
+        // Enough rounds that every worker has run (and survived) a panicking job.
+        for _ in 0..(2 * num_threads() + 2) {
+            let m = boom(&|| run(512, 4, |_, _, _| panic!("kernel boom")));
+            let m1 = boom(&|| run_1d(4096, 1, |_, _, _| panic!("kernel boom")));
+            if num_threads() > 1 {
+                assert!(m.unwrap().contains(WORKER_PANICKED));
+                assert!(m1.unwrap().contains(WORKER_PANICKED));
+            }
+        }
+        let out = run(257, 3, |r0, r1, b| {
+            for i in r0..r1 {
+                b[(i - r0) * 3..(i - r0) * 3 + 3].fill(i as f32);
+            }
+        });
+        assert!((0..257).all(|i| out[i * 3..i * 3 + 3].iter().all(|&v| v == i as f32)));
+        let out = run_1d(1000, 1, |j0, j1, b| {
+            for (k, j) in (j0..j1).enumerate() {
+                b[k] = j as f32;
+            }
+        });
+        assert!(out.iter().enumerate().all(|(j, &v)| v == j as f32));
     }
 }
