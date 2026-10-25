@@ -205,13 +205,22 @@ pub fn gutenberg_bodies(raw: &str) -> Vec<&str> {
 }
 
 /// Offset of `*** <what>` or `***<what>` in `s`, whichever comes first.
+///
+/// One linear pass over the `***` occurrences (including overlapping ones, so
+/// `**** START OF` matches at offset 1). The earlier two `find`s each scanned
+/// to the end of `s` when one form was absent, which made
+/// [`gutenberg_bodies`] quadratic in the number of books.
 fn find_marker(s: &str, what: &str) -> Option<usize> {
-    let a = s.find(&format!("*** {what}"));
-    let b = s.find(&format!("***{what}"));
-    match (a, b) {
-        (Some(x), Some(y)) => Some(x.min(y)),
-        (x, y) => x.or(y),
+    let mut from = 0;
+    while let Some(i) = s[from..].find("***") {
+        let at = from + i;
+        let rest = &s[at + 3..];
+        if rest.starts_with(what) || rest.strip_prefix(' ').is_some_and(|r| r.starts_with(what)) {
+            return Some(at);
+        }
+        from = at + 1; // `*` is one byte, so this is a char boundary
     }
+    None
 }
 
 /// Collapse runs of spaces and tabs within each line to a single space.
@@ -463,5 +472,46 @@ mod tests {
         // a complete book followed by a truncated one keeps only the complete one
         let d = "*** START OF A ***\nb1\n*** END OF A ***\n*** START OF B ***\nb2";
         assert_eq!(gutenberg_bodies(d), vec!["b1\n"]);
+    }
+
+    #[test]
+    fn find_marker_offsets_and_non_matches() {
+        assert_eq!(find_marker("*** START OF X", "START OF"), Some(0));
+        assert_eq!(find_marker("ab***START OF X", "START OF"), Some(2));
+        // overlapping stars: the marker starts at the last three of four
+        assert_eq!(find_marker("**** START OF X", "START OF"), Some(1));
+        // a non-matching `***` earlier must not hide a later match
+        assert_eq!(find_marker("*** nope *** END OF", "END OF"), Some(9));
+        // multi-byte text before the marker keeps byte offsets valid
+        assert_eq!(find_marker("é***END OF", "END OF"), Some(2));
+        // two spaces, wrong case, trailing stars only, empty, absent
+        assert_eq!(find_marker("***  START OF", "START OF"), None);
+        assert_eq!(find_marker("*** start of", "START OF"), None);
+        assert_eq!(find_marker("abc***", "START OF"), None);
+        assert_eq!(find_marker("", "START OF"), None);
+        assert_eq!(find_marker("no markers here", "START OF"), None);
+    }
+
+    /// Regression: `find_marker` scanned to the end of the text for the form that was absent,
+    /// so splitting N books cost O(N * len). 50k books must now take milliseconds, not minutes.
+    #[test]
+    fn many_gutenberg_books_split_in_linear_time() {
+        let n = 50_000;
+        let mut raw = String::new();
+        for i in 0..n {
+            raw.push_str(&format!(
+                "*** START OF B{i} ***\nbody {i}\n*** END OF B{i} ***\n"
+            ));
+        }
+        let t = std::time::Instant::now();
+        let books = gutenberg_bodies(&raw);
+        assert_eq!(books.len(), n);
+        assert_eq!(books[0], "body 0\n");
+        assert_eq!(books[n - 1], format!("body {}\n", n - 1));
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(5),
+            "splitting {n} books took {:?}",
+            t.elapsed()
+        );
     }
 }
