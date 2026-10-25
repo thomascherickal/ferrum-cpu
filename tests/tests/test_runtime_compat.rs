@@ -255,3 +255,147 @@ fn require_runtimes_turns_skip_into_failure() {
         "a missing tool must fail under FERRUM_REQUIRE_RUNTIMES=1"
     );
 }
+
+// ---- scripts/verify_runtimes.sh ----
+
+fn script() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/verify_runtimes.sh")
+}
+
+/// Run the script with a clean, hermetic environment: `HOME` is an empty dir and `PATH` holds
+/// only symlinks to the handful of utilities the script needs (so no real Ollama / LM Studio /
+/// llama.cpp is found unless the test provides one). Returns (exit code, stdout + stderr).
+fn run_script(work: &Path, args: &[&Path], envs: &[(&str, &str)]) -> (i32, String) {
+    let bin = work.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for t in [
+        "bash", "python3", "mktemp", "realpath", "dirname", "basename", "seq", "rm", "rmdir",
+        "cat", "sleep", "kill", "curl", "sed",
+    ] {
+        let found = ["/usr/bin", "/bin"]
+            .iter()
+            .map(|d| Path::new(d).join(t))
+            .find(|p| p.exists());
+        if let Some(src) = found {
+            let _ = std::os::unix::fs::symlink(src, bin.join(t));
+        }
+    }
+    let home = work.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let out = std::process::Command::new(bin.join("bash"))
+        .arg(script())
+        .args(args)
+        .env_clear()
+        .env("PATH", &bin)
+        .env("HOME", &home)
+        .envs(envs.iter().copied())
+        .output()
+        .unwrap();
+    let text =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    (out.status.code().unwrap(), text)
+}
+
+/// A fake llama.cpp dir whose `llama-completion` echoes the prompt plus ` mat`.
+fn fake_llama(work: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let d = work.join("llama");
+    std::fs::create_dir_all(&d).unwrap();
+    let exe = d.join("llama-completion");
+    std::fs::write(
+        &exe,
+        "#!/bin/bash\nwhile [ $# -gt 0 ]; do [ \"$1\" = -p ] && p=$2; shift; done\nprintf '%s mat\\n' \"$p\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    d
+}
+
+#[test]
+fn verify_script_usage_and_missing_tool_semantics() {
+    let work = tmp("script");
+    let model = work.join("m.gguf");
+    std::fs::write(&model, b"GGUF").unwrap();
+    // No model argument / a missing file: usage error (2).
+    let (code, text) = run_script(&work, &[], &[]);
+    assert_eq!(code, 2, "{text}");
+    assert!(text.contains("usage:"), "{text}");
+    let (code, _) = run_script(&work, &[&work.join("nope.gguf")], &[]);
+    assert_eq!(code, 2);
+    // llama.cpp missing: a skip normally ...
+    let (code, text) = run_script(&work, &[&model], &[]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("SKIP llama.cpp"), "{text}");
+    // ... and a failure under FERRUM_REQUIRE_RUNTIMES=1.
+    let (code, text) = run_script(&work, &[&model], &[("FERRUM_REQUIRE_RUNTIMES", "1")]);
+    assert_eq!(code, 1, "{text}");
+    assert!(
+        text.contains("FAIL llama.cpp") && text.contains("not found"),
+        "{text}"
+    );
+    let _ = std::fs::remove_dir_all(&work);
+}
+
+#[test]
+fn verify_script_skips_or_fails_missing_ollama_and_lm_studio() {
+    let work = tmp("script_tools");
+    let model = work.join("m.gguf");
+    std::fs::write(&model, b"GGUF").unwrap();
+    let llama = fake_llama(&work);
+    let l = llama.to_str().unwrap();
+    // Reference present, Ollama and LM Studio absent, not required: both skip, exit 0.
+    let (code, text) = run_script(&work, &[&model], &[("FERRUM_LLAMA_BIN", l)]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("llama.cpp: "), "{text}");
+    assert!(
+        text.contains("SKIP ollama") && text.contains("SKIP lms"),
+        "{text}"
+    );
+    assert!(text.trim_end().ends_with("OK"), "{text}");
+    // Required: both missing tools fail ...
+    let req = [("FERRUM_LLAMA_BIN", l), ("FERRUM_REQUIRE_RUNTIMES", "1")];
+    let (code, text) = run_script(&work, &[&model], &req);
+    assert_eq!(code, 1, "{text}");
+    assert!(
+        text.contains("FAIL ollama") && text.contains("FAIL lms"),
+        "{text}"
+    );
+    // ... except LM Studio, which FERRUM_SKIP_LMSTUDIO=1 exempts (the CI setting).
+    let req_skip = [req[0], req[1], ("FERRUM_SKIP_LMSTUDIO", "1")];
+    let (code, text) = run_script(&work, &[&model], &req_skip);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("FAIL ollama"), "{text}");
+    assert!(
+        text.contains("SKIP lm-studio") && !text.contains("FAIL lms"),
+        "{text}"
+    );
+    let _ = std::fs::remove_dir_all(&work);
+}
+
+/// Ollama and LM Studio produce what llama.cpp produces for a Ferrum F32 GGUF (plan G5). Needs
+/// the real tools, so it runs only with `FERRUM_VERIFY_RUNTIMES=1`; the script itself honours
+/// `FERRUM_REQUIRE_RUNTIMES` and `FERRUM_SKIP_LMSTUDIO`.
+#[test]
+fn ollama_and_lm_studio_run_ferrum_gguf() {
+    if std::env::var("FERRUM_VERIFY_RUNTIMES").ok().as_deref() != Some("1") {
+        eprintln!("skip: set FERRUM_VERIFY_RUNTIMES=1 to run scripts/verify_runtimes.sh");
+        return;
+    }
+    let Some(dir) = llama_dir() else { return };
+    let slm = tiny_model();
+    let work = tmp("verify");
+    let f = work.join("m.gguf");
+    std::fs::write(&f, slm.to_bytes().unwrap()).unwrap();
+    let out = std::process::Command::new("bash")
+        .arg(script())
+        .arg(&f)
+        .env("FERRUM_LLAMA_BIN", &dir)
+        .output()
+        .unwrap();
+    let text =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    eprintln!("{text}");
+    assert!(out.status.success(), "verify_runtimes.sh failed:\n{text}");
+    assert!(text.contains("verify_runtimes: OK"), "{text}");
+    let _ = std::fs::remove_dir_all(&work);
+}
