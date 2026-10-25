@@ -169,6 +169,7 @@ a 1–3 day job.
 | 🟢 | Resume restarts the interrupted epoch with a fresh shuffle instead of replaying the exact remaining batches (marked `ponytail:` in `slm.rs`). |
 | 🟢 | Native `generate` on the CLI exposes temperature only; top-k, top-p, and repetition penalty are library-only (`generate_with`). |
 | 🟢 | GGUF loads expand Q8_0/Q4_0 weights to f32 in RAM (about 4x/8x the file size; marked `ponytail:` in `loader.rs`) until a packed Q8_0 kernel exists. Loading a Ferrum model parses the file bytes in place (`GenerativeSLM::load` no longer copies them). |
+| 🟢 | A hand-built tokenizer without an EOS token exports a GGUF with no `bos`/`eos` ids, and llama.cpp then defaults them to token 11 (byte `0x0B`). Every tokenizer Ferrum trains reserves EOS, so only hand-built ones are affected. |
 | 🟢 | GGUF import is lossy (dequantize and re-quantize to Ferrum's per-row grid) and not bit-exact to llama.cpp; RoPE type is hard-wired to `Norm` on import; no RoPE scaling. |
 
 ---
