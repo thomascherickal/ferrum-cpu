@@ -11,6 +11,7 @@ use crate::tokenizer::ByteBpeTokenizer;
 use crate::train_transformer::{train_transformer_steps, TransformerNet};
 use crate::verbose;
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 /// Hyperparameters for training a causal transformer SLM.
 ///
@@ -254,9 +255,35 @@ pub struct GenerativeSLM {
     pub model: Sequential,
     pub norm: Normalizer,
     pub meta: ModelMetadata,
+    /// The BPE tokenizer parsed from `meta.tokenizer_state`, built once.
+    tokenizer: TokenizerCache,
 }
 
+/// One-slot cache of the parsed tokenizer, keyed by the state string it was
+/// built from, so a caller that edits the public `meta.tokenizer_state` can
+/// never read a stale tokenizer. Errors are not cached.
+#[derive(Default)]
+struct TokenizerCache(Mutex<Option<(String, Arc<ByteBpeTokenizer>)>>);
+
 impl GenerativeSLM {
+    /// The BPE tokenizer for this model (`None` for character-level models),
+    /// parsed from `meta.tokenizer_state` on first use and shared afterwards.
+    fn bpe(&self) -> Result<Option<Arc<ByteBpeTokenizer>>> {
+        let state = &self.meta.tokenizer_state;
+        if state.is_empty() {
+            return Ok(None);
+        }
+        let mut slot = self.tokenizer.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((built_from, tok)) = slot.as_ref() {
+            if built_from == state {
+                return Ok(Some(Arc::clone(tok)));
+            }
+        }
+        let tok = Arc::new(ByteBpeTokenizer::from_state(state)?);
+        *slot = Some((state.clone(), Arc::clone(&tok)));
+        Ok(Some(tok))
+    }
+
     /// Construct a new instance manually from sequential layers, normalizer, and metadata.
     pub fn new(model: Sequential, norm: Normalizer, meta: ModelMetadata) -> Self {
         vprintln!(
@@ -265,7 +292,12 @@ impl GenerativeSLM {
             meta.input_dim,
             meta.output_dim
         );
-        Self { model, norm, meta }
+        Self {
+            model,
+            norm,
+            meta,
+            tokenizer: TokenizerCache::default(),
+        }
     }
 
     /// Train a true decoder-only causal Transformer SLM on a raw text corpus.
@@ -446,7 +478,12 @@ impl GenerativeSLM {
             means: vec![],
             stds: vec![],
         };
-        Ok(Self { model, norm, meta })
+        Ok(Self {
+            model,
+            norm,
+            meta,
+            tokenizer: TokenizerCache::default(),
+        })
     }
 
     /// Serialize the trained Generative SLM model to self-contained GGUF bytes.
@@ -732,7 +769,12 @@ impl GenerativeSLM {
             meta.input_dim,
             meta.output_dim
         );
-        Ok(Self { model, norm, meta })
+        Ok(Self {
+            model,
+            norm,
+            meta,
+            tokenizer: TokenizerCache::default(),
+        })
     }
 
     /// Autoregressively generate next-character sequence completions from a seed text.
@@ -877,8 +919,8 @@ impl GenerativeSLM {
             seed.chars().take(50).collect::<String>(), num_chars,
             params.temperature, params.top_k, params.top_p, params.repetition_penalty, stop);
 
-        if !self.meta.tokenizer_state.is_empty() {
-            return self.generate_bpe_stream(seed, num_chars, params, stop, rng, on_text);
+        if let Some(tok) = self.bpe()? {
+            return self.generate_bpe_stream(&tok, seed, num_chars, params, stop, rng, on_text);
         }
 
         self.require_token_id_model()?;
@@ -1120,6 +1162,7 @@ impl GenerativeSLM {
     #[allow(clippy::too_many_arguments)]
     fn generate_bpe_stream<F>(
         &self,
+        tok: &ByteBpeTokenizer,
         seed: &str,
         num_chars: usize,
         params: &SamplingParams,
@@ -1130,7 +1173,6 @@ impl GenerativeSLM {
     where
         F: FnMut(&str),
     {
-        let tok = ByteBpeTokenizer::from_state(&self.meta.tokenizer_state)?;
         let context_len = self.meta.input_dim;
         let eos = tok.eos_id();
         let ids = tok.encode_docs(seed);
@@ -1360,11 +1402,7 @@ impl GenerativeSLM {
         rng: &mut Rng,
     ) -> Result<Generation> {
         self.require_token_id_model()?;
-        let bpe = if self.meta.tokenizer_state.is_empty() {
-            None
-        } else {
-            Some(ByteBpeTokenizer::from_state(&self.meta.tokenizer_state)?)
-        };
+        let bpe = self.bpe()?;
         let eos = bpe.as_ref().and_then(|t| t.eos_id());
         let mut cached = CachedTransformer::try_new(&self.model).ok_or_else(|| {
             InferError::DimMismatch("generate_tokens needs a transformer model".into())
@@ -1440,11 +1478,9 @@ impl GenerativeSLM {
     /// The conditioning token placed before the first scored or generated
     /// token: the tokenizer's EOS id when it has one (document boundary), else 0.
     pub fn bos_id(&self) -> usize {
-        if self.meta.tokenizer_state.is_empty() {
-            return 0;
-        }
-        ByteBpeTokenizer::from_state(&self.meta.tokenizer_state)
+        self.bpe()
             .ok()
+            .flatten()
             .and_then(|t| t.eos_id())
             .unwrap_or(0)
     }
@@ -1453,8 +1489,7 @@ impl GenerativeSLM {
     /// character-level models map each char (CR dropped) and error on a char
     /// outside the model vocabulary instead of silently using id 0.
     pub fn encode_text(&self, text: &str) -> Result<Vec<usize>> {
-        if !self.meta.tokenizer_state.is_empty() {
-            let tok = ByteBpeTokenizer::from_state(&self.meta.tokenizer_state)?;
+        if let Some(tok) = self.bpe()? {
             return Ok(tok.encode_docs(text));
         }
         self.require_token_id_model()?;
@@ -2980,6 +3015,59 @@ mod tests {
         assert_eq!(slm.bos_id(), 0);
     }
 
+    /// Regression (deferred minor): `bos_id`/`encode_text`/`generate_tokens`
+    /// rebuilt the BPE tokenizer on every call. It is now built once, rebuilt
+    /// only when `meta.tokenizer_state` changes, and errors are not cached.
+    #[test]
+    fn bpe_tokenizer_is_built_once_and_tracks_state_edits() {
+        let mut slm = tiny_bpe_slm();
+        let a = slm.bpe().unwrap().unwrap();
+        let b = slm.bpe().unwrap().unwrap();
+        assert!(
+            Arc::ptr_eq(&a, &b),
+            "second call must reuse the cached tokenizer"
+        );
+        // Bit-identical to a freshly parsed tokenizer.
+        let fresh = ByteBpeTokenizer::from_state(&slm.meta.tokenizer_state).unwrap();
+        assert_eq!(
+            slm.encode_text("the cat sat").unwrap(),
+            fresh.encode_docs("the cat sat")
+        );
+        assert_eq!(slm.bos_id(), fresh.eos_id().unwrap_or(0));
+        // An edited state invalidates the cache; a broken one errors, and the
+        // good entry is not poisoned by it.
+        let good = slm.meta.tokenizer_state.clone();
+        slm.meta.tokenizer_state = "not,a,state".into();
+        assert!(slm.bpe().is_err());
+        assert!(slm.encode_text("x").is_err());
+        slm.meta.tokenizer_state = good;
+        let c = slm.bpe().unwrap().unwrap();
+        assert_eq!(
+            slm.encode_text("the cat sat").unwrap(),
+            c.encode_docs("the cat sat")
+        );
+    }
+
+    #[test]
+    fn char_level_models_have_no_bpe_tokenizer() {
+        assert!(tiny_char_slm().bpe().unwrap().is_none());
+    }
+
+    #[test]
+    fn bpe_cache_survives_a_poisoned_lock() {
+        let slm = tiny_bpe_slm();
+        let _ = slm.bpe().unwrap();
+        std::thread::scope(|sc| {
+            let r = sc.spawn(|| {
+                let _g = slm.tokenizer.0.lock().unwrap();
+                panic!("poison the cache lock");
+            });
+            assert!(r.join().is_err());
+        });
+        assert!(slm.tokenizer.0.is_poisoned());
+        assert!(slm.bpe().unwrap().is_some());
+    }
+
     /// A model with no transformer blocks (just Linear + Softmax) exercises the
     /// one-forward-per-target fallback; constant bias gives a closed-form oracle.
     fn bias_only_slm() -> GenerativeSLM {
@@ -4034,7 +4122,9 @@ mod tests {
             GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(1), |_, _| {})
                 .unwrap();
         assert!(GenerativeSLM::from_bytes(&slm.to_bytes().unwrap()).is_ok());
-        let GenerativeSLM { model, norm, meta } = slm;
+        let GenerativeSLM {
+            model, norm, meta, ..
+        } = slm;
         for edit in [
             |m: &mut ModelMetadata| m.input_dim = 0,
             |m: &mut ModelMetadata| m.input_dim = 1 << 30,
