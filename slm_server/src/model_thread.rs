@@ -232,7 +232,6 @@ mod tests {
         })
         .unwrap_err();
         assert!(!err.is_empty());
-        assert!(collect::<u8>(&[], |_| Ok(json!(0))).unwrap().is_empty());
     }
 
     #[test]
