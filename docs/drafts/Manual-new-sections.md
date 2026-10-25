@@ -521,7 +521,14 @@ stops the server, and writes a summary:
 | `--model`, `--test`, `--out` | Required: model file, test split, summary path |
 | `--max-samples N` | Cap samples per task |
 | `--wikitext` | Add `wikitext:103:document_level` |
-| `--port P` | Server port |
+| `--port P` | Server port (default 8765) |
+
+`FERRUM_SERVE_WAIT` (seconds, default 60) caps the wait for the server to load the
+model and answer `/health`. `run.sh` stops the server (and LightEval) on every
+exit path, including Ctrl-C and `kill`. Each run uses its own LightEval sample
+cache under `eval/lighteval/out/cache`, because LightEval's default cache is
+keyed by the model *config*, not the weights, and would answer a second model
+from the first one's results.
 
 **Tasks.**
 
@@ -533,7 +540,18 @@ stops the server, and writes a summary:
 | `arc:easy` | Science questions | accuracy |
 
 A 500K-parameter model will score near chance on `arc:easy` (25% for four
-choices). That is expected. <!-- MEASURE: results table from a real run -->
+choices). That is expected. Real run of `models/slm.gguf` (507,552 parameters,
+full test split, no `--max-samples`; DVC test-split bits per byte for the
+whole file is 1.305, the LightEval figure scores each document cold):
+
+| Task | Metric | Value |
+|---|---|---|
+| `ferrum_heldout` | word perplexity / byte perplexity / bits per byte | 103.59 / 2.531 / 1.3397 |
+| `tinystories_cloze` | acc | 0.2776 (chance 0.25) |
+| `blimp:anaphor_gender_agreement` | acc | 0.807 |
+| `blimp:anaphor_number_agreement` | acc | 0.521 |
+| `blimp:regular_plural_subject_verb_agreement_1` | acc | 0.669 |
+| `arc:easy` | acc | 0.2508 (chance 0.25) |
 
 `FerrumModel` reads the server address from `FERRUM_URL` (default
 `http://127.0.0.1:8080`) and uses only the Python standard library to talk to it.
