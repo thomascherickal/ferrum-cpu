@@ -542,7 +542,7 @@ from the first one's results.
 A 500K-parameter model will score near chance on `arc:easy` (25% for four
 choices). That is expected. Real run of `models/slm.gguf` (507,552 parameters,
 full test split, no `--max-samples`; DVC test-split bits per byte for the
-whole file is 1.305, the LightEval figure scores each document cold):
+whole file is 1.305, the LightEval figure scores the 1,423 documents one by one, so the two differ):
 
 | Task | Metric | Value |
 |---|---|---|
