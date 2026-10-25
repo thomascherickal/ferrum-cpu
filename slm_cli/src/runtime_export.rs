@@ -263,7 +263,22 @@ fn model_key_for(json: &str, suffix: &str) -> Option<String> {
     None
 }
 
+/// How long to wait for LM Studio to list a fresh import: a running desktop app indexes its
+/// models directory asynchronously, so `lms ls --json` can lag the import by a few seconds.
+const LISTING_ATTEMPTS: u32 = 30;
+const LISTING_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+
 pub fn export_lmstudio(model: &Path, repo: &str, bin: Option<&str>) -> Result<String, String> {
+    export_lmstudio_with(model, repo, bin, LISTING_ATTEMPTS, LISTING_DELAY)
+}
+
+fn export_lmstudio_with(
+    model: &Path,
+    repo: &str,
+    bin: Option<&str>,
+    attempts: u32,
+    delay: std::time::Duration,
+) -> Result<String, String> {
     let (publisher, rest) = repo.split_once('/').unwrap_or(("", ""));
     if publisher.is_empty() || rest.is_empty() || rest.contains('/') {
         return Err(format!("--repo '{repo}' must look like <publisher>/<name>"));
@@ -288,13 +303,22 @@ pub fn export_lmstudio(model: &Path, repo: &str, bin: Option<&str>) -> Result<St
     }
     let file = abs.file_name().unwrap_or_default().to_string_lossy();
     let suffix = format!("{repo}/{file}");
-    let (ok, json) = run_tool(&tool, &["ls".as_ref(), "--json".as_ref()])?;
-    if !ok {
-        return Err(format!("`lms ls --json` failed:\n{}", json.trim()));
+    for attempt in 0..attempts.max(1) {
+        if attempt > 0 {
+            std::thread::sleep(delay);
+        }
+        let (ok, json) = run_tool(&tool, &["ls".as_ref(), "--json".as_ref()])?;
+        if !ok {
+            return Err(format!("`lms ls --json` failed:\n{}", json.trim()));
+        }
+        if let Some(key) = model_key_for(&json, &suffix) {
+            return Ok(key);
+        }
     }
-    model_key_for(&json, &suffix).ok_or_else(|| {
-        format!("imported, but `lms ls --json` has no entry whose path ends with {suffix}")
-    })
+    Err(format!(
+        "imported, but `lms ls --json` has no entry whose path ends with {suffix} \
+         (if the LM Studio app is open, it may still be indexing; rerun in a moment)"
+    ))
 }
 
 const USAGE_OLLAMA: &str =
@@ -807,11 +831,39 @@ mod tests {
             "{e}"
         );
         let tool = lms(&d, "exit 0", "echo '[]'");
-        let e = export_lmstudio(&model, "ferrum/m", Some(s(&tool))).unwrap_err();
+        let e = export_lmstudio_with(&model, "ferrum/m", Some(s(&tool)), 2, ZERO).unwrap_err();
         assert!(
             e.contains("no entry whose path ends with ferrum/m/m.gguf"),
             "{e}"
         );
+    }
+
+    const ZERO: std::time::Duration = std::time::Duration::ZERO;
+
+    /// Regression: with the LM Studio desktop app open, `lms ls --json` lags the import, so the
+    /// export used to fail with "no entry whose path ends with ...". It now polls the listing.
+    #[test]
+    fn export_lmstudio_waits_for_a_lagging_listing() {
+        let d = tmp("lm_lag");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(8));
+        // `ls` prints an empty list for the first two calls, then the entry.
+        let ls = format!(
+            "n=$(cat {0}/n 2>/dev/null || echo 0); echo $((n+1)) > {0}/n; \
+             if [ $n -ge 2 ]; then cat {0}/ls.json; else echo '[]'; fi",
+            s(&d)
+        );
+        let tool = lms(&d, "exit 0", &ls);
+        let key = export_lmstudio_with(&model, "ferrum/m", Some(s(&tool)), 5, ZERO).unwrap();
+        assert_eq!(key, "ferrum/m");
+        assert_eq!(std::fs::read_to_string(d.join("n")).unwrap().trim(), "3");
+        // Too few attempts still reports the miss, mentioning the app.
+        std::fs::remove_file(d.join("n")).unwrap();
+        let e = export_lmstudio_with(&model, "ferrum/m", Some(s(&tool)), 2, ZERO).unwrap_err();
+        assert!(e.contains("still be indexing"), "{e}");
+        // Zero attempts is clamped to one (never skips the listing).
+        std::fs::remove_file(d.join("n")).unwrap();
+        assert!(export_lmstudio_with(&model, "ferrum/m", Some(s(&tool)), 0, ZERO).is_err());
+        assert_eq!(std::fs::read_to_string(d.join("n")).unwrap().trim(), "1");
     }
 
     #[test]

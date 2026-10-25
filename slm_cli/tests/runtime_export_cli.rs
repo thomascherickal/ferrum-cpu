@@ -47,6 +47,10 @@ fn exporter(args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
 
 /// llama.cpp's greedy continuation of `PROMPT` (the reference both runtimes must match).
 fn llama_reference(model: &Path) -> Option<String> {
+    llama_reference_n(model, N)
+}
+
+fn llama_reference_n(model: &Path, n: usize) -> Option<String> {
     let bin = require_or_skip(tool(
         "FERRUM_LLAMA_COMPLETION",
         "llama-completion",
@@ -59,7 +63,7 @@ fn llama_reference(model: &Path) -> Option<String> {
             "-p",
             PROMPT,
             "-n",
-            &N.to_string(),
+            &n.to_string(),
         ])
         .args(["--temp", "0", "-no-cnv", "--no-warmup"])
         .stdin(Stdio::null())
@@ -72,6 +76,13 @@ fn llama_reference(model: &Path) -> Option<String> {
         .unwrap_or_else(|| panic!("llama output {text:?}"));
     assert!(!rest.trim().is_empty(), "llama.cpp produced nothing");
     Some(rest.to_string())
+}
+
+/// LM Studio's engines disagree on whether `max_tokens` counts the first generated token
+/// (older builds returned `max_tokens - 1` visible tokens, newer ones return `max_tokens`),
+/// so a completion is correct if it equals llama.cpp's greedy output for either length.
+fn matches_any_reference(got: &str, refs: &[&str]) -> bool {
+    !got.trim().is_empty() && refs.iter().any(|r| got.trim_end() == r.trim_end())
 }
 
 fn json_string_field(json: &str, key: &str) -> String {
@@ -304,6 +315,9 @@ fn export_lmstudio_then_generate() {
     let Some(want) = llama_reference(&gpt2()) else {
         return;
     };
+    let Some(want_plus) = llama_reference_n(&gpt2(), N + 1) else {
+        return;
+    };
     let model = gpt2();
     let (ok, text) = exporter(
         &[
@@ -357,9 +371,21 @@ fn export_lmstudio_then_generate() {
         &curl_post("http://127.0.0.1:1234/v1/completions", &body),
         "text",
     );
-    eprintln!("llama.cpp: {want:?}\nlmstudio:  {got:?}");
-    assert!(!got.trim().is_empty());
-    assert_eq!(got.trim_end(), want.trim_end()); // llama-completion appends newlines
+    eprintln!("llama.cpp: {want:?} / {want_plus:?}\nlmstudio:  {got:?}");
+    assert!(
+        matches_any_reference(&got, &[&want, &want_plus]), // llama-completion appends newlines
+        "lmstudio {got:?} matches neither {want:?} nor {want_plus:?}"
+    );
+}
+
+#[test]
+fn reference_matching_accepts_either_token_budget_and_nothing_else() {
+    let (n, n1) = (" a b\n\n", " a b c\n\n");
+    assert!(matches_any_reference(" a b", &[n, n1]));
+    assert!(matches_any_reference(" a b c", &[n, n1]));
+    assert!(!matches_any_reference(" a b c d", &[n, n1]));
+    assert!(!matches_any_reference(" a", &[n, n1]));
+    assert!(!matches_any_reference("  ", &["  "])); // empty output is never a pass
 }
 
 #[test]
