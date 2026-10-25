@@ -94,6 +94,9 @@ enum Job {
     /// Test hook: panics on the model thread.
     #[cfg(test)]
     Panic(Reply),
+    /// Test hook: a parallel-pool kernel (panics on the pool workers if `true`).
+    #[cfg(test)]
+    Pool(bool, Reply),
 }
 
 #[derive(Clone)]
@@ -185,6 +188,17 @@ fn handle(model: &GenerativeSLM, job: Job) {
         ),
         #[cfg(test)]
         Job::Panic(reply) => (reply, guarded(|| panic!("boom"))),
+        #[cfg(test)]
+        Job::Pool(fail, reply) => (
+            reply,
+            guarded(|| {
+                let out = ferrum_core::parallel::run(512, 4, move |r0, r1, b| {
+                    assert!(!fail, "kernel boom");
+                    b[..(r1 - r0) * 4].fill(1.0);
+                });
+                Ok(vec![json!(out.iter().sum::<f32>())])
+            }),
+        ),
     };
     let _ = reply.send(result);
 }
@@ -648,7 +662,7 @@ mod tests {
             for job in rx {
                 let (texts, reply) = match job {
                     Job::Rolling(t, r) => (t, r),
-                    Job::Score(_, r) | Job::Generate(_, r) | Job::Panic(r) => {
+                    Job::Score(_, r) | Job::Generate(_, r) | Job::Panic(r) | Job::Pool(_, r) => {
                         (vec!["other".into()], r)
                     }
                 };
@@ -745,6 +759,32 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(v["results"].as_array().unwrap().len(), 1);
+        assert!(health(State(s)).await.is_ok());
+    }
+
+    /// Regression: a panic on a `parallel.rs` pool worker (not the model thread)
+    /// failed that request with a clean 422, but killed the worker, so every later
+    /// parallel matmul failed too. The server must answer an error, not hang, and
+    /// keep serving afterwards.
+    #[tokio::test]
+    async fn pool_worker_panic_is_an_error_and_the_server_keeps_serving() {
+        let m = model(0);
+        let (tx, _info, alive) = spawn_model_thread(m.to_bytes_quantized().unwrap()).unwrap();
+        let mut s = state(tx);
+        s.alive = alive;
+        for _ in 0..(2 * ferrum_core::parallel::num_threads() + 2) {
+            let e = tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                submit(&s, |r| Job::Pool(true, r)),
+            )
+            .await
+            .expect("must not hang")
+            .unwrap_err();
+            assert_eq!(e.0, StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(e.1.contains("panicked"), "{}", e.1);
+            let Json(v) = submit(&s, |r| Job::Pool(false, r)).await.unwrap();
+            assert_eq!(v["results"][0].as_f64(), Some(2048.0));
+        }
         assert!(health(State(s)).await.is_ok());
     }
 
