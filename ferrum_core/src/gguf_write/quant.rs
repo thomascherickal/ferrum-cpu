@@ -235,4 +235,27 @@ mod tests {
             Some(1), // MOSTLY_F16
         );
     }
+
+    #[test]
+    fn every_quant_maps_to_its_ggml_type_and_whole_model_file_type() {
+        use crate::gguf::{
+            GGML_F16, GGML_F32, GGML_Q4_0, GGML_Q4_1, GGML_Q4_K, GGML_Q5_K, GGML_Q6_K, GGML_Q8_0,
+            GGML_Q8_1,
+        };
+        let table = [
+            (GgufQuant::F32, GGML_F32, 0),
+            (GgufQuant::F16, GGML_F16, 1),
+            (GgufQuant::Q4_0, GGML_Q4_0, 2),
+            (GgufQuant::Q4_1, GGML_Q4_1, 3),
+            (GgufQuant::Q8_0, GGML_Q8_0, 7),
+            (GgufQuant::Q8_1, GGML_Q8_1, 7),
+            (GgufQuant::Q4K, GGML_Q4_K, 15),
+            (GgufQuant::Q5K, GGML_Q5_K, 17),
+            (GgufQuant::Q6K, GGML_Q6_K, 18),
+        ];
+        for (q, ty, ft) in table {
+            assert_eq!(q.ggml_type(), ty, "{q:?}");
+            assert_eq!(q.file_type(), ft, "{q:?}");
+        }
+    }
 }

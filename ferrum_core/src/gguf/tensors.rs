@@ -109,8 +109,11 @@ impl Gguf {
 #[cfg(test)]
 mod tests {
     use crate::gguf::format::{type_nbytes, GGML_F32, GGML_Q8_0};
+    use crate::gguf::format::{GGML_Q2_K, GGML_Q3_K};
+    use crate::gguf::test_support::parse_and_open;
     use crate::gguf::test_support::synth_gguf;
     use crate::gguf::Gguf;
+    use crate::gguf_write::GgufBuilder;
     use crate::quant::QKind;
 
     #[test]
@@ -158,5 +161,48 @@ mod tests {
         assert!(type_nbytes(GGML_Q8_0, 30).is_err());
         assert!(type_nbytes(GGML_F32, 30).is_ok());
         assert!(type_nbytes(999, 32).is_err());
+    }
+
+    #[test]
+    fn tensor_bytes_rejects_an_extent_past_eof_in_memory_and_streamed() {
+        let (bytes, _, _, _) = synth_gguf();
+        let (mem, streamed) = parse_and_open(&bytes);
+        for mut g in [mem.unwrap(), streamed.unwrap()] {
+            let mut t = g.tensor("t_f32").unwrap().clone();
+            t.offset += 1 << 20; // directory entry now points far past the data
+            assert!(g
+                .tensor_bytes(&t)
+                .unwrap_err()
+                .to_string()
+                .contains("past EOF"));
+            g.tensors[0].offset = t.offset;
+            assert!(g.dequantize(&g.tensors[0].clone()).is_err());
+        }
+    }
+
+    #[test]
+    fn dequantize_dispatches_q2_k_q3_k_and_rejects_unsupported_types() {
+        let mut b = GgufBuilder::new();
+        b.tensor("q2", &[256], GGML_Q2_K, vec![0u8; 84]);
+        b.tensor("q3", &[256], GGML_Q3_K, vec![0u8; 110]);
+        b.tensor("iq", &[32], 99, vec![0u8; 32]); // a type id we cannot decode
+        let g = Gguf::parse(b.into_bytes()).unwrap();
+        assert_eq!(
+            g.dequantize(g.tensor("q2").unwrap()).unwrap(),
+            vec![0.0; 256]
+        );
+        assert_eq!(g.dequantize(g.tensor("q3").unwrap()).unwrap().len(), 256);
+        assert!(g.dequantize(g.tensor("iq").unwrap()).is_err());
+    }
+
+    #[test]
+    fn quantized_weight_rejects_missing_tensors_and_indivisible_rows() {
+        let (bytes, _, _, _) = synth_gguf();
+        let g = Gguf::parse(bytes).unwrap();
+        assert!(g.quantized_weight("nope", 4, QKind::Int8).is_err());
+        let e = g.quantized_weight("t_f32", 5, QKind::Int8).unwrap_err();
+        assert!(e.to_string().contains("not divisible"), "{e}");
+        assert!(g.quantized_weight("t_f32", 0, QKind::Int8).is_err());
+        assert!(g.quantized_weight("t_f32", 4, QKind::Int8).is_ok());
     }
 }

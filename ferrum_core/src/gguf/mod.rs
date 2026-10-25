@@ -243,6 +243,7 @@ mod tests {
     use crate::error::InferError;
     use crate::gguf::format::{GGML_F32, GGML_Q8_0, GGUF_MAGIC, QK};
     use crate::gguf::test_support::{parse_and_open, put_u32, put_u64, synth_gguf, synth_llama};
+    use crate::gguf_write::GgufBuilder;
     use crate::quant::QKind;
     use std::fs::File;
 
@@ -363,5 +364,50 @@ mod tests {
             .to_string();
         let _ = std::fs::remove_file(&path);
         assert!(e.contains("truncated"), "{e}");
+    }
+
+    #[test]
+    fn wide_scalar_metadata_roundtrips_and_converts() {
+        let mut b = GgufBuilder::new();
+        b.meta("t.i16", MetaValue::I16(7))
+            .meta("t.i16neg", MetaValue::I16(-1))
+            .meta("t.i64", MetaValue::I64(-5))
+            .meta("t.f64", MetaValue::F64(1.5));
+        let g = Gguf::parse(b.into_bytes()).unwrap();
+        assert_eq!(g.meta("t.i16"), Some(&MetaValue::I16(7)));
+        assert_eq!(g.meta("t.i64"), Some(&MetaValue::I64(-5)));
+        assert_eq!(g.meta("t.f64"), Some(&MetaValue::F64(1.5)));
+        assert_eq!(g.meta("t.i16").unwrap().as_usize(), Some(7));
+        assert_eq!(g.meta("t.i16neg").unwrap().as_usize(), None);
+        assert_eq!(g.meta("t.f64").unwrap().as_f32(), Some(1.5));
+    }
+
+    #[test]
+    fn from_path_reads_a_file_and_open_rejects_a_data_section_past_eof() {
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+
+        // from_path == parse of the same bytes.
+        let (bytes, _, _, _) = synth_gguf();
+        let ok = dir.join(format!("ferrum_gguf_from_path_{pid}.gguf"));
+        std::fs::write(&ok, &bytes).unwrap();
+        let g = Gguf::from_path(ok.to_str().unwrap()).unwrap();
+        assert_eq!(g.architecture(), Some("ferrum-test"));
+        assert!(Gguf::from_path("/nonexistent/ferrum.gguf").is_err());
+        let _ = std::fs::remove_file(&ok);
+
+        // A header-only file whose aligned data section starts past EOF: both
+        // the in-memory and the streamed reader refuse it.
+        let mut short = Vec::new();
+        short.extend_from_slice(&0x4655_4747u32.to_le_bytes());
+        short.extend_from_slice(&3u32.to_le_bytes());
+        short.extend_from_slice(&0u64.to_le_bytes());
+        short.extend_from_slice(&0u64.to_le_bytes());
+        assert!(Gguf::parse(short.clone()).is_err());
+        let p = dir.join(format!("ferrum_gguf_short_{pid}.gguf"));
+        std::fs::write(&p, &short).unwrap();
+        let err = Gguf::open(p.to_str().unwrap()).err().unwrap();
+        let _ = std::fs::remove_file(&p);
+        assert!(err.to_string().contains("past EOF"), "{err}");
     }
 }

@@ -397,4 +397,52 @@ mod tests {
         let logits = m2.forward_tokens(&[1usize, 3, 5]).unwrap();
         assert!(logits.data.iter().all(|v| v.is_finite()));
     }
+
+    #[test]
+    fn export_rejects_other_architectures_and_a_missing_architecture() {
+        let mut src = Gguf::parse(tiny_llama_gguf_bytes()).unwrap();
+        let model = src.load_llama_prec(None).unwrap();
+        src.metadata.insert(
+            "general.architecture".into(),
+            MetaValue::String("mamba".into()),
+        );
+        let e = llama_gguf_bytes(&model, &src, GgufQuant::F32).unwrap_err();
+        assert!(e.to_string().contains("llama/qwen2 only"), "{e}");
+        src.metadata.remove("general.architecture");
+        let e = llama_gguf_bytes(&model, &src, GgufQuant::F32).unwrap_err();
+        assert!(
+            e.to_string().contains("missing general.architecture"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_tied_head_source_exports_without_an_output_tensor() {
+        let mut src = Gguf::parse(tiny_llama_gguf_bytes()).unwrap();
+        let model = src.load_llama_prec(None).unwrap();
+        src.tensors.retain(|t| t.name != "output.weight");
+        let out = Gguf::parse(llama_gguf_bytes(&model, &src, GgufQuant::F32).unwrap()).unwrap();
+        assert!(out.tensor("output.weight").is_none());
+        assert!(out.tensor("token_embd.weight").is_some());
+    }
+
+    #[test]
+    fn write_llama_gguf_surfaces_io_errors_and_leaves_no_temp_file() {
+        let src = Gguf::parse(tiny_llama_gguf_bytes()).unwrap();
+        let model = src.load_llama_prec(None).unwrap();
+        // The destination is an existing directory, so the final rename fails.
+        let dir = std::env::temp_dir().join(format!("ferrum_atomic_dir_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.to_str().unwrap();
+        let r = super::write_llama_gguf(&model, &src, GgufQuant::F32, p);
+        let tmp_left = std::path::Path::new(&format!("{p}.tmp")).exists();
+        let _ = std::fs::remove_dir(&dir);
+        assert!(r.is_err());
+        assert!(!tmp_left);
+        // An unwritable directory fails at the first write.
+        assert!(
+            super::write_llama_gguf(&model, &src, GgufQuant::F32, "/nonexistent-dir/x.gguf")
+                .is_err()
+        );
+    }
 }

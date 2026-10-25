@@ -313,4 +313,12 @@ mod tests {
         let amax = x.iter().fold(0.0f32, |m, v| m.max(v.abs()));
         assert!(max_abs_err(&x, &back) <= amax * 0.05, "q6_k error too high");
     }
+
+    #[test]
+    fn enc_q6_k_all_zero_block_decodes_to_zeros() {
+        use crate::gguf::GGML_Q6_K;
+        let x = vec![0.0f32; QK_K];
+        let back = dequant_via_reader(&x, GGML_Q6_K, &[QK_K as u64]);
+        assert_eq!(back, x);
+    }
 }

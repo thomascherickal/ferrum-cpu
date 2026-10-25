@@ -281,4 +281,64 @@ mod tests {
             _ => panic!("tokens not an array"),
         }
     }
+
+    #[test]
+    fn every_metadata_kind_and_array_roundtrips_through_the_reader() {
+        use crate::gguf::{Gguf, MetaValue};
+        let kinds = [
+            ("k.u8", MetaValue::U8(200)),
+            ("k.i8", MetaValue::I8(-7)),
+            ("k.u16", MetaValue::U16(60000)),
+            ("k.i16", MetaValue::I16(-300)),
+            ("k.u32", MetaValue::U32(4_000_000_000)),
+            ("k.i32", MetaValue::I32(-5)),
+            ("k.f32", MetaValue::F32(2.5)),
+            ("k.bool", MetaValue::Bool(true)),
+            ("k.str", MetaValue::String("hi".into())),
+            ("k.u64", MetaValue::U64(1 << 40)),
+            ("k.i64", MetaValue::I64(-(1 << 40))),
+            ("k.f64", MetaValue::F64(-0.125)),
+        ];
+        let mut b = GgufBuilder::default();
+        for (k, v) in &kinds {
+            b.meta(k, v.clone());
+            // The same scalar as a one-element array exercises the element writers.
+            b.meta(&format!("{k}.arr"), MetaValue::Array(vec![v.clone()]));
+        }
+        let g = Gguf::parse(b.into_bytes()).unwrap();
+        for (k, v) in &kinds {
+            assert_eq!(g.meta(k), Some(v), "{k}");
+            assert_eq!(
+                g.meta(&format!("{k}.arr")),
+                Some(&MetaValue::Array(vec![v.clone()])),
+                "{k}.arr"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_arrays_are_written_but_refused_by_the_reader() {
+        use crate::gguf::{Gguf, MetaValue};
+        let mut b = GgufBuilder::new();
+        b.meta(
+            "k.nested",
+            MetaValue::Array(vec![MetaValue::Array(vec![MetaValue::U8(1)])]),
+        );
+        assert!(Gguf::parse(b.into_bytes()).is_err());
+    }
+
+    #[test]
+    fn write_creates_a_readable_file_atomically() {
+        use crate::gguf::{Gguf, MetaValue};
+        let path =
+            std::env::temp_dir().join(format!("ferrum_builder_write_{}.gguf", std::process::id()));
+        let p = path.to_str().unwrap();
+        let mut b = GgufBuilder::new();
+        b.meta("general.architecture", MetaValue::String("x".into()));
+        b.write(p).unwrap();
+        let g = Gguf::from_path(p).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(g.architecture(), Some("x"));
+        assert!(!std::path::Path::new(&format!("{p}.tmp")).exists());
+    }
 }

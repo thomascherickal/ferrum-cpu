@@ -617,4 +617,13 @@ mod tests {
         // vocab × dim not matching (overflowing usize on 32-bit targets).
         llama_err(&file(6, u32::MAX, u32::MAX), "vocab × dim");
     }
+
+    #[test]
+    fn attention_bias_of_the_wrong_length_is_rejected() {
+        let mut ts = l_tensors();
+        ts.push(("blk.0.attn_q.bias", vec![3])); // dim is 2
+        let ts: Vec<(&str, &[u64])> = ts.iter().map(|(n, d)| (*n, &d[..])).collect();
+        let g = llama_file(&L_META, &[], &ts);
+        llama_err(&g, "wrong length");
+    }
 }

@@ -4,7 +4,6 @@ use crate::gguf::cursor::{fmt, read_value, to_usize, Cur};
 use crate::gguf::format::{align_up, type_nbytes, DEFAULT_ALIGNMENT, GGUF_MAGIC};
 use crate::gguf::{MetaValue, TensorInfo};
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io::Read;
 
 /// `(version, metadata, tensor directory, absolute tensor-data offset)`.
@@ -145,7 +144,7 @@ pub(super) fn is_truncation(e: &InferError) -> bool {
 
 /// Read into `buf` until it is full or EOF (handling short/interrupted reads).
 /// Returns the number of bytes actually read.
-pub(super) fn read_fully(f: &mut File, buf: &mut [u8]) -> Result<usize> {
+pub(super) fn read_fully<R: Read>(f: &mut R, buf: &mut [u8]) -> Result<usize> {
     let mut filled = 0;
     while filled < buf.len() {
         match f.read(&mut buf[filled..]) {
@@ -190,6 +189,7 @@ pub(crate) fn patch_tensor_offset(bytes: &mut [u8], idx: usize, off: u64) {
 
 #[cfg(test)]
 mod tests {
+    use super::read_fully;
     use super::{bounded, check_extents, is_truncation, parse_header, patch_tensor_offset};
     use crate::gguf::format::{
         type_nbytes, GGML_F16, GGML_F32, GGML_Q8_0, GGUF_MAGIC, VT_ARRAY, VT_U8,
@@ -463,5 +463,43 @@ mod tests {
         );
         let e = parse_header(&arr(5000), 1 << 20).err().unwrap();
         assert!(is_truncation(&e), "{e}");
+    }
+
+    /// Yields `Interrupted` once, then short reads, then either EOF or an error.
+    struct Flaky {
+        step: usize,
+        fail_at_end: bool,
+    }
+    impl std::io::Read for Flaky {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.step += 1;
+            match self.step {
+                1 => Err(std::io::ErrorKind::Interrupted.into()),
+                2 => {
+                    buf[0] = 7;
+                    Ok(1)
+                }
+                _ if self.fail_at_end => Err(std::io::Error::other("disk on fire")),
+                _ => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn read_fully_retries_interrupts_stops_at_eof_and_surfaces_errors() {
+        let mut buf = [0u8; 4];
+        let mut r = Flaky {
+            step: 0,
+            fail_at_end: false,
+        };
+        assert_eq!(read_fully(&mut r, &mut buf).unwrap(), 1);
+        assert_eq!(buf[0], 7);
+
+        let mut r = Flaky {
+            step: 0,
+            fail_at_end: true,
+        };
+        let err = read_fully(&mut r, &mut buf).unwrap_err();
+        assert!(err.to_string().contains("disk on fire"), "{err}");
     }
 }

@@ -348,4 +348,30 @@ mod tests {
         }
         assert!(max_abs_err(&x, &back) <= (hi - lo) / 15.0 + 1e-4);
     }
+
+    #[test]
+    fn f32_to_f16_handles_nan_ties_and_rounding_overflow() {
+        // NaN keeps its sign and becomes a canonical quiet NaN; infinities map to f16 infinities.
+        assert_eq!(f32_to_f16(f32::NAN), 0x7E00);
+        assert_eq!(f32_to_f16(-f32::NAN), 0xFE00);
+        assert_eq!(f32_to_f16(f32::INFINITY), 0x7C00);
+        assert_eq!(f32_to_f16(f32::NEG_INFINITY), 0xFC00);
+        // Largest finite half is 65504; 65520 is the tie that rounds (to even) up into infinity.
+        assert_eq!(f32_to_f16(65504.0), 0x7BFF);
+        assert_eq!(f32_to_f16(65520.0), 0x7C00);
+        assert_eq!(f32_to_f16(1.0e9), 0x7C00);
+        // 1.5 * 2^-24 is a tie between the subnormals 1 and 2: ties-to-even picks 2.
+        assert_eq!(f32_to_f16(1.5 * 2f32.powi(-24)), 2);
+        // Below half the smallest subnormal flushes to signed zero.
+        assert_eq!(f32_to_f16(2f32.powi(-26)), 0);
+        assert_eq!(f32_to_f16(-(2f32.powi(-26))), 0x8000);
+        // A normal value just above a tie rounds up.
+        assert_eq!(f32_to_f16(f32::from_bits(0x3F80_1001)), 0x3C01);
+    }
+
+    #[test]
+    fn encode_tensor_rejects_unsupported_ggml_types() {
+        let e = encode_tensor(&[0.0; 32], 99).unwrap_err();
+        assert!(e.to_string().contains("unsupported ggml type 99"), "{e}");
+    }
 }

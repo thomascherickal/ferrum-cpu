@@ -536,4 +536,13 @@ mod tests {
         let sub = f16_to_f32(0x0001);
         assert!(sub > 0.0 && (sub - 2f32.powi(-24)).abs() < 1e-12);
     }
+
+    #[test]
+    fn k_quant_dequantizers_reject_data_shorter_than_the_element_count() {
+        // One whole block holds 256 weights; asking for 257 must fail loudly.
+        assert!(dequant_q2_k(&[0u8; 84], 257).is_err());
+        assert!(dequant_q3_k(&[0u8; 110], 257).is_err());
+        assert_eq!(dequant_q2_k(&[0u8; 84], 256).unwrap().len(), 256);
+        assert_eq!(dequant_q3_k(&[0u8; 110], 256).unwrap().len(), 256);
+    }
 }

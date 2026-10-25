@@ -130,3 +130,17 @@ pub(super) fn align_up(x: usize, a: usize) -> usize {
         x.div_ceil(a) * a
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::align_up;
+
+    #[test]
+    fn align_up_rounds_up_and_treats_zero_alignment_as_identity() {
+        assert_eq!(align_up(5, 0), 5);
+        assert_eq!(align_up(0, 32), 0);
+        assert_eq!(align_up(1, 32), 32);
+        assert_eq!(align_up(32, 32), 32);
+        assert_eq!(align_up(33, 32), 64);
+    }
+}
