@@ -75,11 +75,17 @@ fn linear_fwd(x: &Tensor, w: &Tensor, b: &Tensor) -> Result<Tensor> {
     ops::add_bias(&ops::matmul(x, w)?, b)
 }
 
+/// Returns (dW, dx) for y = xW given dy (the bias-free LM head).
+fn matmul_bwd(x: &Tensor, w: &Tensor, dy: &Tensor) -> Result<(Tensor, Tensor)> {
+    let dw = ops::matmul(&ops::transpose(x)?, dy)?;
+    let dx = ops::matmul(dy, &ops::transpose(w)?)?;
+    Ok((dw, dx))
+}
+
 /// Returns (dW, db, dx) for y = xW + b given dy.
 fn linear_bwd(x: &Tensor, w: &Tensor, dy: &Tensor) -> Result<(Tensor, Tensor, Tensor)> {
-    let dw = ops::matmul(&ops::transpose(x)?, dy)?;
+    let (dw, dx) = matmul_bwd(x, w, dy)?;
     let db = ops::sum_axis0(dy)?;
-    let dx = ops::matmul(dy, &ops::transpose(w)?)?;
     Ok((dw, db, dx))
 }
 
@@ -1213,8 +1219,7 @@ impl TransformerNet {
 
         let (norm_f, xhat_f, inv_std_f) = ln_fwd(&cur, &self.lnf_g.data, &self.lnf_b.data)?;
         // LM head has no bias (GPT-2 / llama.cpp graph).
-        let no_bias = Tensor::vector(vec![0.0; self.vocab_size]);
-        let logits = linear_fwd(&norm_f, &self.head_w.data, &no_bias)?;
+        let logits = ops::matmul(&norm_f, &self.head_w.data)?;
 
         Ok((
             logits,
@@ -1255,7 +1260,7 @@ impl TransformerNet {
         let c = self.embed_dim;
 
         // LM head + final LayerNorm (each produced exactly once).
-        let (g_head_w, _g_head_b, d_normf) = linear_bwd(&cache.norm_f, &self.head_w.data, dlogits)?;
+        let (g_head_w, d_normf) = matmul_bwd(&cache.norm_f, &self.head_w.data, dlogits)?;
         let (mut dx, g_lnf_g, g_lnf_b) =
             ln_bwd(&d_normf, &cache.xhat_f, &cache.inv_std_f, &self.lnf_g.data)?;
 
@@ -2049,6 +2054,32 @@ mod tests {
         assert_eq!(
             before.data, after.data,
             "int8 export of a QAT model drifted"
+        );
+    }
+
+    /// The bias-free head path (`matmul_bwd`, plain `matmul` in `forward`) must
+    /// be bit-identical to the old zero-bias `linear_*` route it replaced.
+    #[test]
+    fn bias_free_head_path_matches_linear_with_zero_bias() {
+        let x = Tensor::matrix(3, 2, vec![0.5, -1.0, 2.0, 0.25, -0.75, 1.5]).unwrap();
+        let w = Tensor::matrix(2, 4, vec![0.1, -0.2, 0.3, 0.4, -0.5, 0.6, 0.7, -0.8]).unwrap();
+        let dy = Tensor::matrix(3, 4, (0..12).map(|i| (i as f32 - 5.0) * 0.1).collect()).unwrap();
+        let zero = Tensor::vector(vec![0.0; 4]);
+        assert_eq!(
+            ops::matmul(&x, &w).unwrap().data,
+            linear_fwd(&x, &w, &zero).unwrap().data
+        );
+        let (dw, dx) = matmul_bwd(&x, &w, &dy).unwrap();
+        let (dw2, db2, dx2) = linear_bwd(&x, &w, &dy).unwrap();
+        assert_eq!((dw.data, dx.data), (dw2.data, dx2.data));
+        assert_eq!(db2.data.len(), 4, "linear_bwd still returns the bias grad");
+        // End to end: the net's logits are exactly xW of the final norm.
+        let mut rng = Rng::new(5);
+        let net = TransformerNet::new(7, 4, 8, 2, 16, 1, &mut rng).unwrap();
+        let (logits, cache) = net.forward(&[1, 2, 3, 4]).unwrap();
+        assert_eq!(
+            logits.data,
+            ops::matmul(&cache.norm_f, &net.head_w.data).unwrap().data
         );
     }
 
