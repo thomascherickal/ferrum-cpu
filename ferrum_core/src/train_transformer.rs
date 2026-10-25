@@ -1470,7 +1470,7 @@ impl TransformerNet {
             step_t: self.step_t,
             qat: self.qat,
             grad_clip: self.grad_clip,
-            lr_schedule: self.lr_schedule.clone(),
+            lr_schedule: self.lr_schedule,
             tie_weights: self.tie_weights,
             weight_decay: self.weight_decay,
             dropout: self.dropout,
