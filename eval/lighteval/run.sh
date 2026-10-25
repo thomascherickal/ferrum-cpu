@@ -40,7 +40,7 @@ tasks="ferrum_heldout|0,tinystories_cloze|0,blimp:anaphor_gender_agreement|0,bli
 [ "$wikitext" = 1 ] && tasks="$tasks,wikitext:103:document_level|0"
 extra=(); [ -n "$max" ] && extra=(--max-samples "$max")
 
-FERRUM_URL="http://127.0.0.1:$port" FERRUM_TASK_DATA="$work/data" \
+FERRUM_URL="http://127.0.0.1:$port" FERRUM_TASK_DATA="$work/data" FERRUM_CACHE_DIR="$work/cache" \
   "$le" custom ferrum "$here/ferrum_model.py" "$tasks" \
   --custom-tasks "$here/ferrum_tasks.py" --output-dir "$work/results" ${extra[@]+"${extra[@]}"}
 

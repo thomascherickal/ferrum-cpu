@@ -42,9 +42,11 @@ class Fixture:
         venv = self.root / "venv"
         exe(venv / "bin/python", f'#!/bin/bash\nexec {sys.executable} "$@"\n')
         self.argv = self.root / "lighteval.argv"
+        self.cache_env = self.root / "lighteval.cache_dir"
         exe(
             venv / "bin/lighteval",
             "#!/bin/bash\nprintf '%s\\n' \"$@\" > " + str(self.argv) + "\n"
+            "printf '%s' \"$FERRUM_CACHE_DIR\" > " + str(self.cache_env) + "\n"
             'while [ $# -gt 0 ]; do [ "$1" = --output-dir ] && d=$2; shift; done\n'
             'mkdir -p "$d/x"; echo \'{"results": {"all": {"z": 0}, "t|0": {"acc": 0.5}}}\' > "$d/x/results_1.json"\n',
         )
@@ -98,6 +100,12 @@ class RunShTest(unittest.TestCase):
         argv = fx.argv.read_text().split("\n")
         self.assertEqual(argv[argv.index("--max-samples") + 1], "7")
         self.assertTrue((fx.root / "eval/lighteval/out/data/cloze/test.jsonl").exists())
+
+    def test_lighteval_sample_cache_is_private_to_the_run(self):
+        # regression: lighteval's default cache (~/.cache/huggingface/lighteval) is keyed by config, not weights
+        fx = Fixture(GOOD_SERVER)
+        self.assertEqual(fx.run().returncode, 0)
+        self.assertEqual(fx.cache_env.read_text(), str(fx.root / "eval/lighteval/out/cache"))
 
     def test_no_max_samples_and_wikitext_flag(self):
         fx = Fixture(GOOD_SERVER)

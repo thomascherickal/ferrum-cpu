@@ -12,8 +12,11 @@ LightEval 0.13.0 quirks handled here:
 - @cached(SamplingMethod.PERPLEXITY) drops every result, so
   loglikelihood_rolling is deliberately not cached.
 """
+import atexit
 import json
 import os
+import shutil
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -25,6 +28,16 @@ from lighteval.utils.cache_management import SampleCache, cached
 URL = os.environ.get("FERRUM_URL", "http://127.0.0.1:8080").rstrip("/")
 
 
+def _private_cache_dir():
+    """$FERRUM_CACHE_DIR (run.sh points it into its own scratch dir) or a fresh temp dir removed at exit."""
+    d = os.environ.get("FERRUM_CACHE_DIR")
+    if d:
+        return d
+    d = tempfile.mkdtemp(prefix="ferrum-lighteval-")
+    atexit.register(shutil.rmtree, d, True)
+    return d
+
+
 def _batches(items, n):
     for i in range(0, len(items), n):
         yield items[i : i + n]
@@ -33,6 +46,10 @@ def _batches(items, n):
 class FerrumModel(LightevalModel):
     def __init__(self, config):
         self.config = config
+        # lighteval's sample cache is keyed by (model *config*, task, docs), never by the served
+        # weights, and defaults to ~/.cache/huggingface/lighteval: a second model would silently be
+        # answered from the first one's cached results. Always use a private, per-run cache.
+        config.cache_dir = _private_cache_dir()
         self._cache = SampleCache(config)
         self.url = os.environ.get("FERRUM_URL", URL).rstrip("/")
         self.batch = int(os.environ.get("FERRUM_BATCH", "32"))

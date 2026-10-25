@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover
     ferrum_model = None
 
 CALLS = []
+SCALE = [1.0]  # stub "model weights": multiplies every loglikelihood
 
 
 class Stub(BaseHTTPRequestHandler):
@@ -40,7 +41,7 @@ class Stub(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         CALLS.append((self.path, body))
         if self.path == "/v1/loglikelihood":
-            res = [{"logprob": -float(len(r["continuation"])), "n_tokens": 1, "greedy": r["continuation"] == " a"} for r in body["requests"]]
+            res = [{"logprob": -SCALE[0] * len(r["continuation"]), "n_tokens": 1, "greedy": r["continuation"] == " a"} for r in body["requests"]]
         elif self.path == "/v1/loglikelihood_rolling":
             res = [{"logprob": -2.0 * len(t), "n_tokens": len(t)} for t in body["texts"]]
         elif self.path == "/v1/generate":
@@ -138,6 +139,60 @@ class FerrumModelTest(unittest.TestCase):
         self.m._info = None
         self.assertEqual((self.m.max_length, self.m.max_length), (128, 128))
         self.assertEqual(CALLS, [("/v1/info", None)])
+
+
+@unittest.skipIf(ferrum_model is None, "lighteval not installed")
+class PrivateCacheRegression(unittest.TestCase):
+    """Regression: lighteval keys its sample cache by model config + docs, not by weights, and defaults
+    to ~/.cache/huggingface/lighteval, so a second model was answered from the first one's cache."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = HTTPServer(("127.0.0.1", 0), Stub)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def setUp(self):
+        self._env = dict(os.environ)
+        os.environ["FERRUM_URL"] = f"http://127.0.0.1:{self.srv.server_port}"
+        os.environ.pop("FERRUM_CACHE_DIR", None)
+        SCALE[0] = 1.0
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        SCALE[0] = 1.0
+
+    def _model(self):
+        from lighteval.models.custom.custom_model import CustomModelConfig
+        return ferrum_model.FerrumModel(CustomModelConfig(model_name="ferrum", model_definition_file_path=ferrum_model.__file__))
+
+    def _ll(self, m):
+        return m.loglikelihood([Doc(query="q", choices=[" a", " bb"], gold_index=0, task_name="t_priv")])[0].logprobs
+
+    def test_second_model_is_not_served_from_the_first_ones_cache(self):
+        first = self._ll(self._model())
+        SCALE[0] = 2.0  # "another model" behind the same url / config
+        second = self._ll(self._model())
+        self.assertEqual(first, [-2.0, -3.0])
+        self.assertEqual(second, [-4.0, -6.0])
+
+    def test_default_cache_is_a_private_temp_dir(self):
+        a, b = self._model().config.cache_dir, self._model().config.cache_dir
+        self.assertNotEqual(a, b)
+        for d in (a, b):
+            self.assertTrue(os.path.isdir(d))
+            self.assertNotIn(".cache/huggingface", d)
+
+    def test_env_overrides_cache_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["FERRUM_CACHE_DIR"] = d
+            m = self._model()
+            self.assertEqual(m.config.cache_dir, d)
+            self.assertTrue(str(m._cache.cache_dir).startswith(d))
 
 
 if __name__ == "__main__":
