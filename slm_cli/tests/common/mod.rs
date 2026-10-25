@@ -1,6 +1,7 @@
 //! Helpers shared by the runtime-facing integration tests (E1 here, G5 later).
 #![allow(dead_code)] // each test crate uses a different subset
 
+use ferrum_core::{GgufBuilder, MetaValue};
 use std::path::PathBuf;
 
 /// Pure core of [`require_or_skip`]: `require` is the value of `FERRUM_REQUIRE_RUNTIMES=1`.
@@ -85,4 +86,147 @@ pub fn runtime_lock_is_held_elsewhere() -> bool {
         open_lock_file().try_lock(),
         Err(std::fs::TryLockError::WouldBlock)
     )
+}
+
+pub fn f32_bytes(xs: &[f32]) -> Vec<u8> {
+    let mut o = Vec::new();
+    for &x in xs {
+        o.extend_from_slice(&x.to_le_bytes());
+    }
+    o
+}
+
+/// A tiny but complete `llama`-architecture GGUF (2 layers, dim 8, all F32
+/// tensors). Mirrors `tiny_llama` in `tests/tests/test_gguf_export.rs`; kept
+/// as a minimal duplicate here since that helper lives in a different crate.
+pub fn tiny_llama_gguf_bytes() -> Vec<u8> {
+    tiny_llama_gguf_with_tokens(&(0..32).map(|i| format!("t{i}")).collect::<Vec<_>>())
+}
+
+/// Same model with a caller-supplied (32-entry) vocabulary, so a corpus can
+/// actually be tokenized.
+pub fn tiny_llama_gguf_with_tokens(tokens: &[String]) -> Vec<u8> {
+    tiny_llama_gguf(Some(tokens), &[])
+}
+
+/// The tiny llama model with an optional vocabulary (`None`: no tokenizer metadata at all) and
+/// extra metadata keys (chat template, BOS id, ...).
+pub fn tiny_llama_gguf(tokens: Option<&[String]>, extra: &[(&str, MetaValue)]) -> Vec<u8> {
+    const GGML_F32: u32 = 0;
+    let (dim, n_layers, n_heads, ffn, vocab) = (8usize, 2usize, 2usize, 16usize, 32usize);
+    let head_dim = dim / n_heads;
+    let gen = |seed: usize, n: usize| -> Vec<f32> {
+        (0..n)
+            .map(|i| (((seed * 131 + i * 17) % 101) as f32 / 500.0) - 0.1)
+            .collect()
+    };
+
+    let mut b = GgufBuilder::new();
+    b.meta("general.architecture", MetaValue::String("llama".into()));
+    b.meta("llama.embedding_length", MetaValue::U32(dim as u32));
+    b.meta("llama.block_count", MetaValue::U32(n_layers as u32));
+    b.meta("llama.attention.head_count", MetaValue::U32(n_heads as u32));
+    b.meta(
+        "llama.attention.head_count_kv",
+        MetaValue::U32(n_heads as u32),
+    );
+    b.meta("llama.feed_forward_length", MetaValue::U32(ffn as u32));
+    // `extra` may override the 16-token default context window.
+    let ctx = extra
+        .iter()
+        .find(|(k, _)| *k == "llama.context_length")
+        .map_or(MetaValue::U32(16), |(_, v)| v.clone());
+    b.meta("llama.context_length", ctx);
+    b.meta(
+        "llama.attention.layer_norm_rms_epsilon",
+        MetaValue::F32(1e-5),
+    );
+    if let Some(tokens) = tokens {
+        b.meta("tokenizer.ggml.model", MetaValue::String("gpt2".into()));
+        b.meta(
+            "tokenizer.ggml.tokens",
+            MetaValue::Array(
+                tokens
+                    .iter()
+                    .map(|t| MetaValue::String(t.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    for (k, v) in extra.iter().filter(|(k, _)| *k != "llama.context_length") {
+        b.meta(k, v.clone());
+    }
+
+    let t = |b: &mut GgufBuilder, name: &str, dims: &[u64], seed: usize| {
+        let n: usize = dims.iter().product::<u64>() as usize;
+        b.tensor(name, dims, GGML_F32, f32_bytes(&gen(seed, n)));
+    };
+    t(&mut b, "token_embd.weight", &[dim as u64, vocab as u64], 1);
+    for i in 0..n_layers {
+        let p = format!("blk.{i}");
+        t(
+            &mut b,
+            &format!("{p}.attn_norm.weight"),
+            &[dim as u64],
+            10 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.attn_q.weight"),
+            &[dim as u64, (n_heads * head_dim) as u64],
+            20 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.attn_k.weight"),
+            &[dim as u64, (n_heads * head_dim) as u64],
+            30 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.attn_v.weight"),
+            &[dim as u64, (n_heads * head_dim) as u64],
+            40 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.attn_output.weight"),
+            &[(n_heads * head_dim) as u64, dim as u64],
+            50 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.ffn_norm.weight"),
+            &[dim as u64],
+            60 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.ffn_gate.weight"),
+            &[dim as u64, ffn as u64],
+            70 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.ffn_up.weight"),
+            &[dim as u64, ffn as u64],
+            80 + i,
+        );
+        t(
+            &mut b,
+            &format!("{p}.ffn_down.weight"),
+            &[ffn as u64, dim as u64],
+            90 + i,
+        );
+    }
+    t(&mut b, "output_norm.weight", &[dim as u64], 200);
+    t(&mut b, "output.weight", &[dim as u64, vocab as u64], 201);
+    b.into_bytes()
+}
+
+pub fn letter_vocab() -> Vec<String> {
+    let mut v: Vec<String> = ('a'..='z').map(|c| c.to_string()).collect();
+    v.push("\u{120}".into());
+    v.extend((0..5).map(|i| format!("<f{i}>")));
+    v
 }
