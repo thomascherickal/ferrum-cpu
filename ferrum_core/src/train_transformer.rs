@@ -1959,7 +1959,7 @@ mod tests {
     }
 
     #[test]
-    fn qat_slm_holds_snapped_weights_and_tied_head_follows() {
+    fn qat_snap_is_idempotent_keeps_pos_emb_f32_and_tied_head_mirrors_embedding() {
         let mut rng = Rng::new(3);
         let mut net = TransformerNet::new(8, 4, 32, 2, 64, 1, &mut rng).unwrap();
         net.set_weight_tying(true);
@@ -1970,11 +1970,10 @@ mod tests {
             net.pos_emb.data.data, pos_before,
             "pos_emb must not be snapped"
         );
-        let mut once = net.snapshot_weights();
+        let once = net.snapshot_weights();
         net.fake_quantize_weights();
         assert_eq!(net.snapshot_weights(), once, "snap must be idempotent");
         // head mirrors the snapped embedding
-        once.clear();
         let (v, e) = (8, 32);
         for i in 0..e {
             for j in 0..v {
@@ -1998,8 +1997,8 @@ mod tests {
             masters.iter().zip(&quantized).any(|(m, q)| m != q),
             "fake quantization changed no weights"
         );
-        // Per-channel snapping is idempotent — re-quantizing lands on the same
-        // grid (so every value already sits on its channel's int8 grid).
+        // Snapping is idempotent — re-quantizing lands on the same grid (so
+        // every value already sits on its row's int8 grid).
         net.fake_quantize_weights();
         assert_eq!(
             net.snapshot_weights(),
@@ -2012,7 +2011,7 @@ mod tests {
     }
 
     #[test]
-    fn qat_model_survives_int8_export_with_small_drift() {
+    fn qat_model_survives_int8_export_exactly() {
         use crate::loader::{from_bytes, to_bytes_quantized};
         use crate::meta::{ModelMetadata, Normalizer, TaskType};
         let mut rng = Rng::new(13);
@@ -2045,10 +2044,12 @@ mod tests {
         let x = Tensor::matrix(1, 4, vec![0.0, 1.0, 2.0, 3.0]).unwrap();
         let before = model.forward(&x).unwrap();
         let after = m2.forward(&x).unwrap();
-        // Output probabilities of the int8 export must track the fp32 model.
-        for (a, b) in before.data.iter().zip(&after.data) {
-            assert!((a - b).abs() < 0.05, "int8 export drifted: {a} vs {b}");
-        }
+        // QAT trained on the exact grid the Q8_0 export uses, so the export is
+        // lossless: the reloaded model reproduces the trained one bit for bit.
+        assert_eq!(
+            before.data, after.data,
+            "int8 export of a QAT model drifted"
+        );
     }
 
     #[test]

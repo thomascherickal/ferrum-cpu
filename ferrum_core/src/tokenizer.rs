@@ -500,7 +500,11 @@ impl ByteBpeTokenizer {
 
     /// Rebuild from the three GGUF arrays (inverse of the exporters). Expects
     /// Ferrum's layout: 256 byte tokens, then one token per merge in rank
-    /// order, then control tokens. Errors on any deviation.
+    /// order, then control tokens. Errors on any deviation, except that the
+    /// `token_type` of the text tokens (the first `256 + merges`) is not
+    /// inspected: foreign GPT-2 GGUFs label them inconsistently (normal, byte,
+    /// unused) and the `tokens`/`merges` arrays alone define them. Only the
+    /// tokens after the merges must be control (3).
     pub fn from_gguf_vocab(
         tokens: &[String],
         merges: &[String],
@@ -1274,6 +1278,12 @@ mod tests {
         assert_eq!(pt("a\u{200d}b"), ["a", "\u{200d}", "b"]);
         assert_eq!(pt("\u{1}\u{2}x"), ["\u{1}\u{2}", "x"]);
         assert_eq!(pt("\u{e000}\u{e001}"), ["\u{e000}\u{e001}"]);
+        // Unassigned (Cn) code points are `[^\s\p{L}\p{N}]` too: llama.cpp b11521 gives
+        // them the UNDEFINED flag, which is non-zero, so they join "other" runs
+        // (checked against its unicode.cpp and, for ids, by the llama-tokenize
+        // parity test in tests/tests/test_runtime_compat.rs).
+        assert_eq!(pt("a\u{378}\u{379}!b"), ["a", "\u{378}\u{379}!", "b"]);
+        assert_eq!(pt("a \u{378} b"), ["a", " \u{378}", " b"]);
     }
 
     #[test]
@@ -1439,6 +1449,20 @@ mod tests {
         // empty merge list / no specials is fine
         let byte_only = ByteBpeTokenizer::from_gguf_vocab(&tk[..256], &[], &ty[..256]).unwrap();
         assert_eq!((byte_only.vocab_size(), byte_only.num_special()), (256, 0));
+    }
+
+    /// Pins the documented leniency: the type of a text token is not inspected
+    /// (foreign GPT-2 GGUFs label them inconsistently), only specials must be control.
+    #[test]
+    fn from_gguf_vocab_ignores_token_types_of_text_tokens() {
+        let t = small_tok();
+        let (tk, mg, mut ty) = gguf_parts(&t);
+        let n_text = 256 + mg.len();
+        for (i, ty) in ty.iter_mut().enumerate().take(n_text) {
+            *ty = [1, 4, 5, 6][i % 4]; // normal / user-defined / unused / byte
+        }
+        let back = ByteBpeTokenizer::from_gguf_vocab(&tk, &mg, &ty).unwrap();
+        assert_eq!(back.encode_state(), t.encode_state());
     }
 
     #[test]

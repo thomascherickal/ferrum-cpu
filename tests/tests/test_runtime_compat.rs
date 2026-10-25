@@ -122,6 +122,7 @@ fn tokenizer_matches_llama_cpp() {
         "wait...  what?!  ok;;  fine",
         "two  spaces   and\nnewlines\n\nhere",
         "héllo wörld — ünïcode ☃",
+        "unassigned \u{378}\u{379}!! and \u{378} x",
         "a<|endoftext|>b",
         "<|endoftext|>",
         "",
