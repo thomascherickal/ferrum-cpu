@@ -39,9 +39,9 @@ stages:
       nfiles: 26
     - path: slm_cli/src
       hash: md5
-      md5: 3aef86d4176907f729775e51b71e08e9.dir
-      size: 143056
-      nfiles: 3
+      md5: 31183f89e1b002f6c8b08a131b224651.dir
+      size: 149492
+      nfiles: 15
     params:
       params.yaml:
         prepare:
@@ -85,9 +85,9 @@ stages:
       nfiles: 26
     - path: slm_cli/src
       hash: md5
-      md5: 3aef86d4176907f729775e51b71e08e9.dir
-      size: 143056
-      nfiles: 3
+      md5: 31183f89e1b002f6c8b08a131b224651.dir
+      size: 149492
+      nfiles: 15
     params:
       params.yaml:
         model:
