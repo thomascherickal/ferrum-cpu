@@ -28,6 +28,17 @@ pub(crate) fn train_and_save(
     check_lr(cfg.lr)?;
     check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;
     check_token_budget(args.get("tokens", 0.0f64))?;
+    // Every output must be writable before hours of training, not after.
+    check_writable(model_path)?;
+    if !cfg.checkpoint_path.is_empty() {
+        check_writable(&cfg.checkpoint_path)?;
+    }
+    if cfg.vocab_size > 0
+        && !cfg.tokenizer_path.is_empty()
+        && !std::path::Path::new(&cfg.tokenizer_path).exists()
+    {
+        check_writable(&cfg.tokenizer_path)?;
+    }
     let seed: u64 = args.get("seed", 1337);
     // 0 = auto-detect the machine's parallelism; 1 = serial.
     let threads: usize = args.get("threads", 0);
@@ -138,10 +149,11 @@ pub(crate) fn train_and_save(
     );
 
     match quant {
-        "int8" => slm.save(model_path)?,
-        "int4" => slm.save_int4(model_path)?,
-        _ => slm.save_f32(model_path)?,
+        "int8" => slm.save(model_path),
+        "int4" => slm.save_int4(model_path),
+        _ => slm.save_f32(model_path),
     }
+    .map_err(|e| format!("cannot write {model_path}: {e}"))?;
     let size = std::fs::metadata(model_path)?.len();
     println!("Saved {size} bytes → {model_path} ({quant} GGUF)");
     if let Some(w) = crate::runtime_export::plain_gguf_warning(std::path::Path::new(model_path)) {

@@ -74,8 +74,9 @@ fn progress_line(step: u64, total_steps: u64, tokens_done: f64, secs: f64) -> St
 /// mid-write never leaves a truncated checkpoint behind.
 fn write_checkpoint(path: &str, net: &TransformerNet, rng: &Rng) -> Result<()> {
     let tmp = format!("{path}.tmp");
-    std::fs::write(&tmp, net.save_checkpoint(rng))?;
-    std::fs::rename(&tmp, path)?;
+    let io = |e: std::io::Error| InferError::Io(format!("cannot write {path}: {e}"));
+    std::fs::write(&tmp, net.save_checkpoint(rng)).map_err(io)?;
+    std::fs::rename(&tmp, path).map_err(io)?;
     Ok(())
 }
 

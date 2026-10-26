@@ -16,6 +16,7 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     require_resume_file(args.value("resume"))?;
     let in_path = &args.positional[0];
     let out_path = &args.positional[1];
+    check_writable(out_path)?;
     let quant_name = args.value("quant").unwrap_or("q8_0");
     let quant =
         GgufQuant::from_str(quant_name).ok_or_else(|| format!("unknown --quant '{quant_name}'"))?;

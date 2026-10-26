@@ -9,6 +9,9 @@ pub(crate) fn cmd_eval(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.positional.len() < 2 {
         return Err("usage: train_transformer eval <model.gguf> <heldout.txt>".into());
     }
+    if let Some(json) = args.value("json") {
+        crate::validate::check_writable(json)?;
+    }
     let model_path = &args.positional[0];
     let text_path = &args.positional[1];
 
@@ -40,13 +43,8 @@ pub(crate) fn cmd_eval(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             "bits_per_token": eval.bits_per_token, "bits_per_byte": bits_per_byte,
             "tokens": eval.num_predictions, "bytes": bytes, "seconds": seconds,
         });
-        if let Some(parent) = std::path::Path::new(path)
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-        {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, serde_json::to_string_pretty(&v)? + "\n")?;
+        std::fs::write(path, serde_json::to_string_pretty(&v)? + "\n")
+            .map_err(|e| format!("cannot write {path}: {e}"))?;
     }
     Ok(())
 }

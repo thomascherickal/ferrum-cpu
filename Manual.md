@@ -572,6 +572,7 @@ parser with its own allow-list of flags:
 | Value that does not parse (`--context 12x`) | Error naming the flag and the value; never a silent default |
 | Flag with no value (`--temp` at the end) | `--temp needs a value` |
 | `--resume` path that does not exist | Error before anything trains; use `--checkpoint` to start a new run |
+| Output path that cannot be written (model, `--checkpoint`, `--tokenizer`, `finetune-gguf` `.flck`, `export-gguf` output, `eval --json`) | Error `cannot write <path>: <reason>` in well under a second, before any training or evaluation. Missing parent directories are created first, the same for all of these commands. |
 
 A flag given twice takes its last value, except the repeatable `--stop` and
 `--input`. A negative number is read as a value (`--temp -1`, which is then

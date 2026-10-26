@@ -82,6 +82,30 @@ pub(crate) fn sampling_params(
     Ok(params)
 }
 
+/// Fail fast, before any work, when `path` cannot be written: create its parent directory (as
+/// `train` always did) and test-open a temp file next to it. Error: `cannot write <path>: <why>`.
+pub(crate) fn check_writable(path: &str) -> Result<(), String> {
+    use std::path::Path;
+    let bad = |e: &dyn std::fmt::Display| format!("cannot write {path}: {e}");
+    let p = Path::new(path);
+    if p.is_dir() {
+        return Err(bad(&"is a directory"));
+    }
+    let parent = p.parent().filter(|d| !d.as_os_str().is_empty());
+    if let Some(d) = parent {
+        std::fs::create_dir_all(d).map_err(|e| bad(&e))?;
+    }
+    let name = p
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let probe = parent
+        .unwrap_or(Path::new("."))
+        .join(format!(".{name}.probe{}", std::process::id()));
+    std::fs::File::create(&probe).map_err(|e| bad(&e))?;
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
+}
+
 /// `--resume` must name an existing file; checked before any multi-GB model
 /// load. Blank means "none" (as in `export-gguf`).
 pub(crate) fn require_resume_file(resume: Option<&str>) -> Result<(), String> {
@@ -171,6 +195,39 @@ mod tests {
         assert!(e.contains("--rep "), "{e}");
         assert!(check_temp(0.0).is_ok() && check_temp(1e9).is_ok());
         assert!(check_temp(f32::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn check_writable_creates_parents_and_names_the_path_on_failure() {
+        let dir = std::env::temp_dir().join(format!("ferrum_writable_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ok = dir.join("a/b/m.gguf");
+        check_writable(ok.to_str().unwrap()).unwrap();
+        assert!(dir.join("a/b").is_dir(), "parent created");
+        assert!(!ok.exists(), "the target itself is not created");
+        assert_eq!(
+            std::fs::read_dir(dir.join("a/b")).unwrap().count(),
+            0,
+            "probe removed"
+        );
+        // A bare file name (no parent component) is fine.
+        check_writable("ferrum_writable_probe_target.bin").unwrap();
+        assert!(!std::path::Path::new("ferrum_writable_probe_target.bin").exists());
+        // A directory, and a parent that is a file, are refused with the path named.
+        let e = check_writable(dir.to_str().unwrap()).unwrap_err();
+        assert!(
+            e.starts_with("cannot write ") && e.contains("is a directory"),
+            "{e}"
+        );
+        let f = dir.join("file");
+        std::fs::write(&f, b"x").unwrap();
+        let bad = f.join("sub/m.gguf");
+        let e = check_writable(bad.to_str().unwrap()).unwrap_err();
+        assert!(
+            e.starts_with(&format!("cannot write {}: ", bad.display())),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
