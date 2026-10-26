@@ -5,7 +5,7 @@ use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
 use crate::slm::memory::{available_memory_bytes, check_train_memory};
 use crate::slm::metrics_log::{format_eta, CsvLog, Row};
-use crate::train_transformer::{train_transformer_steps, TransformerNet};
+use crate::train_transformer::{steps_over, TransformerNet};
 
 /// A fresh (or checkpoint-resumed) training net configured from `cfg`.
 pub(super) fn prepare_net(
@@ -96,7 +96,7 @@ fn write_checkpoint(path: &str, net: &TransformerNet, rng: &Rng) -> Result<()> {
 /// and returns `false` to stop early.
 pub(super) fn run_training<F>(
     net: &mut TransformerNet,
-    tokens: &[usize],
+    tokens: &[u32],
     cfg: &TransformerConfig,
     threads: usize,
     rng: &mut Rng,
@@ -202,7 +202,7 @@ where
         } else {
             epoch_left
         };
-        let loss = train_transformer_steps(
+        let loss = steps_over(
             net,
             tokens,
             batch,

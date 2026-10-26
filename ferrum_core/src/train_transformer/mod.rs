@@ -23,6 +23,7 @@ mod threaded;
 mod tying;
 
 pub use self::checkpoint::CheckpointInfo;
+pub(crate) use self::epoch::steps_over;
 pub use self::epoch::{train_transformer_epoch, train_transformer_steps, StepHook};
 pub use self::forward::FwdCache;
 pub use self::step_metrics::StepMetrics;

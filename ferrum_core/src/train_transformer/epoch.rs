@@ -7,6 +7,24 @@ use crate::train_transformer::threaded::epoch_sharded;
 use crate::train_transformer::TransformerNet;
 use crate::verbose;
 
+/// A stored token id that widens to `usize` at the window boundary, so a corpus
+/// can be held as `u32` (half the RAM) while the model code keeps using `usize`.
+pub(crate) trait TokenId: Copy + Send + Sync {
+    fn widen(self) -> usize;
+}
+
+impl TokenId for usize {
+    fn widen(self) -> usize {
+        self
+    }
+}
+
+impl TokenId for u32 {
+    fn widen(self) -> usize {
+        self as usize
+    }
+}
+
 impl TransformerNet {
     /// Training-window start positions for one epoch over `n_tokens`, in a
     /// fresh random order. With stride > 1 the grid gets a random phase each
@@ -97,6 +115,23 @@ pub fn train_transformer_steps(
     max_steps: usize,
     on_step: &mut StepHook,
 ) -> Result<f32> {
+    steps_over(
+        net, tokens, batch_size, adam, rng, threads, max_steps, on_step,
+    )
+}
+
+/// [`train_transformer_steps`] over any stored token width.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn steps_over<T: TokenId>(
+    net: &mut TransformerNet,
+    tokens: &[T],
+    batch_size: usize,
+    adam: &Adam,
+    rng: &mut Rng,
+    threads: usize,
+    max_steps: usize,
+    on_step: &mut StepHook,
+) -> Result<f32> {
     // One shard (or a single-sequence batch, or wasm32) is the serial path.
     #[cfg(not(target_arch = "wasm32"))]
     if threads.max(1).min(batch_size.max(1)) > 1 {
@@ -108,9 +143,9 @@ pub fn train_transformer_steps(
     epoch_serial(net, tokens, batch_size, adam, rng, max_steps, on_step)
 }
 
-fn epoch_serial(
+fn epoch_serial<T: TokenId>(
     net: &mut TransformerNet,
-    tokens: &[usize],
+    tokens: &[T],
     batch_size: usize,
     adam: &Adam,
     rng: &mut Rng,
@@ -131,8 +166,8 @@ fn epoch_serial(
         let mut input = Vec::with_capacity(batch.len() * t);
         let mut targets = Vec::with_capacity(batch.len() * t);
         for &start in batch {
-            input.extend_from_slice(&tokens[start..start + t]);
-            targets.extend_from_slice(&tokens[start + 1..start + t + 1]);
+            input.extend(tokens[start..start + t].iter().map(|&x| x.widen()));
+            targets.extend(tokens[start + 1..start + t + 1].iter().map(|&x| x.widen()));
         }
         // Weight tying: mirror tok_embᵀ into the head before the forward (T9).
         net.sync_tied_head();

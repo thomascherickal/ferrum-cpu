@@ -29,8 +29,9 @@ pub fn corpus_vocab(corpus: &str) -> Vec<char> {
 /// Everything the token-ID language-model paths need to size a network and
 /// describe it in metadata, produced by [`tokenize_for_lm`].
 pub(super) struct LmTokens {
-    /// Token-ID stream over the whole corpus.
-    pub(super) tokens: Vec<usize>,
+    /// Token-ID stream over the whole corpus, held as `u32` (half the RAM of
+    /// `usize`) and widened where a training window is cut.
+    pub(super) tokens: Vec<u32>,
     /// Number of distinct token IDs to embed and predict (the model's
     /// embedding rows and LM-head width).
     pub(super) vocab_size: usize,
@@ -75,7 +76,7 @@ pub(super) fn tokenize_for_lm(
     vocab_size: usize,
 ) -> Result<LmTokens> {
     if vocab_size == 0 {
-        let (vocab_vec, tokens) = tokenize_corpus(corpus, context_len)?;
+        let (vocab_vec, tokens) = tokenize_chars(corpus, context_len)?;
         let class_names = vocab_vec.iter().map(|&ch| char_to_hex(ch)).collect();
         return Ok(LmTokens {
             vocab_size: vocab_vec.len(),
@@ -93,7 +94,7 @@ fn lm_tokens_from_bpe(
     corpus: &str,
     context_len: usize,
 ) -> Result<LmTokens> {
-    let tokens = tok.encode_docs(corpus);
+    let tokens = narrow_ids(tok.encode_docs(corpus))?;
     if tokens.len() < context_len + 1 {
         return Err(InferError::DimMismatch(
             "BPE-tokenized corpus must be longer than the context window".into(),
@@ -112,9 +113,27 @@ fn lm_tokens_from_bpe(
     })
 }
 
+/// Token ids as `u32` with no spare capacity. An id beyond `u32` cannot occur
+/// (the vocabulary is far smaller) but is an error rather than a wrap.
+fn narrow_ids(ids: Vec<usize>) -> Result<Vec<u32>> {
+    let mut out = ids
+        .into_iter()
+        .map(|i| u32::try_from(i).map_err(|_| InferError::Format(format!("token id {i} > u32"))))
+        .collect::<Result<Vec<u32>>>()?;
+    out.shrink_to_fit();
+    Ok(out)
+}
+
 /// Tokenize a corpus into (sorted vocabulary, token-ID stream) for
 /// transformer training. The vocabulary always includes ' ' and '\n'.
 pub fn tokenize_corpus(corpus: &str, context_len: usize) -> Result<(Vec<char>, Vec<usize>)> {
+    let (vocab, ids) = tokenize_chars(corpus, context_len)?;
+    Ok((vocab, ids.into_iter().map(|i| i as usize).collect()))
+}
+
+/// [`tokenize_corpus`] with the ids held as `u32` (a char vocabulary is at most
+/// the Unicode scalar count, far below `u32::MAX`).
+fn tokenize_chars(corpus: &str, context_len: usize) -> Result<(Vec<char>, Vec<u32>)> {
     let chars: Vec<char> = corpus.chars().filter(|&c| c != '\r').collect();
     if chars.len() < context_len + 1 {
         return Err(InferError::DimMismatch(
@@ -122,9 +141,9 @@ pub fn tokenize_corpus(corpus: &str, context_len: usize) -> Result<(Vec<char>, V
         ));
     }
     let vocab_vec = corpus_vocab(corpus);
-    let tokens: Vec<usize> = chars
+    let tokens: Vec<u32> = chars
         .iter()
-        .map(|c| vocab_vec.binary_search(c).unwrap_or(0))
+        .map(|c| vocab_vec.binary_search(c).unwrap_or(0) as u32)
         .collect();
     Ok((vocab_vec, tokens))
 }
@@ -133,6 +152,34 @@ pub fn tokenize_corpus(corpus: &str, context_len: usize) -> Result<(Vec<char>, V
 mod tests {
     use crate::slm::config::TransformerConfig;
     use crate::slm::corpus::tokenize_for_lm_cfg;
+
+    #[test]
+    fn corpus_ids_are_held_as_u32_at_half_the_memory_and_match_the_public_api() {
+        let corpus = "the cat sat on the mat. ".repeat(40);
+        // Character level: same ids as the public `tokenize_corpus`.
+        let c = super::tokenize_for_lm(&corpus, 8, 0).unwrap();
+        let (_, wide) = super::tokenize_corpus(&corpus, 8).unwrap();
+        assert!(c
+            .tokens
+            .iter()
+            .map(|&t| t as usize)
+            .eq(wide.iter().copied()));
+        // BPE: exactly the tokenizer's ids, in `len * 4` bytes with no spare capacity.
+        let b = super::tokenize_for_lm(&corpus, 8, 300).unwrap();
+        let tok = crate::tokenizer::ByteBpeTokenizer::from_state(&b.tokenizer_state).unwrap();
+        assert!(b
+            .tokens
+            .iter()
+            .map(|&t| t as usize)
+            .eq(tok.encode_docs(&corpus)));
+        for t in [&c.tokens, &b.tokens] {
+            assert_eq!(t.capacity(), t.len());
+            assert_eq!(
+                std::mem::size_of_val(&t[..]) * 2,
+                t.len() * std::mem::size_of::<usize>()
+            );
+        }
+    }
 
     #[test]
     fn a_bare_tokenizer_filename_is_created_in_the_working_directory_and_reused() {

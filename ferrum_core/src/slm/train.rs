@@ -498,7 +498,7 @@ mod tests {
         let tc = tokenize_for_lm(&corpus, 8, 280).unwrap();
         let tok = ByteBpeTokenizer::from_state(&tc.tokenizer_state).unwrap();
         let eos = tok.eos_id().unwrap();
-        assert_eq!(tc.tokens.iter().filter(|&&t| t == eos).count(), 60);
+        assert_eq!(tc.tokens.iter().filter(|&&t| t as usize == eos).count(), 60);
         // Char-level corpora are untouched by document handling.
         let c = tokenize_for_lm("abcabcabcabc", 4, 0).unwrap();
         assert!(c.tokenizer_state.is_empty());
