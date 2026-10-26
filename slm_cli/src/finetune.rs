@@ -36,6 +36,11 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     let gguf_path = &args.positional[0];
     let corpus_path = &args.positional[1];
     let out_path = &args.positional[2];
+    check_distinct_paths(&[
+        ("the output", out_path),
+        ("the model", gguf_path),
+        ("the corpus", corpus_path),
+    ])?;
     check_writable(out_path)?; // before hours of training, not after
 
     // 1. Open + f32-load the base model (training needs full-precision masters).

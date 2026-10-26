@@ -70,6 +70,7 @@ mod generate;
 mod info;
 mod memory;
 mod prepare;
+mod resume;
 mod run_gguf;
 mod runtime_export;
 mod train;

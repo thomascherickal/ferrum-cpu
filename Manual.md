@@ -571,6 +571,7 @@ parser with its own allow-list of flags:
 | Unknown flag | Error naming the subcommand and listing the valid flags, for example `unknown flag --contxt for 'train' (valid: --context --embed ...)` |
 | Value that does not parse (`--context 12x`) | Error naming the flag and the value; never a silent default |
 | Flag with no value (`--temp` at the end) | `--temp needs a value` |
+| `--checkpoint`, `--tokenizer` or `--resume` naming the same file as the model output (also spelled differently, through `..` or a symlink); `finetune-gguf` output equal to the base model or corpus | Error `X and Y are the same file`, before any work |
 | `--epochs 0` (without `--tokens`), `--batch 0`, `--threads` above 1024 (`finetune-gguf` too) | Error naming the flag, before anything trains; `--threads 0` still means auto |
 | `--resume` path that does not exist | Error before anything trains; use `--checkpoint` to start a new run |
 | Output path that cannot be written (model, `--checkpoint`, `--tokenizer`, `finetune-gguf` `.flck`, `export-gguf` output, `eval --json`) | Error `cannot write <path>: <reason>` in well under a second, before any training or evaluation. Missing parent directories are created first, the same for all of these commands. |
@@ -696,7 +697,12 @@ crash mid-write never corrupts the checkpoint.
 
 **Resume.** Re-run the *same* command with `--resume run.fckp`. Training
 continues from the saved step toward the same budget or epoch count, and the
-LR schedule picks up where it stopped. The checkpoint fixes the architecture.
+LR schedule picks up where it stopped. The checkpoint fixes the architecture
+and the random state: the banner shows the checkpoint's values, and each
+conflicting `--embed`/`--heads`/`--hidden`/`--blocks`/`--seed` prints one line
+such as `note: --embed 64 ignored, using 32 from the checkpoint`. A checkpoint
+records no corpus hash, so resuming on a different corpus is not detected; the
+run prints a note saying the corpus is not verified.
 If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
 `--tokenizer` so the vocabulary is guaranteed identical. One detail: a resumed

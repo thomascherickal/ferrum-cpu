@@ -1,4 +1,5 @@
 //! Scalar / row kernels: linear, RMSNorm, SiLU, RoPE and cross-entropy.
+use crate::error::{InferError, Result};
 use crate::layer::Linear;
 use crate::llm::RopeType;
 use crate::llm_train::buffers::LinBuf;
@@ -161,11 +162,37 @@ pub(super) fn cross_entropy(logits: &[f32], tokens: &[usize], vocab: usize) -> (
     (loss / n_targets as f32, d)
 }
 
+/// Aborts with [`InferError::Diverged`] (same wording as `train`) when the loss is NaN or infinite.
+pub(super) fn check_loss_finite(loss: f32) -> Result<()> {
+    if loss.is_finite() {
+        Ok(())
+    } else {
+        Err(InferError::Diverged(format!(
+            "the loss became {loss}; lower --lr or set --clip"
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{rmsnorm_backward_row, rmsnorm_forward_row, rope_apply, silu, silu_grad};
     use crate::llm::RopeType;
     use crate::llm_train::test_support::det;
+
+    #[test]
+    fn non_finite_loss_is_a_diverged_error_with_the_train_wording() {
+        assert!(super::check_loss_finite(2.5).is_ok());
+        for bad in [f32::NAN, f32::INFINITY] {
+            let e = super::check_loss_finite(bad).unwrap_err();
+            assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
+            let s = e.to_string();
+            assert!(
+                s.starts_with("training diverged: the loss became ")
+                    && s.ends_with("lower --lr or set --clip"),
+                "{s}"
+            );
+        }
+    }
 
     #[test]
     fn cross_entropy_of_nan_logits_is_nan() {

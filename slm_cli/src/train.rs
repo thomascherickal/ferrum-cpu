@@ -24,7 +24,7 @@ pub(crate) fn train_and_save(
             "note: reusing {tok}; if it was trained without --val it has seen the validation text"
         );
     }
-    let cfg = args.config();
+    let mut cfg = args.config();
     check_lr(cfg.lr)?;
     check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;
     let budget = args.get("tokens", 0.0f64);
@@ -33,7 +33,18 @@ pub(crate) fn train_and_save(
         check_epochs(cfg.epochs, true)?; // with a budget the epoch count is ignored
     }
     check_batch_threads(cfg.batch_size, args.get("threads", 0))?;
-    // Every output must be writable before hours of training, not after.
+    // No two files may be one file, and every output must be writable before hours of training.
+    let ck_label = if cfg.resume {
+        "--resume"
+    } else {
+        "--checkpoint"
+    };
+    check_distinct_paths(&[
+        ("the model output", model_path),
+        (ck_label, &cfg.checkpoint_path),
+        ("--tokenizer", &cfg.tokenizer_path),
+        ("the corpus", corpus_path),
+    ])?;
     check_writable(model_path)?;
     if !cfg.checkpoint_path.is_empty() {
         check_writable(&cfg.checkpoint_path)?;
@@ -43,6 +54,13 @@ pub(crate) fn train_and_save(
         && !std::path::Path::new(&cfg.tokenizer_path).exists()
     {
         check_writable(&cfg.tokenizer_path)?;
+    }
+    let resumed = cfg
+        .resume
+        .then(|| crate::resume::read_info(&cfg.checkpoint_path))
+        .flatten();
+    if let Some(info) = &resumed {
+        crate::resume::apply(args, &mut cfg, info);
     }
     let seed: u64 = args.get("seed", 1337);
     // 0 = auto-detect the machine's parallelism; 1 = serial.
@@ -69,8 +87,13 @@ pub(crate) fn train_and_save(
     } else {
         cfg.epochs.to_string()
     };
+    let seed_desc = if resumed.is_some() {
+        "from checkpoint".to_string()
+    } else {
+        seed.to_string()
+    };
     println!(
-        "  Epochs  : {epochs_desc}   LR: {}   Batch: {}   Seed: {seed}",
+        "  Epochs  : {epochs_desc}   LR: {}   Batch: {}   Seed: {seed_desc}",
         cfg.lr, cfg.batch_size
     );
     let resolved_threads = if threads == 0 {

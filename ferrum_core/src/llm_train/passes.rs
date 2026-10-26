@@ -6,7 +6,8 @@ use crate::llm_train::blocks::{
 };
 use crate::llm_train::buffers::{Buffers, LinBuf};
 use crate::llm_train::kernels::{
-    cross_entropy, lin_backward, lin_forward, rmsnorm_backward_row, rmsnorm_forward_row,
+    check_loss_finite, cross_entropy, lin_backward, lin_forward, rmsnorm_backward_row,
+    rmsnorm_forward_row,
 };
 
 /// Forward pass over `tokens`, returning the activation cache. With `dropout > 0`
@@ -167,9 +168,7 @@ pub(super) fn seq_grad_flat(
 ) -> Result<(f32, Vec<f32>)> {
     let cache = forward_train(model, tokens, dropout, seed)?;
     let (loss, d_logits) = cross_entropy(&cache.logits, tokens, model.cfg.vocab_size);
-    if !loss.is_finite() {
-        return Err(InferError::DimMismatch("non-finite loss".into()));
-    }
+    check_loss_finite(loss)?;
     let mut g = Buffers::zeros(model);
     backward_into(model, &cache, &d_logits, tokens, &mut g)?;
     Ok((loss, g.to_flat()))

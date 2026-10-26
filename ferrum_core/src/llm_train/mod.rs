@@ -48,10 +48,10 @@ mod test_support;
 
 pub use self::checkpoint::apply_checkpoint_weights;
 
-use crate::error::{InferError, Result};
+use crate::error::Result;
 use crate::llm::LlamaModel;
 use crate::llm_train::buffers::Buffers;
-use crate::llm_train::kernels::cross_entropy;
+use crate::llm_train::kernels::{check_loss_finite, cross_entropy};
 use crate::llm_train::params::{ensure_f32_weights, param_data_ref};
 use crate::llm_train::passes::{backward_into, forward_train};
 use crate::optim::{Adam, LrSchedule};
@@ -200,9 +200,7 @@ impl LlamaTrainer {
     pub fn loss_and_backward(&mut self, tokens: &[usize]) -> Result<f32> {
         let cache = forward_train(&self.model, tokens, 0.0, 0)?;
         let (loss, d_logits) = cross_entropy(&cache.logits, tokens, self.model.cfg.vocab_size);
-        if !loss.is_finite() {
-            return Err(InferError::DimMismatch("non-finite loss".into()));
-        }
+        check_loss_finite(loss)?;
         self.grads.clear();
         backward_into(&self.model, &cache, &d_logits, tokens, &mut self.grads)?;
         Ok(loss)

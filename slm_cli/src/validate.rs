@@ -106,6 +106,40 @@ pub(crate) fn check_writable(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The file `p` names, made comparable: canonical when it exists, else its (canonical) parent
+/// plus file name, else the absolute path.
+fn canonical_target(p: &str) -> std::path::PathBuf {
+    use std::path::Path;
+    let path = Path::new(p);
+    if let Ok(c) = path.canonicalize() {
+        return c;
+    }
+    let parent = path.parent().filter(|d| !d.as_os_str().is_empty());
+    match (
+        parent.unwrap_or(Path::new(".")).canonicalize(),
+        path.file_name(),
+    ) {
+        (Ok(d), Some(n)) => d.join(n),
+        _ => std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
+    }
+}
+
+/// Refuse two roles (`(label, path)`; an empty path means unused) that name the same file, e.g.
+/// `--checkpoint` equal to the model output, which would silently overwrite one with the other.
+pub(crate) fn check_distinct_paths(roles: &[(&str, &str)]) -> Result<(), String> {
+    let used: Vec<_> = roles.iter().filter(|(_, p)| !p.is_empty()).collect();
+    for (i, (la, pa)) in used.iter().enumerate() {
+        for (lb, pb) in &used[i + 1..] {
+            if pa == pb || canonical_target(pa) == canonical_target(pb) {
+                return Err(format!(
+                    "{la} and {lb} are the same file ({pb}); they would overwrite each other"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Most data-parallel shards / worker threads a run may ask for; more is never useful.
 pub(crate) const MAX_THREADS: usize = 1024;
 
@@ -254,6 +288,35 @@ mod tests {
             "{e}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn same_file_under_different_spellings_is_refused() {
+        let d = std::env::temp_dir().join(format!("ferrum_distinct_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub")).unwrap();
+        let (a, b) = (d.join("m.gguf"), d.join("c.fckp"));
+        let (a, b) = (a.to_str().unwrap(), b.to_str().unwrap());
+        assert!(
+            check_distinct_paths(&[("model", a), ("--checkpoint", b), ("--tokenizer", "")]).is_ok()
+        );
+        let e = check_distinct_paths(&[("the model output", a), ("--checkpoint", a)]).unwrap_err();
+        assert!(
+            e.contains("the model output and --checkpoint are the same file"),
+            "{e}"
+        );
+        // Not yet existing, with a `..` detour through an existing directory.
+        let detour = format!("{}/sub/../m.gguf", d.display());
+        assert!(check_distinct_paths(&[("a", a), ("b", &detour)]).is_err());
+        // Existing file reached through a symlink.
+        std::fs::write(a, b"x").unwrap();
+        let link = d.join("link.gguf");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(a, &link).unwrap();
+            assert!(check_distinct_paths(&[("a", a), ("b", link.to_str().unwrap())]).is_err());
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

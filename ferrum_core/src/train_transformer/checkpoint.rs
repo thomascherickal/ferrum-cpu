@@ -4,7 +4,46 @@ use crate::error::{InferError, Result};
 use crate::rng::Rng;
 use crate::train_transformer::TransformerNet;
 
+/// What a training checkpoint records about the net: its architecture and progress.
+/// (Not the corpus, learning rate or seed: a checkpoint stores none of those.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckpointInfo {
+    pub vocab: usize,
+    pub context: usize,
+    pub embed: usize,
+    pub heads: usize,
+    pub hidden: usize,
+    pub blocks: usize,
+    pub step: u64,
+}
+
 impl TransformerNet {
+    /// Read just the header of [`TransformerNet::save_checkpoint`] bytes (no weights are decoded),
+    /// e.g. to tell the user which architecture a `--resume` will really use.
+    pub fn checkpoint_info(bytes: Vec<u8>) -> Result<CheckpointInfo> {
+        let g = ckpt::open_owned(bytes, b"FCKP", "ferrum-checkpoint")?;
+        let n = |k| ckpt::get_usize(&g, k);
+        let info = CheckpointInfo {
+            vocab: n("vocab")?,
+            context: n("context")?,
+            embed: n("embed")?,
+            heads: n("heads")?,
+            hidden: n("hidden")?,
+            blocks: n("blocks")?,
+            step: ckpt::get_u64(&g, "step")?,
+        };
+        let dims = [
+            info.vocab,
+            info.context,
+            info.embed,
+            info.heads,
+            info.hidden,
+            info.blocks,
+        ];
+        Self::check_header(&g, dims)?;
+        Ok(info)
+    }
+
     /// Serialize the **full training state** (T6): architecture, QAT/tying
     /// flags, optimizer timestep, the supplied RNG's state, and every
     /// parameter's weights *and* Adam moment buffers (`m`, `v`). Pair with
@@ -157,6 +196,30 @@ mod tests {
             net_c.snapshot_weights(),
             "resumed training diverged from the uninterrupted run"
         );
+    }
+
+    #[test]
+    fn checkpoint_info_reports_architecture_and_step() {
+        let mut r = Rng::new(1);
+        let mut net = TransformerNet::new(30, 8, 16, 2, 48, 3, &mut r).unwrap();
+        let tokens: Vec<usize> = (0..100).map(|i| i % 30).collect();
+        let mut rng = Rng::new(5);
+        train_transformer_epoch(&mut net, &tokens, 8, &Adam::new(0.01), &mut rng).unwrap();
+        let bytes = net.save_checkpoint(&rng);
+        let info = TransformerNet::checkpoint_info(bytes).unwrap();
+        assert_eq!(
+            (
+                info.vocab,
+                info.context,
+                info.embed,
+                info.heads,
+                info.hidden,
+                info.blocks
+            ),
+            (30, 8, 16, 2, 48, 3)
+        );
+        assert_eq!(info.step, net.step_count());
+        assert!(TransformerNet::checkpoint_info(b"junk".to_vec()).is_err());
     }
 
     #[test]
