@@ -20,6 +20,12 @@ const BPE_FIX: &str = "retrain with a BPE vocabulary (`train ... --vocab 1024`; 
 
 fn not_runnable(path: &str, arch: &str) -> String {
     let arch = if arch.is_empty() { "?" } else { arch };
+    if arch == "llama" {
+        return format!(
+            "{path}: architecture 'llama': Ferrum exports only its own gpt2 models; for a llama \
+             GGUF write a Modelfile by hand (Manual 9.5)"
+        );
+    }
     format!(
         "{path}: architecture '{arch}' is not runnable in llama.cpp (Ollama / LM Studio run only \
          'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no \
@@ -428,12 +434,18 @@ mod tests {
     #[test]
     fn refuses_non_runnable_gguf() {
         let d = tmp("sum_refuse");
-        for arch in ["ferrum", "llama"] {
-            let p = gguf(&d, "m.gguf", Some(arch), Some(64));
-            let e = runnable_summary(&p).err().unwrap();
-            assert!(e.contains("not runnable in llama.cpp"), "{e}");
-            assert!(e.contains(&format!("'{arch}'")), "{e}");
-        }
+        let p = gguf(&d, "m.gguf", Some("ferrum"), Some(64));
+        let e = runnable_summary(&p).err().unwrap();
+        assert!(e.contains("not runnable in llama.cpp"), "{e}");
+        assert!(e.contains("'ferrum'"), "{e}");
+        // A llama GGUF does run in llama.cpp; the refusal is Ferrum's own policy.
+        let p = gguf(&d, "l.gguf", Some("llama"), Some(64));
+        let e = runnable_summary(&p).err().unwrap();
+        assert!(
+            e.contains("'llama'") && e.contains("Modelfile by hand (Manual 9.5)"),
+            "{e}"
+        );
+        assert!(!e.contains("not runnable") && !e.contains("retrain"), "{e}");
         // No architecture key at all.
         let e = runnable_summary(&gguf(&d, "n.gguf", None, None))
             .err()

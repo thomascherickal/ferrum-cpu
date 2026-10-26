@@ -13,6 +13,7 @@
 //! | `finetune-progress` | `{ epoch, total, loss, ppl }`    | GGUF fine-tune epoch  |
 //! | `finetune-done` | [`commands::FinetuneResult`]         | GGUF fine-tune done   |
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
+//! | `export-progress` | `String` (one phase line)          | GGUF export phase     |
 
 #![forbid(unsafe_code)]
 

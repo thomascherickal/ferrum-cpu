@@ -171,7 +171,8 @@ fn runtime_exports_refuse_llama_and_write_a_modelfile_for_gpt2() {
         let text = String::from_utf8_lossy(&o.stderr);
         assert!(!o.status.success(), "{args:?}");
         assert!(
-            text.contains("architecture 'llama' is not runnable in llama.cpp"),
+            text.contains("architecture 'llama': Ferrum exports only its own gpt2 models")
+                && text.contains("Modelfile by hand (Manual 9.5)"),
             "{text}"
         );
     }

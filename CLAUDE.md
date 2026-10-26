@@ -167,7 +167,7 @@ Runtime compatibility tests skip a tool that is absent, unless
 `export-ollama`/`export-lmstudio` find their tool by flag (`--bin`), then env
 (`FERRUM_OLLAMA`, `FERRUM_LMS`), then `PATH`, then the default install path;
 the tests and `scripts/verify_runtimes.sh` find llama.cpp through
-`FERRUM_LLAMA_BIN`. Export commands refuse non-gpt2 GGUFs. The Ollama and LM
+`FERRUM_LLAMA_BIN`. Export commands refuse non-gpt2 GGUFs (for a llama GGUF the Ollama route is a hand-written Modelfile, Manual §9.5). The Ollama and LM
 Studio checks need `FERRUM_VERIFY_RUNTIMES=1`.
 
 ```bash

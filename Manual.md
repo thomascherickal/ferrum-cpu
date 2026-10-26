@@ -717,8 +717,10 @@ If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
 `--tokenizer` so the vocabulary is guaranteed identical. One detail: a resumed
 run restarts its partially-finished epoch with a fresh shuffle instead of
-replaying the exact remaining batches, so a resumed run ends close to, but not
-bit-identical with, an uninterrupted one ([Samples §4](Samples.md#4-training-controls)).
+replaying the exact remaining batches. When the last checkpoint falls on an
+epoch boundary the resumed run is bit-identical to an uninterrupted one;
+otherwise it ends close to, but not bit-identical with, it
+([Samples §4](Samples.md#4-training-controls)).
 A mid-run interrupt does not save on exit; the checkpoint on disk is the last
 periodic one.
 
@@ -1229,7 +1231,11 @@ train_transformer export-gguf base.gguf tuned.gguf --resume tuned.flck --quant q
 - Output types are `f32 | f16 | q8_0 | q8_1 | q4_0 | q4_1 | q4_k | q5_k | q6_k`
   (default `q8_0`). Q2_K and Q3_K are read-only.
 - The source's hyperparameters and tokenizer carry over verbatim, so the file
-  runs unchanged in llama.cpp, ollama, and LM Studio.
+  is an ordinary llama/qwen2 GGUF that llama.cpp, Ollama, and LM Studio can
+  load. `export-ollama` and `export-lmstudio` refuse it (they accept only
+  Ferrum's own `gpt2` models); for Ollama write the Modelfile by hand, as in
+  §9.5. The export itself was checked by reloading it with `run-gguf`; the
+  hand-written Modelfile route was not run against a real Ollama here.
 - Norms and biases stay f32. A matrix whose rows are not block-aligned for
   the chosen quant (32 for legacy formats, 256 for k-quants) falls back to
   f16. The per-type summary printed after export shows what was emitted.
@@ -1328,6 +1334,12 @@ a missing tool, but fail instead when `FERRUM_REQUIRE_RUNTIMES=1` is set.
 `FERRUM_VERIFY_RUNTIMES=1` also runs the Ollama and LM Studio checks in
 `test_runtime_compat` (it starts those tools).
 
+**An exported llama/qwen2 GGUF (§9.3).** `export-ollama` and `export-lmstudio`
+refuse it, because Ferrum exports only its own `gpt2` models. The Ollama route
+is a Modelfile you write by hand: `FROM` the exported file, plus the
+`TEMPLATE` and `PARAMETER stop` lines the original model needs (copy them from
+the source model's Ollama or Hugging Face card). Ferrum does not generate it.
+
 **What does not run there.** Character-level models (no BPE vocabulary) and
 Ferrum-ML tabular MLPs are valid GGUF files, but llama.cpp has no architecture
 for them. Use `train_transformer` or the Ferrum library for those.
@@ -1356,8 +1368,11 @@ PARAMETER num_ctx <context_length of the model>
 
 Rules for both commands:
 
-- A GGUF that llama.cpp cannot run (generic layout, character-level, tabular) is
-  **refused before any tool runs**. The error says why and how to fix it.
+- Anything but a Ferrum `gpt2` GGUF is **refused before any tool runs**. A
+  generic-layout, character-level, or tabular file cannot run in llama.cpp, and
+  the error says to retrain with a BPE vocabulary. An imported `llama` GGUF does
+  run there, but Ferrum exports only its own gpt2 models; the error points to the
+  hand-written Modelfile (§9.5).
 - A missing tool gives an error that lists the four places searched (§9.5).
 - If the Ollama server is not running, `ollama create` fails and the error says
   to start it with `ollama serve`. `ollama create` talks to `OLLAMA_HOST`.
@@ -1470,7 +1485,7 @@ environment. `run.sh` stops the server (and LightEval) on every exit path,
 including Ctrl-C and `kill`. Each run uses its own LightEval sample cache under
 `eval/lighteval/out/cache`, because LightEval's default cache is keyed by the
 model *config*, not the weights, and would answer a second model from the first
-one's results. The `blimp` and `arc` tasks download their datasets from Hugging
+one's results. The previous run's raw LightEval results are kept as `eval/lighteval/out/results.prev` (one generation back; the rest of `out/` is regenerated). The `blimp` and `arc` tasks download their datasets from Hugging
 Face on first use. `run.sh` caches them in `eval/lighteval/.hf-cache` (git-ignored,
 kept between runs), never in `~/.cache/huggingface`; set `FERRUM_HF_CACHE` to
 choose another directory.
@@ -1599,9 +1614,15 @@ tauri ios init && cargo tauri ios dev` (macOS only).
 
 ### 10.3 The tabs
 
+The Datasets tab's `clean_text` command wraps `clean_corpus` with its own
+option set: Gutenberg boilerplate, lowercase, whitespace, punctuation, control
+characters, and a maximum length. It has no NFKC, dedup, minimum length,
+document separators, train/val/test split, or manifest; use `train_transformer
+prepare` (§5.1) for those.
+
 | Tab | What you do there |
 |---|---|
-| **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with `clean_corpus`, preview statistics, save |
+| **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
 | **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart |
 | **Generate** | Prompt, characters, temperature, optional streaming |
 | **Evaluate** | Score a model on held-out text; each run adds a table row (perplexity, CE, bits/token, uniform baseline) |
@@ -1711,12 +1732,20 @@ import init, { TransformerSLMModel } from "./pkg/slm_wasm.js";
 await init();
 const bytes = new Uint8Array(await (await fetch("model.gguf")).arrayBuffer());
 const slm = new TransformerSLMModel(bytes);
-const meta = JSON.parse(slm.metadata());          // class_names, input_dim, tokenizer_state, …
+const meta = JSON.parse(slm.metadata());          // model dimensions; tokenizer_state is an empty string
+const contextIds = [/* token ids: see the note below */];
 let probs = slm.prime(new Float32Array(contextIds)); // KV-cached: prime once…
 const next = slm.sample_from_probs(probs, 0.7, Math.random());
 probs = slm.predict_next_cached(next);            // …then one token at a time
 const attn = slm.get_last_attention_weights();    // [heads × T × T] for visualization
 ```
+
+**The BPE text API is planned, not built.** `slm_wasm` takes and returns token
+ids only. It has no `encode` or `decode`, and `metadata()` carries no
+tokenizer, so a browser page cannot yet turn text into ids for a BPE model (or
+ids back into text) with this crate alone. Until the text API lands, tokenize
+outside the browser (for example with `llama-tokenize`, §9.5) or ship the ids
+with the page.
 
 Other methods: `predict_next` (full forward), `num_heads`, `vocab_size`,
 `context_len`, `num_layers`, `cached_len`, `entropy`, and `top_k_indices`.

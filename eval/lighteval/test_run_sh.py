@@ -131,6 +131,21 @@ class RunShTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--max-samples") + 1], "7")
         self.assertTrue((fx.root / "eval/lighteval/out/data/cloze/test.jsonl").exists())
 
+    def test_previous_raw_results_are_kept_as_results_prev(self):
+        # regression: run.sh used to `rm -rf out`, deleting the raw results Samples section 8 points at
+        fx = Fixture(GOOD_SERVER)
+        old = fx.root / "eval/lighteval/out/results/old"
+        old.mkdir(parents=True)
+        (old / "results_0.json").write_text("{}")
+        self.assertEqual(fx.run().returncode, 0)
+        out = fx.root / "eval/lighteval/out"
+        self.assertTrue((out / "results.prev/old/results_0.json").exists())
+        self.assertFalse((out / "results/old").exists())
+        self.assertTrue((out / "results/x/results_1.json").exists())
+        self.assertEqual(fx.run().returncode, 0)  # a second run replaces results.prev by the first run's
+        self.assertFalse((out / "results.prev/old").exists())
+        self.assertTrue((out / "results.prev/x/results_1.json").exists())
+
     def test_huggingface_caches_stay_inside_the_project(self):
         # regression: `datasets` wrote parquet builders and locks into ~/.cache/huggingface
         fx = Fixture(GOOD_SERVER)

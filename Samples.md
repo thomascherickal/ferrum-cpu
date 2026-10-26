@@ -583,7 +583,7 @@ exit=1
 
 **What to look at.**
 
-- The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). A mid-epoch interrupt restarts the partial epoch with a fresh shuffle, so a resumed run is close to, but not bit-identical with, an uninterrupted one. The uninterrupted run in Sample 1 ended at validation perplexity 18.690; the resumed run above ended at 18.910.
+- The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). A resume restarts a partial epoch with a fresh shuffle, so a resumed run is close to, but not bit-identical with, an uninterrupted one, unless the last checkpoint falls on an epoch boundary, where it is bit-identical (a tiny-model check with `--checkpoint-every` equal to the steps per epoch was bit-identical; one that did not divide the epoch was not). The uninterrupted run in Sample 1 ended at validation perplexity 18.690; the resumed run above ended at 18.910.
 - With `--val`, the best validation score is restored on resume.
 - `-v` prints one line per 10 steps. `--debug` is the old per-op trace.
 - The CLI never falls back to a default silently. The second error names `.fckp` because `train` checkpoints are `.fckp` (`run-gguf`, `export-gguf` and `finetune-gguf` say `.flck`).
@@ -864,7 +864,7 @@ curl -s http://127.0.0.1:1234/v1/completions \
 
 `max_tokens` 17 shows 16 visible tokens. `repeat_penalty` 1.0 matters because LM Studio's default (1.1) changes the text. `lms ls --json` entries carry `modelKey` and `path`; that is what the `python3` line reads, and what `export-lmstudio` reads.
 
-**Part E. One-command exports.** Both commands refuse a GGUF that llama.cpp cannot run (a character-level or tabular model) before they start any tool. They find the tools as described in [Manual §9.5](Manual.md#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio), or take `--bin`. The Ollama export talks to the server from Part C, because `OLLAMA_HOST` is still exported.
+**Part E. One-command exports.** Both commands accept only Ferrum's own `gpt2` models: they refuse a GGUF that llama.cpp cannot run (a character-level or tabular model), and an imported llama GGUF (write its Modelfile by hand, Manual §9.5), before they start any tool. They find the tools as described in [Manual §9.5](Manual.md#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio), or take `--bin`. The Ollama export talks to the server from Part C, because `OLLAMA_HOST` is still exported.
 
 ```bash
 train_transformer export-ollama models/slm.gguf ferrum-export --modelfile-only samples/ferrum-export.Modelfile
@@ -991,7 +991,7 @@ cat metrics/lighteval.json
 
 **Not re-run for this document.** The environment above was not built on the machine used for this documentation pass, so the command above was not run here. Two real results exist from earlier runs on this same machine (2026-10-25), and both are reproduced below.
 
-The first is a 20-document smoke run (`--max-samples 20`). Its raw LightEval results file is still on disk under `eval/lighteval/out/results/`, and `summarize.py` (the last step of `run.sh`) turns it into `metrics/lighteval.json`. This is that step, run now on that file:
+The first is a 20-document smoke run (`--max-samples 20`). Its raw LightEval results file is still on disk under `eval/lighteval/out/results/` (a later `run.sh` moves them to `out/results.prev/` and keeps them for one more run), and `summarize.py` (the last step of `run.sh`) turns it into `metrics/lighteval.json`. This is that step, run now on that file:
 
 ```text
 $ python3 eval/lighteval/summarize.py eval/lighteval/out/results metrics/lighteval.json models/slm.gguf 20

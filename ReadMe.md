@@ -220,7 +220,7 @@ or with a one-command export.
 # llama.cpp
 llama-completion -m models/slm.gguf -p "Once upon a time" -n 16 --temp 0 -no-cnv --no-warmup </dev/null 2>/dev/null
 
-# One-command exports (each refuses a GGUF that llama.cpp cannot run)
+# One-command exports (Ferrum gpt2 models only: each refuses anything else)
 train_transformer export-ollama   models/slm.gguf ferrum-tiny   # writes a Modelfile, runs `ollama create`
 train_transformer export-lmstudio models/slm.gguf               # links it into LM Studio with `lms import -l`
 ```
@@ -266,6 +266,11 @@ Two reference sizes are used in the docs:
 |---|---|---|
 | Reference 500K | `--context 128 --embed 96 --heads 4 --blocks 3 --hidden 320 --vocab 1024` | 507,552 |
 | Smallest supported reference | `--context 64 --embed 64 --heads 4 --blocks 2 --hidden 128 --vocab 512 --tie` | 103,936 |
+
+`--vocab N` is a ceiling: a small corpus supplies fewer BPE merges, and `train`
+then prints `vocab: 282 (requested 512, limited by the corpus)`. The counts
+above assume a corpus large enough to fill the vocabulary, as the TinyStories
+reference does ([Manual §6.2](Manual.md#6-training-an-slm)).
 
 ---
 

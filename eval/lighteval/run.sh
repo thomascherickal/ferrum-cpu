@@ -30,7 +30,10 @@ venv="${FERRUM_LIGHTEVAL_VENV:-$here/.venv}"
 py="$venv/bin/python"; le="$venv/bin/lighteval"
 [ -x "$le" ] || { echo "run: python3 -m venv $venv && $venv/bin/pip install -r $here/requirements.txt" >&2; exit 1; }
 
-work="$here/out"; rm -rf "$work"; mkdir -p "$work"
+# The previous raw results survive one run as out/results.prev; everything else is regenerated.
+work="$here/out"; mkdir -p "$work"; rm -rf "$work/results.prev"
+[ ! -d "$work/results" ] || mv "$work/results" "$work/results.prev"
+rm -rf "$work/data" "$work/cache" "$work/server.log"
 "$py" "$here/make_task_data.py" "$test" "$work/data"
 
 (cd "$root" && cargo build --release -q -p slm_server)
