@@ -17,6 +17,18 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     }
     require_resume_file(args.value("resume"))?;
     let params = sampling_params(args, 0.8, "rep")?; // fail before the model loads
+                                                     // Parsed up front so a typo fails before a multi-GB load.
+    let ids_arg: Option<Vec<usize>> = args
+        .value("ids")
+        .map(|ids| {
+            ids.split_whitespace()
+                .map(|s| {
+                    s.parse()
+                        .map_err(|_| format!("--ids: '{s}' is not a token id"))
+                })
+                .collect::<Result<_, String>>()
+        })
+        .transpose()?;
     let path = &args.positional[0];
     let prompt_text = args.positional[1..].join(" ");
 
@@ -39,9 +51,9 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     };
 
     // Streamed open: parse the header without reading the whole file.
-    println!("Opening {path} (streamed)…");
+    eprintln!("Opening {path} (streamed)…");
     let g = Gguf::open(path).map_err(|e| format!("cannot open GGUF {path}: {e}"))?;
-    println!(
+    eprintln!(
         "  GGUF v{}   architecture = {}",
         g.version,
         g.architecture().unwrap_or("?")
@@ -49,7 +61,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 
     // Memory guard before the (potentially multi-GB) load.
     let mut est = estimate_resident_bytes(&g, prec);
-    println!(
+    eprintln!(
         "  estimated resident ≈ {:.2} GB  ({})",
         est as f64 / 1e9,
         if resume.is_some() {
@@ -61,13 +73,13 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     if let Some(ckpt) = &resume {
         // Applying a checkpoint peaks well above the resident model.
         est = est.max(resume_peak_bytes(est, file_len(ckpt)));
-        println!(
+        eprintln!(
             "  estimated peak while applying {ckpt} ≈ {:.2} GB",
             est as f64 / 1e9
         );
     }
     if let Some(avail) = available_memory_bytes() {
-        println!("  available memory   ≈ {:.2} GB", avail as f64 / 1e9);
+        eprintln!("  available memory   ≈ {:.2} GB", avail as f64 / 1e9);
         if let Some(e) = memory_error(
             "resident memory",
             est,
@@ -82,16 +94,16 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     // Tokenizer is optional; without one, the prompt must be raw token IDs.
     let tok = GgufTokenizer::from_gguf(&g).ok();
     match &tok {
-        Some(t) => println!("  tokenizer = {:?}  (vocab {})", t.model(), t.vocab_size()),
-        None => println!("  tokenizer = none in file — supply --ids \"<token ids>\""),
+        Some(t) => eprintln!("  tokenizer = {:?}  (vocab {})", t.model(), t.vocab_size()),
+        None => eprintln!("  tokenizer = none in file — supply --ids \"<token ids>\""),
     }
 
-    println!("Loading weights…");
+    eprintln!("Loading weights…");
     let t0 = Instant::now();
     let mut model = g
         .load_llama_prec(prec)
         .map_err(|e| format!("cannot load model: {e}"))?;
-    println!(
+    eprintln!(
         "  loaded in {:.2}s: {} layers, dim {}, vocab {}, ctx {}",
         t0.elapsed().as_secs_f32(),
         model.cfg.n_layers,
@@ -106,16 +118,14 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
             std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
         ferrum_core::apply_checkpoint_weights(&mut model, bytes)
             .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
-        println!("  applied fine-tuned checkpoint {ckpt}");
+        eprintln!("  applied fine-tuned checkpoint {ckpt}");
     }
 
     // Build the prompt token IDs (explicit --ids win; else encode the text,
     // auto-wrapping instruct prompts in their chat template unless --raw).
     let mut fmt = None;
-    let prompt_ids: Vec<usize> = if let Some(ids) = args.value("ids") {
-        ids.split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect()
+    let prompt_ids: Vec<usize> = if let Some(ids) = ids_arg {
+        ids
     } else if let Some(t) = &tok {
         fmt = if args.has("raw") {
             None
@@ -132,7 +142,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
         }
         match fmt {
             Some(f) => {
-                println!("  chat format = {f:?} (pass --raw to disable)");
+                eprintln!("  chat format = {f:?} (pass --raw to disable)");
                 ids.extend(ferrum_core::chat_format::encode_segments(
                     t,
                     &ferrum_core::chat_format::render(f, &prompt_text),
@@ -168,7 +178,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     }
     let mut rng = Rng::new(gen_seed);
 
-    println!(
+    eprintln!(
         "\nPrefilling {} prompt tokens, generating up to {max_new} (temp {temp})…",
         prompt_ids.len()
     );
@@ -176,7 +186,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     let out_ids = model.generate(&prompt_ids, max_new, &params, &stops, &mut rng)?;
     let dt = t1.elapsed().as_secs_f32();
 
-    println!("\n── output ──");
+    // stdout carries only the generated text, so `run-gguf ... > out.txt` is clean.
     match &tok {
         Some(t) => println!("{prompt_text}{}", t.decode(&out_ids)),
         None => {
@@ -184,8 +194,12 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
             println!("token ids: {}", ids.join(" "));
         }
     }
-    println!("────────────");
-    println!(
+    let room = model.cfg.context_len - prompt_ids.len();
+    if max_new > room && out_ids.len() == room && out_ids.last().is_none_or(|t| !stops.contains(t))
+    {
+        eprintln!("stopped: context full at {} tokens", out_ids.len());
+    }
+    eprintln!(
         "[{} tokens in {:.2}s = {:.1} tok/s]",
         out_ids.len(),
         dt,

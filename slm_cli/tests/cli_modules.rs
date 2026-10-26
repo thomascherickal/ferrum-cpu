@@ -27,6 +27,19 @@ fn tt(args: &[&str]) -> (bool, String) {
     )
 }
 
+/// (success, stdout, stderr)
+fn tt_split(args: &[&str]) -> (bool, String, String) {
+    let o = Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+        .args(args)
+        .output()
+        .unwrap();
+    (
+        o.status.success(),
+        String::from_utf8_lossy(&o.stdout).to_string(),
+        String::from_utf8_lossy(&o.stderr).to_string(),
+    )
+}
+
 fn s(p: &std::path::Path) -> &str {
     p.to_str().unwrap()
 }
@@ -156,7 +169,7 @@ fn run_gguf_quant_choices_and_prompt_ids() {
             "--quant",
             q,
         ]);
-        assert!(ok && out.contains("── output ──"), "{q}: {out}");
+        assert!(ok && out.contains("tok/s]"), "{q}: {out}");
         assert!(out.contains(&format!("--quant {q}")), "{q}: {out}");
     }
     // An unknown one is refused before anything loads.
@@ -174,7 +187,7 @@ fn run_gguf_quant_choices_and_prompt_ids() {
         "run-gguf",
         s(&bare),
         "--ids",
-        "1 2 3 junk",
+        "1 2 3",
         "--max",
         "3",
         "--temp",
@@ -185,16 +198,98 @@ fn run_gguf_quant_choices_and_prompt_ids() {
         out.contains("tokenizer = none in file") && out.contains("token ids: "),
         "{out}"
     );
-    // No tokenizer and no ids: a clear error. Ids that all fail to parse: empty prompt.
+    // No tokenizer and no ids: a clear error. A token that is not a number is named.
     let (ok, out) = tt(&["run-gguf", s(&bare), "hello"]);
     assert!(!ok && out.contains("has no tokenizer; pass --ids"), "{out}");
-    let (ok, out) = tt(&["run-gguf", s(&bare), "--ids", "x y"]);
+    let (ok, out) = tt(&["run-gguf", s(&bare), "--ids", "1 2 junk"]);
+    assert!(
+        !ok && out.contains("--ids: 'junk' is not a token id"),
+        "{out}"
+    );
+    let (ok, out) = tt(&["run-gguf", s(&bare), "--ids", ""]);
     assert!(!ok && out.contains("empty prompt"), "{out}");
     // Not a GGUF at all.
     let junk = d.join("junk.gguf");
     std::fs::write(&junk, b"not gguf").unwrap();
     let (ok, out) = tt(&["run-gguf", s(&junk), "hi"]);
     assert!(!ok && out.contains("cannot open GGUF"), "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn run_gguf_stdout_is_only_the_generated_text() {
+    let d = tmp("rgstdout");
+    let model = llama_file(&d, "m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+    let (ok, out, err) = tt_split(&[
+        "run-gguf",
+        s(&model),
+        "abc",
+        "--raw",
+        "--max",
+        "3",
+        "--temp",
+        "0",
+    ]);
+    assert!(ok, "{err}");
+    assert_eq!(out.lines().count(), 1, "stdout: {out:?}");
+    assert!(out.starts_with("abc"), "{out:?}");
+    for chatter in ["Opening", "estimated resident", "Loading weights", "tok/s]"] {
+        assert!(!out.contains(chatter), "{chatter} on stdout: {out:?}");
+        assert!(
+            err.contains(chatter),
+            "{chatter} missing on stderr: {err:?}"
+        );
+    }
+    // Without a tokenizer the ids are the output, still alone on stdout.
+    let bare = llama_file(&d, "bare.gguf", tiny_llama_gguf(None, &[]));
+    let (ok, out, err) = tt_split(&[
+        "run-gguf",
+        s(&bare),
+        "--ids",
+        "1 2 3",
+        "--max",
+        "3",
+        "--temp",
+        "0",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.starts_with("token ids: ") && out.lines().count() == 1,
+        "{out:?}"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn run_gguf_says_when_the_context_window_ended_the_run() {
+    let d = tmp("rgctx");
+    let extra = [("llama.context_length", MetaValue::U32(8))];
+    let model = llama_file(&d, "m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &extra));
+    let (ok, out, err) = tt_split(&[
+        "run-gguf",
+        s(&model),
+        "abc",
+        "--raw",
+        "--max",
+        "1000",
+        "--temp",
+        "0",
+    ]);
+    assert!(ok, "{err}");
+    assert!(err.contains("stopped: context full at 5 tokens"), "{err}");
+    assert!(!out.contains("stopped"), "{out}");
+    // A run that ends by its own budget says nothing.
+    let (ok, _, err) = tt_split(&[
+        "run-gguf",
+        s(&model),
+        "abc",
+        "--raw",
+        "--max",
+        "2",
+        "--temp",
+        "0",
+    ]);
+    assert!(ok && !err.contains("stopped:"), "{err}");
     let _ = std::fs::remove_dir_all(&d);
 }
 

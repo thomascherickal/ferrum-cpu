@@ -69,7 +69,12 @@ pub(crate) fn train_and_save(
     let chars = corpus.chars().filter(|&c| c != '\r').count();
 
     println!("╔══════════════════════════════════════════════════════════╗");
-    println!("  ferrum transformer SLM trainer (int8 QAT)");
+    let mode = match (cfg.qat, quant) {
+        (true, "int8") => "int8 QAT".to_string(),
+        (true, q) => format!("int8 QAT, saved as {q}"),
+        (false, q) => format!("fp32, no QAT, saved as {q}"),
+    };
+    println!("  ferrum transformer SLM trainer ({mode})");
     println!("  Corpus  : {corpus_path}  ({chars} chars)");
     let tok_desc = if cfg.vocab_size == 0 {
         "character-level".to_string()
@@ -133,10 +138,15 @@ pub(crate) fn train_and_save(
         format!("/{epochs}")
     };
 
+    let reused_tokenizer =
+        !cfg.tokenizer_path.is_empty() && std::path::Path::new(&cfg.tokenizer_path).exists();
+    // Early stopping, tracked from the per-epoch callback: (last epoch, best epoch, epochs since best).
+    let (mut last_epoch, mut best_epoch, mut stale) = (0, 0, 0);
+    let patience: usize = args.get("patience", 0);
     let slm = if args.value("val").is_some() {
         let val = ValidationConfig {
             val_fraction: args.get("val", 0.1),
-            patience: args.get("patience", 0),
+            patience,
         };
         GenerativeSLM::train_transformer_config_validated(
             corpus,
@@ -145,6 +155,10 @@ pub(crate) fn train_and_save(
             &val,
             &mut rng,
             |p| {
+                (last_epoch, stale) = (p.epoch, if p.is_best { 0 } else { stale + 1 });
+                if p.is_best {
+                    best_epoch = p.epoch;
+                }
                 let best = if p.is_best { "  *best" } else { "" };
                 report(
                     p.epoch,
@@ -166,6 +180,9 @@ pub(crate) fn train_and_save(
     };
 
     println!("\nTrained in {:.2}s.", t0.elapsed().as_secs_f32());
+    if patience > 0 && stale >= patience {
+        println!("early stop at epoch {last_epoch}, best epoch {best_epoch} kept");
+    }
     let vocab_kind = if slm.meta.tokenizer_state.is_empty() {
         "chars"
     } else {
@@ -175,6 +192,18 @@ pub(crate) fn train_and_save(
         "  vocab = {} {}   context = {}   output_dim = {}",
         slm.meta.output_dim, vocab_kind, slm.meta.input_dim, slm.meta.output_dim
     );
+
+    if cfg.vocab_size > 0 && slm.meta.output_dim != cfg.vocab_size {
+        let why = if reused_tokenizer {
+            "fixed by the reused tokenizer"
+        } else {
+            "limited by the corpus"
+        };
+        println!(
+            "  vocab: {} (requested {}, {why})",
+            slm.meta.output_dim, cfg.vocab_size
+        );
+    }
 
     match quant {
         "int8" => slm.save(model_path),

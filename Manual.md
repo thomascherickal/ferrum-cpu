@@ -598,7 +598,7 @@ rename), so an interrupted or failed save leaves any previous file intact and no
 | `--heads N` | 4 | Attention heads per block |
 | `--blocks N` | 2 | Transformer blocks |
 | `--hidden N` | 64 | FFN hidden width (typically 4× `--embed`) |
-| `--vocab N` | 512 | `0` = character-level; `≥ 256` = byte-level BPE of that size (the end-of-text token counts toward it) |
+| `--vocab N` | 512 | `0` = character-level; `≥ 256` = byte-level BPE of that size (the end-of-text token counts toward it). A small corpus can supply fewer merges than that: `train` then prints `vocab: 408 (requested 512, limited by the corpus)` and the model has the smaller vocabulary |
 
 **Schedule and data**
 
@@ -695,7 +695,9 @@ stride 1 trained on each token thousands of times. Do not copy them.
 tokenizer is fit on the training part only). After each epoch the model is
 scored on it, and the weights with the **lowest validation loss are the ones
 saved**, which are not necessarily the last epoch's. `--patience N` stops
-early.
+early and prints `early stop at epoch 25, best epoch 24 kept` (the epoch numbers
+are the real ones from your run). The banner names what is trained and saved:
+`int8 QAT` by default, `fp32, no QAT, saved as f32` with `--no-qat --quant f32`.
 
 **Checkpoints.** `--checkpoint run.fckp --checkpoint-every 500` writes the
 full training state every 500 steps and at the end: weights, Adam moments,
@@ -1160,6 +1162,11 @@ train_transformer run-gguf <model.gguf> [prompt] [options]
 | `--resume ckpt.flck` | — | Overlay fine-tuned weights (forces f32) |
 | `--force` | — | Load even if the memory estimate exceeds available RAM |
 
+- **Output streams.** Only the generated text (prompt included) goes to stdout, so
+  `run-gguf ... > out.txt` is clean. The progress lines (`Opening`, memory estimate,
+  `Loading weights`), the `[N tokens in ...]` speed line and a stop reason such as
+  `stopped: context full at 63 tokens` (the run hit the model's context window
+  before `--max`) go to stderr. A non-numeric `--ids` token is an error naming it.
 - **Chat templates.** For instruct models, Ferrum detects the template from
   `tokenizer.chat_template` (ChatML, Llama-3, Llama-2 `[INST]`, Zephyr) or
   falls back by architecture. It wraps your prompt and stops at the

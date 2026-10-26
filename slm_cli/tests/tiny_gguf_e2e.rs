@@ -47,10 +47,15 @@ fn ok(args: &[&str]) -> String {
     text
 }
 
-/// The generated text of a `run-gguf` run (between the output rules).
-fn generated(out: &str) -> String {
-    let after = out.split("── output ──\n").nth(1).expect("no output block");
-    after.split("\n────────────").next().unwrap().to_string()
+/// The generated text of a `run-gguf` run: its stdout (status chatter goes to stderr).
+fn generated(args: &[&str]) -> String {
+    let o = tt(args);
+    assert!(
+        o.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    String::from_utf8(o.stdout).unwrap().trim_end().to_string()
 }
 
 /// Fine-tune `base`, export it with the checkpoint, and check the exported file runs exactly
@@ -98,7 +103,7 @@ fn round_trip(tag: &str, base_bytes: Vec<u8>) {
             "run-gguf", model, "abc", "--raw", "--max", "12", "--temp", "0", "--quant", "f32",
         ];
         a.extend(extra);
-        generated(&ok(&a))
+        generated(&a)
     };
     let resumed = run(&base, &["--resume", &ck]);
     let exported = run(&tuned, &[]);

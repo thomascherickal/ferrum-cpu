@@ -342,3 +342,54 @@ fn existing_model_is_reused_and_force_retrains() {
     assert!(out.contains("epoch     1/1"), "{out}");
     assert_ne!(sha(Path::new(&m)), before);
 }
+
+#[test]
+fn training_output_tells_the_truth_about_the_run() {
+    let e = Env::new("honest");
+    // The banner names what is really trained and saved.
+    let out = e.train("a.gguf", &["--vocab", "300"]);
+    assert!(out.contains("trainer (int8 QAT)"), "{out}");
+    let out = e.train("b.gguf", &["--vocab", "300", "--no-qat", "--quant", "f32"]);
+    assert!(!out.contains("int8 QAT"), "{out}");
+    assert!(
+        out.contains("trainer (fp32, no QAT, saved as f32)"),
+        "{out}"
+    );
+    let out = e.train("c.gguf", &["--vocab", "300", "--quant", "int4"]);
+    assert!(out.contains("trainer (int8 QAT, saved as int4)"), "{out}");
+
+    // A vocab the corpus cannot fill is reported with the real size.
+    let out = e.train("d.gguf", &["--vocab", "5000", "--force"]);
+    let real = info_field(&e.s("d.gguf"), "Output dim");
+    assert!(
+        out.contains(&format!(
+            "vocab: {real} (requested 5000, limited by the corpus)"
+        )),
+        "{real}: {out}"
+    );
+    // Nothing to explain when the request was met.
+    assert!(!e.train("e.gguf", &["--vocab", "300"]).contains("requested"));
+
+    // Early stopping says so, and which epoch's weights were kept.
+    let out = e.train(
+        "f.gguf",
+        &[
+            "--vocab",
+            "300",
+            "--epochs",
+            "300",
+            "--val",
+            "0.3",
+            "--patience",
+            "1",
+        ],
+    );
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("early stop at epoch "))
+        .unwrap_or_else(|| panic!("no early stop line: {out}"));
+    assert!(
+        line.contains(", best epoch ") && line.ends_with(" kept"),
+        "{line}"
+    );
+}
