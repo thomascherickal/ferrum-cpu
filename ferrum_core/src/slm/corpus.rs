@@ -55,8 +55,7 @@ pub(super) fn tokenize_for_lm_cfg(corpus: &str, cfg: &TransformerConfig) -> Resu
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, tok.to_gguf_bytes())
-            .map_err(|e| InferError::Io(format!("cannot write {}: {e}", path.display())))?;
+        crate::fs_atomic::atomic_write(&cfg.tokenizer_path, &tok.to_gguf_bytes())?;
         tok
     };
     lm_tokens_from_bpe(&tok, corpus, cfg.context_len)

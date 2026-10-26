@@ -1,5 +1,6 @@
 //! Serialize a LlamaModel to a GGUF file.
 use crate::error::{InferError, Result};
+use crate::fs_atomic::atomic_write;
 use crate::gguf::{Gguf, MetaValue, GGML_F32};
 use crate::gguf_write::blocks::encode_tensor;
 use crate::gguf_write::builder::GgufBuilder;
@@ -107,7 +108,7 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
     Ok(b.into_bytes())
 }
 
-/// Write `llama_gguf_bytes` to a file (atomically — see `atomic_write`).
+/// Write `llama_gguf_bytes` to a file (atomically — see `crate::fs_atomic`).
 pub fn write_llama_gguf(
     model: &LlamaModel,
     source: &Gguf,
@@ -116,18 +117,6 @@ pub fn write_llama_gguf(
 ) -> Result<()> {
     let bytes = llama_gguf_bytes(model, source, quant)?;
     atomic_write(path, &bytes)
-}
-
-/// Write `bytes` to `path` via a same-directory temp file + rename, so a crash
-/// or full disk mid-write can never leave a truncated `.gguf` at `path`
-/// (`rename` replaces an existing destination on both Unix and Windows).
-pub(super) fn atomic_write(path: &str, bytes: &[u8]) -> Result<()> {
-    let tmp = format!("{path}.tmp");
-    std::fs::write(&tmp, bytes).map_err(InferError::from)?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp); // best-effort cleanup
-        InferError::from(e)
-    })
 }
 
 /// Transpose row-major `[rows, cols]` → `[cols, rows]`.

@@ -43,7 +43,7 @@ impl GenerativeSLM {
 
     /// Save the trained model to `model_path` as int8-quantized Ferrum GGUF
     /// (the default on-disk format — ≈4× smaller than f32). Parent
-    /// directories are created as needed.
+    /// directories are created as needed; the write is atomic (temp file + rename).
     pub fn save(&self, model_path: &str) -> Result<()> {
         let bytes = self.to_bytes_quantized()?;
         if let Some(parent) = std::path::Path::new(model_path).parent() {
@@ -51,7 +51,7 @@ impl GenerativeSLM {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        std::fs::write(model_path, &bytes)?;
+        crate::fs_atomic::atomic_write(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save] Wrote {} bytes → {}",
             bytes.len(),
@@ -73,7 +73,7 @@ impl GenerativeSLM {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        std::fs::write(model_path, &bytes)?;
+        crate::fs_atomic::atomic_write(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save_int4] Wrote {} bytes → {}",
             bytes.len(),
@@ -91,7 +91,7 @@ impl GenerativeSLM {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        std::fs::write(model_path, &bytes)?;
+        crate::fs_atomic::atomic_write(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save_f32] Wrote {} bytes → {}",
             bytes.len(),
@@ -298,5 +298,47 @@ mod tests {
             let _ = std::fs::remove_file(&path);
             assert!(loaded.is_ok(), "{suffix}");
         }
+    }
+
+    #[test]
+    fn saves_are_atomic_byte_identical_and_a_failed_save_keeps_the_old_file() {
+        let slm = tiny_bpe_slm();
+        let dir =
+            std::env::temp_dir().join(format!("ferrum_persist_atomic_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        type Save = fn(&GenerativeSLM, &str) -> crate::error::Result<()>;
+        type Bytes = fn(&GenerativeSLM) -> crate::error::Result<Vec<u8>>;
+        let cases: [(&str, Save, Bytes); 3] = [
+            ("q8", GenerativeSLM::save, GenerativeSLM::to_bytes_quantized),
+            (
+                "q4",
+                GenerativeSLM::save_int4,
+                GenerativeSLM::to_bytes_quantized_int4,
+            ),
+            ("f32", GenerativeSLM::save_f32, GenerativeSLM::to_bytes),
+        ];
+        for (name, save, bytes) in cases {
+            let p = dir.join(format!("{name}.gguf"));
+            let p = p.to_str().unwrap();
+            std::fs::write(p, b"previous model").unwrap();
+            // A directory squatting on the temp name makes the save fail midway.
+            std::fs::create_dir(format!("{p}.tmp")).unwrap();
+            assert!(save(&slm, p).is_err(), "{name}");
+            assert_eq!(
+                std::fs::read(p).unwrap(),
+                b"previous model",
+                "{name}: old file damaged"
+            );
+            std::fs::remove_dir(format!("{p}.tmp")).unwrap();
+            // A good save writes exactly the serialized bytes and leaves no temp file.
+            save(&slm, p).unwrap();
+            assert_eq!(std::fs::read(p).unwrap(), bytes(&slm).unwrap(), "{name}");
+            assert!(
+                !std::path::Path::new(&format!("{p}.tmp")).exists(),
+                "{name}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

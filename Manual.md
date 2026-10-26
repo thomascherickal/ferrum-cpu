@@ -580,7 +580,9 @@ A flag given twice takes its last value, except the repeatable `--stop` and
 `--input`. A negative number is read as a value (`--temp -1`, which is then
 rejected by the range check). `--verbose` and `-v` are accepted everywhere.
 
-**Model file name.** Model files are GGUF. Use `.gguf`: `model.gguf`.
+**Model file name.** Model files are GGUF. Use `.gguf`: `model.gguf`. `train` writes the
+model and a new tokenizer file atomically (a temporary `<name>.tmp` in the same directory, then a
+rename), so an interrupted or failed save leaves any previous file intact and no truncated model.
 
 **Architecture**
 

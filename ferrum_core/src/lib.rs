@@ -58,6 +58,7 @@ pub mod chat_format;
 mod ckpt;
 pub mod dataset;
 pub mod error;
+mod fs_atomic;
 pub mod gguf;
 pub mod gguf_tokenizer;
 pub mod gguf_write;

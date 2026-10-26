@@ -1,9 +1,9 @@
 //! GgufBuilder: metadata + tensor directory + aligned data to GGUF v3 bytes.
+use crate::fs_atomic::atomic_write;
 use crate::gguf::{
     MetaValue, DEFAULT_ALIGNMENT, GGUF_MAGIC, VT_ARRAY, VT_BOOL, VT_F32, VT_F64, VT_I16, VT_I32,
     VT_I64, VT_I8, VT_STRING, VT_U16, VT_U32, VT_U64, VT_U8,
 };
-use crate::gguf_write::llama::atomic_write;
 
 fn align_up(x: usize, a: usize) -> usize {
     if a == 0 {
