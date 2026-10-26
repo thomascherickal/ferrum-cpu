@@ -193,6 +193,12 @@ fn put_value(o: &mut Vec<u8>, v: &MetaValue) {
                 put_value_payload(o, it);
             }
         }
+        MetaValue::Nums(n) => {
+            put_u32(o, VT_ARRAY);
+            put_u32(o, n.elem_tag());
+            put_u64(o, n.len() as u64);
+            n.write_payload(o);
+        }
     }
 }
 
@@ -211,7 +217,7 @@ fn value_type_tag(v: &MetaValue) -> u32 {
         MetaValue::U64(_) => VT_U64,
         MetaValue::I64(_) => VT_I64,
         MetaValue::F64(_) => VT_F64,
-        MetaValue::Array(_) => VT_ARRAY,
+        MetaValue::Array(_) | MetaValue::Nums(_) => VT_ARRAY,
     }
 }
 
@@ -231,7 +237,7 @@ fn put_value_payload(o: &mut Vec<u8>, v: &MetaValue) {
         MetaValue::U64(x) => o.extend_from_slice(&x.to_le_bytes()),
         MetaValue::I64(x) => o.extend_from_slice(&x.to_le_bytes()),
         MetaValue::F64(x) => o.extend_from_slice(&x.to_le_bytes()),
-        MetaValue::Array(_) => {
+        MetaValue::Array(_) | MetaValue::Nums(_) => {
             // The reader rejects nested arrays; the writer never produces them.
         }
     }
@@ -308,9 +314,13 @@ mod tests {
         let g = Gguf::parse(b.into_bytes()).unwrap();
         for (k, v) in &kinds {
             assert_eq!(g.meta(k), Some(v), "{k}");
+            // Strings stay `Array`; numeric/bool arrays read back as compact `Nums`.
+            let a = g.meta(&format!("{k}.arr")).unwrap();
+            assert_eq!(a.array_len(), Some(1), "{k}.arr");
+            assert_eq!(a.array_get(0).as_ref(), Some(v), "{k}.arr");
             assert_eq!(
-                g.meta(&format!("{k}.arr")),
-                Some(&MetaValue::Array(vec![v.clone()])),
+                matches!(a, MetaValue::Array(_)),
+                matches!(v, MetaValue::String(_)),
                 "{k}.arr"
             );
         }

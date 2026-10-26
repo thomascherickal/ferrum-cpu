@@ -1,7 +1,7 @@
 //! The llama.cpp-compatible gpt2 codec used for BPE transformer SLMs.
 use crate::activation::Activation;
 use crate::error::Result;
-use crate::gguf::{transpose_2d, MetaValue};
+use crate::gguf::{transpose_2d, MetaValue, NumArray};
 use crate::layer::{ActivationLayer, Embedding, LayerNorm, Linear, TransformerBlock};
 use crate::loader::decode::GgufIn;
 use crate::loader::encode::GgufOut;
@@ -91,10 +91,9 @@ impl GgufOut {
             .meta("tokenizer.ggml.tokens", strings(tok.gguf_tokens()));
         self.b
             .meta("tokenizer.ggml.merges", strings(tok.gguf_merges()));
-        let types = tok.gguf_token_types().into_iter().map(MetaValue::I32);
         self.b.meta(
             "tokenizer.ggml.token_type",
-            MetaValue::Array(types.collect()),
+            NumArray::I32(tok.gguf_token_types()).into_meta(),
         );
         // Without these ids llama.cpp defaults bos/eos to token 11, so refuse.
         let eos = tok.eos_id().ok_or_else(|| {
@@ -349,12 +348,7 @@ mod tests {
             assert_eq!(u("tokenizer.ggml.merges"), strs(tok.gguf_merges()));
             assert_eq!(
                 u("tokenizer.ggml.token_type"),
-                Some(MetaValue::Array(
-                    tok.gguf_token_types()
-                        .into_iter()
-                        .map(MetaValue::I32)
-                        .collect()
-                ))
+                Some(crate::gguf::NumArray::I32(tok.gguf_token_types()).into_meta())
             );
             let eos = tok.eos_id().unwrap() as u32;
             assert_eq!(u("tokenizer.ggml.bos_token_id"), Some(MetaValue::U32(eos)));

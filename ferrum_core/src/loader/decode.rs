@@ -35,11 +35,10 @@ impl GgufIn<'_> {
         key: &str,
         item: impl Fn(&MetaValue) -> Option<T>,
     ) -> Result<Vec<T>> {
-        match self.0.meta(key) {
-            Some(MetaValue::Array(a)) => a.iter().map(item).collect(),
-            _ => None,
-        }
-        .ok_or_else(|| bad(format!("GGUF key '{key}' missing or of the wrong type")))
+        let m = self.0.meta(key);
+        let n = m.and_then(MetaValue::array_len);
+        n.and_then(|n| (0..n).map(|i| item(&m?.array_get(i)?)).collect())
+            .ok_or_else(|| bad(format!("GGUF key '{key}' missing or of the wrong type")))
     }
     /// Tensor `name` dequantized to f32, after checking its GGML dims.
     pub(super) fn tensor(&self, name: &str, dims: &[usize]) -> Result<Vec<f32>> {
@@ -142,7 +141,7 @@ fn reject_finf(bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::from_gguf;
-    use crate::gguf::MetaValue;
+    use crate::gguf::{MetaValue, NumArray};
     use crate::gguf_write::GgufBuilder;
     use crate::loader::encode::to_gguf;
     use crate::loader::test_support::{
@@ -283,7 +282,9 @@ mod tests {
                 "type count",
                 "token types",
                 Box::new(|kv, _| {
-                    let Some(MetaValue::Array(t)) = kv.get_mut("tokenizer.ggml.token_type") else {
+                    let Some(MetaValue::Nums(NumArray::I32(t))) =
+                        kv.get_mut("tokenizer.ggml.token_type")
+                    else {
                         panic!()
                     };
                     t.pop();
@@ -313,10 +314,12 @@ mod tests {
                 "special not control",
                 "not control",
                 Box::new(|kv, _| {
-                    let Some(MetaValue::Array(t)) = kv.get_mut("tokenizer.ggml.token_type") else {
+                    let Some(MetaValue::Nums(NumArray::I32(t))) =
+                        kv.get_mut("tokenizer.ggml.token_type")
+                    else {
                         panic!()
                     };
-                    *t.last_mut().unwrap() = MetaValue::I32(1);
+                    *t.last_mut().unwrap() = 1;
                 }),
             ),
             (

@@ -28,6 +28,7 @@ mod dequant;
 mod format;
 mod header;
 mod llama;
+mod num_array;
 mod tensors;
 #[cfg(test)]
 mod test_support;
@@ -45,6 +46,7 @@ pub(crate) use self::header::bounded;
 #[cfg(test)]
 pub(crate) use self::header::patch_tensor_offset;
 pub(crate) use self::llama::transpose_2d;
+pub use self::num_array::NumArray;
 
 use crate::error::Result;
 use crate::gguf::cursor::{fmt, to_usize};
@@ -69,7 +71,12 @@ pub enum MetaValue {
     F64(f64),
     Bool(bool),
     String(String),
+    /// An array of strings (or, when built by hand, of scalars).
     Array(Vec<MetaValue>),
+    /// A non-empty numeric/bool array stored at its on-disk width: what the
+    /// reader yields for every such array (1-8 bytes per element, not 32).
+    /// The writer encodes it identically to the equivalent [`MetaValue::Array`].
+    Nums(NumArray),
 }
 
 impl MetaValue {
@@ -98,6 +105,50 @@ impl MetaValue {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             MetaValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+    /// Element count of an array value (either representation).
+    pub fn array_len(&self) -> Option<usize> {
+        match self {
+            MetaValue::Array(a) => Some(a.len()),
+            MetaValue::Nums(n) => Some(n.len()),
+            _ => None,
+        }
+    }
+    /// Element `i` of an array value, as a scalar/string [`MetaValue`].
+    pub fn array_get(&self, i: usize) -> Option<MetaValue> {
+        match self {
+            MetaValue::Array(a) => a.get(i).cloned(),
+            MetaValue::Nums(n) => n.get(i),
+            _ => None,
+        }
+    }
+    /// Borrow an `i32` array (e.g. `tokenizer.ggml.token_type`) without copying.
+    pub fn as_i32_slice(&self) -> Option<&[i32]> {
+        match self {
+            MetaValue::Nums(NumArray::I32(v)) => Some(v),
+            _ => None,
+        }
+    }
+    /// Borrow an `f32` array (e.g. `tokenizer.ggml.scores`) without copying.
+    pub fn as_f32_slice(&self) -> Option<&[f32]> {
+        match self {
+            MetaValue::Nums(NumArray::F32(v)) => Some(v),
+            _ => None,
+        }
+    }
+    /// Borrow a `u32` array without copying.
+    pub fn as_u32_slice(&self) -> Option<&[u32]> {
+        match self {
+            MetaValue::Nums(NumArray::U32(v)) => Some(v),
+            _ => None,
+        }
+    }
+    /// Borrow a `u8` array without copying.
+    pub fn as_u8_slice(&self) -> Option<&[u8]> {
+        match self {
+            MetaValue::Nums(NumArray::U8(v)) => Some(v),
             _ => None,
         }
     }
@@ -335,7 +386,12 @@ mod tests {
         let bytes = b.into_bytes();
         let (p, o) = parse_and_open(&bytes);
         for g in [p.unwrap(), o.unwrap()] {
-            assert!(matches!(g.meta("big"), Some(MetaValue::Array(a)) if a.len() == n));
+            assert_eq!(
+                g.meta("big")
+                    .and_then(MetaValue::as_u8_slice)
+                    .map(<[u8]>::len),
+                Some(n)
+            );
             assert_eq!(g.file_len(), bytes.len());
         }
     }

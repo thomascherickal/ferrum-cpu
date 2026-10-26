@@ -1,6 +1,6 @@
 //! GGUF vocabulary arrays and standalone tokenizer files.
 use crate::error::{InferError, Result};
-use crate::gguf::{Gguf, MetaValue};
+use crate::gguf::{Gguf, MetaValue, NumArray};
 use crate::gguf_write::GgufBuilder;
 use crate::tokenizer::pretokenize::byte_to_unicode;
 use crate::tokenizer::{ByteBpeTokenizer, BASE_VOCAB};
@@ -113,7 +113,7 @@ impl ByteBpeTokenizer {
     pub fn to_gguf_bytes(&self) -> Vec<u8> {
         let strings =
             |v: Vec<String>| MetaValue::Array(v.into_iter().map(MetaValue::String).collect());
-        let types = self.gguf_token_types().into_iter().map(MetaValue::I32);
+        let types = NumArray::I32(self.gguf_token_types()).into_meta();
         let mut b = GgufBuilder::new();
         b.meta(
             "general.architecture",
@@ -122,10 +122,7 @@ impl ByteBpeTokenizer {
         .meta("tokenizer.ggml.model", MetaValue::String("gpt2".into()))
         .meta("tokenizer.ggml.tokens", strings(self.gguf_tokens()))
         .meta("tokenizer.ggml.merges", strings(self.gguf_merges()))
-        .meta(
-            "tokenizer.ggml.token_type",
-            MetaValue::Array(types.collect()),
-        )
+        .meta("tokenizer.ggml.token_type", types)
         .meta(
             "tokenizer.ferrum.state",
             MetaValue::String(self.encode_state()),
@@ -169,14 +166,18 @@ impl ByteBpeTokenizer {
         };
         let tokens = strings("tokenizer.ggml.tokens")?;
         let merges = strings("tokenizer.ggml.merges")?;
-        let types: Vec<i32> = array("tokenizer.ggml.token_type")?
-            .iter()
-            .map(|v| match v {
-                MetaValue::I32(x) => Some(*x),
-                _ => None,
-            })
-            .collect::<Option<_>>()
-            .ok_or_else(|| bad("tokenizer file token_type is not an i32 array".into()))?;
+        let types: Vec<i32> = match g.meta("tokenizer.ggml.token_type") {
+            Some(MetaValue::Nums(NumArray::I32(v))) => v.clone(),
+            Some(MetaValue::Array(a)) if a.is_empty() => Vec::new(),
+            Some(MetaValue::Array(_) | MetaValue::Nums(_)) => {
+                return Err(bad("tokenizer file token_type is not an i32 array".into()))
+            }
+            _ => {
+                return Err(bad(
+                    "tokenizer file key 'tokenizer.ggml.token_type' missing or not an array".into(),
+                ))
+            }
+        };
         let Some(state) = g.meta("tokenizer.ferrum.state").and_then(MetaValue::as_str) else {
             return Self::from_gguf_vocab(&tokens, &merges, &types);
         };
@@ -470,10 +471,10 @@ mod tests {
             let key = format!("tokenizer.ggml.{key}");
             let bad = crate::ckpt::rewrite(
                 &b,
-                |m| {
-                    if let Some(MetaValue::Array(a)) = m.get_mut(&key) {
-                        a.pop();
-                    }
+                |m| match m.get_mut(&key) {
+                    Some(MetaValue::Array(a)) => drop(a.pop()),
+                    Some(MetaValue::Nums(crate::gguf::NumArray::I32(a))) => drop(a.pop()),
+                    _ => panic!("{key} is not an array"),
                 },
                 None,
             );

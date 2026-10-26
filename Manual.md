@@ -2152,7 +2152,7 @@ Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
 
 | Module | Key API | Notes |
 |---|---|---|
-| `gguf` (directory: `format`, `cursor`, `header`, `tensors`, `dequant`, `llama`) | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts |
+| `gguf` (directory: `format`, `cursor`, `header`, `tensors`, `dequant`, `llama`) | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts; numeric metadata arrays are held at their on-disk width (`MetaValue::Nums`, 1-8 bytes per element, not 32) and a count beyond the bytes left in the file is rejected before allocating |
 | `gguf_tokenizer` | `GgufTokenizer::from_gguf`, `encode`, `decode` | BPE exact; SPM decode exact, encode greedy longest-match |
 | `llm` | `LlamaModel::{forward, generate}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
 | `llm_train` | `LlamaTrainer::{new, set_lr, set_lr_schedule, set_grad_clip, train_step, train_batch, finetune_epoch_threaded, save_checkpoint, load_checkpoint_into}` | finite-difference-checked backward pass; AdamW; `.flck` checkpoints; rejects quantized weights |

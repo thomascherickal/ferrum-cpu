@@ -4,7 +4,7 @@ use crate::gguf::format::{
     VT_ARRAY, VT_BOOL, VT_F32, VT_F64, VT_I16, VT_I32, VT_I64, VT_I8, VT_STRING, VT_U16, VT_U32,
     VT_U64, VT_U8,
 };
-use crate::gguf::MetaValue;
+use crate::gguf::{MetaValue, NumArray};
 
 /// Little-endian cursor over the GGUF byte stream.
 pub(super) struct Cur<'a> {
@@ -113,15 +113,31 @@ pub(super) fn read_value(c: &mut Cur, vtype: u32) -> Result<MetaValue> {
                 return Err(fmt("GGUF nested arrays are not supported"));
             }
             let count = to_usize(c.u64()?);
-            // Guard against absurd counts before reserving. Every element takes
-            // at least one byte, so a count beyond the file is final, and one
-            // beyond the bytes read so far means "read more" (the "GGUF EOF"
-            // prefix lets `Gguf::open` grow its prefix).
-            if count > c.total {
+            if count == 0 {
+                return Ok(MetaValue::Array(Vec::new()));
+            }
+            // Every element takes at least `min` bytes (its width, or the 8-byte
+            // length prefix of a string), so the count is checked against the
+            // bytes left in the file before anything is allocated: beyond the
+            // file is final, beyond the bytes read so far means "read more"
+            // (the "GGUF EOF" prefix lets `Gguf::open` grow its prefix).
+            let num_size = NumArray::elem_size(elem_type);
+            let min = match elem_type {
+                VT_STRING => 8,
+                _ => num_size
+                    .ok_or_else(|| fmt(&format!("GGUF unknown metadata value type {elem_type}")))?,
+            };
+            let need = count
+                .checked_mul(min)
+                .ok_or_else(|| fmt("GGUF array count exceeds the file size"))?;
+            if need > c.total - c.pos {
                 return Err(fmt("GGUF array count exceeds the file size"));
             }
-            if count > c.b.len() {
+            if need > c.b.len() - c.pos {
                 return Err(fmt("GGUF EOF: array count exceeds the bytes read"));
+            }
+            if num_size.is_some() {
+                return Ok(MetaValue::Nums(NumArray::read(c, elem_type, count)?));
             }
             let mut items = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
