@@ -55,9 +55,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
       - name: JavaScript syntax check
         run: |
-          node --check ferrum_gui/ui/app.js
-          node --check ferrum_gui/ui/stream.js
-          node --check ferrum_gui/ui/stream.test.js
+          for f in ferrum_gui/ui/*.js; do node --check "$f"; done
 
   msrv:
     name: MSRV (Rust 1.87)
@@ -171,8 +169,8 @@ jobs:
       - name: Run backend command tests
         working-directory: ferrum_gui
         run: cargo test --locked
-      - name: Run UI stream-reconciliation tests
-        run: node ferrum_gui/ui/stream.test.js
+      - name: Run UI tests (Node, no dependencies)
+        run: for t in ferrum_gui/ui/*.test.js; do node "$t" || exit 1; done
 
   runtimes:
     name: Runtimes (llama.cpp + Ollama)

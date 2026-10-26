@@ -23,16 +23,16 @@
 
   <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
   <nav id="tabs">
-    <button class="tab active" data-tab="datasets">Datasets</button>
-    <button class="tab" data-tab="train">Train</button>
-    <button class="tab" data-tab="generate">Generate</button>
-    <button class="tab" data-tab="evaluate">Evaluate</button>
-    <button class="tab" data-tab="models">Models</button>
-    <button class="tab" data-tab="gguf">GGUF</button>
-    <button class="tab" data-tab="finetune">Fine-tune</button>
-    <button class="tab" data-tab="export">Export</button>
-    <button class="tab" data-tab="system">System</button>
-    <button class="tab" data-tab="capable">Capable</button>
+    <button class="tab active" id="tab-datasets" data-tab="datasets">Datasets</button>
+    <button class="tab" id="tab-train" data-tab="train">Train</button>
+    <button class="tab" id="tab-generate" data-tab="generate">Generate</button>
+    <button class="tab" id="tab-evaluate" data-tab="evaluate">Evaluate</button>
+    <button class="tab" id="tab-models" data-tab="models">Models</button>
+    <button class="tab" id="tab-gguf" data-tab="gguf">GGUF</button>
+    <button class="tab" id="tab-finetune" data-tab="finetune">Fine-tune</button>
+    <button class="tab" id="tab-export" data-tab="export">Export</button>
+    <button class="tab" id="tab-system" data-tab="system">System</button>
+    <button class="tab" id="tab-capable" data-tab="capable">Capable</button>
   </nav>
 
   <main id="content">
@@ -58,7 +58,7 @@
           <label>Download into folder
             <input type="text" id="dsDestDir" placeholder="/path/to/datasets" />
           </label>
-          <button class="ghost browse-dir" data-target="dsDestDir">Browse…</button>
+          <button class="ghost browse-dir" id="dsDestDirBrowse" data-target="dsDestDir">Browse…</button>
           <button id="dsCatalogLoad" class="ghost">Refresh list</button>
         </div>
         <div id="dsCatalog" class="catalog"></div>
@@ -100,7 +100,7 @@
         <label>…or local file
           <input type="text" id="dsFile" placeholder="/path/to/corpus.txt" />
         </label>
-        <button class="ghost browse" data-target="dsFile">Browse…</button>
+        <button class="ghost browse" id="dsFileBrowse" data-target="dsFile">Browse…</button>
         <button id="dsLoadFile">Load file</button>
       </div>
       <span class="err" id="errDsSource"></span>
@@ -135,7 +135,7 @@
         <label>Save to
           <input type="text" id="dsOut" placeholder="/path/to/clean_corpus.txt" />
         </label>
-        <button class="ghost browse-save" data-target="dsOut">Browse…</button>
+        <button class="ghost browse-save" id="dsOutBrowse" data-target="dsOut">Browse…</button>
         <button id="dsSave" class="primary">Save corpus</button>
       </div>
       <span class="err" id="errDsSave"></span>
@@ -146,11 +146,11 @@
       <h2>Train a transformer SLM</h2>
       <div class="row">
         <label>Corpus <input type="text" id="trCorpus" placeholder="/path/to/corpus.txt" /></label>
-        <button class="ghost browse" data-target="trCorpus">Browse…</button>
+        <button class="ghost browse" id="trCorpusBrowse" data-target="trCorpus">Browse…</button>
       </div>
       <div class="row">
         <label>Model output <input type="text" id="trModel" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse-save" data-target="trModel">Browse…</button>
+        <button class="ghost browse-save" id="trModelBrowse" data-target="trModel">Browse…</button>
       </div>
 
       <div class="grid">
@@ -200,7 +200,7 @@
       <h2>Generate (with live streaming)</h2>
       <div class="row">
         <label>Model <input type="text" id="genModel" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="genModel">Browse…</button>
+        <button class="ghost browse" id="genModelBrowse" data-target="genModel">Browse…</button>
       </div>
       <label>Seed text
         <textarea id="genSeed" rows="3" placeholder="Once upon a time"></textarea>
@@ -228,11 +228,11 @@
         vocabulary size.</p>
       <div class="row">
         <label>Model <input type="text" id="evModel" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="evModel">Browse…</button>
+        <button class="ghost browse" id="evModelBrowse" data-target="evModel">Browse…</button>
       </div>
       <div class="row">
         <label>Held-out text file <input type="text" id="evFile" placeholder="/path/to/heldout.txt (or paste below)" /></label>
-        <button class="ghost browse" data-target="evFile">Browse…</button>
+        <button class="ghost browse" id="evFileBrowse" data-target="evFile">Browse…</button>
       </div>
       <label>…or paste held-out text
         <textarea id="evText" rows="3" placeholder="Paste held-out text to score against"></textarea>
@@ -257,7 +257,7 @@
       <h2>Models — inspect / load from disk</h2>
       <div class="row">
         <label>Model file <input type="text" id="miPath" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="miPath">Browse…</button>
+        <button class="ghost browse" id="miPathBrowse" data-target="miPath">Browse…</button>
         <button id="miInspect" class="primary">Inspect / reload</button>
       </div>
       <span class="err" id="errModel"></span>
@@ -273,7 +273,7 @@
         <strong>int4</strong> for memory. Quantized import is lossy; <strong>f32</strong> avoids it.</p>
       <div class="row">
         <label>GGUF file <input type="text" id="ggPath" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="ggPath">Browse…</button>
+        <button class="ghost browse" id="ggPathBrowse" data-target="ggPath">Browse…</button>
         <button id="ggInspect" class="ghost">Inspect</button>
       </div>
       <div id="ggInfo" class="infocards"></div>
@@ -300,7 +300,7 @@
       </label>
       <div class="row">
         <label>Fine-tune checkpoint (optional) <input type="text" id="ggResume" placeholder="/path/to/finetune.flck — overlays trained weights (forces f32)" /></label>
-        <button class="ghost browse" data-target="ggResume">Browse…</button>
+        <button class="ghost browse" id="ggResumeBrowse" data-target="ggResume">Browse…</button>
       </div>
       <label class="chk"><input type="checkbox" id="ggChatFmt" checked /> Chat format (auto)</label>
       <label class="chk"><input type="checkbox" id="ggForce" /> Load even if it may exceed available RAM</label>
@@ -321,15 +321,15 @@
         4× the f32 weight size in RAM (weights + gradient + Adam moments).</p>
       <div class="row">
         <label>GGUF file <input type="text" id="ftPath" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="ftPath">Browse…</button>
+        <button class="ghost browse" id="ftPathBrowse" data-target="ftPath">Browse…</button>
       </div>
       <div class="row">
         <label>Training corpus (.txt) <input type="text" id="ftCorpus" placeholder="/path/to/corpus.txt" /></label>
-        <button class="ghost browse" data-target="ftCorpus">Browse…</button>
+        <button class="ghost browse" id="ftCorpusBrowse" data-target="ftCorpus">Browse…</button>
       </div>
       <div class="row">
         <label>Output checkpoint (.flck) <input type="text" id="ftOut" placeholder="/path/to/finetune.flck" /></label>
-        <button class="ghost browse-save" data-target="ftOut">Browse…</button>
+        <button class="ghost browse-save" id="ftOutBrowse" data-target="ftOut">Browse…</button>
       </div>
       <div class="grid">
         <label>Epochs <input type="number" id="ftEpochs" value="3" min="1" /></label>
@@ -345,7 +345,7 @@
       </div>
       <div class="row">
         <label>Resume checkpoint (optional) <input type="text" id="ftResume" placeholder="/path/to/prev.flck — continue a run" /></label>
-        <button class="ghost browse" data-target="ftResume">Browse…</button>
+        <button class="ghost browse" id="ftResumeBrowse" data-target="ftResume">Browse…</button>
       </div>
       <label class="chk"><input type="checkbox" id="ftQat" /> Quantization-aware (int8) fine-tuning</label>
       <label class="chk"><input type="checkbox" id="ftForce" /> Train even if the estimate exceeds available RAM</label>
@@ -370,7 +370,7 @@
         below shows exactly what was written).</p>
       <div class="row">
         <label>Source GGUF <input type="text" id="exPath" placeholder="/path/to/model.gguf" /></label>
-        <button class="ghost browse" data-target="exPath">Browse…</button>
+        <button class="ghost browse" id="exPathBrowse" data-target="exPath">Browse…</button>
         <button id="exInspect" class="ghost">Inspect</button>
       </div>
       <div id="exInfo" class="infocards"></div>
@@ -391,11 +391,11 @@
       </div>
       <div class="row">
         <label>Fine-tune checkpoint (optional) <input type="text" id="exResume" placeholder="/path/to/finetune.flck — export tuned weights" /></label>
-        <button class="ghost browse" data-target="exResume">Browse…</button>
+        <button class="ghost browse" id="exResumeBrowse" data-target="exResume">Browse…</button>
       </div>
       <div class="row">
         <label>Output file (.gguf) <input type="text" id="exOut" placeholder="/path/to/out.gguf" /></label>
-        <button class="ghost browse-save" data-target="exOut">Save as…</button>
+        <button class="ghost browse-save" id="exOutBrowse" data-target="exOut">Save as…</button>
       </div>
       <label class="chk"><input type="checkbox" id="exForce" /> Export even if the estimate exceeds available RAM</label>
       <span class="err" id="errExport"></span>
@@ -469,7 +469,7 @@
       <h2>Machine capability</h2>
       <div id="capDialogBody"></div>
       <menu class="dlg-actions">
-        <button class="primary" value="ok">Close</button>
+        <button class="primary" id="capDialogClose" value="ok">Close</button>
       </menu>
     </form>
   </dialog>

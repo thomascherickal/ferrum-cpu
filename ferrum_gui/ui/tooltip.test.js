@@ -1,0 +1,178 @@
+// Node test for tooltip.js. Run with: node ui/tooltip.test.js
+"use strict";
+const assert = require("node:assert");
+const { placeTooltip, contentFromHelp, plainText, createTooltips, HOVER_MS } = require("./tooltip.js");
+const { Document } = require("./testdom.js");
+const { HELP } = require("./help.js");
+
+const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+const VP = { width: 1000, height: 700 };
+
+// ── placeTooltip (pure) ─────────────────────────────────────────────────────
+{
+  const a = rect(100, 100, 80, 24);
+  let p = placeTooltip(a, { width: 300, height: 200 }, VP);
+  assert.deepStrictEqual(p, { left: 100, top: 132, placement: "below" });
+
+  // No room below -> above.
+  p = placeTooltip(rect(100, 600, 80, 24), { width: 300, height: 200 }, VP);
+  assert.strictEqual(p.placement, "above");
+  assert.strictEqual(p.top, 600 - 8 - 200);
+
+  // Right edge: slide left so the bubble stays inside.
+  p = placeTooltip(rect(900, 100, 80, 24), { width: 300, height: 100 }, VP);
+  assert.strictEqual(p.left, 1000 - 300 - 8);
+
+  // Anchor scrolled off to the left.
+  assert.strictEqual(placeTooltip(rect(-50, 100, 80, 24), { width: 300, height: 100 }, VP).left, 8);
+
+  // Taller than the space on both sides: pick the roomier side and clamp inside.
+  p = placeTooltip(rect(100, 300, 80, 24), { width: 300, height: 600 }, VP);
+  assert.ok(p.top >= 8 && p.top + 600 <= 700 - 8 + 1e-9, JSON.stringify(p));
+
+  // Bigger than the whole viewport: never negative, pinned to the margin.
+  p = placeTooltip(rect(100, 100, 80, 24), { width: 2000, height: 2000 }, VP);
+  assert.deepStrictEqual([p.left, p.top], [8, 8]);
+
+  // Property: whenever the bubble fits the viewport, the result is fully inside it.
+  let seed = 42;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+  for (let i = 0; i < 2000; i++) {
+    const tip = { width: 50 + rnd(500), height: 30 + rnd(500) };
+    const an = rect(rnd(1200) - 100, rnd(900) - 100, 10 + rnd(200), 10 + rnd(50));
+    const r = placeTooltip(an, tip, VP);
+    assert.ok(r.left >= 8 && r.left + tip.width <= VP.width - 8, "x " + JSON.stringify([an, tip, r]));
+    assert.ok(r.top >= 8 && r.top + tip.height <= VP.height - 8, "y " + JSON.stringify([an, tip, r]));
+  }
+}
+
+// ── content ─────────────────────────────────────────────────────────────────
+{
+  const field = contentFromHelp(HELP.trEpochs);
+  assert.deepStrictEqual(field.sections.map((s) => s.label), ["What it is", "How it works", "New to AI?"]);
+  const button = contentFromHelp(HELP.trStart);
+  assert.strictEqual(button.sections[0].label, "What it does");
+  assert.ok(button.sections.some((s) => s.label === "New to AI?"));
+  assert.strictEqual(contentFromHelp(null), null);
+  assert.strictEqual(plainText(null), "");
+  const t = plainText(field);
+  assert.ok(t.startsWith("Epochs.") && t.includes("What it is: ") && !t.includes(".."), t);
+}
+
+// ── behaviour with a stub DOM ───────────────────────────────────────────────
+function setup() {
+  const doc = new Document();
+  const timers = [];
+  const env = {
+    document: doc,
+    setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; },
+    clearTimeout: (id) => { if (id) timers[id - 1] = null; },
+    viewport: () => VP,
+  };
+  const tips = createTooltips(env);
+  const label = doc.createElement("label");
+  const input = doc.createElement("input");
+  label.appendChild(input);
+  doc.body.appendChild(label);
+  input.rect = rect(200, 100, 120, 30);
+  tips.bubble.rect = rect(0, 0, 320, 180);
+  const fire = () => { const t = timers.filter(Boolean).pop(); timers.length = 0; t && t.f(); return t; };
+  return { doc, tips, label, input, fire, timers };
+}
+
+{
+  const { doc, tips, input, label, fire } = setup();
+  assert.strictEqual(tips.bubble.getAttribute("role"), "tooltip");
+  assert.ok(tips.bubble.classList.contains("hidden"));
+  let content = { title: "Epochs", sections: [{ label: "What it is", text: "A pass." }] };
+  tips.attach(input, () => content);
+
+  // Screen readers: aria-describedby points at a persistent description node.
+  const descId = input.getAttribute("aria-describedby");
+  const desc = doc.getElementById(descId);
+  assert.ok(desc && desc.textContent === "Epochs. What it is: A pass.", desc && desc.textContent);
+
+  // Hover shows after the delay, not before; leaving hides.
+  label.dispatch("mouseenter");
+  assert.ok(tips.bubble.classList.contains("hidden"));
+  const t = fire();
+  assert.strictEqual(t.ms, HOVER_MS);
+  assert.ok(!tips.bubble.classList.contains("hidden") && tips.current() === input);
+  assert.strictEqual(tips.bubble.textContent, "EpochsWhat it is: A pass.");
+  assert.strictEqual(tips.bubble.style.left, "200px");
+  assert.strictEqual(tips.bubble.style.top, "138px"); // below the input + 8
+  assert.strictEqual(tips.bubble.getAttribute("data-placement"), "below");
+  label.dispatch("mouseleave");
+  assert.ok(tips.bubble.classList.contains("hidden"));
+
+  // Keyboard focus shows immediately; blur hides.
+  input.dispatch("focus");
+  assert.ok(tips.isVisible());
+  input.dispatch("blur");
+  assert.ok(!tips.isVisible());
+
+  // Escape dismisses and the tooltip does not come back until focus leaves.
+  input.dispatch("focus");
+  doc.dispatch("keydown", { key: "Tab" });
+  assert.ok(tips.isVisible(), "other keys must not dismiss");
+  doc.dispatch("keydown", { key: "Escape" });
+  assert.ok(!tips.isVisible());
+  label.dispatch("mouseenter"); fire();
+  assert.ok(!tips.isVisible(), "dismissed tooltip stays dismissed while the pointer/focus is still there");
+  input.dispatch("blur");
+  input.dispatch("focus");
+  assert.ok(tips.isVisible(), "re-shows after leaving and coming back");
+
+  // Live update: changing the content refreshes the open bubble and the description.
+  content = { title: "Epochs", sections: [{ label: "Estimated time", text: "about 4 min" }] };
+  tips.refreshTarget(input);
+  assert.ok(tips.bubble.textContent.includes("about 4 min"));
+  assert.ok(desc.textContent.includes("about 4 min"));
+  // ...and refreshing a target that is not shown does not open it.
+  input.dispatch("blur");
+  content = { title: "Epochs", sections: [{ label: null, text: "again" }] };
+  tips.refreshAll();
+  assert.ok(!tips.isVisible() && desc.textContent === "Epochs. again.");
+
+  // The bubble repositions above when the anchor is near the bottom.
+  input.rect = rect(200, 600, 120, 30);
+  input.dispatch("focus");
+  assert.strictEqual(tips.bubble.getAttribute("data-placement"), "above");
+  tips.hide();
+}
+
+// Untrusted text is never parsed as markup.
+{
+  const { tips, input } = setup();
+  const evil = "<img src=x onerror=alert(1)>";
+  tips.attach(input, () => ({ title: evil, sections: [{ label: evil, text: evil, tone: "warn" }] }));
+  input.dispatch("focus");
+  let imgs = 0;
+  tips.bubble.walk((n) => { if (n.tagName === "IMG") imgs++; });
+  assert.strictEqual(imgs, 0);
+  assert.ok(tips.bubble.textContent.includes(evil));
+  assert.ok(!tips.bubble.innerHTML, "no innerHTML was used");
+  assert.ok(tips.store.textContent.includes(evil));
+}
+
+// No content (e.g. no help entry) -> nothing shown.
+{
+  const { tips, input } = setup();
+  tips.attach(input, () => null);
+  input.dispatch("focus");
+  assert.ok(!tips.isVisible());
+  assert.strictEqual(tips.store.textContent, "");
+}
+
+// Attaching twice replaces the content getter instead of adding listeners.
+{
+  const { tips, input, doc } = setup();
+  tips.attach(input, () => ({ title: "A", sections: [] }));
+  tips.attach(input, () => ({ title: "B", sections: [] }));
+  assert.strictEqual(doc.getElementById("ferrum-descriptions").children.length, 1);
+  assert.strictEqual(input.listeners.focus.length, 1);
+  input.dispatch("focus");
+  assert.strictEqual(tips.bubble.textContent, "B");
+}
+
+console.log("tooltip.test.js: all assertions passed");

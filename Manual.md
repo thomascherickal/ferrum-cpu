@@ -1761,7 +1761,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), escape.js (+ escape.test.js), stream.js (+ stream.test.js)
+ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips); each pure module has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds
