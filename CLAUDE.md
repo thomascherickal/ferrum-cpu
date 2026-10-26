@@ -172,7 +172,7 @@ root fails. Work inside the crate:
 cd ferrum_gui
 cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo tauri dev                           # run the app
-node --check ui/app.js && node --check ui/stream.js && node ui/stream.test.js
+for f in ui/*.js; do node --check "$f"; done && node ui/stream.test.js && node ui/escape.test.js
 ```
 
 The UI (`ui/index.html`, `app.js`, `styles.css`) is static — `cargo build`

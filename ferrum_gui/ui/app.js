@@ -8,6 +8,7 @@ const invoke = hasTauri ? T.core.invoke : async () => { throw new Error("Not run
 const listen = hasTauri ? T.event.listen : async () => () => {};
 const dialog = hasTauri && T.dialog ? T.dialog : null;
 
+const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo } = window.FerrumEscape;
 const $ = (id) => document.getElementById(id);
 const bySel = (s) => Array.from(document.querySelectorAll(s));
 
@@ -90,7 +91,7 @@ function termLine(text, cls = "") {
   while (termOut.childElementCount > 2000) termOut.removeChild(termOut.firstChild);
   termOut.scrollTop = termOut.scrollHeight;
 }
-$("termClear").addEventListener("click", () => { termOut.innerHTML = ""; });
+$("termClear").addEventListener("click", () => { termOut.textContent = ""; });
 
 // ── Datasets ─────────────────────────────────────────────────────────────────
 let cleanedCorpus = "";
@@ -135,16 +136,13 @@ function afterDownload(res) {
 
 function renderCatalog(list) {
   const box = $("dsCatalog");
-  box.innerHTML = "";
+  box.textContent = "";
   if (!list.length) { box.textContent = "No datasets listed."; return; }
   for (const d of list) {
     const card = document.createElement("div");
     card.className = "catalog-item";
     const meta = document.createElement("div");
-    meta.innerHTML =
-      `<strong>${d.name}</strong> <span class="badge">${d.source}</span> ` +
-      `<span class="muted">~${d.approxMb} MB · ${d.format}</span><br>` +
-      `<span class="muted">${d.description}</span>`;
+    meta.innerHTML = catalogMeta(d);
     const btn = document.createElement("button");
     btn.textContent = "Download";
     btn.addEventListener("click", async () => {
@@ -215,9 +213,9 @@ $("dsClean").addEventListener("click", async () => {
     cleanedCorpus = r.cleaned;
     $("dsPreview").value = r.preview;
     $("dsStats").innerHTML =
-      `chars <b>${r.chars.toLocaleString()}</b> · words <b>${r.words.toLocaleString()}</b> · ` +
-      `lines <b>${r.lines.toLocaleString()}</b> · bytes <b>${r.bytes.toLocaleString()}</b> · ` +
-      `char-vocab <b>${r.uniqueChars}</b>`;
+      `chars <b>${esc(r.chars.toLocaleString())}</b> · words <b>${esc(r.words.toLocaleString())}</b> · ` +
+      `lines <b>${esc(r.lines.toLocaleString())}</b> · bytes <b>${esc(r.bytes.toLocaleString())}</b> · ` +
+      `char-vocab <b>${esc(r.uniqueChars)}</b>`;
     toast("Cleaned. char-level vocab = " + r.uniqueChars, "ok");
   } catch (e) { setErr("errDsClean", String(e)); }
 });
@@ -384,11 +382,7 @@ $("evRun").addEventListener("click", async () => {
     const r = await invoke("evaluate_slm", { params });
     const good = r.perplexity < r.uniformBaseline * 0.5;
     const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td>${r.model}</td><td>${r.numPredictions.toLocaleString()}</td>` +
-      `<td>${r.crossEntropy.toFixed(4)}</td><td>${r.bitsPerToken.toFixed(4)}</td>` +
-      `<td><b>${r.perplexity.toFixed(4)}</b></td><td>${r.uniformBaseline.toFixed(0)}</td>` +
-      `<td class="${good ? "verdict-good" : "verdict-weak"}">${good ? "learned" : "weak"}</td>`;
+    tr.innerHTML = evalRow(r, good);
     $("evTable").querySelector("tbody").appendChild(tr);
     $("evStatus").textContent = "added";
     toast(`Perplexity ${r.perplexity.toFixed(3)}`, "ok");
@@ -398,7 +392,7 @@ $("evRun").addEventListener("click", async () => {
     toast("Evaluation failed: " + e, "error");
   } finally { $("evRun").disabled = false; }
 });
-$("evClear").addEventListener("click", () => { $("evTable").querySelector("tbody").innerHTML = ""; });
+$("evClear").addEventListener("click", () => { $("evTable").querySelector("tbody").textContent = ""; });
 
 // ── Models ────────────────────────────────────────────────────────────────────
 $("miInspect").addEventListener("click", async () => {
@@ -407,12 +401,7 @@ $("miInspect").addEventListener("click", async () => {
   try { path = reqStr("miPath", "Model file"); } catch (e) { setErr("errModel", String(e)); return; }
   try {
     const i = await invoke("model_info", { path });
-    const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-    $("miInfo").innerHTML =
-      card("File", i.path) + card("Size", i.bytes.toLocaleString() + " bytes") +
-      card("Format", i.format) + card("Name", i.name) + card("Task", i.task) +
-      card("Input dim", i.inputDim) + card("Output dim", i.outputDim) +
-      card("Tokenizer", i.tokenizer) + card("BPE merges", i.merges) + card("Layers", i.layers);
+    $("miInfo").innerHTML = modelInfo(i);
     toast("Model loaded", "ok");
   } catch (e) { setErr("errModel", String(e)); toast("Inspect failed: " + e, "error"); }
 });
@@ -448,9 +437,9 @@ function confirmGgufWarning(paramCount, crossed) {
       ? "You can still proceed — but this exceeds the fits-in-RAM ceiling: expect heavy swapping or a failed load."
       : "You can still proceed — expect slower than the targets above.";
     $("ggWarnBody").innerHTML =
-      `<p>This model has <strong>${fmtParams(paramCount)}</strong> parameters, which exceeds
+      `<p>This model has <strong>${esc(fmtParams(paramCount))}</strong> parameters, which exceeds
        the estimated limits of this machine:</p><ul>` +
-      crossed.map((c) => `<li>${c}</li>`).join("") +
+      crossed.map((c) => `<li>${esc(c)}</li>`).join("") +
       `</ul><p class="muted">${footer}</p>`;
     const dlg = $("ggWarnDialog");
     let proceed = false; // default for Esc / backdrop dismissal
@@ -475,16 +464,7 @@ $("ggInspect").addEventListener("click", async () => {
   $("ggStatus").textContent = "inspecting…";
   try {
     const i = await invoke("gguf_info", { path });
-    const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-    const avail = i.availMb == null ? "unknown" : (i.availMb / 1024).toFixed(2) + " GB";
-    $("ggInfo").innerHTML =
-      card("Architecture", i.architecture + (i.runnable ? " ✓" : " ✗ not runnable")) +
-      card("GGUF", "v" + i.version + " · " + i.numTensors + " tensors") +
-      card("Shape", `dim ${i.modelDim} · ${i.nLayers}L · ${i.nHeads}h/${i.nKvHeads}kv · vocab ${i.vocabSize}`) +
-      card("Tokenizer", i.tokenizer) +
-      card("Resident (int4/int8/f32)", `${(i.estInt4Mb/1024).toFixed(2)} / ${(i.estInt8Mb/1024).toFixed(2)} / ${(i.estF32Mb/1024).toFixed(2)} GB`) +
-      card("Available RAM", avail) +
-      card("Note", i.note);
+    $("ggInfo").innerHTML = ggufInfo(i);
     $("ggStatus").textContent = "";
     toast(i.runnable ? "GGUF inspected" : "Inspected — architecture not runnable", i.runnable ? "ok" : "error");
     const crossedI = checkGgufBudget(i.paramCount);
@@ -627,15 +607,7 @@ $("exInspect").addEventListener("click", async () => {
   $("exStatus").textContent = "inspecting…";
   try {
     const i = await invoke("gguf_info", { path });
-    const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-    const avail = i.availMb == null ? "unknown" : (i.availMb / 1024).toFixed(2) + " GB";
-    $("exInfo").innerHTML =
-      card("Architecture", i.architecture + (i.runnable ? " ✓" : " ✗ not exportable")) +
-      card("GGUF", "v" + i.version + " · " + i.numTensors + " tensors") +
-      card("Shape", `dim ${i.modelDim} · ${i.nLayers}L · ${i.nHeads}h/${i.nKvHeads}kv · vocab ${i.vocabSize}`) +
-      card("Tokenizer", i.tokenizer) +
-      card("Resident f32 (export loads f32)", (i.estF32Mb / 1024).toFixed(2) + " GB") +
-      card("Available RAM", avail);
+    $("exInfo").innerHTML = exportInfo(i);
     $("exStatus").textContent = "";
     toast(i.runnable ? "GGUF inspected" : "Inspected — architecture not exportable", i.runnable ? "ok" : "error");
     const crossed = checkGgufBudget(i.paramCount);
@@ -708,9 +680,19 @@ async function pollStats() {
     $("sysMemBar").style.width = Math.min(100, s.memPercent) + "%";
     $("sysMemAbs").textContent = `${fmtBytes(s.memUsed)} / ${fmtBytes(s.memTotal)}`;
     $("sysThreads").textContent = s.ferrumThreads;
-    $("sysCores").innerHTML = s.perCore.map((v, i) =>
-      `<div class="core">core ${i} — ${v.toFixed(0)}%<div class="cbar"><div style="width:${Math.min(100, v)}%"></div></div></div>`
-    ).join("");
+    // DOM construction: an inline style="" attribute in markup would need CSP 'unsafe-inline'.
+    $("sysCores").replaceChildren(...s.perCore.map((v, i) => {
+      const core = document.createElement("div");
+      core.className = "core";
+      core.append(`core ${i} — ${v.toFixed(0)}%`);
+      const bar = document.createElement("div");
+      bar.className = "cbar";
+      const fill = document.createElement("div");
+      fill.style.width = Math.min(100, v) + "%";
+      bar.appendChild(fill);
+      core.appendChild(bar);
+      return core;
+    }));
   } catch (e) { /* transient; ignore */ }
 }
 function restartMonitor() {
@@ -741,7 +723,6 @@ function renderCapReport(r) {
     loadInt4: r.loadInt4, finetuneHi: r.finetuneHi,
   };
   // Summary cards on the panel.
-  const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
   $("capCards").innerHTML =
     card("CPU", r.cpu) +
     card("Cores / threads", `${r.cores} / ${r.threads}`) +
@@ -756,11 +737,11 @@ function renderCapReport(r) {
     return l === h ? l : `${l} – ${h}`;
   };
   const row = (label, val, note) =>
-    `<tr><td>${label}</td><td>${val}</td><td class="muted">${note}</td></tr>`;
+    `<tr><td>${esc(label)}</td><td>${esc(val)}</td><td class="muted">${esc(note)}</td></tr>`;
   const trainLo = Math.min(r.trainChinchilla, r.trainFixed1b);
   const trainHi = Math.max(r.trainChinchilla, r.trainFixed1b);
   $("capDialogBody").innerHTML = `
-    <p class="muted">${r.cpu} · ${r.cores} cores · ${r.memBwGbps.toFixed(1)} GB/s · ${r.gemmGflops.toFixed(1)} GFLOP/s</p>
+    <p class="muted">${esc(r.cpu)} · ${esc(r.cores)} cores · ${esc(r.memBwGbps.toFixed(1))} GB/s · ${esc(r.gemmGflops.toFixed(1))} GFLOP/s</p>
     <table class="data">
       <thead><tr><th>Capability</th><th>Range (params)</th><th>Basis</th></tr></thead>
       <tbody>

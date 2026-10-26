@@ -1579,12 +1579,12 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), stream.js (+ stream.test.js)
+ui/               index.html, styles.css, app.js (vanilla), escape.js (+ escape.test.js), stream.js (+ stream.test.js)
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
-tauri.conf.json   window + bundle config (frontendDist = "ui")
+tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)
 capabilities/     Tauri v2 permissions (core + dialog)
 ```
 
