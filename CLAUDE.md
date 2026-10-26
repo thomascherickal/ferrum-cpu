@@ -7,8 +7,43 @@ GGUF files that run in llama.cpp, Ollama, and LM Studio. Overview in
 `ReadMe.md`, usage in `Manual.md`, walk-throughs in `Samples.md`, current state
 / known issues / roadmap / compatibility record in `Status.md`.
 
-> `CLAUDE.md` and `AGENTS.md` are identical copies. Edit both together
-> (`cp CLAUDE.md AGENTS.md`).
+> `AGENTS.md` is a symlink to `CLAUDE.md`, so the two cannot drift. Edit
+> `CLAUDE.md` only; never replace the symlink with a regular file.
+
+## Working rules
+
+Every rule the user has given for this repo. They override defaults and
+skills. When the user states a new rule, add it here.
+
+1. **Commit after every completed feature.** A feature is complete when its
+   tests are in, the full suite passes (`cargo test --workspace --release`,
+   clippy `-D warnings`, fmt, and for GUI work the checks in Commands), and its
+   docs are updated. Then make one commit with a Conventional-style subject.
+   Never commit a half-done feature or a red tree, and never batch several
+   finished features into one commit.
+2. **Run only one agent at a time.** No parallel subagents. Finish or stop the
+   running agent before launching the next. Before relaunching, check that an
+   agent is truly active (file mtimes, running processes); after a crash or
+   restart launch a fresh agent with explicit state instead of resuming it.
+3. **Stay inside the project.** Never touch anything outside the project
+   directory (no `~/.cache`, `~/.ollama`). Scratch files go in the session
+   scratchpad; samples that need an external tool use a private dir.
+4. **Low-memory machine (15 GB).** Build with
+   `CARGO_BUILD_JOBS=3 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`,
+   run one cargo command at a time, and do not run `llvm-cov` together with
+   tests.
+5. **Tests run after every added feature**, the whole suite, not just the new
+   tests. Report the exact pass/fail/ignored counts; fix or disclose any failure.
+6. **No invented output.** Every number and command output in the docs comes
+   from a real run on this machine. Say plainly what was not run.
+7. **Finish a branch one way:** fast-forward merge to `master`, push, delete the
+   branch. No PRs, no merge commits. "Finish completely" also means resolving
+   the remaining Minor review findings in one polish commit first.
+8. **`ferrum_gui` is outside the workspace.** Build and test it from its crate
+   dir; use `node --check` for the UI JavaScript.
+9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
+   counts, known issues, roadmap, section 7) in the feature's commit. Only the
+   docs listed under Conventions exist; add no others.
 
 ## Hard constraints
 
@@ -50,8 +85,8 @@ Do not break these; they are the product's selling points.
   `Default`; callers use `..TransformerConfig::default()`. The positional
   `train_transformer*` functions keep stride 1 and their exact results. Record
   any compat change in `Status.md` §7. FINF files do not load (deliberate).
-- **Tests first.** Every feature lands with its unit tests in the same commit.
-  Every commit builds and passes its tests.
+- **Tests first.** Every feature lands with its unit tests in the same commit
+  (Working rules 1 and 5).
 - **Scoring semantics.** `evaluate()` and `--val` use `score_rolling`, which
   scores every token. `temperature == 0` is exact argmax. `<|endoftext|>` is
   always a reserved special token.
@@ -157,9 +192,8 @@ won't catch JS errors; `node --check` is the gate. Tabs are generic: a
   feature. Every command in `Samples.md` is executed and its output pasted from
   the run; no invented numbers. `glossary.md` is a beginner-facing guide to LLM
   terms, not a domain glossary for agents.
-- Git: solo repo, linear history. Feature branches are fast-forward merged into
-  `master`, pushed, then deleted — no PRs, no merge commits. Each commit should
-  build and pass its tests on its own. Conventional-style subjects
+- Git: solo repo, linear history; see Working rules 1 and 7. Each commit builds
+  and passes its tests on its own. Conventional-style subjects
   (`feat(gguf): …`, `fix(gui): …`, `docs(status): …`).
 
 ## Agent skills
