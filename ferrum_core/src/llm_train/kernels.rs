@@ -152,7 +152,7 @@ pub(super) fn cross_entropy(logits: &[f32], tokens: &[usize], vocab: usize) -> (
             *p /= sum;
         }
         let target = tokens[t + 1];
-        loss += -(probs[target].max(1e-12)).ln();
+        loss += -crate::loss::clamp_prob(probs[target]).ln();
         for j in 0..vocab {
             d[t * vocab + j] = (probs[j] - if j == target { 1.0 } else { 0.0 }) / n_targets as f32;
         }
@@ -165,6 +165,13 @@ mod tests {
     use super::{rmsnorm_backward_row, rmsnorm_forward_row, rope_apply, silu, silu_grad};
     use crate::llm::RopeType;
     use crate::llm_train::test_support::det;
+
+    #[test]
+    fn cross_entropy_of_nan_logits_is_nan() {
+        let logits = [f32::NAN, 0.0, 1.0, 0.5, 0.0, 1.0];
+        let (loss, _) = super::cross_entropy(&logits, &[0, 1], 3);
+        assert!(loss.is_nan(), "loss {loss}");
+    }
 
     #[test]
     fn rmsnorm_backward_matches_finite_difference() {

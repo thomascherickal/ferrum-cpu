@@ -6,6 +6,17 @@ use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;
 
+/// Clamps a probability away from zero so `ln` stays finite, but lets NaN
+/// through: `f32::max(NaN, x)` returns `x`, which would turn a NaN model into a
+/// finite loss and hide divergence.
+pub(crate) fn clamp_prob(p: f32) -> f32 {
+    if p.is_nan() {
+        p
+    } else {
+        p.max(1e-12)
+    }
+}
+
 /// Returns (mean_loss, dL/d_logits) for a batch.
 /// `logits` shape: [batch, num_classes]. `targets`: one class index per row.
 #[allow(clippy::needless_range_loop)]
@@ -51,7 +62,7 @@ pub fn softmax_cross_entropy(logits: &Tensor, targets: &[usize]) -> Result<(f32,
                 "target index {t} ≥ num_classes {vocab}"
             )));
         }
-        let sample_loss = -(probs[t].max(1e-12)).ln();
+        let sample_loss = -clamp_prob(probs[t]).ln();
         total_loss += sample_loss;
 
         if verbose::is_verbose() && batch <= 16 {
@@ -262,5 +273,25 @@ mod mse_tests {
             let numeric = (lp - lm) / (2.0 * eps);
             assert!((numeric - grad.data[k]).abs() < 1e-3, "k={k}");
         }
+    }
+}
+
+#[cfg(test)]
+mod nan_tests {
+    use super::*;
+    use crate::tensor::Tensor;
+
+    #[test]
+    fn clamp_prob_keeps_nan_and_floors_zero() {
+        assert!(clamp_prob(f32::NAN).is_nan());
+        assert_eq!(clamp_prob(0.0), 1e-12);
+        assert_eq!(clamp_prob(0.25), 0.25);
+    }
+
+    #[test]
+    fn nan_logits_give_nan_loss_not_a_finite_one() {
+        let logits = Tensor::matrix(1, 3, vec![f32::NAN, 0.0, 1.0]).unwrap();
+        let (loss, _) = softmax_cross_entropy(&logits, &[1]).unwrap();
+        assert!(loss.is_nan(), "loss {loss}");
     }
 }

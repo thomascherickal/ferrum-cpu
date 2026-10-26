@@ -159,7 +159,7 @@ impl GenerativeSLM {
 
         let transformer = CachedTransformer::try_new(&self.model).is_some();
         let mut add = |row: &[f32], target: usize| {
-            let p = row[target].max(1e-12) as f64;
+            let p = crate::loss::clamp_prob(row[target]) as f64;
             let argmax = argmax_first(row);
             score.logprob += p.ln();
             score.n_tokens += 1;
