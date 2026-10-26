@@ -111,7 +111,7 @@ fn main() {
     let budget = Duration::from_millis(1200);
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
 
-    println!("Ferrum matmul benchmark — std-only, zero external deps");
+    println!("Ferrum matmul benchmark — std-only benchmark, no Criterion");
     println!(
         "threads = {}   (FERRUM_NUM_THREADS = {})",
         ferrum_core::num_threads(),

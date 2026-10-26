@@ -1089,7 +1089,7 @@ The first block is `auto` threads (8 here) and the second is one thread. `train`
 cargo bench --bench gemm
 ```
 
-This prints the square-GEMM rates, the f32 decode GEMV rates, a synthesized f32 1B-class decode step, and the same for int8 and int4. Machine and date: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz, 4 cores / 8 threads, 2026-10-26. The banner line is omitted; the "std-only" in it means the benchmark program itself uses only `std` and `ferrum_core`. This is the third of three runs at auto threads; the table takes the median of three at 8 threads and three at one thread (`FERRUM_NUM_THREADS=1 cargo bench --bench gemm`):
+This prints the square-GEMM rates, the f32 decode GEMV rates, a synthesized f32 1B-class decode step, and the same for int8 and int4. Machine and date: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz, 4 cores / 8 threads, 2026-10-26. The banner line is omitted; it says the benchmark program is std-only (no Criterion). This is the third of three runs at auto threads; the table takes the median of three at 8 threads and three at one thread (`FERRUM_NUM_THREADS=1 cargo bench --bench gemm`):
 
 ```text
 threads = 8   (FERRUM_NUM_THREADS = unset)

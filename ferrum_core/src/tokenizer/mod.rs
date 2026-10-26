@@ -1,4 +1,5 @@
-//! Byte-level Byte-Pair Encoding (BPE) tokenizer. Zero dependencies.
+//! Byte-level Byte-Pair Encoding (BPE) tokenizer, written in `std` (the
+//! pre-tokenizer uses `unicode-general-category`).
 //!
 //! The base vocabulary is the 256 single bytes, so *any* text — emoji,
 //! Cyrillic, CJK, control characters — round-trips without an unknown-token

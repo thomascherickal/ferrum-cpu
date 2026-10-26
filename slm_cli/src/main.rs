@@ -1,8 +1,8 @@
 //! `train_transformer` — corpus → causal transformer SLM trainer & generator.
 //!
 //! Trains a character-level decoder-only **causal Transformer** Small
-//! Language Model from any raw text corpus — entirely on CPU, zero external
-//! dependencies. Training is int8 quantization-aware (QAT) and models are
+//! Language Model from any raw text corpus — entirely on CPU, with a
+//! `std`-only engine (two pure-Rust Unicode table crates). Training is int8 quantization-aware (QAT) and models are
 //! exported as int8 GGUF (≈4× smaller than f32) unless `--quant int4|f32` says otherwise.
 //!
 //! Trained weights are cached on disk: if the model file already exists,
