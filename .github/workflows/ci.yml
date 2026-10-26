@@ -121,13 +121,13 @@ jobs:
         run: cargo fmt -- --check
       - name: Clippy (ferrum_gui)
         working-directory: ferrum_gui
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: cargo check (all targets)
         working-directory: ferrum_gui
-        run: cargo check --all-targets
+        run: cargo check --all-targets --locked
       - name: Run backend command tests
         working-directory: ferrum_gui
-        run: cargo test
+        run: cargo test --locked
       - name: Run UI stream-reconciliation tests
         run: node ferrum_gui/ui/stream.test.js
 
