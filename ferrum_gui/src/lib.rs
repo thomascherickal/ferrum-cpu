@@ -19,6 +19,7 @@
 mod capable;
 mod commands;
 mod datasets;
+mod paths;
 
 use std::sync::Mutex;
 use sysinfo::System;

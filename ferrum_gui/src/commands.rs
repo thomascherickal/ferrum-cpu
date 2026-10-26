@@ -6,6 +6,7 @@
 //! - Heavy/blocking work runs inside `spawn_blocking` so the UI thread stays
 //!   responsive and events can stream while the command runs.
 
+use crate::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{
     clean_corpus, corpus_stats, validate_for_training, Adam, CleanOptions, GenerativeSLM, Gguf,
@@ -142,9 +143,7 @@ pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, String> {
 /// Write a corpus to disk (creating parent directories), returning bytes written.
 #[tauri::command]
 pub fn save_corpus(text: String, path: String) -> Result<usize, String> {
-    if path.trim().is_empty() {
-        return Err("please provide an output file path".into());
-    }
+    checked_path("output file path", &path, false)?;
     if let Some(parent) = Path::new(&path).parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
@@ -158,7 +157,8 @@ pub fn save_corpus(text: String, path: String) -> Result<usize, String> {
 /// Read a UTF-8 text file (lossy), capped at `max_bytes` (default 16 MiB).
 #[tauri::command]
 pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, String> {
-    // Read at most the cap (not the whole file, which may be huge or endless like /dev/zero).
+    // Devices and FIFOs are refused up front; the cap still bounds huge regular files.
+    checked_path("file path", &path, true)?;
     let cap = max_bytes.unwrap_or(16 * 1024 * 1024) as u64;
     let file = std::fs::File::open(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
     let mut data = Vec::new();
@@ -255,8 +255,15 @@ pub async fn train_slm(app: AppHandle, params: TrainParams) -> Result<TrainResul
 
 fn train_inner(app: AppHandle, p: TrainParams) -> Result<TrainResult, String> {
     // ---- shared validation with clear messages ----
-    if p.model_path.trim().is_empty() {
-        return Err("please provide an output model path".into());
+    checked_path("output model path", &p.model_path, false)?;
+    checked_path("corpus path", &p.corpus_path, true)?;
+    for (label, v) in [
+        ("tokenizer path", &p.tokenizer_path),
+        ("checkpoint path", &p.checkpoint_path),
+    ] {
+        if !v.trim().is_empty() {
+            checked_path(label, v, false)?;
+        }
     }
     if p.context_len == 0 {
         return Err("context length must be ≥ 1".into());
@@ -429,6 +436,7 @@ fn gen_inner(app: AppHandle, p: GenParams) -> Result<String, String> {
     if !(p.temp.is_finite() && p.temp > 0.0) {
         return Err("temperature must be a positive number".into());
     }
+    checked_path("model path", &p.model_path, true)?;
     let slm = GenerativeSLM::load(&p.model_path)
         .map_err(|e| format!("cannot load model {}: {e}", p.model_path))?;
 
@@ -473,6 +481,10 @@ pub struct EvalRow {
 #[tauri::command]
 pub async fn evaluate_slm(params: EvalParams) -> Result<EvalRow, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checked_path("model path", &params.model_path, true)?;
+        if let Some(tp) = params.text_path.as_deref().filter(|s| !s.trim().is_empty()) {
+            checked_path("held-out text path", tp, true)?;
+        }
         let text = match (&params.text, &params.text_path) {
             (Some(t), _) if !t.trim().is_empty() => t.clone(),
             (_, Some(path)) if !path.trim().is_empty() => {
@@ -520,6 +532,7 @@ pub struct ModelInfo {
 /// Inspect a saved model file (mirrors `slm_cli info`).
 #[tauri::command]
 pub fn model_info(path: String) -> Result<ModelInfo, String> {
+    checked_path("model path", &path, true)?;
     let raw = std::fs::read(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
     let slm = GenerativeSLM::from_bytes(&raw).map_err(|e| format!("not a valid model: {e}"))?;
     let m = &slm.meta;
@@ -633,6 +646,7 @@ pub struct GgufSummary {
 #[tauri::command]
 pub async fn gguf_info(path: String) -> Result<GgufSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checked_path("GGUF path", &path, true)?;
         let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let g = Gguf::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
         let arch = g.architecture().unwrap_or("?").to_string();
@@ -747,6 +761,10 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
     }
     if !(p.rep_penalty.is_finite() && p.rep_penalty > 0.0) {
         return Err("repetition penalty must be a positive number".into());
+    }
+    checked_path("model path", &p.model_path, true)?;
+    if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
+        checked_path("checkpoint path", r, true)?;
     }
     // A fine-tune checkpoint holds f32 weights, so applying one forces f32.
     let resume = p.resume.as_ref().filter(|s| !s.trim().is_empty()).cloned();
@@ -916,8 +934,11 @@ pub async fn finetune_gguf(
 }
 
 fn finetune_inner(app: AppHandle, p: FinetuneParams) -> Result<FinetuneResult, String> {
-    if p.out_path.trim().is_empty() {
-        return Err("please provide an output checkpoint path (.flck)".into());
+    checked_path("output checkpoint path (.flck)", &p.out_path, false)?;
+    checked_path("model path", &p.model_path, true)?;
+    checked_path("corpus path", &p.corpus_path, true)?;
+    if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
+        checked_path("resume checkpoint path", r, true)?;
     }
     if p.epochs == 0 {
         return Err("epochs must be ≥ 1".into());
@@ -1135,11 +1156,13 @@ fn ggml_type_name(t: u32) -> String {
 /// event emission. `progress` receives one human-readable line per phase
 /// (prefixes: "opening", "loading", "applying", "encoding").
 pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<ExportResult, String> {
-    if p.out_path.trim().is_empty() {
-        return Err("please provide an output path (.gguf)".into());
-    }
+    checked_path("output path (.gguf)", &p.out_path, false)?;
     let quant = ferrum_core::GgufQuant::from_str(&p.quant)
         .ok_or_else(|| format!("unknown output type '{}'", p.quant))?;
+    checked_path("source GGUF path", &p.model_path, true)?;
+    if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
+        checked_path("checkpoint path", r, true)?;
+    }
     // Whitespace-only checkpoint paths mean "none" (parity with `gguf_run_inner`).
     let resume = p.resume.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
@@ -1341,7 +1364,7 @@ mod tests {
     // ── G2: download timeouts + URL validation ────────────────────────────────
 
     #[test]
-    fn read_text_file_caps_the_read_and_survives_endless_files() {
+    fn read_text_file_caps_the_read_and_refuses_endless_files() {
         let dir = std::env::temp_dir().join(format!("ferrum_gui_read_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("t.txt");
@@ -1360,12 +1383,13 @@ mod tests {
             27
         );
         let e = read_text_file(dir.join("nope").to_str().unwrap().into(), None).unwrap_err();
-        assert!(e.contains("cannot read"), "{e}");
+        assert!(e.contains("does not exist"), "{e}");
         #[cfg(unix)]
         {
-            // Regression: std::fs::read on /dev/zero never returns (and eats all RAM).
-            let z = read_text_file("/dev/zero".into(), Some(1000)).unwrap();
-            assert_eq!(z.len(), 1000);
+            // Regression: std::fs::read on /dev/zero never returns (and eats all RAM);
+            // now refused up front by the path check.
+            let e = read_text_file("/dev/zero".into(), Some(1000)).unwrap_err();
+            assert!(e.contains("not allowed"), "{e}");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1461,9 +1485,55 @@ mod tests {
         p.quant = "q9_9".into();
         assert!(do_export(&p, &noop).unwrap_err().contains("q9_9"));
 
-        // A missing source file reaches — and names — the open failure.
+        // A missing source file is refused by the path check and named.
         p.quant = "q8_0".into();
-        assert!(do_export(&p, &noop).unwrap_err().contains("cannot open"));
+        assert!(do_export(&p, &noop).unwrap_err().contains("does not exist"));
+
+        // Device paths are refused before anything is opened.
+        p.out_path = "/dev/null".into();
+        assert!(do_export(&p, &noop).unwrap_err().contains("not allowed"));
+    }
+
+    #[test]
+    fn file_commands_refuse_bad_paths() {
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_cmdpaths_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap().to_string();
+
+        // read_text_file: device, directory, missing, NUL; a normal file works.
+        for bad in [
+            "/dev/zero",
+            "/proc/self/mem",
+            d.as_str(),
+            "/nonexistent/x.txt",
+            "a\0b",
+            "",
+        ] {
+            assert!(read_text_file(bad.into(), None).is_err(), "{bad:?}");
+        }
+        let f = dir.join("ok.txt");
+        std::fs::write(&f, "hello").unwrap();
+        assert_eq!(
+            read_text_file(f.to_str().unwrap().into(), None).unwrap(),
+            "hello"
+        );
+
+        // save_corpus: refuses devices and directories, writes a new file (making parents).
+        assert!(save_corpus("x".into(), "/dev/null".into()).is_err());
+        assert!(save_corpus("x".into(), d.clone()).is_err());
+        assert!(save_corpus("x".into(), String::new()).is_err());
+        let out = dir.join("sub/out.txt");
+        assert_eq!(
+            save_corpus("abc".into(), out.to_str().unwrap().into()).unwrap(),
+            3
+        );
+
+        // model_info: directory and device are refused with the path message.
+        assert!(model_info(d).err().unwrap().contains("directory"));
+        assert!(model_info("/dev/null".into())
+            .err()
+            .unwrap()
+            .contains("not allowed"));
     }
 
     // Build a minimal valid `llama` GGUF (dim 8, 2 layers, gpt2 tokenizer

@@ -11,6 +11,7 @@
 //! `KAGGLE_USERNAME` / `KAGGLE_KEY` or `~/.kaggle/kaggle.json`.
 
 use crate::commands::http_agent;
+use crate::paths::checked_dir;
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -324,6 +325,7 @@ pub fn list_datasets() -> Vec<DatasetEntry> {
 #[tauri::command]
 pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checked_dir("download folder", &dest_dir)?;
         let entry = catalog()
             .into_iter()
             .find(|d| d.id == id)
@@ -373,6 +375,7 @@ pub async fn download_hf_file(
     hf_token: Option<String>,
 ) -> Result<DownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checked_dir("download folder", &dest_dir)?;
         if repo.trim().is_empty() || file.trim().is_empty() {
             return Err("provide a HuggingFace repo (owner/name) and file".into());
         }
@@ -398,6 +401,7 @@ pub async fn download_kaggle_file(
     dest_dir: String,
 ) -> Result<DownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checked_dir("download folder", &dest_dir)?;
         if owner_slug.trim().is_empty() || file.trim().is_empty() {
             return Err("provide a Kaggle owner/slug and file".into());
         }
@@ -422,6 +426,27 @@ pub async fn download_kaggle_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_commands_refuse_bad_destination_folders() {
+        use tauri::async_runtime::block_on;
+        for bad in ["/dev/shm/x", "/proc/x", "", "a\0b"] {
+            let d = bad.to_string();
+            let e = block_on(download_dataset("any".into(), d.clone())).unwrap_err();
+            assert!(e.contains("download folder"), "{bad:?}: {e}");
+            let e = block_on(download_hf_file(
+                "o/n".into(),
+                "f".into(),
+                None,
+                d.clone(),
+                None,
+            ))
+            .unwrap_err();
+            assert!(e.contains("download folder"), "{bad:?}: {e}");
+            let e = block_on(download_kaggle_file("o/n".into(), "f".into(), d)).unwrap_err();
+            assert!(e.contains("download folder"), "{bad:?}: {e}");
+        }
+    }
 
     #[test]
     fn catalog_is_nonempty_and_cpu_sized() {

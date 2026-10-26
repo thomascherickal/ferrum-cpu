@@ -1586,8 +1586,9 @@ src/lib.rs        Tauri builder, shared state, verbose → event sink, command r
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
+src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)
-capabilities/     Tauri v2 permissions (core + dialog)
+capabilities/     Tauri v2 permissions (event listen/unlisten + dialog open/save only)
 ```
 
 Heavy commands run on blocking tasks and stream events back to the UI
