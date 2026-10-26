@@ -150,7 +150,7 @@ train_transformer prepare --input corpus.txt --out data/prepared --dedup --nfkc
 cargo run --release -p slm_server -- --model models/slm.gguf      # ferrum-serve, 127.0.0.1:8080
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
 .venv/bin/dvc repro && .venv/bin/dvc status
-python3 -m unittest eval/lighteval/test_ferrum_model.py           # skips without lighteval
+python3 -m unittest discover -s eval/lighteval -p 'test_*.py'    # CI runs this; skips what needs lighteval
 eval/lighteval/run.sh --model models/slm.gguf --test data/prepared/test.txt --out metrics/lighteval.json --max-samples 200
 ```
 

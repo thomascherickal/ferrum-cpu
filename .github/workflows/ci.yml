@@ -74,6 +74,25 @@ jobs:
       - name: cargo check (workspace, MSRV)
         run: cargo check --workspace --locked
 
+  python:
+    name: Python tests (eval/lighteval)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Deliberately WITHOUT `pip install -r eval/lighteval/requirements.txt`:
+      # it pulls LightEval and the torch CPU wheel (hundreds of MB). The tests
+      # that need LightEval skip themselves (31 pass / 18 skip), and the rest
+      # cover run.sh, summarize.py and the task-data builder. The full 49-test
+      # run needs that install and is done locally.
+      - name: Run the Python tests
+        run: python -m unittest discover -s eval/lighteval -p 'test_*.py'
+
   deny:
     name: cargo-deny (advisories, licenses, sources)
     runs-on: ubuntu-latest
