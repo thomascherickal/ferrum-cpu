@@ -1890,7 +1890,10 @@ Keys in the `ferrum.` namespace are ignored by llama.cpp.
 | `ferrum.metadata` | string | `ModelMetadata` JSON: task, class names, dimensions |
 | `ferrum.normalizer` | string | Normalizer state (empty for SLMs) |
 
-`train_transformer info` reads these. A GPT-2 GGUF that Ferrum did not write
+`train_transformer info` reads these. It also describes a `.fckp` training checkpoint
+(vocab, context, embed, heads, hidden, blocks, step) and an imported llama/qwen GGUF
+(architecture, layers, dims, heads, vocab, quantization, parameters, context,
+tokenizer) from the header alone, without loading the weights. A GPT-2 GGUF that Ferrum did not write
 also loads, with its metadata rebuilt from the `gpt2.*` keys.
 
 #### Quantization rules

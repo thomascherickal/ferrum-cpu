@@ -99,6 +99,11 @@ fn missing_resume_checkpoint_is_an_error_even_when_the_model_exists() {
             text.contains("checkpoint /nonexistent/nope.flck does not exist"),
             "{cmd}: {text}"
         );
+        // train/run checkpoints are .fckp
+        assert!(
+            text.contains("needs an existing .fckp file"),
+            "{cmd}: {text}"
+        );
     }
 }
 
@@ -334,6 +339,11 @@ fn gguf_commands_name_a_missing_resume_checkpoint_before_loading_anything() {
         assert_eq!(code, 1, "{text}");
         assert!(
             text.contains("checkpoint /nonexistent/r.flck does not exist"),
+            "{args:?}: {text}"
+        );
+        // run-gguf/export-gguf/finetune-gguf checkpoints are .flck
+        assert!(
+            text.contains("needs an existing .flck file"),
             "{args:?}: {text}"
         );
     }

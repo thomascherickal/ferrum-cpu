@@ -185,7 +185,21 @@ which is what `info` printed.
 - The banner shows the token budget, not an epoch count. 2 million tokens is
   less than one pass over the 20 MB corpus, so one epoch line is printed. With
   `--val`, that line also shows the validation perplexity.
-- `info` reports the parameter count and the quantization (int8) of a `gpt2`-architecture GGUF.
+- `info` reports the parameter count and the quantization (int8) of a `gpt2`-architecture GGUF. It also reads a `.fckp` training checkpoint (this is `samples/run.fckp` from section 4, "Training controls"; that run took 977 optimizer steps) and an imported llama/qwen GGUF (architecture, layers, dims, vocab, quantization, context):
+
+  ```text
+  $ train_transformer info samples/run.fckp
+  Model     : samples/run.fckp  (6097088 bytes)
+  Format    : GGUF v3 (ferrum-checkpoint)
+  Kind      : training checkpoint; continue it with train --resume
+  Vocab     : 1024
+  Context   : 128
+  Embed     : 96
+  Heads     : 4
+  Hidden    : 320
+  Blocks    : 3
+  Step      : 977
+  ```
 - Training is deterministic. The model written by this run is byte-identical
   to the one the committed `dvc.lock` records (sha256
   `63249ca483b9c94a9dec49e8ee0674977d2a8941cfa067cff905b135c082892f`, the same
@@ -562,7 +576,7 @@ train_transformer train data/prepared/train.txt samples/x.gguf --resume samples/
 ```text
 error: unknown flag --contxt for 'train' (valid: --context --embed --heads --blocks --hidden --epochs --lr --batch --vocab --seed --threads --weight_decay --dropout --stride --tokens --cosine --warmup --clip --tie --no-qat --quant --debug --tokenizer --checkpoint --checkpoint-every --resume --val --patience --force --sample)
 exit=1
-error: checkpoint samples/does-not-exist.fckp does not exist (--resume needs an existing .flck file)
+error: checkpoint samples/does-not-exist.fckp does not exist (--resume needs an existing .fckp file)
 exit=1
 ```
 
@@ -571,7 +585,7 @@ exit=1
 - The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). A mid-epoch interrupt restarts the partial epoch with a fresh shuffle, so a resumed run is close to, but not bit-identical with, an uninterrupted one. The uninterrupted run in Sample 1 ended at validation perplexity 18.690; the resumed run above ended at 18.910.
 - With `--val`, the best validation score is restored on resume.
 - `-v` prints one line per 10 steps. `--debug` is the old per-op trace.
-- The CLI never falls back to a default silently. The second error says `.flck` because the same check serves `run-gguf` and `finetune-gguf`; here the file would be `.fckp`.
+- The CLI never falls back to a default silently. The second error names `.fckp` because `train` checkpoints are `.fckp` (`run-gguf`, `export-gguf` and `finetune-gguf` say `.flck`).
 - The first line of the resume output is a reminder that a reused tokenizer file may have seen the validation text. The run used `--tokenizer samples/tok.gguf`, created by the first command with `--val`, so it did not.
 
 ---

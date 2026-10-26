@@ -167,11 +167,12 @@ pub(crate) fn check_batch_threads(batch: usize, threads: usize) -> Result<(), St
 }
 
 /// `--resume` must name an existing file; checked before any multi-GB model
-/// load. Blank means "none" (as in `export-gguf`).
-pub(crate) fn require_resume_file(resume: Option<&str>) -> Result<(), String> {
+/// load. Blank means "none" (as in `export-gguf`). `ext` names the checkpoint kind the command
+/// resumes: `.fckp` for train/run, `.flck` for the llama fine-tune commands.
+pub(crate) fn require_resume_file(resume: Option<&str>, ext: &str) -> Result<(), String> {
     match resume.map(str::trim).filter(|s| !s.is_empty()) {
         Some(p) if !std::path::Path::new(p).is_file() => Err(format!(
-            "checkpoint {p} does not exist (--resume needs an existing .flck file)"
+            "checkpoint {p} does not exist (--resume needs an existing {ext} file)"
         )),
         _ => Ok(()),
     }
@@ -186,22 +187,27 @@ mod tests {
 
     #[test]
     fn require_resume_file_names_the_missing_checkpoint() {
-        assert!(require_resume_file(None).is_ok());
-        assert!(require_resume_file(Some("   ")).is_ok(), "blank = none");
-        let e = require_resume_file(Some("/nonexistent/x.flck")).unwrap_err();
+        assert!(require_resume_file(None, ".fckp").is_ok());
         assert!(
-            e.contains("/nonexistent/x.flck") && e.contains("does not exist"),
+            require_resume_file(Some("   "), ".fckp").is_ok(),
+            "blank = none"
+        );
+        let e = require_resume_file(Some("/nonexistent/x.flck"), ".flck").unwrap_err();
+        assert!(
+            e.contains("/nonexistent/x.flck")
+                && e.contains("does not exist")
+                && e.contains("needs an existing .flck file"),
             "{e}"
         );
         let dir = std::env::temp_dir().join(format!("ferrum_resume_chk_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(
-            require_resume_file(Some(dir.to_str().unwrap())).is_err(),
+            require_resume_file(Some(dir.to_str().unwrap()), ".flck").is_err(),
             "a directory is not a file"
         );
         let f = dir.join("c.flck");
         std::fs::write(&f, b"x").unwrap();
-        assert!(require_resume_file(Some(f.to_str().unwrap())).is_ok());
+        assert!(require_resume_file(Some(f.to_str().unwrap()), ".flck").is_ok());
     }
 
     #[test]

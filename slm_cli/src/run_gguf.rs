@@ -15,7 +15,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
                     [--top-k N] [--top-p F] [--rep F] [--ids \"1 2 3\"] [--raw]"
             .into());
     }
-    require_resume_file(args.value("resume"))?;
+    require_resume_file(args.value("resume"), ".flck")?;
     let params = sampling_params(args, 0.8, "rep")?; // fail before the model loads
                                                      // Parsed up front so a typo fails before a multi-GB load.
     let ids_arg: Option<Vec<usize>> = args

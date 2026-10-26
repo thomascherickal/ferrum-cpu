@@ -118,10 +118,24 @@ fn round_trip(tag: &str, base_bytes: Vec<u8>) {
     assert_eq!(e.architecture(), Some("llama"));
     assert_eq!(e.tensors.len(), b.tensors.len());
     e.load_llama_prec(None).unwrap();
-    // `info` is for Ferrum's own models and says so for a llama file.
-    let i = tt(&["info", &tuned]);
-    assert!(!i.status.success());
-    assert!(String::from_utf8_lossy(&i.stderr).contains("need gpt2 or ferrum"));
+    // `info` describes an imported llama file from its header.
+    let info = ok(&["info", &tuned]);
+    let params: usize = e.tensors.iter().map(|t| t.num_elements()).sum();
+    for want in [
+        "Format    : GGUF v3 (llama, f32)".to_string(),
+        format!("Params    : {params}"),
+        "Layers    : 2".to_string(),
+        "Dim       : 8".to_string(),
+        "Heads     : 2 (2 KV)".to_string(),
+        "Vocab     : 32".to_string(),
+        "Context   : 16".to_string(),
+    ] {
+        assert!(info.contains(&want), "missing {want:?}: {info}");
+    }
+    assert!(info.contains("Tokenizer : "), "{info}");
+    // A fine-tune checkpoint is not a model: say what it is instead of a format error.
+    let i = ok(&["info", &ck]);
+    assert!(i.contains("ferrum-llama-checkpoint"), "{i}");
 }
 
 #[test]

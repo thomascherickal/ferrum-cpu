@@ -244,7 +244,7 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: train_transformer train <corpus.txt> <model.gguf> [options]".into());
     }
     // Before the model-exists shortcut too, so a typo'd --resume never goes unnoticed.
-    require_resume_file(args.value("resume"))?;
+    require_resume_file(args.value("resume"), ".fckp")?;
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
     let corpus = read_corpus(corpus_path)?;

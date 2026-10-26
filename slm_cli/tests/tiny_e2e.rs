@@ -288,6 +288,23 @@ fn checkpoint_every_writes_a_checkpoint_with_optimizer_state() {
     let size = std::fs::metadata(&ck).unwrap().len();
     // Weights plus Adam state: far bigger than the int8 model.
     assert!(size > std::fs::metadata(e.p("m.gguf")).unwrap().len());
+    // `info` reads the checkpoint header.
+    let out = run(&["info", &ck]);
+    assert!(
+        out.contains("Format    : GGUF v3 (ferrum-checkpoint)"),
+        "{out}"
+    );
+    for want in [
+        "Context   : 16",
+        "Embed     : 16",
+        "Heads     : 2",
+        "Hidden    : 32",
+        "Blocks    : 2",
+    ] {
+        assert!(out.contains(want), "missing {want:?}: {out}");
+    }
+    assert!(out.contains("Step      : "), "{out}");
+    assert!(out.contains("train --resume"), "{out}");
 }
 
 #[test]

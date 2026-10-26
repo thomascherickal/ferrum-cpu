@@ -21,7 +21,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
                 .into(),
         );
     }
-    require_resume_file(args.value("resume"))?;
+    require_resume_file(args.value("resume"), ".flck")?;
     if args.has("sample") {
         check_temp(args.get("temp", 0.8))?; // before hours of training, not after
     }

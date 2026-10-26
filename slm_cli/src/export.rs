@@ -13,7 +13,7 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
                     [--resume tuned.flck] [--force]"
             .into());
     }
-    require_resume_file(args.value("resume"))?;
+    require_resume_file(args.value("resume"), ".flck")?;
     let in_path = &args.positional[0];
     let out_path = &args.positional[1];
     check_writable(out_path)?;
