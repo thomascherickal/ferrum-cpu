@@ -328,6 +328,49 @@ mod tests {
         assert!(g1.tensor("blk.1.attn_output.bias").is_none());
     }
 
+    /// D1: fine-tune 2 epochs, then `export-gguf --resume` (apply the checkpoint,
+    /// write, reload) must be the exact model `run-gguf --resume` runs, with and
+    /// without real q/k/v biases in the source (the trainer must not train a bias
+    /// the source file cannot carry).
+    fn finetune_export_equals_resume(with_bias: bool) {
+        use crate::llm_train::{apply_checkpoint_weights, LlamaTrainer};
+        use crate::rng::Rng;
+
+        let g0 = Gguf::parse(tiny_llama_gguf_bytes_ex(with_bias)).unwrap();
+        let mut tr = LlamaTrainer::new(g0.load_llama_prec(None).unwrap()).unwrap();
+        tr.set_lr(0.02);
+        let tokens: Vec<usize> = (0..100).map(|i| (i * 7) % 32).collect();
+        let mut rng = Rng::new(5);
+        for _ in 0..2 {
+            tr.finetune_epoch(&tokens, 8, 8, &mut rng).unwrap();
+        }
+        let ckpt = tr.save_checkpoint(&rng);
+
+        let base = g0.load_llama_prec(None).unwrap();
+        let mut resumed = g0.load_llama_prec(None).unwrap();
+        apply_checkpoint_weights(&mut resumed, ckpt).unwrap();
+        let out = llama_gguf_bytes(&resumed, &g0, GgufQuant::F32).unwrap();
+        let exported = Gguf::parse(out).unwrap().load_llama_prec(None).unwrap();
+
+        let toks = [1usize, 5, 2, 7, 3];
+        let want = resumed.forward_tokens(&toks).unwrap().data;
+        assert!(
+            want == exported.forward_tokens(&toks).unwrap().data,
+            "exported logits differ from base + --resume"
+        );
+        assert!(want != base.forward_tokens(&toks).unwrap().data, "trained");
+    }
+
+    #[test]
+    fn export_of_a_bias_free_finetune_equals_the_resumed_model() {
+        finetune_export_equals_resume(false);
+    }
+
+    #[test]
+    fn export_of_a_finetune_with_real_qkv_biases_equals_the_resumed_model() {
+        finetune_export_equals_resume(true);
+    }
+
     // Regression guard (Task 11 final review, Fix 1): a source GGUF that
     // declares a non-default `general.alignment` must not have that value
     // carried into the export. The builder always packs tensor data at

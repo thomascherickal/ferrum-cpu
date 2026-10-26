@@ -37,8 +37,9 @@ pub(super) fn lin_backward(
         let xr = &x[r * k..r * k + k];
         let dyr = &dy[r * n..r * n + n];
         let dxr = &mut dx[r * k..r * k + k];
-        for (o, &dyo) in dyr.iter().enumerate() {
-            g.b[o] += dyo;
+        // An empty `g.b` is a frozen placeholder bias: no gradient.
+        for (b, &dyo) in g.b.iter_mut().zip(dyr) {
+            *b += dyo;
         }
         for i in 0..k {
             let wr = &w[i * n..i * n + n];

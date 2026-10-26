@@ -174,6 +174,63 @@ fn finetune_gguf_cli_trains_resumes_and_exports() {
         .unwrap();
 }
 
+/// D1: for a bias-free llama GGUF, `export-gguf --resume` writes exactly the
+/// model `run-gguf --resume` runs (base + checkpoint): same logits, bit for bit.
+#[test]
+fn export_gguf_resume_is_the_resumed_model() {
+    let d = tmp("d1");
+    let model = d.join("m.gguf");
+    std::fs::write(&model, tiny_llama_gguf_with_tokens(&letter_vocab())).unwrap();
+    let corpus = d.join("c.txt");
+    std::fs::write(&corpus, "abc abc abc abc abc abc abc abc").unwrap();
+    let (m, c) = (model.to_str().unwrap(), corpus.to_str().unwrap());
+    let (ck, tuned) = (d.join("o.flck"), d.join("ft.gguf"));
+    let (ck_s, tuned_s) = (ck.to_str().unwrap(), tuned.to_str().unwrap());
+
+    let o = tt(&[
+        "finetune-gguf",
+        m,
+        c,
+        ck_s,
+        "--epochs",
+        "2",
+        "--batch",
+        "2",
+        "--seq",
+        "8",
+        "--lr",
+        "1e-2",
+        "--threads",
+        "1",
+    ]);
+    assert!(o.status.success(), "{}", text(&o));
+    let o = tt(&[
+        "export-gguf",
+        m,
+        tuned_s,
+        "--resume",
+        ck_s,
+        "--quant",
+        "f32",
+    ]);
+    assert!(o.status.success(), "{}", text(&o));
+
+    let base = Gguf::open(m).unwrap().load_llama_prec(None).unwrap();
+    let mut resumed = Gguf::open(m).unwrap().load_llama_prec(None).unwrap();
+    ferrum_core::apply_checkpoint_weights(&mut resumed, std::fs::read(&ck).unwrap()).unwrap();
+    let exported = Gguf::open(tuned_s).unwrap().load_llama_prec(None).unwrap();
+    let toks = [0usize, 1, 2, 26, 0, 1];
+    let want = resumed.forward_tokens(&toks).unwrap().data;
+    assert!(
+        want != base.forward_tokens(&toks).unwrap().data,
+        "fine-tune moved"
+    );
+    assert!(
+        want == exported.forward_tokens(&toks).unwrap().data,
+        "exported logits differ from base + --resume"
+    );
+}
+
 #[test]
 fn finetune_gguf_cli_rejects_bad_input() {
     let d = tmp("errors");

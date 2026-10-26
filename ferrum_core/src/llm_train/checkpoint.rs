@@ -19,6 +19,25 @@ fn shape_keys_of(c: &LlamaConfig) -> [(&'static str, usize); 7] {
     ]
 }
 
+/// A parameter slot with nothing to train (a placeholder bias, see
+/// `params::bias_ref`) is stored as an empty tensor. Data in such a slot means
+/// an older Ferrum trained the placeholder, which the source architecture
+/// cannot represent: name the cause instead of a bare shape error.
+fn check_no_placeholder_biases(g: &crate::gguf::Gguf, lens: &[usize]) -> Result<()> {
+    for (i, _) in lens.iter().enumerate().filter(|(_, &n)| n == 0) {
+        let name = format!("p{i}.data");
+        if g.tensor(&name).is_some_and(|t| t.dims != [0u64]) {
+            return Err(InferError::Format(format!(
+                "checkpoint tensor '{name}' holds a bias this model does not have (its GGUF \
+                 has no such bias tensor): the checkpoint was written by an older Ferrum \
+                 that trained placeholder biases, which cannot be exported. Re-run \
+                 finetune-gguf to make a new checkpoint"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Overlay a fine-tune checkpoint's f32 master **weights** onto `model` without
 /// a [`LlamaTrainer`]: no gradient buffers or Adam-moment copies are allocated
 /// and no flat f32 vectors are built (the optimizer state in the file is
@@ -43,6 +62,7 @@ pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Resul
     ckpt::get_u64(&g, "step")?;
     ckpt::get_u64(&g, "rng")?;
     let mut targets = param_data_mut(model);
+    check_no_placeholder_biases(&g, &targets.iter().map(|s| s.len()).collect::<Vec<_>>())?;
     for (i, s) in targets.iter().enumerate() {
         ckpt::f32_tensor(&g, &format!("p{i}.data"), s.len())?;
     }
@@ -122,6 +142,7 @@ impl LlamaTrainer {
             .iter()
             .map(|s| s.len())
             .collect();
+        check_no_placeholder_biases(&g, &lens)?;
         let read = |suffix: &str| -> Result<Vec<f32>> {
             let mut flat = Vec::with_capacity(self.num_params());
             for (i, &n) in lens.iter().enumerate() {

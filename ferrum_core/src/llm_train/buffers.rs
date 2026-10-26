@@ -7,14 +7,21 @@ use crate::llm::LlamaModel;
 #[derive(Clone)]
 pub(super) struct LinBuf {
     pub(super) w: Vec<f32>, // [in·out] row-major, like Linear::weight
-    pub(super) b: Vec<f32>, // [out]
+    pub(super) b: Vec<f32>, // [out], or empty when the layer has no real bias
 }
 
 impl LinBuf {
     pub(super) fn zeros(lin: &Linear) -> Self {
         Self {
             w: vec![0.0; lin.in_features() * lin.out_features()],
-            b: vec![0.0; lin.out_features()],
+            b: vec![
+                0.0;
+                if lin.has_bias() {
+                    lin.out_features()
+                } else {
+                    0
+                }
+            ],
         }
     }
     pub(super) fn clear(&mut self) {

@@ -62,19 +62,23 @@ impl Gguf {
         }
         let flat = self.dequantize(&t)?; // row-major [n_out, n_in]
         let w = transpose_2d(&flat, n_out, n_in); // → [n_in, n_out]
-        let bias = match bias_name.and_then(|b| self.tensor(b)).cloned() {
+        let bias = bias_name.and_then(|b| self.tensor(b)).cloned();
+        let has_bias = bias.is_some();
+        let bias = match bias {
             Some(bt) => self.dequantize(&bt)?,
             None => vec![0.0; n_out],
         };
         if bias.len() != n_out {
             return Err(fmt(&format!("bias for '{name}' has wrong length")));
         }
-        match prec {
+        let lin = match prec {
             Some(kind) => {
                 Linear::quantized(n_in, n_out, QWeight::from_f32(&w, n_in, n_out, kind), bias)
             }
             None => Linear::new(n_in, n_out, w, bias),
-        }
+        }?;
+        // No bias tensor in the file: the zero bias is a placeholder, never a parameter.
+        Ok(if has_bias { lin } else { lin.into_bias_free() })
     }
 
     /// Build a runnable [`LlamaModel`] from a `llama`- or `qwen2`-architecture
@@ -239,6 +243,7 @@ impl Gguf {
                 )?,
                 None => Linear::new(dim, vocab, w, vec![0.0; vocab])?,
             }
+            .into_bias_free()
         };
 
         let cfg = LlamaConfig {

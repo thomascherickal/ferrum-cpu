@@ -66,6 +66,20 @@ impl Linear {
         Ok(l)
     }
 
+    /// Mark this layer as having no bias parameters: the zero `bias` only fills the
+    /// shape (an imported GGUF projection whose file has no bias tensor). The
+    /// fine-tune trainer then leaves it out of the trainable set, so a trained
+    /// model stays exactly representable by the file it came from.
+    pub fn into_bias_free(mut self) -> Self {
+        self.bias_free = true;
+        self
+    }
+
+    /// Whether the layer has real bias parameters (see [`Linear::into_bias_free`]).
+    pub fn has_bias(&self) -> bool {
+        !self.bias_free
+    }
+
     /// A bias-free head whose weight is shared with the token embedding
     /// (weight tying). Behaves like [`Linear::without_bias`] but contributes no
     /// parameters, so `Sequential::num_params` counts the shared matrix once.
