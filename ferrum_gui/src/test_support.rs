@@ -41,14 +41,20 @@ pub fn tiny_llama_gguf(
         MetaValue::F32(1e-5),
     );
     b.meta("tokenizer.ggml.model", MetaValue::String("gpt2".into()));
+    // A usable tokenizer: single-character tokens for "hi abcdefg" first, filler after,
+    // no merges, BOS = 0, EOS = 9 (so text fine-tuning and prompts work on the fixture).
+    let chars = ["h", "i", " ", "a", "b", "c", "d", "e", "f", "g"];
     b.meta(
         "tokenizer.ggml.tokens",
         MetaValue::Array(
             (0..vocab)
-                .map(|i| MetaValue::String(format!("t{i}")))
+                .map(|i| MetaValue::String(chars.get(i).map_or(format!("t{i}"), |c| c.to_string())))
                 .collect(),
         ),
     );
+    b.meta("tokenizer.ggml.merges", MetaValue::Array(vec![]));
+    b.meta("tokenizer.ggml.bos_token_id", MetaValue::U32(0));
+    b.meta("tokenizer.ggml.eos_token_id", MetaValue::U32(9));
     let t = |b: &mut GgufBuilder, name: &str, dims: &[u64], seed: usize| {
         let n: usize = dims.iter().product::<u64>() as usize;
         b.tensor(name, dims, GGML_F32, f32_bytes(&gen(seed, n)));

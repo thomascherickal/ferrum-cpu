@@ -42,6 +42,8 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {} } = {}) {
     setTimeout: (f, ms) => setTimeout(f, Math.min(ms || 0, 5)), clearTimeout, setInterval: (f, ms) => { intervals.push({ f, ms }); return intervals.length; },
     clearInterval() {},
   };
+  Object.assign(sandbox, win);
+  sandbox.window = sandbox; // like a browser: window === the global object
   vm.createContext(sandbox);
   for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: f });
   return { doc, win, calls, listeners, intervals, emit: (name, payload) => listeners[name]({ payload }) };

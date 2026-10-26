@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Runtime, State};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Small helpers
@@ -247,13 +247,16 @@ pub struct TrainResult {
 /// Train a transformer SLM in-process, streaming
 /// `train-progress` events and (if `verbose`) `engine-log` lines, then save it.
 #[tauri::command]
-pub async fn train_slm(app: AppHandle, params: TrainParams) -> Result<TrainResult, String> {
+pub async fn train_slm<R: Runtime>(
+    app: AppHandle<R>,
+    params: TrainParams,
+) -> Result<TrainResult, String> {
     tauri::async_runtime::spawn_blocking(move || train_inner(app, params))
         .await
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn train_inner(app: AppHandle, p: TrainParams) -> Result<TrainResult, String> {
+fn train_inner<R: Runtime>(app: AppHandle<R>, p: TrainParams) -> Result<TrainResult, String> {
     // ---- shared validation with clear messages ----
     checked_path("output model path", &p.model_path, false)?;
     checked_path("corpus path", &p.corpus_path, true)?;
@@ -427,13 +430,16 @@ pub struct GenParams {
 /// emitted as a `gen-fragment` event as it is produced; the full string is also
 /// returned.
 #[tauri::command]
-pub async fn generate_slm(app: AppHandle, params: GenParams) -> Result<String, String> {
+pub async fn generate_slm<R: Runtime>(
+    app: AppHandle<R>,
+    params: GenParams,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || gen_inner(app, params))
         .await
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn gen_inner(app: AppHandle, p: GenParams) -> Result<String, String> {
+fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams) -> Result<String, String> {
     if !(p.temp.is_finite() && p.temp > 0.0) {
         return Err("temperature must be a positive number".into());
     }
@@ -925,8 +931,8 @@ pub struct FinetuneResult {
 /// `.flck` checkpoint that `run_gguf { resume }` can overlay on the base model.
 /// Per-epoch progress streams as `finetune-progress` events.
 #[tauri::command]
-pub async fn finetune_gguf(
-    app: AppHandle,
+pub async fn finetune_gguf<R: Runtime>(
+    app: AppHandle<R>,
     params: FinetuneParams,
 ) -> Result<FinetuneResult, String> {
     tauri::async_runtime::spawn_blocking(move || finetune_inner(app, params))
@@ -934,7 +940,10 @@ pub async fn finetune_gguf(
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn finetune_inner(app: AppHandle, p: FinetuneParams) -> Result<FinetuneResult, String> {
+fn finetune_inner<R: Runtime>(
+    app: AppHandle<R>,
+    p: FinetuneParams,
+) -> Result<FinetuneResult, String> {
     checked_path("output checkpoint path (.flck)", &p.out_path, false)?;
     checked_path("model path", &p.model_path, true)?;
     checked_path("corpus path", &p.corpus_path, true)?;
@@ -1243,7 +1252,10 @@ pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<Exp
 /// to a new GGUF at the requested quantization. Phase progress streams as
 /// `export-progress` events (see [`do_export`] for the phases).
 #[tauri::command]
-pub async fn export_gguf(app: AppHandle, params: ExportParams) -> Result<ExportResult, String> {
+pub async fn export_gguf<R: Runtime>(
+    app: AppHandle<R>,
+    params: ExportParams,
+) -> Result<ExportResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         ferrum_core::set_verbose(params.verbose);
         let emit = |m: &str| {

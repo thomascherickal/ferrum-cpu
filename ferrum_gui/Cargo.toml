@@ -31,3 +31,7 @@ ferrum_core = { path = "../ferrum_core" }
 # and an unoptimized matmul would make them (and `cargo tauri dev`) needlessly slow.
 [profile.dev.package.ferrum_core]
 opt-level = 3
+
+[dev-dependencies]
+# Same crate, plus its mock runtime for IPC tests (no extra packages, no display needed).
+tauri = { version = "2", features = ["test"] }

@@ -39,21 +39,13 @@ pub struct AppState {
     pub bench: Mutex<Option<estimate::Throughput>>,
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+/// Shared state and the command registry. `run` and the mock-runtime tests
+/// both build the app through this, so the tests exercise the real handler list.
+fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             bench: Mutex::new(None),
-        })
-        .setup(|app| {
-            // Mirror every ferrum_core `--verbose` line into the GUI terminal.
-            let handle = app.handle().clone();
-            ferrum_core::set_log_sink(move |line| {
-                let _ = handle.emit("engine-log", line.to_string());
-            });
-            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::download_text,
@@ -77,6 +69,23 @@ pub fn run() {
             datasets::download_hf_file,
             datasets::download_kaggle_file,
         ])
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    configure(tauri::Builder::default())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // Mirror every ferrum_core `--verbose` line into the GUI terminal.
+            let handle = app.handle().clone();
+            ferrum_core::set_log_sink(move |line| {
+                let _ = handle.emit("engine-log", line.to_string());
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running Ferrum SLM Studio");
 }
+
+#[cfg(test)]
+mod ipc_tests;

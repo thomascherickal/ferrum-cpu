@@ -43,6 +43,7 @@ class Element {
   appendChild(c) { c.parentNode = this; this.children.push(c); return c; }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new TextNode(c) : c)); }
   removeChild(c) { this.children = this.children.filter((x) => x !== c); c.parentNode = null; return c; }
+  replaceChildren(...cs) { this.textContent = ""; this.append(...cs); }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this._text + this.children.map((c) => c.textContent).join(""); }
   set textContent(v) { this.children.forEach((c) => (c.parentNode = null)); this.children = []; this._text = String(v); }

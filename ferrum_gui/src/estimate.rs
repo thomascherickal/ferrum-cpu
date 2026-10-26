@@ -33,6 +33,11 @@ pub const REF_MEM_BW_GBPS: f64 = 3.76;
 /// against a fresh run (18.5, 26 and 44 GFLOP/s for the 0.17M, 1.3M and 6.9M models).
 const TRAIN_RMAX_GFLOPS: f64 = 28.0;
 const TRAIN_M0: f64 = 120_000.0;
+/// No Ferrum model trains or evaluates slower than this many effective GFLOP/s
+/// at any thread count: a 7k-matmul-parameter model measured 7.4 GFLOP/s on one
+/// thread (30 epochs of a 3 KB corpus in 0.44 s, 2026-10-26), and the
+/// formula above would otherwise say 0.7 for it. Used as a floor, rounded down.
+const TRAIN_FLOOR_GFLOPS: f64 = 6.0;
 /// Speed-up relative to 8 threads: 2,900 / 6,058 / 6,764 / 7,090 tokens/s at
 /// 1 / 2 / 4 / 8 threads (Manual §13.2).
 const TRAIN_THREAD_SCALE: [(f64, f64); 4] = [(1.0, 0.409), (2.0, 0.854), (4.0, 0.954), (8.0, 1.0)];
@@ -71,14 +76,13 @@ const PREFILL_POINTS: [(f64, f64); 2] = [(29.4e6, 8.3), (1.0e9, 40.0)];
 const PREFILL_F32_FACTOR: f64 = 0.6;
 /// GEMM thread scaling relative to 8 threads: 14.2 vs 42 GFLOP/s (Manual §13.3).
 const GEMM_THREAD_SCALE: [(f64, f64); 2] = [(1.0, 0.34), (8.0, 1.0)];
-/// Decode streams `(non-embedding weights)` once per token at this effective
-/// rate with 8 threads: 0.44 GB in 150 ms for a 1B int4 model (Manual §13.4).
-const DECODE_BYTES_PER_S: f64 = 2.94e9;
+/// Decode streams the non-embedding weights once per token at this effective
+/// rate with 8 threads, by model size (interpolated in log(parameters)):
+/// 0.8 GB/s for a 29.4M-parameter int4 model (14.7 MB in 18.5 ms, measured) and
+/// 2.94 GB/s for a 1B int4 model (0.44 GB in 150 ms, Manual §13.4).
+const DECODE_BYTES_PER_S: [(f64, f64); 2] = [(29.4e6, 0.8e9), (1.0e9, 2.94e9)];
 /// Decode speed relative to 8 threads: 3.95 vs 6.68 tokens/s (Manual §13.4).
 const DECODE_THREAD_SCALE: [(f64, f64); 2] = [(1.0, 0.59), (8.0, 1.0)];
-/// Per-layer fixed cost of a decode step: 18.5 ms for 8 layers measured on a
-/// 29.4M model, where bandwidth is not the limit.
-const DECODE_LAYER_S: f64 = 0.0023;
 /// Full-parameter fine-tune: GFLOP/s of `6 * M * token-passes` on one thread,
 /// measured 4.83 on a 1.05M llama (3 threads: 10.25, 8: 16.46) and 2.33 derived
 /// from Manual §9.2 (6 token-passes/s on 135M with 3 threads = 4.9 GFLOP/s).
@@ -88,8 +92,8 @@ const FT_POINTS: [(f64, f64); 2] = [(1.05e6, 4.83), (135e6, 2.33)];
 const FT_THREAD_SCALE: [(f64, f64); 3] = [(1.0, 1.0), (3.0, 2.1), (8.0, 3.4)];
 /// Peak fine-tune RAM is ~12x the f32 weights (Manual §9.2, measured 6.4 GB on 135M).
 const FT_PEAK_FACTOR: usize = 12;
-/// Cleaning text, MB/s (a conservative round figure; checked by a regression test).
-const CLEAN_BYTES_PER_S: f64 = 20e6;
+/// Cleaning text, bytes/s: 115 MB/s measured on a 1.6 MB text, rounded down.
+const CLEAN_BYTES_PER_S: f64 = 100e6;
 /// Reading a file from disk, bytes/s. Assumed, not measured.
 const DISK_BYTES_PER_S: f64 = 200e6;
 /// Download speed assumption, bytes/s, and the range shown around it.
@@ -123,7 +127,7 @@ pub enum JobKind {
 }
 
 /// Facts about a Ferrum SLM file (`generate`, `evaluate`), read from its GGUF header.
-#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SlmFacts {
     pub params: u64,
@@ -134,7 +138,7 @@ pub struct SlmFacts {
 }
 
 /// Facts about an imported Llama/Qwen GGUF, read from its header.
-#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GgufFacts {
     pub params: u64,
@@ -148,7 +152,7 @@ pub struct GgufFacts {
 }
 
 /// Everything the estimate reads. Missing fields mean "not filled in yet".
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct JobParams {
     // Train tab
@@ -485,7 +489,7 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
     let m = matmul_params(n, vocab, p.embed_dim, p.context_len);
     let flops_tok = 6.0 * m + 12.0 * (p.num_blocks * p.context_len * p.embed_dim) as f64;
     let scale = interp(&TRAIN_THREAD_SCALE, d.threads as f64);
-    let rate = train_gflops_8(m) * 1e9 * scale * speed / flops_tok;
+    let rate = (train_gflops_8(m) * scale).max(TRAIN_FLOOR_GFLOPS) * 1e9 * speed / flops_tok;
     let tokenize = if p.vocab_size >= 256 {
         corpus / 1024.0 * TOKENIZE_MS_PER_KB / 1000.0 / speed
     } else {
@@ -564,11 +568,10 @@ fn evaluate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
     };
     let tokens = bytes / bytes_per_token(s.vocab);
     d.threads = effective_threads(0, d.hw);
-    let rate = train_gflops_8(s.matmul_params as f64)
-        * 1e9
-        * interp(&EVAL_THREAD_SCALE, d.threads as f64)
-        * speed
-        / (6.0 * s.matmul_params as f64).max(1.0);
+    let gflops = (train_gflops_8(s.matmul_params as f64)
+        * interp(&EVAL_THREAD_SCALE, d.threads as f64))
+    .max(TRAIN_FLOOR_GFLOPS);
+    let rate = gflops * 1e9 * speed / (6.0 * s.matmul_params as f64).max(1.0);
     d.note(format!(
         "About {} tokens scored at {} tokens/s (scoring is not batched).",
         tokens.round(),
@@ -611,8 +614,10 @@ fn gguf_run(mut d: Draft, p: &JobParams, speed: f64, bw_speed: f64) -> Estimate 
         gflops *= PREFILL_F32_FACTOR;
     }
     let prefill = 2.0 * non_embd * prompt_tokens / (gflops * 1e9);
-    let bw = DECODE_BYTES_PER_S * interp(&DECODE_THREAD_SCALE, t) * bw_speed;
-    let per_tok = (streamed / bw).max(g.n_layers as f64 * DECODE_LAYER_S);
+    let bw = interp_log(&DECODE_BYTES_PER_S, g.params as f64)
+        * interp(&DECODE_THREAD_SCALE, t)
+        * bw_speed;
+    let per_tok = streamed / bw;
     let decode = p.max_new as f64 * per_tok;
     d.note(format!(
         "Load {load:.1} s + prompt {prefill:.1} s (about {} tokens) + up to {} new tokens at {:.1} tokens/s.",

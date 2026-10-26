@@ -1701,7 +1701,8 @@ build), listed in the comments of `src/estimate.rs`:
   parameters, L blocks, T context, C width) at a rate fitted to the four rows
   of [§6.7](#67-sizing-a-run-for-your-machine) (within 35% of each), scaled by
   the measured 1/2/4/8-thread speed-ups of [§13.2](#132-end-to-end-scaling)
-  and assumed flat beyond 8 threads (not measured). Corpus bytes become tokens
+  and assumed flat beyond 8 threads (not measured), with a floor of 6 GFLOP/s
+  because tiny models do not get slower than that. Corpus bytes become tokens
   with the measured bytes-per-token of the vocabulary (1.0 for characters, 1.8
   at 512, 2.3 at 1,024, 2.8 at 2,048, 3.3 at 4,096 on English text). Training
   RAM is `TransformerNet::estimate_train_peak_bytes`, the same function the
@@ -1802,6 +1803,25 @@ Heavy commands run on blocking tasks and stream events back to the UI
 `finetune-progress`, `export-progress`), so the window stays responsive. Under
 a token budget, `train-progress` sends `total: null` because the epoch count is
 not known in advance.
+
+### 10.7 Testing the GUI
+
+The GUI has no click-through test (it needs a display), so the suite covers
+every layer below the glass, all with tiny models so the whole thing runs in a
+few seconds:
+
+| Layer | What it checks | Where |
+|---|---|---|
+| Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end | `src/ipc_tests.rs` |
+| Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
+| Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
+| Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+
+After changing what `live.js` or `app.js` sends, regenerate the pinned
+arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
+`UPDATE_FIXTURE=1 node ui/app_flows.test.js`, then run `cargo test`.
 
 ---
 

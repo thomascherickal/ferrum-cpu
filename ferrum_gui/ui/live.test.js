@@ -65,6 +65,20 @@ const gotoTab = (doc, name, from = "datasets") => {
 const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = { left: 100, top: 100, right: 220, bottom: 130, width: 120, height: 30 }; el.dispatch("focus"); return bubbleOf(doc).textContent; };
 
 (async () => {
+  // 0. The parameter objects live.js builds from the default form values are the
+  // contract with the Rust `JobParams`; src/../tests/ui_contract.rs checks the same
+  // file field by field. Regenerate with UPDATE_FIXTURE=1 after changing PARAMS.
+  {
+    const { doc } = build();
+    const current = {};
+    for (const id of Object.keys(Live.PARAMS).sort()) {
+      current[id] = { kind: help.helpFor(id).kind, params: Live.PARAMS[id](doc) };
+    }
+    const file = path.join(__dirname, "live_params.fixture.json");
+    if (process.env.UPDATE_FIXTURE) fs.writeFileSync(file, JSON.stringify(current, null, 2) + "\n");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")), current, "live_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/live.test.js");
+  }
+
   // 1. Startup: every control with a help entry gets a tooltip description; hardware line is filled.
   {
     const { doc, live, calls, intervals, estimateCalls } = build();

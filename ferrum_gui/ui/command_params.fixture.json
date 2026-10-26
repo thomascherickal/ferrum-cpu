@@ -1,0 +1,101 @@
+{
+  "clean_text": {
+    "raw": "Hello  there",
+    "opts": {
+      "stripGutenberg": true,
+      "lowercase": true,
+      "collapseWhitespace": true,
+      "normalizePunctuation": true,
+      "stripControlChars": true,
+      "maxChars": 0
+    }
+  },
+  "evaluate_slm": {
+    "modelPath": "/m.gguf",
+    "text": "held out",
+    "textPath": null
+  },
+  "export_gguf": {
+    "modelPath": "/g.gguf",
+    "outPath": "/out.gguf",
+    "quant": "q8_0",
+    "resume": "/t.flck",
+    "force": false,
+    "verbose": false
+  },
+  "finetune_gguf": {
+    "modelPath": "/g.gguf",
+    "corpusPath": "/c.txt",
+    "outPath": "/o.flck",
+    "epochs": 3,
+    "lr": 0.0001,
+    "batchSize": 8,
+    "seqLen": 64,
+    "warmup": 0,
+    "clip": 1,
+    "weightDecay": 0,
+    "dropout": 0,
+    "qat": false,
+    "seed": 1337,
+    "threads": 0,
+    "resume": null,
+    "force": false,
+    "verbose": false
+  },
+  "generate_slm": {
+    "modelPath": "/m.gguf",
+    "seedText": "the q",
+    "numChars": 200,
+    "temp": 0.8,
+    "genSeed": 7,
+    "stream": true,
+    "verbose": false
+  },
+  "run_gguf": {
+    "modelPath": "/g.gguf",
+    "prompt": "hello",
+    "quant": "int4",
+    "maxNew": 64,
+    "temp": 0.8,
+    "topK": 40,
+    "topP": 1,
+    "repPenalty": 1,
+    "genSeed": 5,
+    "ids": null,
+    "force": false,
+    "resume": null,
+    "raw": true
+  },
+  "train_slm": {
+    "method": "transformer",
+    "corpusPath": "/data/c.txt",
+    "modelPath": "/m/out.gguf",
+    "contextLen": 16,
+    "embedDim": 32,
+    "numHeads": 4,
+    "numBlocks": 2,
+    "hiddenDim": 64,
+    "epochs": 100,
+    "lr": 0.01,
+    "batchSize": 16,
+    "vocabSize": 512,
+    "seed": 1337,
+    "threads": 0,
+    "verbose": false,
+    "windowStride": 0,
+    "maxTokens": 50000000,
+    "weightDecay": 0,
+    "dropout": 0,
+    "gradClip": 0,
+    "warmupSteps": 0,
+    "cosineLr": true,
+    "weightTying": false,
+    "qat": true,
+    "tokenizerPath": "",
+    "checkpointPath": "",
+    "checkpointEvery": 0,
+    "resume": false,
+    "valFraction": 0.1,
+    "patience": 0
+  }
+}

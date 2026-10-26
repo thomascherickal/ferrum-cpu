@@ -1,0 +1,101 @@
+{
+  "dsClean": {
+    "kind": "clean_text",
+    "params": {
+      "textChars": 0
+    }
+  },
+  "dsDownload": {
+    "kind": "download",
+    "params": {
+      "maxMb": 8
+    }
+  },
+  "dsLoadFile": {
+    "kind": "load_file",
+    "params": {
+      "textPath": ""
+    }
+  },
+  "evRun": {
+    "kind": "evaluate",
+    "params": {
+      "modelPath": "",
+      "textPath": "",
+      "textChars": 0
+    }
+  },
+  "exExport": {
+    "kind": "gguf_export",
+    "params": {
+      "modelPath": "",
+      "quant": "q8_0",
+      "resumePath": ""
+    }
+  },
+  "exInspect": {
+    "kind": "gguf_info",
+    "params": {
+      "modelPath": ""
+    }
+  },
+  "ftRun": {
+    "kind": "gguf_finetune",
+    "params": {
+      "modelPath": "",
+      "corpusPath": "",
+      "epochs": 3,
+      "batchSize": 8,
+      "seqLen": 64,
+      "threads": 0,
+      "resumePath": ""
+    }
+  },
+  "genStart": {
+    "kind": "generate",
+    "params": {
+      "modelPath": "",
+      "numChars": 200
+    }
+  },
+  "ggInspect": {
+    "kind": "gguf_info",
+    "params": {
+      "modelPath": ""
+    }
+  },
+  "ggRun": {
+    "kind": "gguf_run",
+    "params": {
+      "modelPath": "",
+      "quant": "int8",
+      "maxNew": 64,
+      "promptChars": 0,
+      "resumePath": ""
+    }
+  },
+  "miInspect": {
+    "kind": "model_info",
+    "params": {
+      "modelPath": ""
+    }
+  },
+  "trStart": {
+    "kind": "train",
+    "params": {
+      "corpusPath": "",
+      "contextLen": 16,
+      "embedDim": 32,
+      "numHeads": 4,
+      "numBlocks": 2,
+      "hiddenDim": 64,
+      "epochs": 100,
+      "batchSize": 16,
+      "vocabSize": 512,
+      "threads": 0,
+      "windowStride": 0,
+      "maxTokens": 0,
+      "valFraction": 0
+    }
+  }
+}
