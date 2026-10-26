@@ -110,6 +110,7 @@ Do not break these; they are the product's selling points.
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) and `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) |
+| `docs/` | `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace** |
 
 Sibling folders `../Ferrum-ML` (tabular MLP demos, depends on `ferrum_core` by
@@ -196,7 +197,7 @@ won't catch JS errors; `node --check` is the gate. Tabs are generic: a
 - Deliberate simplifications are marked with a `// ponytail:` comment naming the
   ceiling and the upgrade path.
 - Docs are `ReadMe.md`, `Manual.md`, `Status.md`, `Samples.md`, and
-  `glossary.md`. Don't add other top-level docs; update `Status.md` (snapshot,
+  `glossary.md`, plus the article `docs/SLM-edge-use-cases.md`. Don't add other top-level docs; update `Status.md` (snapshot,
   test counts, known issues, roadmap, §7 compatibility) when shipping a
   feature. Every command in `Samples.md` is executed and its output pasted from
   the run; no invented numbers. `glossary.md` is a beginner-facing guide to LLM
