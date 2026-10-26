@@ -708,6 +708,33 @@
       kind: "evaluate",
       beginner: "Perplexity is the key number. Lower is better, and the uniform baseline column is what a model that learned nothing would score.",
     },
+    trCancel: {
+      title: "Stop training",
+      does: "Ends the running training after the current step. The model trained so far is saved to the Model output path (and the checkpoint is written if you set one), so you keep what was learned and can resume.",
+      kind: "instant",
+      beginner: "Handy when the loss has stopped improving or you started with too many epochs. A stopped model is simply less trained, not broken.",
+    },
+    genCancel: {
+      title: "Stop",
+      does: "Ends the running generation after the current piece of text. What was produced so far stays in the output box.",
+      kind: "instant",
+    },
+    ggCancel: {
+      title: "Stop",
+      does: "Ends the running GGUF generation before the next token. The text produced so far is shown. While the model is still loading, it stops once loading finishes.",
+      kind: "instant",
+      beginner: "On a CPU a large model writes only a few tokens per second, so stopping early saves a lot of waiting.",
+    },
+    ftCancel: {
+      title: "Stop fine-tuning",
+      does: "Ends the running fine-tune after the current step and still writes the checkpoint, so you can continue later with the Resume checkpoint field or try the partly tuned model on the GGUF tab.",
+      kind: "instant",
+    },
+    exCancel: {
+      title: "Cancel export",
+      does: "Cancels the export between its phases (opening, loading, applying the checkpoint). Nothing is written when it is cancelled. Once the final encode-and-write phase has started it cannot be interrupted and the file is finished.",
+      kind: "instant",
+    },
     evClear: {
       title: "Clear table",
       does: "Removes all rows from the evaluation table. No file is touched.",

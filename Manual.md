@@ -1763,6 +1763,20 @@ prepare` (§5.1) for those.
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
 
+**Stopping a job.** Train, Generate, GGUF, Fine-tune and Export show a Stop button
+while they run (the `cancel_job` command; one running job per kind, so starting a
+second training run, say, fails at once with "a training job is already running").
+*Train* and *Fine-tune* stop after the current optimizer step through the engine's
+`StopCondition`, exactly as `--max-seconds` does: the model trained so far is
+saved (and the checkpoint, if a path is set, so the run resumes) and the tab says
+"stopped at step N". *Generate* and *GGUF* stop after the current fragment or
+token and keep the text so far. *Export* stops between its phases (opening,
+loading, applying the checkpoint) and writes nothing; once the final
+encode-and-write has begun it cannot be interrupted. *Evaluate* has no Stop
+button: it is a single scoring call, but it too refuses to start while another
+evaluation runs. Models, checkpoints and exports are written through a temporary
+file and renamed, so a cancel never leaves a half-written file.
+
 **Hardware detection.** The `hardware_info` command reports the CPU model, physical
 and logical cores, Ferrum's thread count, total and available RAM, and any GPUs.
 CPU and RAM come from `sysinfo`. GPUs come from `nvidia-smi` (when it can be
@@ -1871,6 +1885,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
+src/jobs.rs       one running slot per kind of long job + the cancel_job command
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
@@ -1895,11 +1910,11 @@ few seconds:
 | Layer | What it checks | Where |
 |---|---|---|
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
-| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end | `src/ipc_tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
@@ -2333,7 +2348,7 @@ Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
 |---|---|---|
 | `gguf` (directory: `format`, `cursor`, `header`, `tensors`, `dequant`, `llama`) | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts; numeric metadata arrays are held at their on-disk width (`MetaValue::Nums`, 1-8 bytes per element, not 32) and a count beyond the bytes left in the file is rejected before allocating |
 | `gguf_tokenizer` | `GgufTokenizer::from_gguf`, `encode`, `decode` | BPE exact; SPM decode exact, encode greedy longest-match |
-| `llm` | `LlamaModel::{forward, generate}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
+| `llm` | `LlamaModel::{forward, generate, generate_cancellable}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
 | `llm_train` | `LlamaTrainer::{new, set_lr, set_lr_schedule, set_grad_clip, train_step, train_batch, finetune_epoch_threaded, save_checkpoint, load_checkpoint_into}` | finite-difference-checked backward pass; AdamW; `.flck` checkpoints; rejects quantized weights |
 | `gguf_write` | `GgufBuilder`, `write_llama_gguf`, `LlamaModel::write_gguf`, `GgufQuant` | byte-exact GGUF v3; encoders are exact inverses of the decoders (verified round trip) |
 | `token_file` | `write_token_file`, `TokenSink::push`, `TokenFile::{open, read_window, len}`, `is_gguf_file`; `GenerativeSLM::{train_transformer_tokens, train_transformer_tokens_validated}` | the `ferrum-tokens` corpus file and streamed training, bit-identical to in-memory training ([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)) |

@@ -92,6 +92,26 @@ bySel(".browse").forEach((b) => b.addEventListener("click", () => pickOpen(b.dat
 bySel(".browse-save").forEach((b) => b.addEventListener("click", () => pickSave(b.dataset.target)));
 bySel(".browse-dir").forEach((b) => b.addEventListener("click", () => pickDir(b.dataset.target)));
 
+// ── Job control: a Stop button per long job, shown while it runs ─────────────
+const stopAsked = {}; // kind -> the user pressed Stop for the job running now
+function wireStop(btnId, kind) {
+  $(btnId).addEventListener("click", async () => {
+    stopAsked[kind] = true;
+    $(btnId).disabled = true; // asked once; the job ends at its next check
+    try { await invoke("cancel_job", { kind }); } catch (e) { toast("Stop failed: " + e, "error"); }
+  });
+}
+function jobRunning(btnId, kind, on) {
+  stopAsked[kind] = false;
+  $(btnId).classList.toggle("hidden", !on);
+  $(btnId).disabled = false;
+}
+wireStop("trCancel", "train");
+wireStop("genCancel", "generate");
+wireStop("ggCancel", "run");
+wireStop("ftCancel", "finetune");
+wireStop("exCancel", "export");
+
 // ── Terminal (bottom dock) ───────────────────────────────────────────────────
 const termOut = $("termOut");
 function termLine(text, cls = "") {
@@ -319,14 +339,18 @@ $("trStart").addEventListener("click", async () => {
   $("trResult").textContent = "";
   $("trStatus").textContent = "training…";
   $("trStart").disabled = true;
+  jobRunning("trCancel", "train", true);
   try {
     const r = await invoke("train_slm", { params });
-    $("trStatus").textContent = "done";
-    $("trResult").textContent =
+    $("trStatus").textContent = r.stopped ? `stopped at step ${r.stoppedAtStep}` : "done";
+    $("trResult").textContent = (r.stopped
+      ? `Stopped at step ${r.stoppedAtStep}; the model trained so far was saved` +
+        (params.checkpointPath ? ` and the checkpoint written (tick Resume to continue).\n` : ".\n")
+      : "") +
       `Saved ${r.bytes.toLocaleString()} bytes → ${r.modelPath}\n` +
       `method=${r.method}  final loss=${r.finalLoss.toFixed(6)}  time=${r.seconds.toFixed(2)}s\n` +
       `input_dim=${r.inputDim}  output_dim=${r.outputDim}  tokenizer=${r.tokenizer}  layers=${r.layers}`;
-    toast("Training complete", "ok");
+    toast(r.stopped ? `Training stopped at step ${r.stoppedAtStep}; model saved` : "Training complete", "ok");
     if (!$("genModel").value) $("genModel").value = r.modelPath;
     if (!$("evModel").value) $("evModel").value = r.modelPath;
     if (!$("miPath").value) $("miPath").value = r.modelPath;
@@ -334,7 +358,7 @@ $("trStart").addEventListener("click", async () => {
     $("trStatus").textContent = "error";
     setErr("errTrain", String(e));
     toast("Training failed: " + e, "error");
-  } finally { $("trStart").disabled = false; }
+  } finally { $("trStart").disabled = false; jobRunning("trCancel", "train", false); }
 });
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -361,8 +385,10 @@ $("genStart").addEventListener("click", async () => {
   $("genStatus").textContent = "generating…";
   $("genStart").disabled = true;
   generating = params.stream;
+  jobRunning("genCancel", "generate", true);
   try {
     const out = await invoke("generate_slm", { params });
+    const stopped = stopAsked.generate; // Stop was pressed (the text so far is returned)
     // Stop accepting late gen-fragment events *before* reconciling, then set the
     // display from the authoritative return value so a dropped/late stream tail
     // can never leave the output truncated (G1).
@@ -372,12 +398,12 @@ $("genStart").addEventListener("click", async () => {
     } else {
       $("genOut").textContent = out;
     }
-    $("genStatus").textContent = `done (${out.length} chars)`;
+    $("genStatus").textContent = `${stopped ? "stopped" : "done"} (${out.length} chars)`;
   } catch (e) {
     $("genStatus").textContent = "error";
     setErr("errGen", String(e));
     toast("Generation failed: " + e, "error");
-  } finally { generating = false; $("genStart").disabled = false; }
+  } finally { generating = false; $("genStart").disabled = false; jobRunning("genCancel", "generate", false); }
 });
 
 // ── Evaluate ──────────────────────────────────────────────────────────────────
@@ -529,16 +555,21 @@ $("ggRun").addEventListener("click", async () => {
   $("ggOut").textContent = "";
   $("ggStatus").textContent = "loading & generating… (CPU: this can take a while)";
   $("ggRun").disabled = true;
+  jobRunning("ggCancel", "run", true);
   try {
     const r = await invoke("run_gguf", { params });
     $("ggOut").textContent = r.text;
     $("ggStatus").textContent =
-      `done — ${r.generated} tokens in ${r.seconds.toFixed(1)}s (${r.tokensPerSec.toFixed(1)} tok/s, prompt ${r.promptTokens} tok)`;
+      `${r.stopped ? "stopped" : "done"} — ${r.generated} tokens in ${r.seconds.toFixed(1)}s (${r.tokensPerSec.toFixed(1)} tok/s, prompt ${r.promptTokens} tok)`;
   } catch (e) {
-    $("ggStatus").textContent = "error";
-    setErr("errGguf", String(e));
-    toast("Run failed: " + e, "error");
-  } finally { $("ggRun").disabled = false; }
+    if (stopAsked.run && /cancelled/.test(String(e))) {
+      $("ggStatus").textContent = "stopped before any text was produced";
+    } else {
+      $("ggStatus").textContent = "error";
+      setErr("errGguf", String(e));
+      toast("Run failed: " + e, "error");
+    }
+  } finally { $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
 });
 
 // ── Fine-tune (GGUF) ────────────────────────────────────────────────────────────
@@ -594,22 +625,23 @@ $("ftRun").addEventListener("click", async () => {
   $("ftResult").textContent = "";
   $("ftStatus").textContent = "fine-tuning… (CPU: this can take a while)";
   $("ftRun").disabled = true;
+  jobRunning("ftCancel", "finetune", true);
   try {
     const r = await invoke("finetune_gguf", { params });
-    $("ftStatus").textContent = "done";
-    $("ftResult").textContent =
+    $("ftStatus").textContent = r.stopped ? `stopped at step ${r.steps}` : "done";
+    $("ftResult").textContent = (r.stopped ? `Stopped at step ${r.steps}; the checkpoint so far was saved and can be resumed.\n` : "") +
       `Saved ${r.bytes.toLocaleString()} bytes → ${r.outPath}\n` +
       `epochs=${r.epochs}  first loss=${r.firstLoss.toFixed(6)}  final loss=${r.finalLoss.toFixed(6)}\n` +
       `tokens=${r.tokens.toLocaleString()}  steps=${r.steps}  time=${r.seconds.toFixed(2)}s\n` +
       `Run it: GGUF tab → set "Fine-tune checkpoint" to ${r.outPath}`;
-    toast("Fine-tune complete", "ok");
+    toast(r.stopped ? `Fine-tune stopped at step ${r.steps}; checkpoint saved` : "Fine-tune complete", "ok");
     if (!$("ggPath").value) $("ggPath").value = params.modelPath;
     if (!$("ggResume").value) $("ggResume").value = r.outPath;
   } catch (e) {
     $("ftStatus").textContent = "error";
     setErr("errFt", String(e));
     toast("Fine-tune failed: " + e, "error");
-  } finally { $("ftRun").disabled = false; }
+  } finally { $("ftRun").disabled = false; jobRunning("ftCancel", "finetune", false); }
 });
 
 // ── Export (write a GGUF back out) ──────────────────────────────────────────────
@@ -658,6 +690,7 @@ $("exExport").addEventListener("click", async () => {
   $("exResult").textContent = "";
   $("exStatus").textContent = "starting… (CPU: a large model can take minutes)";
   $("exExport").disabled = true;
+  jobRunning("exCancel", "export", true);
   try {
     const r = await invoke("export_gguf", { params });
     $("exStatus").textContent = "done";
@@ -667,10 +700,14 @@ $("exExport").addEventListener("click", async () => {
       `The file runs in llama.cpp / ollama / LM Studio as-is.`;
     toast("Export complete", "ok");
   } catch (e) {
-    $("exStatus").textContent = "error";
-    setErr("errExport", String(e));
-    toast("Export failed: " + e, "error");
-  } finally { $("exExport").disabled = false; }
+    if (stopAsked.export && /cancelled/.test(String(e))) {
+      $("exStatus").textContent = "cancelled; nothing was written";
+    } else {
+      $("exStatus").textContent = "error";
+      setErr("errExport", String(e));
+      toast("Export failed: " + e, "error");
+    }
+  } finally { $("exExport").disabled = false; jobRunning("exCancel", "export", false); }
 });
 
 // ── System monitor ──────────────────────────────────────────────────────────

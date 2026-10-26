@@ -6,6 +6,7 @@
 //! - Heavy/blocking work runs inside `spawn_blocking` so the UI thread stays
 //!   responsive and events can stream while the command runs.
 
+use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{
@@ -242,21 +243,34 @@ pub struct TrainResult {
     pub tokenizer: String,
     pub layers: usize,
     pub bytes: u64,
+    /// A cancel ended the run early; the model so far was saved.
+    pub stopped: bool,
+    /// Optimizer step at which the run stopped (`None` unless `stopped`).
+    pub stopped_at_step: Option<u64>,
 }
 
 /// Train a transformer SLM in-process, streaming
 /// `train-progress` events and (if `verbose`) `engine-log` lines, then save it.
+/// `cancel_job("train")` ends the run after the current optimizer step; the
+/// model trained so far is still saved (and checkpointed, if a checkpoint path
+/// is set), exactly as `train --max-seconds` does.
 #[tauri::command]
 pub async fn train_slm<R: Runtime>(
     app: AppHandle<R>,
+    state: State<'_, AppState>,
     params: TrainParams,
 ) -> Result<TrainResult, String> {
-    tauri::async_runtime::spawn_blocking(move || train_inner(app, params))
+    let job = state.jobs.start(Job::Train)?;
+    tauri::async_runtime::spawn_blocking(move || train_inner(app, params, job))
         .await
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn train_inner<R: Runtime>(app: AppHandle<R>, p: TrainParams) -> Result<TrainResult, String> {
+fn train_inner<R: Runtime>(
+    app: AppHandle<R>,
+    p: TrainParams,
+    job: JobGuard,
+) -> Result<TrainResult, String> {
     // ---- shared validation with clear messages ----
     checked_path("output model path", &p.model_path, false)?;
     checked_path("corpus path", &p.corpus_path, true)?;
@@ -351,6 +365,7 @@ fn train_inner<R: Runtime>(app: AppHandle<R>, p: TrainParams) -> Result<TrainRes
                 checkpoint_every: p.checkpoint_every,
                 resume: p.resume,
                 log_every_steps: 0,
+                stop: job.stop().clone(),
                 ..TransformerConfig::default()
             };
             if p.val_fraction > 0.0 {
@@ -390,6 +405,7 @@ fn train_inner<R: Runtime>(app: AppHandle<R>, p: TrainParams) -> Result<TrainRes
     let bytes = std::fs::metadata(&p.model_path)
         .map(|m| m.len())
         .unwrap_or(0);
+    let stopped = job.stop().stopped();
     let tokenizer = if slm.meta.tokenizer_state.is_empty() {
         "character-level".to_string()
     } else {
@@ -405,6 +421,8 @@ fn train_inner<R: Runtime>(app: AppHandle<R>, p: TrainParams) -> Result<TrainRes
         tokenizer,
         layers: slm.model.len(),
         bytes,
+        stopped: stopped.is_some(),
+        stopped_at_step: stopped.map(|(_, step)| step),
     };
     let _ = app.emit("train-done", result.clone());
     Ok(result)
@@ -501,11 +519,14 @@ fn parse_stops(raw: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Carried by `resume_unwind` out of the engine's text callback to end a cancelled generation.
+struct Cancelled;
+
 /// Generate exactly as `train_transformer generate` does for the same flags:
 /// a token budget or stop strings select the token path (`generate_tokens_with`,
 /// stop text excluded), otherwise `num_chars` characters. Returns seed +
 /// continuation; `on_text` receives only the continuation, as it is produced.
-pub(crate) fn run_generation(
+fn generate_once(
     slm: &GenerativeSLM,
     p: &GenParams,
     on_text: &mut dyn FnMut(&str),
@@ -527,35 +548,70 @@ pub(crate) fn run_generation(
     out.map_err(|e| format!("generation failed: {e}"))
 }
 
+/// [`generate_once`] that ends as soon as `cancelled()` answers true after a fragment, returning
+/// (seed + the text so far, true).
+///
+/// ponytail: the three decode loops in `ferrum_core` have no stop hook, so the callback unwinds
+/// (`resume_unwind` runs no panic hook and prints nothing) and `catch_unwind` stops here; the
+/// loops only borrow the model, so nothing is left half-built. Upgrade path: a cancel hook in
+/// `generate_stream_core` and the stream types.
+pub(crate) fn run_generation(
+    slm: &GenerativeSLM,
+    p: &GenParams,
+    cancelled: &dyn Fn() -> bool,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<(String, bool), String> {
+    use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+    let mut so_far = String::new();
+    let run = catch_unwind(AssertUnwindSafe(|| {
+        generate_once(slm, p, &mut |frag| {
+            so_far.push_str(frag);
+            on_text(frag);
+            if cancelled() {
+                resume_unwind(Box::new(Cancelled));
+            }
+        })
+    }));
+    match run {
+        Ok(text) => text.map(|t| (t, false)),
+        Err(payload) if payload.is::<Cancelled>() => Ok((format!("{}{so_far}", p.seed_text), true)),
+        Err(payload) => resume_unwind(payload),
+    }
+}
+
 /// Load a model and generate text. With `stream = true`, each fragment is
 /// emitted as a `gen-fragment` event as it is produced; the full string is also
-/// returned.
+/// returned. `cancel_job("generate")` ends it after the current fragment and
+/// returns the text produced so far.
 #[tauri::command]
 pub async fn generate_slm<R: Runtime>(
     app: AppHandle<R>,
+    state: State<'_, AppState>,
     params: GenParams,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || gen_inner(app, params))
+    let job = state.jobs.start(Job::Generate)?;
+    tauri::async_runtime::spawn_blocking(move || gen_inner(app, params, job))
         .await
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams) -> Result<String, String> {
+fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Result<String, String> {
     sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?; // fail before the model loads
     checked_path("model path", &p.model_path, true)?;
     let slm = GenerativeSLM::load(&p.model_path)
         .map_err(|e| format!("cannot load model {}: {e}", p.model_path))?;
 
     ferrum_core::set_verbose(p.verbose);
+    let cancelled = || job.cancelled();
     let result = if p.stream {
-        run_generation(&slm, &p, &mut |frag| {
+        run_generation(&slm, &p, &cancelled, &mut |frag| {
             let _ = app.emit("gen-fragment", frag.to_string());
         })
     } else {
-        run_generation(&slm, &p, &mut |_| {})
+        run_generation(&slm, &p, &cancelled, &mut |_| {})
     };
     ferrum_core::set_verbose(false);
-    result
+    result.map(|(text, _stopped)| text)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -583,8 +639,15 @@ pub struct EvalRow {
 
 /// Score a model against held-out text; returns one table row.
 #[tauri::command]
-pub async fn evaluate_slm(params: EvalParams) -> Result<EvalRow, String> {
+pub async fn evaluate_slm(
+    state: State<'_, AppState>,
+    params: EvalParams,
+) -> Result<EvalRow, String> {
+    // One pass of the engine's scorer, which has no stop hook: it can be refused while another
+    // evaluation runs, but not cancelled.
+    let job = state.jobs.start(Job::Evaluate)?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _job = job;
         checked_path("model path", &params.model_path, true)?;
         if let Some(tp) = params.text_path.as_deref().filter(|s| !s.trim().is_empty()) {
             checked_path("held-out text path", tp, true)?;
@@ -846,17 +909,27 @@ pub struct GgufRunResult {
     pub generated: usize,
     pub seconds: f32,
     pub tokens_per_sec: f32,
+    /// A cancel ended the run early; `text` is what was produced so far.
+    pub stopped: bool,
 }
 
 /// Import a llama/qwen2 GGUF and generate from it (mirrors `slm_cli run-gguf`).
+/// `cancel_job("run")` stops it before the next prompt or generated token.
 #[tauri::command]
-pub async fn run_gguf(params: GgufRunParams) -> Result<GgufRunResult, String> {
-    tauri::async_runtime::spawn_blocking(move || gguf_run_inner(params))
+pub async fn run_gguf(
+    state: State<'_, AppState>,
+    params: GgufRunParams,
+) -> Result<GgufRunResult, String> {
+    let job = state.jobs.start(Job::Run)?;
+    tauri::async_runtime::spawn_blocking(move || gguf_run_inner(params, job))
         .await
         .map_err(|e| format!("task error: {e}"))?
 }
 
-fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
+/// The error of a run that was cancelled before it produced anything.
+const CANCELLED_EARLY: &str = "cancelled before any text was produced";
+
+fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, String> {
     let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
     checked_path("model path", &p.model_path, true)?;
     if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -885,9 +958,15 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
     }
 
     let tok = GgufTokenizer::from_gguf(&g).ok();
+    if job.cancelled() {
+        return Err(CANCELLED_EARLY.into());
+    }
     let mut model = g
         .load_llama_prec(prec)
         .map_err(|e| format!("cannot load model: {e}"))?;
+    if job.cancelled() {
+        return Err(CANCELLED_EARLY.into());
+    }
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
@@ -949,8 +1028,13 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
         }
     }
     let t0 = std::time::Instant::now();
+    let stopped = std::cell::Cell::new(false);
     let out = model
-        .generate(&prompt_ids, p.max_new, &params, &stops, &mut rng)
+        .generate_cancellable(&prompt_ids, p.max_new, &params, &stops, &mut rng, &|| {
+            let c = job.cancelled();
+            stopped.set(stopped.get() || c);
+            c
+        })
         .map_err(|e| format!("generation failed: {e}"))?;
     let seconds = t0.elapsed().as_secs_f32();
 
@@ -968,6 +1052,7 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
         generated: out.len(),
         tokens_per_sec: out.len() as f32 / seconds.max(1e-6),
         seconds,
+        stopped: stopped.get(),
     })
 }
 
@@ -1008,24 +1093,42 @@ pub struct FinetuneResult {
     pub tokens: usize,
     pub steps: u64,
     pub bytes: u64,
+    /// A cancel ended the run early; the checkpoint so far was saved and resumes.
+    pub stopped: bool,
 }
 
 /// AdamW-fine-tune an imported llama/qwen2 GGUF on a text corpus and write a
 /// `.flck` checkpoint that `run_gguf { resume }` can overlay on the base model.
-/// Per-epoch progress streams as `finetune-progress` events.
+/// Per-epoch progress streams as `finetune-progress` events. `cancel_job("finetune")`
+/// ends the run after the current optimizer step and still writes the checkpoint,
+/// so it can be resumed.
 #[tauri::command]
 pub async fn finetune_gguf<R: Runtime>(
     app: AppHandle<R>,
+    state: State<'_, AppState>,
     params: FinetuneParams,
 ) -> Result<FinetuneResult, String> {
-    tauri::async_runtime::spawn_blocking(move || finetune_inner(app, params))
+    let job = state.jobs.start(Job::Finetune)?;
+    tauri::async_runtime::spawn_blocking(move || finetune_inner(app, params, job))
         .await
         .map_err(|e| format!("task error: {e}"))?
+}
+
+/// Write `bytes` to `path` through `<path>.tmp` and a rename, so a failure never leaves a
+/// truncated file at `path` (and never a stray `.tmp`).
+fn write_atomic(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = format!("{path}.tmp");
+    std::fs::write(&tmp, bytes)
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
 }
 
 fn finetune_inner<R: Runtime>(
     app: AppHandle<R>,
     p: FinetuneParams,
+    job: JobGuard,
 ) -> Result<FinetuneResult, String> {
     checked_path("output checkpoint path (.flck)", &p.out_path, false)?;
     checked_path("model path", &p.model_path, true)?;
@@ -1143,14 +1246,23 @@ fn finetune_inner<R: Runtime>(
     let t0 = std::time::Instant::now();
     let mut first_loss = f32::NAN;
     let mut final_loss = f32::NAN;
+    let total_steps = tr.step_count() + steps_per_epoch * p.epochs as u64;
+    let mut epochs_run = 0;
+    let mut stopped = false;
     for e in 0..p.epochs {
-        let loss = match tr.finetune_epoch_threaded(&tokens, seq, batch, &mut rng, threads) {
-            Ok(l) => l,
-            Err(err) => {
-                cleanup();
-                return Err(format!("fine-tuning failed: {err}"));
-            }
-        };
+        // A cancel ends the epoch after a step (never the last step of the run).
+        let (loss, halted) =
+            match tr.finetune_epoch_until(&tokens, seq, batch, &mut rng, threads, &mut |step| {
+                step < total_steps && job.cancelled()
+            }) {
+                Ok(r) => r,
+                Err(err) => {
+                    cleanup();
+                    return Err(format!("fine-tuning failed: {err}"));
+                }
+            };
+        epochs_run = e + 1;
+        stopped = halted;
         if e == 0 {
             first_loss = loss;
         }
@@ -1161,12 +1273,15 @@ fn finetune_inner<R: Runtime>(
                 "epoch": e + 1, "total": p.epochs, "loss": loss, "ppl": loss.exp(),
             }),
         );
+        if halted {
+            break;
+        }
     }
     let seconds = t0.elapsed().as_secs_f64();
 
     // 6. Save the checkpoint.
     let bytes = tr.save_checkpoint(&rng);
-    std::fs::write(&p.out_path, &bytes).map_err(|e| {
+    write_atomic(&p.out_path, &bytes).map_err(|e| {
         cleanup();
         format!("cannot write {}: {e}", p.out_path)
     })?;
@@ -1174,13 +1289,14 @@ fn finetune_inner<R: Runtime>(
 
     let result = FinetuneResult {
         out_path: p.out_path.clone(),
-        epochs: p.epochs,
+        epochs: epochs_run,
         first_loss,
         final_loss,
         seconds,
         tokens: tokens.len(),
         steps: tr.step_count(),
         bytes: bytes.len() as u64,
+        stopped,
     };
     let _ = app.emit("finetune-done", result.clone());
     Ok(result)
@@ -1248,7 +1364,20 @@ fn ggml_type_name(t: u32) -> String {
 /// The testable core of the Export tab: everything `export_gguf` does except
 /// event emission. `progress` receives one human-readable line per phase
 /// (prefixes: "opening", "loading", "applying", "encoding").
-pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<ExportResult, String> {
+pub(crate) fn do_export(
+    p: &ExportParams,
+    progress: &dyn Fn(&str),
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ExportResult, String> {
+    // Cancel is polled between the phases; the encode-and-write phase is one call into the
+    // engine and cannot be interrupted (it writes `<out>.tmp` and renames it when complete).
+    let check = || {
+        if cancelled() {
+            Err(String::from("export cancelled; no file was written"))
+        } else {
+            Ok(())
+        }
+    };
     checked_path("output path (.gguf)", &p.out_path, false)?;
     let quant = ferrum_core::GgufQuant::from_str(&p.quant)
         .ok_or_else(|| format!("unknown output type '{}'", p.quant))?;
@@ -1288,11 +1417,13 @@ pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<Exp
         }
     }
 
+    check()?;
     let t0 = std::time::Instant::now();
     progress("loading weights (f32)…");
     let mut model = g
         .load_llama_prec(None)
         .map_err(|e| format!("cannot load model: {e}"))?;
+    check()?;
 
     if let Some(ckpt) = resume {
         progress(&format!("applying {ckpt}…"));
@@ -1302,6 +1433,7 @@ pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<Exp
         tr.load_checkpoint_from_vec(bytes)
             .map_err(|e| format!("cannot apply checkpoint: {e}"))?;
         model = tr.model;
+        check()?;
     }
 
     progress(&format!("encoding + writing ({})…", p.quant));
@@ -1337,14 +1469,16 @@ pub(crate) fn do_export(p: &ExportParams, progress: &dyn Fn(&str)) -> Result<Exp
 #[tauri::command]
 pub async fn export_gguf<R: Runtime>(
     app: AppHandle<R>,
+    state: State<'_, AppState>,
     params: ExportParams,
 ) -> Result<ExportResult, String> {
+    let job = state.jobs.start(Job::Export)?;
     tauri::async_runtime::spawn_blocking(move || {
         ferrum_core::set_verbose(params.verbose);
         let emit = |m: &str| {
             let _ = app.emit("export-progress", m.to_string());
         };
-        let r = do_export(&params, &emit);
+        let r = do_export(&params, &emit, &|| job.cancelled());
         ferrum_core::set_verbose(false);
         r
     })
@@ -1586,7 +1720,9 @@ mod tests {
 
     fn generate_with_gui(slm: &GenerativeSLM, p: &GenParams) -> (String, String) {
         let mut streamed = String::new();
-        let out = run_generation(slm, p, &mut |f| streamed.push_str(f)).unwrap();
+        let (out, stopped) =
+            run_generation(slm, p, &|| false, &mut |f| streamed.push_str(f)).unwrap();
+        assert!(!stopped);
         (out, streamed)
     }
 
@@ -1715,6 +1851,116 @@ mod tests {
         }
     }
 
+    // ── G9: cancelling jobs ──────────────────────────────────────────────────
+
+    #[test]
+    fn a_cancelled_generation_returns_the_text_so_far_for_both_paths() {
+        let slm = tiny_bpe();
+        for max_tokens in [0usize, 30] {
+            let mut p = gen_params("the ");
+            p.temp = 0.0;
+            p.max_tokens = max_tokens;
+            let (full, _) = generate_with_gui(&slm, &p);
+            let polls = std::cell::Cell::new(0);
+            let mut streamed = String::new();
+            let (part, stopped) = run_generation(
+                &slm,
+                &p,
+                &|| {
+                    polls.set(polls.get() + 1);
+                    polls.get() >= 3
+                },
+                &mut |f| streamed.push_str(f),
+            )
+            .unwrap();
+            assert!(stopped, "max_tokens {max_tokens}");
+            assert_eq!(part, format!("the {streamed}"));
+            assert!(
+                full.starts_with(&part) && part.len() < full.len(),
+                "{part:?} vs {full:?}"
+            );
+        }
+        // A cancel that never comes changes nothing; other panics still propagate.
+        let r = std::panic::catch_unwind(|| {
+            let mut p = gen_params("the ");
+            p.temp = 0.0;
+            run_generation(&tiny_bpe(), &p, &|| false, &mut |_| panic!("boom"))
+        });
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn a_cancelled_export_writes_nothing_and_leaves_no_temp_file() {
+        let dir =
+            std::env::temp_dir().join(format!("ferrum_gui_exportcancel_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.gguf");
+        let dst = dir.join("dst.gguf");
+        std::fs::write(&src, crate::test_support::tiny_llama_gguf(8, 2, 2, 16, 32)).unwrap();
+        let p = ExportParams {
+            model_path: src.to_string_lossy().into_owned(),
+            out_path: dst.to_string_lossy().into_owned(),
+            quant: "f32".into(),
+            resume: None,
+            force: false,
+            verbose: false,
+        };
+        // Cancelled at each of the polls in turn: always an error, never a file.
+        for after in 0..2 {
+            let polls = std::cell::Cell::new(0);
+            let e = do_export(&p, &|_| {}, &|| {
+                polls.set(polls.get() + 1);
+                polls.get() > after
+            })
+            .unwrap_err();
+            assert!(e.contains("cancelled"), "{e}");
+            assert!(!dst.exists(), "no output after a cancel at poll {after}");
+            assert!(!dir.join("dst.gguf.tmp").exists());
+        }
+        // Without a cancel the same call completes.
+        assert!(do_export(&p, &|_| {}, &|| false).is_ok());
+        assert!(dst.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_gguf_run_cancelled_before_it_starts_says_so() {
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_runcancel_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("m.gguf");
+        std::fs::write(&src, crate::test_support::tiny_llama_gguf(8, 2, 2, 16, 32)).unwrap();
+        let p = |max_new: usize| -> GgufRunParams {
+            serde_json::from_value(serde_json::json!({
+                "modelPath": src, "prompt": "hi", "quant": "int8", "maxNew": max_new, "temp": 0.0,
+                "genSeed": 1, "ids": null, "force": false, "resume": null, "raw": true
+            }))
+            .unwrap()
+        };
+        let jobs = crate::jobs::Jobs::default();
+        let job = jobs.start(Job::Run).unwrap();
+        assert!(jobs.cancel(Job::Run));
+        assert_eq!(gguf_run_inner(p(6), job).err().unwrap(), CANCELLED_EARLY);
+        let r = gguf_run_inner(p(6), jobs.start(Job::Run).unwrap()).unwrap();
+        assert!(!r.stopped && r.generated > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_atomic_replaces_and_never_leaves_a_temp_file() {
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_atomic_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("c.flck").to_string_lossy().into_owned();
+        write_atomic(&f, b"one").unwrap();
+        write_atomic(&f, b"two!").unwrap();
+        assert_eq!(std::fs::read(&f).unwrap(), b"two!");
+        assert!(!std::path::Path::new(&format!("{f}.tmp")).exists());
+        // A directory squatting on the temp name makes the write fail; the old file survives.
+        std::fs::create_dir(format!("{f}.tmp")).unwrap();
+        assert!(write_atomic(&f, b"three").is_err());
+        assert_eq!(std::fs::read(&f).unwrap(), b"two!");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // ── GGUF export (do_export) ──────────────────────────────────────────────
 
     use ferrum_core::GgufQuant;
@@ -1741,19 +1987,27 @@ mod tests {
 
         let mut p = base;
         p.out_path = "  ".into();
-        assert!(do_export(&p, &noop).unwrap_err().contains("output"));
+        assert!(do_export(&p, &noop, &|| false)
+            .unwrap_err()
+            .contains("output"));
 
         p.out_path = "/tmp/out.gguf".into();
         p.quant = "q9_9".into();
-        assert!(do_export(&p, &noop).unwrap_err().contains("q9_9"));
+        assert!(do_export(&p, &noop, &|| false)
+            .unwrap_err()
+            .contains("q9_9"));
 
         // A missing source file is refused by the path check and named.
         p.quant = "q8_0".into();
-        assert!(do_export(&p, &noop).unwrap_err().contains("does not exist"));
+        assert!(do_export(&p, &noop, &|| false)
+            .unwrap_err()
+            .contains("does not exist"));
 
         // Device paths are refused before anything is opened.
         p.out_path = "/dev/null".into();
-        assert!(do_export(&p, &noop).unwrap_err().contains("not allowed"));
+        assert!(do_export(&p, &noop, &|| false)
+            .unwrap_err()
+            .contains("not allowed"));
     }
 
     #[test]
@@ -1816,7 +2070,7 @@ mod tests {
             verbose: false,
         };
         let phases = std::cell::RefCell::new(Vec::<String>::new());
-        let r = do_export(&p, &|m| phases.borrow_mut().push(m.to_string())).unwrap();
+        let r = do_export(&p, &|m| phases.borrow_mut().push(m.to_string()), &|| false).unwrap();
 
         // Phases arrive in order: opening → loading → encoding (no resume).
         let ph = phases.borrow();

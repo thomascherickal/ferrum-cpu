@@ -189,6 +189,7 @@
 
       <div class="row">
         <button id="trStart" class="primary">Train</button>
+        <button id="trCancel" class="ghost hidden">Stop training</button>
         <div class="progress"><div class="bar" id="trBar"></div></div>
         <span id="trStatus" class="muted">idle</span>
       </div>
@@ -223,6 +224,7 @@
       <span class="err" id="errGen"></span>
       <div class="row">
         <button id="genStart" class="primary">Generate</button>
+        <button id="genCancel" class="ghost hidden">Stop</button>
         <span id="genStatus" class="muted"></span>
       </div>
       <div id="genOut" class="output" placeholder="Generated text appears here…"></div>
@@ -315,6 +317,7 @@
       <span class="err" id="errGguf"></span>
       <div class="row">
         <button id="ggRun" class="primary">Run</button>
+        <button id="ggCancel" class="ghost hidden">Stop</button>
         <span id="ggStatus" class="muted"></span>
       </div>
       <div id="ggOut" class="output" placeholder="Generated text appears here…"></div>
@@ -360,6 +363,7 @@
       <span class="err" id="errFt"></span>
       <div class="row">
         <button id="ftRun" class="primary">Fine-tune</button>
+        <button id="ftCancel" class="ghost hidden">Stop fine-tuning</button>
         <div class="progress"><div class="bar" id="ftBar"></div></div>
         <span id="ftStatus" class="muted"></span>
       </div>
@@ -409,6 +413,7 @@
       <span class="err" id="errExport"></span>
       <div class="row">
         <button id="exExport" class="primary">Export</button>
+        <button id="exCancel" class="ghost hidden">Cancel export</button>
         <span id="exStatus" class="muted"></span>
       </div>
       <div id="exResult" class="result"></div>

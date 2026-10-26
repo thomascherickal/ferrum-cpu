@@ -296,6 +296,153 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Block until `got` holds `n` payloads (a job that never reports fails the test, not hangs it).
+fn wait_for(got: &Arc<Mutex<Vec<String>>>, n: usize) {
+    let t0 = std::time::Instant::now();
+    while got.lock().unwrap().len() < n {
+        assert!(
+            t0.elapsed().as_secs() < 120,
+            "no event arrived within 120 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+fn no_temp_files(dir: &std::path::Path) {
+    for e in std::fs::read_dir(dir).unwrap() {
+        let name = e.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(
+            !name.ends_with(".tmp") && !name.ends_with(".part"),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_running_training_job_is_cancelled_saves_a_loadable_model_and_refuses_a_second_start() {
+    let (app, w) = app();
+    let progress = collect(&app, "train-progress");
+    let done = collect(&app, "train-done");
+    let dir = tmp("cancel_train");
+    let corpus = dir.join("c.txt");
+    std::fs::write(
+        &corpus,
+        "the quick brown fox jumps over the lazy dog. ".repeat(60),
+    )
+    .unwrap();
+    let model = dir.join("m.gguf").to_string_lossy().into_owned();
+    let ckpt = dir.join("run.fckp").to_string_lossy().into_owned();
+    // Far more epochs than the test will ever wait for: only a cancel ends this run.
+    let params = json!({"params": {
+        "method": "transformer", "corpusPath": corpus.to_string_lossy(), "modelPath": model,
+        "contextLen": 8, "embedDim": 16, "numHeads": 2, "numBlocks": 1, "hiddenDim": 32,
+        "epochs": 1_000_000, "lr": 0.01, "batchSize": 8, "vocabSize": 300, "seed": 1, "threads": 1,
+        "verbose": false, "checkpointPath": ckpt
+    }});
+    // Nothing is running yet.
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "train"})).unwrap(),
+        false
+    );
+
+    let (w2, p2) = (w.clone(), params.clone());
+    let job = std::thread::spawn(move || call(&w2, "train_slm", p2));
+    wait_for(&progress, 1);
+
+    // A second training job is refused while the first runs.
+    let e = call(&w, "train_slm", params.clone()).unwrap_err();
+    assert_eq!(
+        e.as_str().unwrap(),
+        "a training job is already running",
+        "{e}"
+    );
+    // Other kinds have their own slot, and an unknown kind is a clear error.
+    assert!(call(&w, "cancel_job", json!({"kind": "nonsense"})).is_err());
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "export"})).unwrap(),
+        false
+    );
+
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "train"})).unwrap(),
+        true
+    );
+    let r = job.join().unwrap().unwrap();
+    assert_eq!(r["stopped"], true, "{r}");
+    assert!(r["stoppedAtStep"].as_u64().unwrap() >= 1, "{r}");
+    assert!(r["bytes"].as_u64().unwrap() > 0);
+    // The Done event carries the same stopped result.
+    wait_for(&done, 1);
+    let d: Value = serde_json::from_str(&done.lock().unwrap()[0]).unwrap();
+    assert_eq!(
+        (d["stopped"].clone(), d["modelPath"].clone()),
+        (json!(true), json!(model))
+    );
+    // The model is complete and loads; the checkpoint was written for a resume; no temp files.
+    assert!(ferrum_core::GenerativeSLM::load(&model).is_ok());
+    let info = call(&w, "model_info", json!({"path": model})).unwrap();
+    assert!(info["bytes"].as_u64().unwrap() > 0);
+    assert!(std::fs::metadata(&ckpt).unwrap().len() > 0);
+    no_temp_files(&dir);
+
+    // The slot is free again: cancel finds nothing and a fresh job can start.
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "train"})).unwrap(),
+        false
+    );
+    let again = {
+        let mut q = params.clone();
+        q["params"]["epochs"] = json!(1);
+        call(&w, "train_slm", q).unwrap()
+    };
+    assert_eq!(again["stopped"], false);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_running_finetune_is_cancelled_and_its_checkpoint_resumes() {
+    let (app, w) = app();
+    let progress = collect(&app, "finetune-progress");
+    let dir = tmp("cancel_ft");
+    let src = dir.join("base.gguf").to_string_lossy().into_owned();
+    std::fs::write(&src, crate::test_support::tiny_llama_gguf(8, 2, 2, 16, 32)).unwrap();
+    let corpus = dir.join("c.txt");
+    std::fs::write(
+        &corpus,
+        "hi abc hi abc hi abc hi abc hi abc hi abc ".repeat(4),
+    )
+    .unwrap();
+    let ckpt = dir.join("tuned.flck").to_string_lossy().into_owned();
+    let params = json!({"params": {"modelPath": src, "corpusPath": corpus.to_string_lossy(), "outPath": ckpt,
+        "epochs": 1_000_000, "lr": 0.001, "batchSize": 2, "seqLen": 8, "warmup": 0, "clip": 1.0, "weightDecay": 0,
+        "dropout": 0, "qat": false, "seed": 1, "threads": 1, "resume": null, "force": false, "verbose": false}});
+    let (w2, p2) = (w.clone(), params.clone());
+    let job = std::thread::spawn(move || call(&w2, "finetune_gguf", p2));
+    wait_for(&progress, 1);
+    let e = call(&w, "finetune_gguf", params.clone()).unwrap_err();
+    assert_eq!(e.as_str().unwrap(), "a fine-tuning job is already running");
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "finetune"})).unwrap(),
+        true
+    );
+    let r = job.join().unwrap().unwrap();
+    assert_eq!(r["stopped"], true, "{r}");
+    assert!(r["epochs"].as_u64().unwrap() >= 1 && r["steps"].as_u64().unwrap() >= 1);
+    assert!(std::fs::metadata(&ckpt).unwrap().len() > 0);
+    no_temp_files(&dir);
+    // The stopped checkpoint overlays on the base model (a resume) and runs.
+    let run = call(
+        &w,
+        "run_gguf",
+        json!({"params": {"modelPath": src, "prompt": "hi", "quant": "f32", "maxNew": 3, "temp": 0, "genSeed": 1,
+            "ids": null, "force": false, "resume": ckpt, "raw": true}}),
+    )
+    .unwrap();
+    assert!(run["text"].as_str().unwrap().starts_with("hi"));
+    assert_eq!(run["stopped"], false);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn training_errors_reach_the_ui_as_plain_messages() {
     let (_app, w) = app();

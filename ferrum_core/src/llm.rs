@@ -539,6 +539,22 @@ impl LlamaModel {
         stops: &[usize],
         rng: &mut Rng,
     ) -> Result<Vec<usize>> {
+        self.generate_cancellable(prompt, max_new, params, stops, rng, &|| false)
+    }
+
+    /// [`LlamaModel::generate`] that asks `cancelled()` before every prompt token and before
+    /// every sampled token, and returns what it has produced so far (nothing, if it was
+    /// cancelled while reading the prompt) as soon as it answers `true`. With `|| false` it is
+    /// bit-for-bit [`LlamaModel::generate`]. A GUI's Cancel button sets the flag behind it.
+    pub fn generate_cancellable(
+        &self,
+        prompt: &[usize],
+        max_new: usize,
+        params: &SamplingParams,
+        stops: &[usize],
+        rng: &mut Rng,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Vec<usize>> {
         if prompt.is_empty() {
             return Err(InferError::DimMismatch("prompt must be non-empty".into()));
         }
@@ -556,11 +572,17 @@ impl LlamaModel {
         let mut cache = LlamaCache::new(self.blocks.len());
         let mut logits = vec![0.0f32; self.cfg.vocab_size];
         for &tok in prompt {
+            if cancelled() {
+                return Ok(Vec::new());
+            }
             logits = self.forward_one(tok, &mut cache)?;
         }
         let mut out = Vec::new();
         let mut recent: Vec<usize> = prompt.to_vec();
         for _ in 0..max_new {
+            if cancelled() {
+                break;
+            }
             let next = sample_with_params(&logits, params, &recent, rng);
             out.push(next);
             if stops.contains(&next) {
@@ -863,6 +885,34 @@ mod tests {
             }
         }
         assert_eq!(cache.pos(), tokens.len());
+    }
+
+    #[test]
+    fn generate_cancellable_matches_generate_and_stops_when_asked() {
+        use std::cell::Cell;
+        let model = tiny_model();
+        let params = SamplingParams::with_temperature(0.8);
+        let plain = model
+            .generate(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7))
+            .unwrap();
+        let never = model
+            .generate_cancellable(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &|| false)
+            .unwrap();
+        assert_eq!(plain, never);
+        // Cancelled after the prompt (3 polls) and 4 sampled tokens: those 4 are kept, a prefix.
+        let polls = Cell::new(0);
+        let part = model
+            .generate_cancellable(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &|| {
+                polls.set(polls.get() + 1);
+                polls.get() > 3 + 4
+            })
+            .unwrap();
+        assert_eq!(part, plain[..4]);
+        // Cancelled while reading the prompt: nothing generated.
+        let none = model
+            .generate_cancellable(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &|| true)
+            .unwrap();
+        assert!(none.is_empty());
     }
 
     #[test]

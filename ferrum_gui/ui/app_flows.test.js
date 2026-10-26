@@ -354,6 +354,112 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("exStatus").textContent, "encoding + writing (q8_0)…");
   }
 
+  // ── Stop buttons (G9): shown while a job runs, send cancel_job, report the stop ──
+  {
+    const hidden = (a, id) => a.$(id).classList.contains("hidden");
+    const pending = () => { let release; const p = new Promise((res) => { release = res; }); return { p, release: (v) => release(v) }; };
+
+    // Train: the Stop button appears, cancel_job("train") is sent, "stopped at step N" is shown.
+    {
+      const t = pending();
+      const a = await start({ train_slm: () => t.p, cancel_job: async () => true });
+      a.set("trCorpus", "/c.txt"); a.set("trModel", "/m.gguf");
+      assert.ok(hidden(a, "trCancel"), "no Stop button before a job runs");
+      a.$("trStart").dispatch("click"); await settle(4);
+      assert.ok(!hidden(a, "trCancel"), "Stop button while training");
+      await a.click("trCancel");
+      assert.deepStrictEqual(a.of("cancel_job")[0].args, { kind: "train" });
+      assert.strictEqual(a.$("trCancel").disabled, true, "asked once");
+      t.release({ ...TRAINED, stopped: true, stoppedAtStep: 7 });
+      await settle(6);
+      assert.strictEqual(a.$("trStatus").textContent, "stopped at step 7");
+      assert.ok(a.$("trResult").textContent.includes("Stopped at step 7"), a.$("trResult").textContent);
+      assert.ok(a.$("trResult").textContent.includes("Saved 999 bytes"));
+      assert.ok(hidden(a, "trCancel") && !a.$("trStart").disabled);
+      assert.ok(a.$("toasts").children.some((x) => x.textContent.includes("stopped at step 7")));
+      // A second start while one runs: the backend's message is shown as is.
+      const b = await start({ train_slm: async () => { throw "a training job is already running"; } });
+      b.set("trCorpus", "/c.txt"); b.set("trModel", "/m.gguf");
+      await b.click("trStart");
+      assert.strictEqual(b.$("errTrain").textContent, "a training job is already running");
+      assert.ok(hidden(b, "trCancel"));
+    }
+
+    // Generate: Stop keeps the text so far and says "stopped".
+    {
+      const t = pending();
+      const a = await start({ generate_slm: () => t.p, cancel_job: async () => true });
+      a.set("genModel", "/m.gguf"); a.set("genSeed", "ab");
+      a.$("genStart").dispatch("click"); await settle(3);
+      assert.ok(!hidden(a, "genCancel"));
+      await a.click("genCancel");
+      assert.deepStrictEqual(a.of("cancel_job")[0].args, { kind: "generate" });
+      t.release("abcd");
+      await settle(6);
+      assert.strictEqual(a.$("genStatus").textContent, "stopped (4 chars)");
+      assert.strictEqual(a.$("genOut").textContent, "cd");
+      assert.ok(hidden(a, "genCancel") && !a.$("genStart").disabled);
+    }
+
+    // GGUF run: stopped result, and a cancel before any text is not an error.
+    {
+      const t = pending();
+      const a = await start({ run_gguf: () => t.p, cancel_job: async () => true });
+      a.set("ggPath", "/g.gguf"); a.set("ggPrompt", "hi");
+      a.$("ggRun").dispatch("click"); await settle(3);
+      await a.click("ggCancel");
+      assert.deepStrictEqual(a.of("cancel_job")[0].args, { kind: "run" });
+      t.release({ text: "hi the", promptTokens: 1, generated: 2, seconds: 1, tokensPerSec: 2, stopped: true });
+      await settle(6);
+      assert.ok(a.$("ggStatus").textContent.startsWith("stopped — 2 tokens"), a.$("ggStatus").textContent);
+      assert.ok(hidden(a, "ggCancel"));
+      const t2 = pending();
+      const b = await start({ run_gguf: () => t2.p, cancel_job: async () => true });
+      b.set("ggPath", "/g.gguf"); b.set("ggPrompt", "hi");
+      b.$("ggRun").dispatch("click"); await settle(3);
+      await b.click("ggCancel");
+      t2.p.catch(() => {});
+      t2.release(Promise.reject("cancelled before any text was produced"));
+      await settle(6);
+      assert.strictEqual(b.$("ggStatus").textContent, "stopped before any text was produced");
+      assert.strictEqual(b.$("errGguf").textContent, "");
+    }
+
+    // Fine-tune: stopped result keeps the checkpoint.
+    {
+      const t = pending();
+      const a = await start({ finetune_gguf: () => t.p, cancel_job: async () => true });
+      a.set("ftPath", "/g.gguf"); a.set("ftCorpus", "/c.txt"); a.set("ftOut", "/o.flck");
+      a.$("ftRun").dispatch("click"); await settle(3);
+      assert.ok(!hidden(a, "ftCancel"));
+      await a.click("ftCancel");
+      assert.deepStrictEqual(a.of("cancel_job")[0].args, { kind: "finetune" });
+      t.release({ outPath: "/o.flck", epochs: 1, firstLoss: 3, finalLoss: 2.5, seconds: 1, tokens: 99, steps: 12, bytes: 64, stopped: true });
+      await settle(6);
+      assert.strictEqual(a.$("ftStatus").textContent, "stopped at step 12");
+      assert.ok(a.$("ftResult").textContent.includes("checkpoint so far was saved"));
+      assert.strictEqual(a.$("ggResume").value, "/o.flck", "the stopped checkpoint is offered on the GGUF tab");
+      assert.ok(hidden(a, "ftCancel"));
+    }
+
+    // Export: a cancel is reported as cancelled, not as a failure.
+    {
+      const t = pending();
+      const a = await start({ export_gguf: () => t.p, cancel_job: async () => true });
+      a.set("exPath", "/g.gguf"); a.set("exOut", "/out.gguf");
+      a.$("exExport").dispatch("click"); await settle(3);
+      assert.ok(!hidden(a, "exCancel"));
+      await a.click("exCancel");
+      assert.deepStrictEqual(a.of("cancel_job")[0].args, { kind: "export" });
+      t.p.catch(() => {});
+      t.release(Promise.reject("export cancelled; no file was written"));
+      await settle(6);
+      assert.strictEqual(a.$("exStatus").textContent, "cancelled; nothing was written");
+      assert.strictEqual(a.$("errExport").textContent, "");
+      assert.ok(hidden(a, "exCancel") && !a.$("exExport").disabled);
+    }
+  }
+
   // ── Capable ─────────────────────────────────────────────────────────────
   {
     const report = { cpu: EVIL, cores: 4, threads: 4, memTotal: 8e9, memAvail: 4e9, memBwGbps: 3.5, gemmGflops: 60, inferInt4: 1e9, inferInt8: 5e8, inferF32: 1e8,

@@ -9,7 +9,7 @@
 //! |-----------------|--------------------------------------|-----------------------|
 //! | `engine-log`    | `String` (one diagnostic line)       | `--verbose` sink      |
 //! | `train-progress`| `{ epoch, total, loss }` (total null under a token budget) | training callback |
-//! | `train-done`    | [`commands::TrainResult`]            | training completion   |
+//! | `train-done`    | [`commands::TrainResult`] (`stopped`, `stoppedAtStep` after a cancel) | training completion or cancel |
 //! | `finetune-progress` | `{ epoch, total, loss, ppl }`    | GGUF fine-tune epoch  |
 //! | `finetune-done` | [`commands::FinetuneResult`]         | GGUF fine-tune done   |
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
@@ -23,6 +23,7 @@ mod datasets;
 pub mod estimate;
 pub mod estimate_cmd;
 pub mod hardware;
+mod jobs;
 mod paths;
 #[cfg(test)]
 mod test_support;
@@ -37,6 +38,8 @@ pub struct AppState {
     pub sys: Mutex<System>,
     /// Last Capable-tab benchmark (release builds only), used to scale estimates.
     pub bench: Mutex<Option<estimate::Throughput>>,
+    /// The running long jobs, one slot per kind (see [`jobs`]).
+    pub jobs: jobs::Jobs,
 }
 
 /// Shared state and the command registry. `run` and the mock-runtime tests
@@ -46,6 +49,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             bench: Mutex::new(None),
+            jobs: jobs::Jobs::default(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::download_text,
@@ -60,6 +64,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::run_gguf,
             commands::finetune_gguf,
             commands::export_gguf,
+            jobs::cancel_job,
             commands::system_stats,
             hardware::hardware_info,
             estimate_cmd::estimate_job,
