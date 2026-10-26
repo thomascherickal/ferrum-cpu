@@ -46,7 +46,7 @@ pub fn train_transformer_epoch_threaded(
         rng,
         threads,
         usize::MAX,
-        &mut |_, _| Ok(()),
+        &mut |_, _| Ok(true),
     )
 }
 
@@ -72,6 +72,7 @@ pub(super) fn epoch_sharded(
         let num_windows = perm.len();
         let steps = num_windows.div_ceil(batch_size).min(max_steps);
         let mut total = 0.0f32;
+        let mut done = 0usize;
 
         for step in 0..steps {
             // The step's minibatch is the next slice of the permutation (the
@@ -174,13 +175,16 @@ pub(super) fn epoch_sharded(
                 net.clip_grad_norm(max_norm);
             }
             net.step(adam)?;
-            on_step(net, rng)?;
             total += step_loss;
+            done += 1;
+            if !on_step(net, rng)? {
+                break;
+            }
         }
 
-        let avg = total / steps.max(1) as f32;
+        let avg = total / done.max(1) as f32;
         if verbose::is_verbose() {
-            vprintln!("[train_transformer::epoch_threaded] shards={nshards}, steps={steps}, mean loss={avg:.6}");
+            vprintln!("[train_transformer::epoch_threaded] shards={nshards}, steps={done}, mean loss={avg:.6}");
         }
         Ok(avg)
     }

@@ -348,6 +348,7 @@ fn train_inner(app: AppHandle, p: TrainParams) -> Result<TrainResult, String> {
                 checkpoint_every: p.checkpoint_every,
                 resume: p.resume,
                 log_every_steps: 0,
+                ..TransformerConfig::default()
             };
             if p.val_fraction > 0.0 {
                 let val = ValidationConfig {

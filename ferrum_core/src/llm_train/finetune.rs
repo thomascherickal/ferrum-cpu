@@ -84,6 +84,23 @@ impl LlamaTrainer {
         rng: &mut Rng,
         threads: usize,
     ) -> Result<f32> {
+        self.finetune_epoch_until(tokens, seq_len, batch_size, rng, threads, &mut |_| false)
+            .map(|(loss, _)| loss)
+    }
+
+    /// [`LlamaTrainer::finetune_epoch_threaded`] that asks `stop(step_count)`
+    /// after every optimizer step and ends the epoch early when it answers
+    /// `true`. Returns the mean loss over the steps run and whether it stopped.
+    /// With `stop` always `false` it is bit-for-bit the plain epoch.
+    pub fn finetune_epoch_until(
+        &mut self,
+        tokens: &[usize],
+        seq_len: usize,
+        batch_size: usize,
+        rng: &mut Rng,
+        threads: usize,
+        stop: &mut dyn FnMut(u64) -> bool,
+    ) -> Result<(f32, bool)> {
         let seq_len = seq_len.min(self.model.cfg.context_len).max(2);
         if tokens.len() < seq_len {
             return Err(InferError::DimMismatch(format!(
@@ -97,6 +114,7 @@ impl LlamaTrainer {
         let perm = rng.shuffled_indices(num_windows);
         let dropout = self.dropout;
         let mut total = 0.0f32;
+        let mut done = 0usize;
 
         for step in 0..steps {
             let idxs = &perm[step * batch_size..((step + 1) * batch_size).min(num_windows)];
@@ -104,8 +122,12 @@ impl LlamaTrainer {
             let base_seed = if dropout > 0.0 { rng.next_u64() } else { 0 };
             let loss = self.step_over_windows(&windows, base_seed, threads)?;
             total += loss;
+            done += 1;
+            if stop(self.step_count()) {
+                return Ok((total / done as f32, true));
+            }
         }
-        Ok(total / steps as f32)
+        Ok((total / steps as f32, false))
     }
 
     /// Shared gradient computation for one minibatch of already-sliced windows,
@@ -246,6 +268,34 @@ mod tests {
         {
             assert!((x - y).abs() < 1e-6, "batch != hand-averaged: {x} vs {y}");
         }
+    }
+
+    #[test]
+    fn finetune_epoch_until_stops_after_the_asked_step_and_never_stopping_matches() {
+        let tokens: Vec<usize> = (0..120).map(|i| (i * 5 + i / 7) % 5).collect();
+        let base = tiny(5, 16, 4, 2, 32, 2);
+        let mk = || LlamaTrainer::new(base_clone(&base)).unwrap();
+        let (mut a, mut b) = (mk(), mk());
+        let (mut ra, mut rb) = (Rng::new(3), Rng::new(3));
+        let plain = a
+            .finetune_epoch_threaded(&tokens, 8, 8, &mut ra, 1)
+            .unwrap();
+        let (loss, stopped) = b
+            .finetune_epoch_until(&tokens, 8, 8, &mut rb, 1, &mut |_| false)
+            .unwrap();
+        assert!(!stopped && loss.to_bits() == plain.to_bits());
+        assert_eq!(a.save_checkpoint(&ra), b.save_checkpoint(&rb));
+
+        let mut c = mk();
+        let mut seen = Vec::new();
+        let (_, stopped) = c
+            .finetune_epoch_until(&tokens, 8, 8, &mut Rng::new(3), 1, &mut |s| {
+                seen.push(s);
+                s >= 2
+            })
+            .unwrap();
+        assert!(stopped);
+        assert_eq!((seen, c.step_count()), (vec![1, 2], 2));
     }
 
     #[test]

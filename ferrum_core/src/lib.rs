@@ -75,6 +75,7 @@ pub mod parallel;
 pub mod quant;
 pub mod rng;
 pub mod slm;
+pub mod stop;
 pub mod tensor;
 pub mod tokenizer;
 pub mod train_transformer;
@@ -113,6 +114,7 @@ pub use slm::{
     Evaluation, Generation, GenerativeSLM, SamplingParams, Score, StopReason, TransformerConfig,
     ValidationConfig, ValidationProgress,
 };
+pub use stop::{StopCause, StopCondition};
 pub use tensor::Tensor;
 pub use tokenizer::{ByteBpeTokenizer, DOC_SEP, TOK_BOS, TOK_EOS, TOK_PAD, TOK_UNK};
 pub use train_transformer::{

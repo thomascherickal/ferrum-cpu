@@ -72,6 +72,7 @@ pub(crate) fn print_usage() {
          \x20 --tokenizer tok.gguf  (reuse this BPE tokenizer GGUF; trained + saved if missing)\n\
          \x20 --checkpoint ck.fckp  --checkpoint-every N   (save a GGUF checkpoint: weights + optimizer state)\n\
          \x20 --resume ck.fckp      (continue from a GGUF checkpoint)\n\
+         \x20 --max-seconds F       (stop cleanly after the step that crosses F seconds; also: touch <model>.stop)\n\
          \x20 --val F  --patience N (hold out fraction F; keep best epoch; early stop)\n\
          \x20 --threads N  --force    --sample\n\
          \x20 --verbose|-v   (progress line every 10 steps)   --debug   (engine internals)\n\
@@ -103,6 +104,7 @@ pub(crate) fn print_usage() {
          \x20 --warmup N  --clip F  --weight_decay F  --dropout F   (schedule/regularization)\n\
          \x20 --qat          (int8 quantization-aware fine-tuning)\n\
          \x20 --threads N  --seed N  --resume ckpt.flck  --sample\n\
+         \x20 --max-seconds F  (stop cleanly, checkpoint written; also: touch <out.flck>.stop)\n\
          \x20 writes a .flck checkpoint; apply it with  run-gguf ... --resume out.flck\n\n\
          EXPORT-GGUF options (re-quantize / export an imported GGUF to disk):\n\
          \x20 --quant q8_0|q4_0|q4_1|q8_1|q4_k|q5_k|q6_k|f16|f32  (output precision; default q8_0)\n\

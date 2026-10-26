@@ -40,6 +40,7 @@
 //!   --clip <F>  --tie  --no-qat  --tokenizer <path>
 //!   --quant <int8|int4|f32>  on-disk precision      (default int8)
 //!   --checkpoint <path>  --checkpoint-every <N>  --resume <path>
+//!   --max-seconds <F>  stop cleanly after the step that crosses the budget (also: touch <model>.stop)
 //!   --val <F>  --patience <N>   validation split + early stopping
 //!   --force         retrain even if the model file exists
 //!   --sample        print a short sample after training
@@ -73,6 +74,7 @@ mod prepare;
 mod resume;
 mod run_gguf;
 mod runtime_export;
+mod stop;
 mod train;
 mod usage;
 mod util;

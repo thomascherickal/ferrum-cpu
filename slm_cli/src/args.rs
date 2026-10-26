@@ -51,6 +51,7 @@ pub(crate) const TRAIN_FLAGS: Spec = &[
     ("patience", Kind::Usize),
     ("force", Kind::Bool),
     ("sample", Kind::Bool),
+    ("max-seconds", Kind::F64),
 ];
 
 pub(crate) const GENERATE_FLAGS: Spec = &[
@@ -96,6 +97,7 @@ pub(crate) const FINETUNE_FLAGS: Spec = &[
     ("temp", Kind::F32),
     ("max", Kind::Usize),
     ("force", Kind::Bool),
+    ("max-seconds", Kind::F64),
 ];
 
 pub(crate) const EXPORT_FLAGS: Spec = &[
@@ -292,6 +294,7 @@ impl Args {
             resume: self.value("resume").is_some(),
             // `-v` prints a progress line every 10 optimizer steps.
             log_every_steps: if self.verbose { 10 } else { 0 },
+            stop: d.stop,
         }
     }
 }
@@ -627,6 +630,7 @@ mod tests {
                     "patience",
                     "force",
                     "sample",
+                    "max-seconds",
                 ],
             ),
             (
@@ -673,6 +677,7 @@ mod tests {
                     "temp",
                     "max",
                     "force",
+                    "max-seconds",
                 ],
             ),
             ("export-gguf", &["quant", "resume", "force"]),

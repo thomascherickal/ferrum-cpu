@@ -271,6 +271,65 @@ fn resume_from_an_epoch_checkpoint_finishes_the_run() {
 }
 
 #[test]
+fn a_stop_file_or_time_budget_stops_cleanly_and_resume_finishes_the_run() {
+    let e = Env::new("stop");
+    // One optimizer step per epoch, so a stop after step 1 is an epoch boundary.
+    let one = ["--vocab", "300", "--batch", "4096"];
+    e.train("full.gguf", &one);
+
+    // The stop file is `<model>.stop`; it is consumed, the checkpoint is written, exit is 0.
+    let ck = e.s("ck.fckp");
+    std::fs::write(e.p("part.gguf.stop"), b"").unwrap();
+    let mut a = one.to_vec();
+    a.extend(["--checkpoint", &ck]);
+    let out = e.train("part.gguf", &a);
+    assert!(
+        out.contains(&format!(
+            "stopped early at step 1: stop file found; resume with --resume {ck}"
+        )),
+        "{out}"
+    );
+    assert!(e.p("ck.fckp").is_file() && e.p("part.gguf").is_file());
+    assert!(!e.p("part.gguf.stop").exists(), "stop file must be removed");
+
+    let at_stop = sha(&e.p("ck.fckp")); // `--resume` keeps writing to this file
+    let mut r = one.to_vec();
+    r.extend(["--resume", &ck]);
+    e.train("resumed.gguf", &r);
+    assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("resumed.gguf")));
+
+    // A time budget crossed during the first step stops the same way.
+    let ck2 = e.s("ck2.fckp");
+    let mut t = one.to_vec();
+    t.extend(["--checkpoint", &ck2, "--max-seconds", "0.000001"]);
+    let out = e.train("timed.gguf", &t);
+    assert!(
+        out.contains("stopped early at step 1: time budget reached"),
+        "{out}"
+    );
+    assert_eq!(at_stop, sha(&e.p("ck2.fckp")));
+
+    // A budget the run never reaches changes nothing; nonsense is refused up front.
+    e.train(
+        "roomy.gguf",
+        &[&one[..], &["--max-seconds", "3600"]].concat(),
+    );
+    assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("roomy.gguf")));
+    let bad = Command::new(BIN)
+        .args([
+            "train",
+            &e.s("prep/train.txt"),
+            &e.s("bad.gguf"),
+            "--max-seconds",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("--max-seconds"));
+}
+
+#[test]
 fn checkpoint_every_writes_a_checkpoint_with_optimizer_state() {
     let e = Env::new("ckevery");
     let ck = e.s("ck.fckp");

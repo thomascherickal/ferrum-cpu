@@ -25,6 +25,7 @@ pub(crate) fn train_and_save(
         );
     }
     let mut cfg = args.config();
+    cfg.stop = crate::stop::condition(args, model_path)?;
     check_lr(cfg.lr)?;
     check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;
     let budget = args.get("tokens", 0.0f64);
@@ -180,6 +181,7 @@ pub(crate) fn train_and_save(
     };
 
     println!("\nTrained in {:.2}s.", t0.elapsed().as_secs_f32());
+    let stopped = cfg.stop.stopped();
     if patience > 0 && stale >= patience {
         println!("early stop at epoch {last_epoch}, best epoch {best_epoch} kept");
     }
@@ -220,6 +222,11 @@ pub(crate) fn train_and_save(
     // Verify the file roundtrips.
     let reloaded = GenerativeSLM::load(model_path)?;
     println!("Reload check: OK ({} layers).", reloaded.model.len());
+    if let Some((cause, step)) = stopped {
+        cfg.stop.clear_stop_file();
+        let ck = Some(cfg.checkpoint_path.as_str()).filter(|p| !p.is_empty());
+        crate::stop::announce(cause, step, ck);
+    }
     Ok(reloaded)
 }
 

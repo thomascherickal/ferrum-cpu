@@ -138,6 +138,62 @@ fn round_trip(tag: &str, base_bytes: Vec<u8>) {
     assert!(i.contains("ferrum-llama-checkpoint"), "{i}");
 }
 
+/// A stop file ends `finetune-gguf` after a step with the checkpoint written; resuming for the
+/// remaining epochs equals the uninterrupted run (one step per epoch, so the stop is on a boundary).
+#[test]
+fn finetune_stops_on_a_stop_file_and_resume_equals_the_full_run() {
+    let t = Tmp::new("ftstop");
+    std::fs::write(
+        t.s("base.gguf"),
+        tiny_llama_gguf_with_tokens(&letter_vocab()),
+    )
+    .unwrap();
+    std::fs::write(t.s("c.txt"), "abc abc abc abc abc abc abc abc").unwrap();
+    let (base, corpus) = (t.s("base.gguf"), t.s("c.txt"));
+    let (full, part, rest) = (t.s("full.flck"), t.s("part.flck"), t.s("rest.flck"));
+    let ft = |out: &str, epochs: &str, extra: &[&str]| {
+        let mut a = vec![
+            "finetune-gguf",
+            &base,
+            &corpus,
+            out,
+            "--epochs",
+            epochs,
+            "--batch",
+            "1000",
+            "--seq",
+            "8",
+            "--lr",
+            "1e-2",
+            "--threads",
+            "1",
+        ];
+        a.extend(extra);
+        ok(&a)
+    };
+    ft(&full, "3", &[]);
+
+    std::fs::write(t.s("part.flck.stop"), b"").unwrap();
+    let out = ft(&part, "3", &[]);
+    assert!(
+        out.contains(&format!(
+            "stopped early at step 1: stop file found; resume with --resume {part}"
+        )),
+        "{out}"
+    );
+    assert!(std::path::Path::new(&part).is_file());
+    assert!(!std::path::Path::new(&t.s("part.flck.stop")).exists());
+
+    ft(&rest, "2", &["--resume", &part]);
+    assert_eq!(std::fs::read(&full).unwrap(), std::fs::read(&rest).unwrap());
+
+    let out = ft(&t.s("timed.flck"), "3", &["--max-seconds", "0.000001"]);
+    assert!(
+        out.contains("stopped early at step 1: time budget reached"),
+        "{out}"
+    );
+}
+
 #[test]
 fn untied_llama_finetune_export_run_round_trip() {
     round_trip("untied", tiny_llama_gguf_with_tokens(&letter_vocab()));

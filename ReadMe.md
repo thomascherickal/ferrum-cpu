@@ -154,7 +154,9 @@ train_transformer info     models/slm.gguf
 ```
 
 Interrupted? Add `--checkpoint run.fckp --checkpoint-every 500` to the training
-command, then repeat the same command with `--resume run.fckp`.
+command, then repeat the same command with `--resume run.fckp`. To stop on
+purpose, pass `--max-seconds N` or create the file `<model>.stop`; the run
+checkpoints and exits cleanly ([Manual §6.6](Manual.md#66-validation-checkpoints-and-resuming)).
 [Samples.md](Samples.md) walks through every step with real output, and
 [Manual §6](Manual.md#6-training-an-slm) explains every flag.
 

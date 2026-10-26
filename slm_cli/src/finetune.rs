@@ -42,6 +42,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
         ("the corpus", corpus_path),
     ])?;
     check_writable(out_path)?; // before hours of training, not after
+    let stop = crate::stop::condition(args, out_path)?;
 
     // 1. Open + f32-load the base model (training needs full-precision masters).
     println!("Opening {gguf_path} (streamed)…");
@@ -177,10 +178,24 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     );
     println!("  {num_windows} windows · {steps_per_epoch} steps/epoch");
 
-    // 6. Train.
+    // 6. Train. A stop request ends the run after a step (never the last one);
+    // the checkpoint below is still written, so the run resumes.
+    let total_steps = tr.step_count() + steps_per_epoch * epochs as u64;
+    let mut stopped = None;
     for e in 0..epochs {
         let te = Instant::now();
-        let loss = tr.finetune_epoch_threaded(&tokens, seq, batch, &mut rng, threads)?;
+        let (loss, halted) =
+            tr.finetune_epoch_until(&tokens, seq, batch, &mut rng, threads, &mut |step| {
+                let cause = if step < total_steps {
+                    stop.should_stop()
+                } else {
+                    None
+                };
+                if cause.is_some() {
+                    stopped = cause.map(|c| (c, step));
+                }
+                cause.is_some()
+            })?;
         let secs = te.elapsed().as_secs_f32();
         let toks = (num_windows * seq) as f32;
         println!(
@@ -193,6 +208,9 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
                 .map(|s| s.lr_at(tr.step_count()))
                 .unwrap_or(lr),
         );
+        if halted {
+            break;
+        }
     }
 
     // 7. Save the checkpoint (weights + optimizer moments + RNG + step).
@@ -203,6 +221,10 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
          run it with:  train_transformer run-gguf {gguf_path} \"<prompt>\" --resume {out_path}",
         bytes.len() as f64 / 1e6
     );
+    if let Some((cause, step)) = stopped {
+        stop.clear_stop_file();
+        crate::stop::announce(cause, step, Some(out_path));
+    }
 
     // 8. Optional sample generation from the fine-tuned model.
     if args.has("sample") {

@@ -1,5 +1,6 @@
 //! Training hyperparameters and validation-split controls.
 use crate::slm::scoring::Evaluation;
+use crate::stop::StopCondition;
 
 /// Hyperparameters for training a causal transformer SLM.
 ///
@@ -67,6 +68,11 @@ pub struct TransformerConfig {
     /// Print a `[train] step S/T  tokens/s R  elapsed Xs` line every this many
     /// optimizer steps; `0` = off.
     pub log_every_steps: u64,
+    /// Graceful stop (deadline, stop file, cancel flag), polled after every
+    /// optimizer step. On a stop the run checkpoints (if `checkpoint_path` is set)
+    /// and returns the model as trained so far; [`StopCondition::stopped`] says
+    /// where. The default never stops.
+    pub stop: StopCondition,
 }
 
 impl Default for TransformerConfig {
@@ -95,6 +101,7 @@ impl Default for TransformerConfig {
             checkpoint_every: 0,
             resume: false,
             log_every_steps: 0,
+            stop: StopCondition::default(),
         }
     }
 }

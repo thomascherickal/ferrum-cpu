@@ -72,18 +72,20 @@ pub fn train_transformer_epoch(
         rng,
         1,
         usize::MAX,
-        &mut |_, _| Ok(()),
+        &mut |_, _| Ok(true),
     )
 }
 
 /// Callback run after every optimizer step of [`train_transformer_steps`],
-/// with the updated net and the RNG (e.g. to write a checkpoint).
-pub type StepHook<'a> = dyn FnMut(&TransformerNet, &Rng) -> Result<()> + 'a;
+/// with the updated net and the RNG (e.g. to write a checkpoint). It returns
+/// `Ok(true)` to keep going or `Ok(false)` to end the epoch after this step.
+pub type StepHook<'a> = dyn FnMut(&TransformerNet, &Rng) -> Result<bool> + 'a;
 
 /// One epoch (see [`train_transformer_epoch_threaded`](super::train_transformer_epoch_threaded)) that stops after at
 /// most `max_steps` optimizer steps and calls `on_step` after each one, so a
 /// driver can enforce a token/step budget mid-epoch and checkpoint as it goes.
-/// Returns the mean loss over the steps actually run.
+/// Returns the mean loss over the steps actually run (fewer if `on_step` ends
+/// the epoch early).
 #[allow(clippy::too_many_arguments)]
 pub fn train_transformer_steps(
     net: &mut TransformerNet,
@@ -123,6 +125,7 @@ fn epoch_serial(
     let num_windows = perm.len();
     let steps = num_windows.div_ceil(batch_size).min(max_steps);
     let mut total = 0.0f32;
+    let mut done = 0usize;
     for step in 0..steps {
         let batch = &perm[step * batch_size..((step + 1) * batch_size).min(num_windows)];
         let mut input = Vec::with_capacity(batch.len() * t);
@@ -160,14 +163,17 @@ fn epoch_serial(
             net.clip_grad_norm(max_norm);
         }
         net.step(adam)?;
-        on_step(net, rng)?;
         total += loss;
+        done += 1;
+        if !on_step(net, rng)? {
+            break;
+        }
     }
-    let avg = total / steps.max(1) as f32;
+    let avg = total / done.max(1) as f32;
     if verbose::is_verbose() {
         vprintln!(
             "[train_transformer::epoch] steps={}, mean loss={:.6}",
-            steps,
+            done,
             avg
         );
     }

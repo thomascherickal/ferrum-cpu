@@ -634,6 +634,7 @@ rename), so an interrupted or failed save leaves any previous file intact and no
 | `--checkpoint PATH` | none | Write training state (weights + Adam moments + RNG) to a GGUF checkpoint |
 | `--checkpoint-every N` | 0 | Checkpoint every `N` optimizer steps (always at the end) |
 | `--resume PATH` | none | Resume from that checkpoint and keep writing to it. A resumed run reports the right epoch and step, and with `--val` it restores the best validation score. |
+| `--max-seconds F` | none | Stop cleanly after the optimizer step that crosses `F` seconds (fractions allowed). Also stops when the file `<model>.stop` exists. See [§6.6](#66-validation-checkpoints-and-resuming). |
 | `--threads N` | 0 (auto) | Data-parallel training workers; `1` = serial. See [§6.8](#68-multi-threading-and-determinism). |
 | `--seed N` | 1337 | RNG seed |
 | `--force` | off | Retrain even if the model file exists |
@@ -721,8 +722,23 @@ replaying the exact remaining batches. When the last checkpoint falls on an
 epoch boundary the resumed run is bit-identical to an uninterrupted one;
 otherwise it ends close to, but not bit-identical with, it
 ([Samples §4](Samples.md#4-training-controls)).
-A mid-run interrupt does not save on exit; the checkpoint on disk is the last
-periodic one.
+A hard interrupt (Ctrl-C, power cut) does not save on exit; the checkpoint on
+disk is the last periodic one.
+
+**Stopping on purpose.** `--max-seconds 3600` stops after the optimizer step
+that crosses the budget (fractions are fine). The same happens when the file
+`<model>.stop` exists, for example `touch models/slm.gguf.stop` from another
+terminal; the file is checked once per step. A stopped run writes the
+`--checkpoint`/`--resume` file, saves the model as it stands, deletes the stop
+file, prints `stopped early at step N: <reason>; resume with --resume <ckpt>`
+and exits 0. Without a checkpoint path the message says so, and the stop cannot
+be resumed. A stop that lands on the run's last step is not a stop. The
+saved model of a stopped run is a partial model; with `--val` it is the best
+epoch so far. `finetune-gguf` takes the same flag and watches `<out.flck>.stop`;
+its `.flck` is the checkpoint. Resuming after a stop at an epoch boundary
+gives the same model as an uninterrupted run (tested); elsewhere the usual
+partial-epoch note above applies. Without these flags nothing changes: the
+unstopped path is bit-identical.
 
 ```bash
 train_transformer train big.txt model.gguf --context 128 --embed 128 --heads 4 --blocks 4 \
@@ -1203,6 +1219,7 @@ train_transformer finetune-gguf <model.gguf> <corpus.txt> <out.flck> [options]
 | `--qat` | off | int8 quantization-aware fine-tuning |
 | `--threads N`, `--seed N` | auto, — | Parallelism and determinism |
 | `--resume ckpt.flck` | — | Continue a previous fine-tune |
+| `--max-seconds F` | — | Stop after the step that crosses `F` seconds, or when `<out.flck>.stop` exists; the `.flck` is written, so `--resume` continues ([§6.6](#66-validation-checkpoints-and-resuming)) |
 | `--sample` | — | Print a sample afterwards |
 
 The model loads at f32, because training needs full-precision masters.
@@ -2228,7 +2245,8 @@ trains on every token about `context_len` times. Use the default stride, and
 prefer `--tokens` to `--epochs` for real runs.
 
 **Training crashed after hours. Did I lose everything?** Not if you used
-`--checkpoint`. Re-run with `--resume <file>`.
+`--checkpoint`. Re-run with `--resume <file>`. To stop a long run yourself
+without losing it, use `--max-seconds` or create `<model>.stop` (§6.6).
 
 **Can it run models I downloaded?** Llama/Qwen GGUFs, yes
 ([§9.1](#91-running-run-gguf)). Other architectures are rejected.

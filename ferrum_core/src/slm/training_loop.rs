@@ -113,13 +113,15 @@ where
         )));
     }
     let adam = Adam::new(cfg.lr);
+    cfg.stop.clear_record();
     let ckpt = &cfg.checkpoint_path;
     let every = cfg.checkpoint_every;
     let t0 = std::time::Instant::now();
     let start_step = net.step_count();
     let log_every = cfg.log_every_steps;
     let tokens_per_step = (batch * t) as f64;
-    let mut on_step = |n: &TransformerNet, r: &Rng| -> Result<()> {
+    let halted = std::cell::Cell::new(false);
+    let mut on_step = |n: &TransformerNet, r: &Rng| -> Result<bool> {
         if !ckpt.is_empty() && every > 0 && n.step_count().is_multiple_of(every) {
             write_checkpoint(ckpt, n, r)?;
         }
@@ -135,7 +137,15 @@ where
                 )
             );
         }
-        Ok(())
+        // A stop request ends the run after this step, unless it was the last one.
+        if n.step_count() < total_steps {
+            if let Some(cause) = cfg.stop.should_stop() {
+                cfg.stop.note_stop(cause, n.step_count());
+                halted.set(true);
+                return Ok(false);
+            }
+        }
+        Ok(true)
     };
     // ponytail: a resumed run reshuffles its partially-done epoch (so the
     // remaining steps see a fresh permutation); exact mid-epoch replay would
@@ -170,7 +180,9 @@ where
             "[slm::train] epoch {ep}: step {}/{total_steps}, loss={loss:.6}",
             net.step_count()
         );
-        if !on_epoch(net, ep, loss)? {
+        // After a stop the (partial) epoch is still reported, so a validated run
+        // keeps its best-so-far model; then the final checkpoint below is written.
+        if !on_epoch(net, ep, loss)? || halted.get() {
             break;
         }
     }
@@ -326,6 +338,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn a_stop_request_checkpoints_and_resume_finishes_the_run_exactly() {
+        use crate::stop::{StopCause, StopCondition};
+        let corpus = RESUME_CORPUS.repeat(40);
+        // One step per epoch, so a stop after step 1 lands on an epoch boundary.
+        let one_step = |ckpt: &str| TransformerConfig {
+            batch_size: 4096,
+            checkpoint_every: 0,
+            ..resume_cfg(ckpt)
+        };
+        let full_ck = scratch_ckpt("stop_full");
+        assert_eq!(epoch_ends(&corpus, &one_step(&full_ck)), vec![1, 2, 3]);
+
+        let ck = scratch_ckpt("stop_part");
+        let stop_file = std::path::PathBuf::from(&ck).with_extension("stop");
+        std::fs::write(&stop_file, b"").unwrap();
+        let stop = StopCondition::none().with_stop_file(&stop_file);
+        let cfg = TransformerConfig {
+            stop: stop.clone(),
+            ..one_step(&ck)
+        };
+        assert_eq!(epoch_ends(&corpus, &cfg), vec![1]);
+        assert_eq!(stop.stopped(), Some((StopCause::StopFile, 1)));
+        let (net, _) = TransformerNet::load_checkpoint(&std::fs::read(&ck).unwrap()).unwrap();
+        assert_eq!(net.step_count(), 1);
+
+        // Resume without the stop request: the remaining epochs run and the
+        // final checkpoint equals the uninterrupted run's, byte for byte.
+        let resumed = TransformerConfig {
+            resume: true,
+            ..one_step(&ck)
+        };
+        assert_eq!(epoch_ends(&corpus, &resumed), vec![2, 3]);
+        assert_eq!(
+            std::fs::read(&ck).unwrap(),
+            std::fs::read(&full_ck).unwrap()
+        );
+        std::fs::remove_file(&stop_file).unwrap();
+    }
+
+    #[test]
+    fn a_stop_during_the_last_step_does_not_count_as_a_stop() {
+        use crate::stop::StopCondition;
+        let corpus = RESUME_CORPUS.repeat(40);
+        let stop = StopCondition::none().with_deadline(std::time::Duration::ZERO);
+        let cfg = TransformerConfig {
+            epochs: 1,
+            batch_size: 4096,
+            stop: stop.clone(),
+            ..resume_cfg("")
+        };
+        // The only step is also the last: the run completes normally.
+        assert_eq!(epoch_ends(&corpus, &cfg), vec![1]);
+        assert_eq!(stop.stopped(), None);
     }
 
     #[test]
