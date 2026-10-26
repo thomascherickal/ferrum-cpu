@@ -227,6 +227,70 @@ async fn generate_defaults_and_sampling_fields() {
     assert_eq!(v["results"][1]["n_tokens"], 5);
 }
 
+/// D23: an omitted `max_tokens` defaults to min(64, the server limit), not to a 400.
+#[tokio::test]
+async fn omitted_max_tokens_respects_a_small_server_limit() {
+    let r = router_with(Limits {
+        max_tokens: 8,
+        ..Limits::default()
+    });
+    let (s, v) = post(
+        &r,
+        "/v1/generate",
+        json!({"requests": [{"prompt": "the cat"}]}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["results"][0]["n_tokens"], 8);
+    // An explicit value above the limit is still refused.
+    let (s, _) = post(
+        &r,
+        "/v1/generate",
+        json!({"requests": [{"prompt": "x", "max_tokens": 9}]}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}
+
+/// D24: unknown fields (at the body and request level, on every POST route) and empty stop
+/// strings are a 400 that names the problem.
+#[tokio::test]
+async fn unknown_fields_and_empty_stop_are_400() {
+    let r = router();
+    for (uri, body, needle) in [
+        (
+            "/v1/generate",
+            json!({"requests": [{"prompt": "x", "unknown": 1}]}),
+            "unknown",
+        ),
+        ("/v1/generate", json!({"requests": [], "extra": 1}), "extra"),
+        (
+            "/v1/loglikelihood",
+            json!({"requests": [{"context": "a", "continuation": "b", "k": 1}]}),
+            "`k`",
+        ),
+        (
+            "/v1/loglikelihood",
+            json!({"requests": [], "bogus": true}),
+            "bogus",
+        ),
+        (
+            "/v1/loglikelihood_rolling",
+            json!({"texts": [], "bogus": true}),
+            "bogus",
+        ),
+        (
+            "/v1/generate",
+            json!({"requests": [{"prompt": "x", "stop": [""]}]}),
+            "empty stop",
+        ),
+    ] {
+        let (s, v) = post(&r, uri, body).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{uri} {v}");
+        assert!(v["error"].as_str().unwrap().contains(needle), "{uri} {v}");
+    }
+}
+
 #[tokio::test]
 async fn empty_batch_is_ok() {
     let r = router();

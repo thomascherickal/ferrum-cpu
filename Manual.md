@@ -1385,8 +1385,8 @@ dedicated model thread** and handles **one request at a time**, because
 | `POST /v1/loglikelihood_rolling` | `{"texts":[...]}` | `{"results":[{"logprob","n_tokens"}]}` |
 | `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed"}]}` | `{"results":[{"text","n_tokens"}]}` |
 
-`generate` defaults: `temperature` 0 (greedy), `max_tokens` 64, `top_k` 0, `top_p` 1,
-`seed` 0. `temperature` must be finite and at least 0, `top_p` in (0, 1].
+`generate` defaults: `temperature` 0 (greedy), `max_tokens` 64 (or the server's
+`--max-tokens` if that is smaller), `top_k` 0, `top_p` 1, `seed` 0. `temperature` must be finite and at least 0, `top_p` in (0, 1].
 POST requests must send `Content-Type: application/json`; without it the server
 answers `400`, and `curl -d` does not set it for you.
 
@@ -1408,7 +1408,7 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/loglikeliho
 Each of the four limit flags must be at least 1; `0` is refused at startup
 (`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
 | POST requests in flight | 32 | `503`, before the body is read |
-| Malformed JSON or a missing field | | `400` |
+| Malformed JSON, a missing field, an unknown field (the error names it), or an empty stop string | | `400` |
 | Model error (for example an unknown character in a character-level model) | | `422` |
 
 Errors have the form `{"error": "..."}`. An empty `requests` array returns `200`

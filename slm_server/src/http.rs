@@ -3,7 +3,7 @@
 
 use crate::info::Info;
 use crate::limits::{Limits, MAX_INFLIGHT, MAX_STOPS, MAX_STOP_BYTES};
-use crate::model_thread::{spawn_model_thread, GenRequest, Job, Reply};
+use crate::model_thread::{spawn_model_thread, GenRequest, Job, Reply, DEFAULT_MAX_TOKENS};
 use axum::extract::{rejection::JsonRejection, DefaultBodyLimit, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
@@ -142,11 +142,13 @@ async fn submit(s: &AppState, make: impl FnOnce(Reply) -> Job) -> Result<Json<Va
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LlRequest {
     context: String,
     continuation: String,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LlBody {
     requests: Vec<LlRequest>,
 }
@@ -170,6 +172,7 @@ async fn loglikelihood(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RollingBody {
     texts: Vec<String>,
 }
@@ -184,6 +187,7 @@ async fn loglikelihood_rolling(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GenBody {
     requests: Vec<GenRequest>,
 }
@@ -191,10 +195,9 @@ struct GenBody {
 /// Boundary checks for one generate request.
 fn validate_gen(r: &GenRequest, max_tokens: usize) -> Result<(), ApiError> {
     let bad = |m: String| Err(ApiError(StatusCode::BAD_REQUEST, m));
-    if r.max_tokens > max_tokens {
+    if let Some(n) = r.max_tokens.filter(|&n| n > max_tokens) {
         return bad(format!(
-            "max_tokens {} exceeds max_tokens limit {max_tokens}",
-            r.max_tokens
+            "max_tokens {n} exceeds max_tokens limit {max_tokens}"
         ));
     }
     if !(r.temperature.is_finite() && r.temperature >= 0.0) {
@@ -212,6 +215,9 @@ fn validate_gen(r: &GenRequest, max_tokens: usize) -> Result<(), ApiError> {
             r.stop.len()
         ));
     }
+    if r.stop.iter().any(|s| s.is_empty()) {
+        return bad("empty stop string".into());
+    }
     if let Some(s) = r.stop.iter().find(|s| s.len() > MAX_STOP_BYTES) {
         return bad(format!(
             "a stop string of {} bytes exceeds the limit of {MAX_STOP_BYTES}",
@@ -225,7 +231,7 @@ async fn generate(
     State(s): State<AppState>,
     body: Result<Json<GenBody>, JsonRejection>,
 ) -> Result<Json<Value>, ApiError> {
-    let Json(b) = body.map_err(reject)?;
+    let Json(mut b) = body.map_err(reject)?;
     check(
         &s,
         b.requests.len(),
@@ -234,6 +240,11 @@ async fn generate(
     b.requests
         .iter()
         .try_for_each(|r| validate_gen(r, s.max_tokens))?;
+    // An omitted max_tokens is min(64, the server limit), so a small --max-tokens still works.
+    for r in &mut b.requests {
+        r.max_tokens
+            .get_or_insert(DEFAULT_MAX_TOKENS.min(s.max_tokens));
+    }
     submit(&s, |tx| Job::Generate(b.requests, tx)).await
 }
 
@@ -434,7 +445,7 @@ mod tests {
     fn gen_req(max_tokens: usize, temperature: f32, top_p: f32) -> GenRequest {
         GenRequest {
             prompt: String::new(),
-            max_tokens,
+            max_tokens: Some(max_tokens),
             stop: vec![],
             temperature,
             top_k: 0,
@@ -458,6 +469,16 @@ mod tests {
             assert_eq!(e.0, StatusCode::BAD_REQUEST);
             assert!(e.1.contains("top_p"), "{}", e.1);
         }
+    }
+
+    #[test]
+    fn validate_gen_rejects_empty_stop_and_accepts_omitted_max_tokens() {
+        let mut r = gen_req(1, 0.0, 1.0);
+        r.stop = vec!["a".into(), String::new()];
+        assert_eq!(validate_gen(&r, 5).unwrap_err().1, "empty stop string");
+        r.stop.clear();
+        r.max_tokens = None;
+        assert!(validate_gen(&r, 5).is_ok());
     }
 
     #[test]

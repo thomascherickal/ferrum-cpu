@@ -90,7 +90,7 @@ fn handle(model: &GenerativeSLM, job: Job) {
                     model
                         .generate_tokens(
                             &g.prompt,
-                            g.max_tokens,
+                            g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
                             &g.stop,
                             &params,
                             &mut Rng::new(g.seed),
@@ -160,18 +160,19 @@ fn spawn_with(
     Ok((tx, info, weak))
 }
 
-fn default_max_tokens() -> usize {
-    64
-}
+/// `max_tokens` when a generate request omits it (capped by the server's `--max-tokens`).
+pub(crate) const DEFAULT_MAX_TOKENS: usize = 64;
 fn default_top_p() -> f32 {
     1.0
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct GenRequest {
     pub(crate) prompt: String,
-    #[serde(default = "default_max_tokens")]
-    pub(crate) max_tokens: usize,
+    /// `None` until the HTTP layer fills in the default, capped by the server limit.
+    #[serde(default)]
+    pub(crate) max_tokens: Option<usize>,
     #[serde(default)]
     pub(crate) stop: Vec<String>,
     #[serde(default)]
@@ -236,7 +237,7 @@ mod tests {
 
     #[test]
     fn default_helpers() {
-        assert_eq!((default_max_tokens(), default_top_p()), (64, 1.0));
+        assert_eq!((DEFAULT_MAX_TOKENS, default_top_p()), (64, 1.0));
     }
 
     #[test]
