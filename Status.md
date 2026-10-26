@@ -32,7 +32,7 @@ executed walk-throughs, see [Samples.md](Samples.md). For the overview, see
 | **Scope** | A pure-Rust engine for training, running, serving, and evaluating small transformer SLMs on the CPU. Models are GPT-2-architecture GGUF files that run in llama.cpp, Ollama, and LM Studio. Also GGUF import, fine-tuning, and export for Llama/Qwen |
 | **Date and branch** | 2026-10-26 · version 0.3.0 · `feat/finish-remaining` (not yet merged to `master`) |
 | **Build** | `cargo build --workspace` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `ferrum_gui` builds separately (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` pass from inside `ferrum_gui/`; `node --check` passes on every `ui/*.js`) |
-| **Tests** | **923 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (622 `ferrum_core` unit, 78 cross-crate integration in `tests/`, 159 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **31** pass and **18** skip of 49 (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25; the suite now has 49 tests). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
+| **Tests** | **926 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (622 `ferrum_core` unit, 78 cross-crate integration in `tests/`, 162 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **31** pass and **18** skip of 49 (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25; the suite now has 49 tests). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
 | **Safety** | `#![forbid(unsafe_code)]` in every crate root, plus a repo-wide scan test |
 | **Dependencies** | `ferrum_core`: two pure-Rust Unicode tables, nothing else. `slm_cli`: `sha2`, `serde_json`. `slm_server`: `axum`, `tokio`, `serde`, `serde_json`, `sha2`. `slm_wasm`: `wasm-bindgen`. `ferrum_gui`: Tauri and a few helper crates (`tauri-plugin-dialog`, `sysinfo`, `ureq`, `serde`, `serde_json`). `rayon`, `ndarray`, and `faer` were measured and not adopted ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)) |
 | **Commits** | 74 commits on `feat/finish-remaining` ahead of `master` (`git log --oneline master..HEAD`) at `3ba1bc8`, before the documentation commits |
@@ -329,7 +329,10 @@ must do.
   `--rep`/`--repetition-penalty` (> 0), `--dropout` ([0, 1)), `--weight_decay`, `--clip`
   and `--tokens` are validated before anything loads or trains; `--resume` names a missing
   checkpoint up front for `run-gguf`, `finetune-gguf` and `export-gguf`; `prepare` refuses
-  a non-regular file named as input (and skips FIFOs/devices inside directories);
+  a non-regular file named as input (and skips FIFOs/devices inside directories),
+  writes `*.part` files and renames them into place only after all input was read (a failed
+  run keeps the previous outputs), fails on an empty train split, and names the path and
+  operation in I/O errors;
   `ferrum-serve` caps stop strings (16 x 1024 bytes) and in-flight POSTs (32).
   Greedy decoding (`temperature <= 0`) returns the first maximum on exact ties
   (llama.cpp / `torch.argmax`), and `generate` on a char-level model with an empty seed

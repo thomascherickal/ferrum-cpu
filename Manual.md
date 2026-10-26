@@ -408,8 +408,8 @@ train_transformer prepare --input <file|dir> [--input ...] --out <dir>
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--input PATH` | required, repeatable | A file or a directory. Directories are walked in sorted order. A file is one document unless it contains the separator. |
-| `--out DIR` | required | Output directory. An input that is one of this run's own outputs is refused before anything is truncated. |
+| `--input PATH` | required, repeatable | A file or a directory. Directories are walked in sorted order and **every** file in them is read, whatever its extension (hidden files and anything under `--out` are skipped), so a stray `.bin` counts as an invalid-UTF-8 document. A file is one document unless it contains the separator. |
+| `--out DIR` | required | Output directory. An input that is one of this run's own outputs is refused. Splits and manifest are written to `*.part` files and renamed into place only after every input was read and validated, so a failed run leaves the previous outputs untouched and a fresh directory empty. |
 | `--doc-sep S` | `<\|endoftext\|>` | The string that separates documents inside a file. |
 | `--lossy` | off | Replace invalid UTF-8 bytes with U+FFFD. Without it, invalid UTF-8 is an error that names the file and byte offset. |
 | `--nfkc` | off | Unicode NFKC normalization. |
@@ -428,7 +428,9 @@ What it does to each document, in order:
    (CRLF, and the lone CR of old Mac files) becomes `\n`.
 2. Split out Gutenberg books if asked.
 3. Strip the byte-order mark, zero-width characters (U+200B to U+200D, U+2060,
-   U+FEFF), and control characters except newline and tab.
+   U+FEFF), and control characters (NUL included) except newline and tab. They
+   are removed, not replaced by a space, so the surrounding text is joined:
+   `hello\0world` becomes `helloworld`.
 4. Apply NFKC if asked.
 5. Fold curly quotes, dashes, and the ellipsis to ASCII, collapse runs of three
    or more newlines, and lowercase if asked.
@@ -441,7 +443,11 @@ Each input is read in fixed 1 MiB chunks, so a large file is not loaded whole.
 `train` by `H(seed, document) mod 10,000` against the fractions. Three
 consequences: the same document always lands in the same split, no document
 appears in two splits, and appending new documents later does not move the old
-ones. With very few documents a split can be empty.
+ones. With very few documents a split can be empty. An empty **train** split is an
+error (exit 1, nothing written): `train split is empty: N documents found, need at
+least 3 (one file is one document unless it contains the separator ...; use
+--doc-sep or add more files)`. A single file without `<|endoftext|>` separators is
+one document, so split it with `--doc-sep` or give `prepare` more files.
 
 **Outputs.** `out/train.txt`, `out/val.txt`, `out/test.txt` (documents joined by
 `\n<|endoftext|>\n`) and `out/manifest.json`.

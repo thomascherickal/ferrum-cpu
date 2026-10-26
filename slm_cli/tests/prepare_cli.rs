@@ -389,25 +389,172 @@ fn lossy_counts_documents_needing_replacement() {
     assert_eq!(m["rejected"]["invalid_utf8"], 0);
 }
 
+const NAMES: [&str; 4] = ["train.txt", "val.txt", "test.txt", "manifest.json"];
+
+fn snapshot(out: &Path) -> Vec<Vec<u8>> {
+    NAMES
+        .iter()
+        .map(|n| std::fs::read(out.join(n)).unwrap())
+        .collect()
+}
+
+fn dir_names(out: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(out)
+        .map(|r| {
+            r.map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// D2: a failed run (bad input, missing input, bad UTF-8 after good files) keeps the previous
+/// outputs byte-identical and leaves no `.part` files.
 #[test]
-fn failed_run_removes_stale_manifest() {
-    let d = tmp("stale");
+fn failed_run_keeps_previous_outputs_byte_identical() {
+    let d = tmp("keep");
     let good = d.join("good.txt");
-    std::fs::write(&good, "a perfectly fine document").unwrap();
+    std::fs::write(&good, stories(50)).unwrap();
     let out = d.join("out");
     let (g, o) = (good.to_str().unwrap(), out.to_str().unwrap());
     let (ok, log) = prepare(&["--input", g, "--out", o]);
     assert!(ok, "{log}");
-    assert!(out.join("manifest.json").exists());
+    let before = snapshot(&out);
+    let mut expected: Vec<String> = NAMES.iter().map(|s| s.to_string()).collect();
+    expected.sort();
+    let bad = d.join("bad.txt");
+    std::fs::write(&bad, b"fine text\n<|endoftext|>\noops \xff").unwrap();
+    let b = bad.to_str().unwrap();
+    let missing = d.join("nope");
+    let m = missing.to_str().unwrap();
+    for inputs in [vec![b], vec![g, b], vec![m], vec![g, m]] {
+        let mut args = vec!["--out", o];
+        for i in &inputs {
+            args.extend(["--input", i]);
+        }
+        let (ok, log) = prepare(&args);
+        assert!(!ok, "{inputs:?}: {log}");
+        assert_eq!(snapshot(&out), before, "{inputs:?} changed the outputs");
+        assert_eq!(dir_names(&out), expected, "{inputs:?} left stray files");
+    }
+    // An empty train split is also a failure that keeps them.
+    let tiny = d.join("tiny.txt");
+    std::fs::write(&tiny, "one single document").unwrap();
+    let (ok, _) = prepare(&[
+        "--input",
+        tiny.to_str().unwrap(),
+        "--out",
+        o,
+        "--val-frac",
+        "0.9999",
+        "--test-frac",
+        "0",
+    ]);
+    assert!(!ok);
+    assert_eq!(snapshot(&out), before);
+}
+
+/// D2: a failed run into a fresh `--out` leaves no files at all (no empty splits, no `.part`).
+#[test]
+fn failed_run_into_a_fresh_dir_leaves_no_files() {
+    let d = tmp("fresh");
     let bad = d.join("bad.txt");
     std::fs::write(&bad, b"oops \xff").unwrap();
-    let (ok, _) = prepare(&["--input", bad.to_str().unwrap(), "--out", o]);
+    let out = d.join("out");
+    let (ok, _) = prepare(&[
+        "--input",
+        bad.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
     assert!(!ok);
-    assert!(!out.join("manifest.json").exists(), "stale manifest left");
-    std::fs::write(out.join("manifest.json"), "{}").unwrap();
-    let (ok, _) = prepare(&["--input", d.join("nope").to_str().unwrap(), "--out", o]);
+    assert!(dir_names(&out).is_empty(), "{:?}", dir_names(&out));
+}
+
+/// D4: an empty train split is an error that names the document count and the way out.
+#[test]
+fn empty_train_split_is_an_error_and_writes_nothing() {
+    let d = tmp("emptytrain");
+    let one = d.join("corpus.txt");
+    std::fs::write(&one, "A paragraph.\n\nAnother paragraph.\n").unwrap();
+    let emptyf = d.join("empty.txt");
+    std::fs::write(&emptyf, "").unwrap();
+    let emptyd = d.join("emptydir");
+    std::fs::create_dir_all(&emptyd).unwrap();
+    for (input, found) in [
+        (&one, "1 documents"),
+        (&emptyf, "0 documents"),
+        (&emptyd, "0 documents"),
+    ] {
+        let out = d.join(format!(
+            "out_{found}_{}",
+            input.file_name().unwrap().to_string_lossy()
+        ));
+        let (ok, log) = prepare(&[
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--val-frac",
+            "0.9999",
+            "--test-frac",
+            "0", // the hash picks the split of a lone document; send it to val
+        ]);
+        assert!(!ok, "{log}");
+        assert!(
+            log.contains(&format!(
+                "train split is empty: {found} found, need at least 3"
+            )) && log.contains("--doc-sep"),
+            "{log}"
+        );
+        assert!(dir_names(&out).is_empty(), "{:?}", dir_names(&out));
+    }
+}
+
+/// D22: I/O errors name the path and the operation.
+#[cfg(unix)]
+#[test]
+fn io_errors_name_the_path_and_the_operation() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tmp("ioerr");
+    let input = d.join("a.txt");
+    std::fs::write(&input, stories(20)).unwrap();
+    let ro = d.join("ro");
+    std::fs::create_dir_all(&ro).unwrap();
+    std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::File::create(ro.join("probe")).is_ok() {
+        return; // running as root: permissions do not apply
+    }
+    let (ok, log) = prepare(&[
+        "--input",
+        input.to_str().unwrap(),
+        "--out",
+        ro.to_str().unwrap(),
+    ]);
     assert!(!ok);
-    assert!(!out.join("manifest.json").exists());
+    assert!(
+        log.contains(&format!(
+            "cannot create {}",
+            ro.join("train.txt.part").display()
+        )) && log.contains("Permission denied"),
+        "{log}"
+    );
+    let (ok, log) = prepare(&[
+        "--input",
+        input.to_str().unwrap(),
+        "--out",
+        ro.join("sub").to_str().unwrap(),
+    ]);
+    assert!(!ok);
+    assert!(
+        log.contains(&format!(
+            "cannot create directory {}",
+            ro.join("sub").display()
+        )),
+        "{log}"
+    );
+    std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 fn fetch(url: &str, sha: &str, out: &Path) -> std::process::Output {
@@ -701,32 +848,32 @@ fn summary_line_lists_only_nonzero_rejections_readably() {
 
 #[test]
 fn empty_and_whitespace_only_inputs_produce_consistent_empty_outputs() {
+    // Nothing survives cleaning: the empty-train error (D4), nothing written.
     for (name, raw) in [("empty", ""), ("blank", "  \n\n\t \r\n<|endoftext|>\n  ")] {
         let (ok, log, d, m) = prep_sep(name, raw.as_bytes(), "<|endoftext|>", &[]);
-        assert!(ok, "{name}: {log}");
-        assert!(d.is_empty(), "{name}: {d:?}");
-        assert_eq!(m["outputs"]["train"]["documents"], 0);
-        assert_eq!(m["outputs"]["train"]["bytes"], 0);
-        assert_eq!(m["outputs"]["train"]["sha256"], sha_hex(b""));
-        assert_eq!(m["train_stats"]["unique_chars"], 0);
-        assert!(m["rejected"]["empty"].as_u64().unwrap() >= 1, "{name}");
+        assert!(
+            !ok && log.contains("train split is empty: 0 documents found"),
+            "{name}: {log}"
+        );
+        assert!(d.is_empty() && m.is_null(), "{name}: nothing is written");
     }
 }
 
 #[test]
 fn huge_single_line_is_rejected_as_too_long_not_buffered_twice() {
-    let big = "x".repeat(3 << 20); // 3 MiB, no newline, spans several read chunks
+    // 3 MiB, no newline, spans several read chunks; one small document keeps train non-empty.
+    let raw = format!("{}<|endoftext|>small", "x".repeat(3 << 20));
     let (ok, log, d, m) = prep_sep(
         "huge",
-        big.as_bytes(),
+        raw.as_bytes(),
         "<|endoftext|>",
         &["--max-chars", "1000"],
     );
     assert!(ok, "{log}");
-    assert!(d.is_empty());
+    assert_eq!(d, strs(&["small"]));
     assert_eq!(m["rejected"]["too_long"], 1);
-    assert_eq!(m["inputs"][0]["bytes"], 3 << 20);
-    assert_eq!(m["inputs"][0]["sha256"], sha_hex(big.as_bytes()));
+    assert_eq!(m["inputs"][0]["bytes"], raw.len() as u64);
+    assert_eq!(m["inputs"][0]["sha256"], sha_hex(raw.as_bytes()));
 }
 
 /// Regression: a lone `\r` (classic Mac line ending) was deleted, gluing the words around it.

@@ -37,8 +37,17 @@ pub struct PrepareOptions {
     pub args: Vec<String>,
 }
 
+/// The files a run writes.
+const OUTPUTS: [&str; 4] = ["train.txt", "val.txt", "test.txt", "manifest.json"];
+
+/// Where `name` is written until the whole run has succeeded.
+fn part(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{name}.part"))
+}
+
 struct Split {
     path: PathBuf,
+    tmp: PathBuf,
     w: BufWriter<std::fs::File>,
     hash: Sha256,
     bytes: u64,
@@ -47,18 +56,22 @@ struct Split {
 }
 
 impl Split {
-    fn create(dir: &Path, name: &str) -> std::io::Result<Self> {
+    fn create(dir: &Path, name: &str) -> Result<Self, String> {
         let path = dir.join(format!("{name}.txt"));
+        let tmp = part(dir, &format!("{name}.txt"));
+        let file = std::fs::File::create(&tmp)
+            .map_err(|e| format!("cannot create {}: {e}", tmp.display()))?;
         Ok(Split {
-            w: BufWriter::new(std::fs::File::create(&path)?),
+            w: BufWriter::new(file),
             path,
+            tmp,
             hash: Sha256::new(),
             bytes: 0,
             docs: 0,
             chars: 0,
         })
     }
-    fn write(&mut self, doc: &str) -> std::io::Result<()> {
+    fn write(&mut self, doc: &str) -> Result<(), String> {
         if self.docs > 0 {
             self.put(JOIN.as_bytes())?;
         }
@@ -67,14 +80,18 @@ impl Split {
         self.chars += doc.chars().count() as u64;
         Ok(())
     }
-    fn put(&mut self, b: &[u8]) -> std::io::Result<()> {
-        self.w.write_all(b)?;
+    fn put(&mut self, b: &[u8]) -> Result<(), String> {
+        self.w
+            .write_all(b)
+            .map_err(|e| format!("cannot write {}: {e}", self.tmp.display()))?;
         self.hash.update(b);
         self.bytes += b.len() as u64;
         Ok(())
     }
-    fn finish(mut self) -> std::io::Result<Value> {
-        self.w.flush()?;
+    fn finish(mut self) -> Result<Value, String> {
+        self.w
+            .flush()
+            .map_err(|e| format!("cannot write {}: {e}", self.tmp.display()))?;
         Ok(json!({
             "path": self.path.to_string_lossy(),
             "bytes": self.bytes,
@@ -92,8 +109,7 @@ impl Split {
 ///
 /// Anything under `outdir` (this run's own outputs and manifest, e.g. `--out`
 /// inside `--input`) is skipped when found by walking a directory and an error
-/// when named directly: re-ingesting the outputs would feed them back in (and
-/// they are truncated before any input is read).
+/// when named directly: re-ingesting the outputs would feed them back in.
 fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBuf>> {
     let outdir = std::fs::canonicalize(outdir).unwrap_or_else(|_| outdir.to_path_buf());
     let inside_out = |p: &Path| std::fs::canonicalize(p).is_ok_and(|c| c.starts_with(&outdir));
@@ -107,8 +123,11 @@ fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBu
             if !top && inside_out(p) {
                 return Ok(());
             }
-            for e in std::fs::read_dir(p)? {
-                let e = e?.path();
+            let ctx = |e: std::io::Error| {
+                std::io::Error::new(e.kind(), format!("cannot read {}: {e}", p.display()))
+            };
+            for e in std::fs::read_dir(p).map_err(ctx)? {
+                let e = e.map_err(ctx)?.path();
                 if !e
                     .file_name()
                     .is_some_and(|n| n.to_string_lossy().starts_with('.'))
@@ -229,15 +248,26 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
         return Err("--val-frac and --test-frac must be in [0, 1) and sum to less than 1".into());
     }
     let out = Path::new(&o.out);
-    std::fs::create_dir_all(out)?;
-    // A failed run must not leave a stale manifest beside truncated splits.
-    match std::fs::remove_file(out.join("manifest.json")) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-        _ => {}
-    }
-    // Resolve inputs before any split is created (and so truncated): an input that is one of
-    // this run's own outputs is refused here, untouched.
+    // An input that is one of this run's own outputs is refused here, untouched.
     let files = expand_inputs(&o.inputs, out)?;
+    std::fs::create_dir_all(out)
+        .map_err(|e| format!("cannot create directory {}: {e}", out.display()))?;
+    // Everything is written to `*.part` and renamed into place only after every input was read
+    // and validated, so a failed run leaves the previous outputs untouched.
+    let r = build(o, out, files);
+    if r.is_err() {
+        for n in OUTPUTS {
+            let _ = std::fs::remove_file(part(out, n));
+        }
+    }
+    r
+}
+
+fn build(
+    o: &PrepareOptions,
+    out: &Path,
+    files: Vec<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut splits = [
         Split::create(out, "train")?,
         Split::create(out, "val")?,
@@ -343,7 +373,7 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
                     lines += doc.lines().count() as u64;
                     words += doc.split_whitespace().count() as u64;
                 }
-                splits[which].write(doc).map_err(|e| e.to_string())?;
+                splits[which].write(doc)?;
             }
             Ok(())
         })?;
@@ -351,6 +381,15 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let [train, val, test] = splits;
+    let total_docs = train.docs + val.docs + test.docs;
+    if train.docs == 0 {
+        return Err(format!(
+            "train split is empty: {total_docs} documents found, need at least 3 (one file is one \
+             document unless it contains the separator {:?}; use --doc-sep or add more files)",
+            o.doc_sep
+        )
+        .into());
+    }
     let train = train.finish()?;
     let train_stats = json!({
         "bytes": train["bytes"], "chars": train["chars"], "lines": lines,
@@ -368,10 +407,16 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
         "rejected": rejected,
         "train_stats": train_stats,
     });
-    std::fs::write(
-        out.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest)? + "\n",
-    )?;
+    let mpart = part(out, "manifest.json");
+    std::fs::write(&mpart, serde_json::to_string_pretty(&manifest)? + "\n")
+        .map_err(|e| format!("cannot write {}: {e}", mpart.display()))?;
+    // ponytail: the four renames are not atomic as a set; a crash between them mixes old and new
+    // files. A staging directory swap would fix that if it ever matters.
+    for n in OUTPUTS {
+        let (from, to) = (part(out, n), out.join(n));
+        std::fs::rename(&from, &to)
+            .map_err(|e| format!("cannot rename {} to {}: {e}", from.display(), to.display()))?;
+    }
     let docs: Vec<String> = ["train", "val", "test"]
         .iter()
         .map(|s| format!("{s}={}", manifest["outputs"][s]["documents"]))
