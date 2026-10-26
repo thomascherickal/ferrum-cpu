@@ -20,6 +20,7 @@
 mod capable;
 mod commands;
 mod datasets;
+pub mod hardware;
 mod paths;
 
 use std::sync::Mutex;
@@ -61,6 +62,7 @@ pub fn run() {
             commands::finetune_gguf,
             commands::export_gguf,
             commands::system_stats,
+            hardware::hardware_info,
             capable::capability_report,
             datasets::list_datasets,
             datasets::download_dataset,

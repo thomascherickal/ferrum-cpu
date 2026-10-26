@@ -1681,6 +1681,15 @@ prepare` (§5.1) for those.
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
 
+**Hardware detection.** The `hardware_info` command reports the CPU model, physical
+and logical cores, Ferrum's thread count, total and available RAM, and any GPUs.
+CPU and RAM come from `sysinfo`. GPUs come from `nvidia-smi` (when it can be
+started; a 2 s timeout) and from `/sys/class/drm` on Linux, plus the AMD KFD
+topology for compute units. **Ferrum never uses a GPU**, so every GPU is
+reported as "detected, not used by Ferrum". A GPU's core count is shown only
+when a driver file really reports it (otherwise "unknown"); it is never guessed
+from the product name. GPUs are detected once per process, RAM on every call.
+
 Every form validates input and shows plain-language errors. If the Rust
 backend is unavailable (for example, in a plain web preview), a banner says so.
 
@@ -1720,6 +1729,7 @@ ui/               index.html, styles.css, app.js (vanilla), escape.js (+ escape.
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds
+src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
 src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)
