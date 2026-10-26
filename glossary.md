@@ -217,7 +217,7 @@ single byte. In English, one token is roughly ¾ of a word on average.
 The component that splits text into tokens and converts them to numbers
 (*token IDs*), and converts IDs back into text. A model only works with the
 tokenizer it was trained with.
-**In Ferrum:** `ferrum_core/src/tokenizer.rs` and, for imported models,
+**In Ferrum:** `ferrum_core/src/tokenizer/` and, for imported models,
 `gguf_tokenizer.rs`.
 
 ### Tokenization / Detokenization
@@ -365,7 +365,7 @@ essential for training models with many layers.
 One repeating unit of a Transformer: normalization → attention → residual add →
 normalization → feed-forward → residual add. Models stack many identical
 blocks: a small SLM might have 4–12, a large LLM 80 or more.
-**In Ferrum:** `TransformerBlock` in `ferrum_core/src/layer.rs` and
+**In Ferrum:** `TransformerBlock` in `ferrum_core/src/layer/` and
 `LlamaBlock` in `llm.rs`.
 
 ### Pre-Norm vs Post-Norm
@@ -600,7 +600,7 @@ why you rarely need to train from scratch.
 ### Fine-tuning
 Continuing to train an already-trained model on a smaller, focused dataset so
 it gets better at a specific task, style, or domain.
-**In Ferrum:** `finetune-gguf` in `slm_cli`, backed by `llm_train.rs`.
+**In Ferrum:** `finetune-gguf` in `slm_cli`, backed by `llm_train/`.
 
 ### Full Fine-tuning
 Fine-tuning that updates *every* parameter. Best quality, but needs memory for
@@ -685,7 +685,7 @@ one token at a time; it is limited by how fast weights can be read from memory.
 During decode, the keys and values for earlier tokens never change, so they are
 stored instead of recomputed. This makes generation much faster but uses memory
 that grows with the context length.
-**In Ferrum:** `KvCache` in `layer.rs` and `LlamaCache` in `llm.rs`.
+**In Ferrum:** `KvCache` in `layer/` and `LlamaCache` in `llm.rs`.
 
 ### Decoding Strategy
 The rule for picking the next token from the model's probability distribution.
@@ -720,7 +720,7 @@ token's probability. A newer alternative to top-p.
 ### Repetition Penalty
 Lowers the score of tokens that have already appeared, to stop the model from
 looping on the same phrase. Especially useful for small models.
-**In Ferrum:** these settings live in `SamplingParams` in `slm.rs`.
+**In Ferrum:** these settings live in `SamplingParams` in `slm/`.
 
 ### Beam Search
 Keep several candidate continuations at once and pick the one with the best
@@ -875,16 +875,16 @@ older Python "pickle" files, it cannot hide executable code.
 A single-file model format from the llama.cpp project. It packs the weights
 (often quantized), the architecture settings, and the tokenizer into one file.
 The standard format for running models locally on CPUs.
-**In Ferrum:** read in `gguf.rs`, written in `gguf_write.rs`.
+**In Ferrum:** read in `gguf/`, written in `gguf_write/`.
 
 ### GGML
 The C tensor library behind llama.cpp, and the name of GGUF's predecessor
 format.
 
 ### FINF
-Ferrum's own self-contained model format: weights, metadata, and tokenizer in
-one `.bin` file.
-**In Ferrum:** `ferrum_core/src/loader.rs`; details in `Manual.md`.
+Ferrum's former own model format: weights, metadata, and tokenizer in one `.bin`
+file. It is removed: Ferrum now writes GGUF for everything.
+**In Ferrum:** nothing reads it any more; see `Status.md` §7.
 
 ### ONNX
 "Open Neural Network Exchange": a format for moving models between frameworks

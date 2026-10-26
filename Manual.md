@@ -5,13 +5,14 @@ principles for readers who have never trained a model. It then walks through
 preparing data, training, generating, evaluating, running external models, the
 GUI, and deployment. It ends with the complete reference.
 
-For a one-page overview and installation, see [ReadMe.md](ReadMe.md). For what
+For a one-page overview and installation, see [ReadMe.md](ReadMe.md). For
+executed walk-throughs with real output, see [Samples.md](Samples.md). For what
 is implemented, tested, and planned, see [Status.md](Status.md).
 
 **How to read it.**
 
 - New to all of this? Read Part I in order, then §6.10, a complete worked
-  walkthrough.
+  walkthrough, and try [Samples.md](Samples.md).
 - Know the basics already? Go to Part II and read only the chapter for the
   task in front of you.
 - Integrating the library? Part III is the reference.
@@ -28,7 +29,7 @@ usually decides whether a project succeeds.
 
 **Part I — Foundations**
 1. [Generative AI, SLMs, and Transformers from zero](#1-generative-ai-slms-and-transformers-from-zero)
-2. [Why Rust, and what "minimal dependencies" buys](#2-why-rust-and-what-minimal-dependencies-buys)
+2. [Why Rust, and what few dependencies buy](#2-why-rust-and-what-few-dependencies-buy)
 3. [Data decides: garbage in, garbage out](#3-data-decides-garbage-in-garbage-out)
 
 **Part II — Using Ferrum**
@@ -38,7 +39,7 @@ usually decides whether a project succeeds.
 6. [Training an SLM](#6-training-an-slm)
 7. [Generating text](#7-generating-text)
 8. [Evaluating a model](#8-evaluating-a-model)
-9. [External models (GGUF): run, fine-tune, export](#9-external-models-gguf-run-fine-tune-export)
+9. [GGUF: Ferrum models, other runtimes, serving, and external models](#9-gguf-ferrum-models-other-runtimes-serving-and-external-models)
 10. [The GUI (Ferrum SLM Studio)](#10-the-gui-ferrum-slm-studio)
 11. [Deploying models](#11-deploying-models)
 
@@ -182,7 +183,7 @@ variety and more risk.
 
 ---
 
-## 2. Why Rust, and what "minimal dependencies" buys
+## 2. Why Rust, and what few dependencies buy
 
 ### 2.1 Rust in one minute
 
@@ -195,22 +196,60 @@ garbage collector pausing the program.
 
 - **Memory safety without a garbage collector.** There are no surprise pauses
   while tokens are streaming.
-- **`#![forbid(unsafe_code)]`.** The compiler rejects the entire engine if any
-  code uses Rust's `unsafe` escape hatch, so every memory operation is
-  compiler-checked. The cost is concrete: reading a downloaded model cannot use
+- **`#![forbid(unsafe_code)]` in every crate.** The compiler rejects the code if
+  it uses Rust's `unsafe` escape hatch, and a repo-wide test (`test_no_unsafe`)
+  scans every source file for `unsafe` and checks that every crate root
+  forbids it. The cost is concrete: reading a downloaded model cannot use
   memory-mapping (which needs `unsafe`), so Ferrum streams files with ordinary
-  safe reads instead.
-- **Minimal dependencies.** `ferrum_core` depends only on two pure-Rust Unicode-table
-  crates (`unicode-general-category`, `unicode-normalization`). The project writes its own matrix maths, neural-network layers, tokenizer,
-  file formats, multi-core parallelism, and GGUF parser.
+  safe reads instead. Dependencies may use `unsafe` inside themselves; Ferrum
+  calls only their safe APIs, which rules out `unsafe fn` entry points such as
+  `matrixmultiply::sgemm`.
+- **Few dependencies, each with a reason.** `ferrum_core`, the engine, depends
+  on two pure-Rust Unicode-table crates and nothing else. It stays `std`-only
+  for threading, linear algebra, parsing, and file formats. The other crates add
+  what their job needs (§2.2.1). The rule for a new crate:
+  1. a benchmark shows a gain (or the crate replaces more code than it adds),
+  2. results stay bit-for-bit identical at 1 thread and at N threads (a test
+     enforces this), and
+  3. `ferrum_core` and `slm_wasm` still build and run on
+     `wasm32-unknown-unknown`.
+
+  A crate that fails any of the three is rejected. `deny.toml` lists the
+  allowed licences, and `cargo deny check` runs in CI.
+
+### 2.2.1 What is used, and what was tried and not kept
+
+The dependencies as they are in each `Cargo.toml`:
+
+| Crate(s) | Used by | Used for |
+|---|---|---|
+| `unicode-general-category`, `unicode-normalization` | `ferrum_core` | The GPT-2 pre-tokenizer's `\p{L}`/`\p{N}` classes, and NFKC for `prepare --nfkc`. Both are pure Rust tables and build for `wasm32`. |
+| `sha2`, `serde_json` | `slm_cli`, `slm_server` | sha256 in `prepare` manifests and the server's `model_sha256`; `manifest.json`, `eval --json`, and the server's JSON. Hashes are correctness-critical, and a hand-written one is more code to audit. |
+| `axum`, `tokio`, `serde` | `slm_server` only | The HTTP server. The engine does not depend on them. |
+| `wasm-bindgen` | `slm_wasm` only | Browser bindings. |
+| `tauri` and friends | `ferrum_gui` only | The desktop GUI, outside the workspace. |
+
+Three matmul or threading crates were benchmarked against the hand-written
+kernel and worker pool on the 507,552-parameter reference model. None is in
+the tree. All rows are the median of three runs of `scripts/bench_slm.sh` and
+`cargo bench --bench gemm` at 8 threads on the machine in
+[Samples §9](Samples.md#9-benchmarking), measured on 2026-10-24 with the low-memory
+build settings (`CARGO_PROFILE_RELEASE_LTO=off`, 16 codegen units).
+
+| Candidate | Train tokens/s | Eval s | Generate ms/token | GEMM 2048³ GFLOP/s | Outcome |
+|---|---:|---:|---:|---:|---|
+| Starting point: previous kernel, hand-written pool | 6,726 | 1.63 | 0.292 | 35.2 | |
+| `rayon` pool instead of the hand-written pool | 6,836 (+1.6%) | 1.49 | 0.293 | 33.0 | Rejected: no gain. |
+| `ndarray` (`matrixmultiply` backend) | 9,429 (+40%) | 1.44 | 0.459 | 176.9 | Not adopted: it clears the 10% bar but makes generation 57% slower, and it would be the engine's first dependency on the hot path. A hybrid (`ndarray` for large matmuls, own kernel for single-token decode) gave 9,036 (+34%) at 0.301 ms/token. Whether to take it is an open decision ([Status §6](Status.md#6-roadmap)). |
+| `faer` | 8,368 (+24%) | 1.50 | 0.235 | 158.2 | Rejected: it failed the thread-count determinism rule. |
+| **A 4×8 register tile in the existing kernel (kept)** | **8,056 (+20%)** | 1.48 | 0.304 | 49.8 | Kept. Safe `std` Rust, and bit-identical results to the kernel it replaced. |
 
 | Benefit | Why it matters |
 |---|---|
-| Tiny, fast builds | Nothing to download; one small binary |
-| Nothing to vet or update | No supply-chain surface; the whole engine is readable |
+| Small, readable engine | The forward and backward pass, the tokenizer, and the GGUF codecs are all in the repo |
+| Few crates to vet | `cargo deny check` covers the whole tree; the engine crate has a two-line dependency list |
 | Runs anywhere Rust runs | Servers, laptops, Raspberry Pi, browsers |
-| Reproducibility | No moving external parts, so results do not drift |
-| A teaching artifact | You can read the entire forward and backward pass |
+| Reproducibility | A determinism test blocks any change that makes results depend on the thread count |
 
 ### 2.3 Why Rust fits CPU inference
 
@@ -228,10 +267,15 @@ no API key, and no data leaving their machine ([§11.3](#113-in-the-browser-weba
 ### 2.5 The trade-offs, honestly
 
 - Rust is harder to learn than Python. *Using* Ferrum requires no Rust.
-- Writing its own maths instead of using OpenBLAS or MKL means Ferrum is **not
-  the fastest possible CPU engine**. It trades peak speed for transparency.
+- Admitting a crate costs something: more code you did not write, a larger
+  build, and a licence and advisory list to watch. The rule above keeps that
+  cost to crates that pay for themselves, and for the engine that is two
+  Unicode tables.
+- Ferrum does not call OpenBLAS or MKL, so it is **not the fastest possible CPU
+  engine**. It trades peak speed for transparency, safety, and portability.
 - The AI ecosystem still lives mostly in Python, so ready-made Rust resources
-  are fewer.
+  are fewer. (Ferrum's LightEval module and DVC pipeline use Python tools from
+  outside the engine.)
 
 ---
 
@@ -293,8 +337,11 @@ is sufficient on its own to ruin a model. Spend your effort accordingly.
 | Part | What it is |
 |---|---|
 | `ferrum_core` | The engine library. Everything else calls into it. |
-| `slm_cli` | The `train_transformer` command-line tool: train, generate, eval, info, run-gguf, finetune-gguf, export-gguf |
+| `slm_cli` | The `train_transformer` command-line tool: train, run, generate, eval, info, prepare, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio |
+| `slm_server` | The `ferrum-serve` HTTP server: log-likelihood, rolling log-likelihood, and generation routes ([§9.7](#97-serving-ferrum-serve)) |
 | `slm_wasm` | Browser bindings for trained SLMs |
+| `eval/lighteval/` | Python: a LightEval 0.13.0 model class and custom tasks that evaluate a Ferrum model through the server ([§9.8](#98-evaluating-with-lighteval)) |
+| `dvc.yaml`, `params.yaml` | The fetch → prepare → train → eval pipeline ([§9.9](#99-dvc-pipeline)) |
 | `ferrum_gui` | **Ferrum SLM Studio**, a point-and-click desktop app ([§10](#10-the-gui-ferrum-slm-studio)) |
 | `tests` | Integration and regression tests |
 
@@ -306,12 +353,12 @@ The single most common source of over-claiming is mixing these two up:
 |---|---|---|
 | Positions | learned absolute embedding | RoPE (rotary) |
 | Norm | LayerNorm | RMSNorm |
-| FFN | ReLU MLP | SwiGLU |
+| FFN | GELU MLP (tanh approximation, as GPT-2) | SwiGLU |
 | Attention | dense multi-head | grouped-query (GQA) |
 | Training | full backprop, Adam/AdamW, QAT, from scratch | gradient-checked backprop, AdamW fine-tuning (f32) |
 | Source | trained from your text | imported from a GGUF file |
 | Tokenizer | Ferrum byte-level BPE (stored in the model) | the checkpoint's own (BPE exact, SPM approximate) |
-| Ships as | FINF `.bin` (native, WASM) | GGUF (llama.cpp, ollama, LM Studio) |
+| Ships as | `gpt2`-architecture GGUF (runs in llama.cpp, Ollama, LM Studio, and in Ferrum natively and in WASM) | GGUF |
 
 They share the low-level kernels, worker pool, and quantization grid, and
 nothing above that.
@@ -325,12 +372,12 @@ Tensor ──► ops (matmul, qlinear, softmax, layernorm)  ──► parallel (
                      · Flatten · TransformerBlock (causal MHA + FFN) · KvCache
 Sequential ──► ordered pipeline of layers
 
-tokenizer          ByteBpeTokenizer (byte-level BPE; char-level fallback)
+tokenizer          ByteBpeTokenizer (byte-level BPE with the GPT-2 pre-tokenizer; char-level fallback)
 quant              int8/int4 fake-quant for QAT; packed in-memory QWeight
 train_transformer  TransformerNet: backprop, data-parallel epochs, stride, step budgets
 slm                GenerativeSLM: config-driven training pipeline, generate, evaluate
-meta / loader      ModelMetadata + FINF v4 (f32) / v5 (int8, int4) model files
-dataset            clean_corpus, corpus_stats, validate_for_training
+meta / loader      ModelMetadata + the GGUF codecs for Ferrum models (GPT-2 layout, generic layout)
+dataset            clean_corpus, corpus_stats, validate_for_training, prepare's cleaning steps
 
 ── imported architecture ──
 gguf / gguf_tokenizer   std-only GGUF v2/v3 reader + the checkpoint's own tokenizer
@@ -344,28 +391,121 @@ chat_format             chat-template detection and rendering for instruct model
 
 ## 5. Preparing a corpus
 
-Any UTF-8 text file is a corpus. Three engine functions help you make it a
-*good* one. They are available from the library and from the GUI's
-**Datasets** tab ([§10.3](#103-the-tabs)):
+Any UTF-8 text file is a corpus. For a good one, use `prepare`: a repeatable,
+streaming cleaner and splitter that records exactly what it did
+([Samples §3](Samples.md#3-cleaning-your-own-corpus) runs it on a deliberately messy input).
+The same cleaning steps are available as library functions and in the GUI's
+**Datasets** tab ([§10.3](#103-the-tabs)).
 
-1. **`clean_corpus`**: strip Project Gutenberg boilerplate, lowercase, collapse
-   whitespace, normalize punctuation, strip control characters, and cap the
-   size for quick experiments.
+### 5.1 `train_transformer prepare`
+
+```text
+train_transformer prepare --input <file|dir> [--input ...] --out <dir>
+    [--doc-sep S] [--lossy] [--nfkc] [--lowercase]
+    [--strip-gutenberg] [--min-chars N] [--max-chars N] [--dedup]
+    [--val-frac F] [--test-frac F] [--seed N]
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--input PATH` | required, repeatable | A file or a directory. Directories are walked in sorted order. A file is one document unless it contains the separator. |
+| `--out DIR` | required | Output directory. An input that is one of this run's own outputs is refused before anything is truncated. |
+| `--doc-sep S` | `<\|endoftext\|>` | The string that separates documents inside a file. |
+| `--lossy` | off | Replace invalid UTF-8 bytes with U+FFFD. Without it, invalid UTF-8 is an error that names the file and byte offset. |
+| `--nfkc` | off | Unicode NFKC normalization. |
+| `--lowercase` | off | Lowercase every document. |
+| `--strip-gutenberg` | off | Remove the Project Gutenberg header and footer of each book. Handles several books in one file; each book becomes its own document. |
+| `--min-chars N` | 1 | Drop documents shorter than `N` characters. |
+| `--max-chars N` | 0 (off) | Drop documents longer than `N` characters. |
+| `--dedup` | off | Drop exact duplicate documents (a 128-bit content hash; only the hashes are held in memory). |
+| `--val-frac F` | 0.05 | Share of documents for the validation split. |
+| `--test-frac F` | 0.05 | Share of documents for the test split. |
+| `--seed N` | 42 | Seed for the split. |
+
+What it does to each document, in order:
+
+1. Decode UTF-8 (an error, or replacement with `--lossy`). Every line ending
+   (CRLF, and the lone CR of old Mac files) becomes `\n`.
+2. Split out Gutenberg books if asked.
+3. Strip the byte-order mark, zero-width characters (U+200B to U+200D, U+2060,
+   U+FEFF), and control characters except newline and tab.
+4. Apply NFKC if asked.
+5. Fold curly quotes, dashes, and the ellipsis to ASCII, collapse runs of three
+   or more newlines, and lowercase if asked.
+6. Collapse runs of spaces and trim the document.
+7. Apply the length filter, then the duplicate filter.
+
+Each input is read in fixed 1 MiB chunks, so a large file is not loaded whole.
+
+**The split is by document, not by line.** A document goes to `val`, `test`, or
+`train` by `H(seed, document) mod 10,000` against the fractions. Three
+consequences: the same document always lands in the same split, no document
+appears in two splits, and appending new documents later does not move the old
+ones. With very few documents a split can be empty.
+
+**Outputs.** `out/train.txt`, `out/val.txt`, `out/test.txt` (documents joined by
+`\n<|endoftext|>\n`) and `out/manifest.json`.
+
+### 5.2 The manifest
+
+`manifest.json` makes a run auditable.
+
+| Field | Content |
+|---|---|
+| `ferrum_version` | The version that ran `prepare` |
+| `args` | The full argument list |
+| `inputs` | For each input: `path`, `bytes`, `sha256` |
+| `outputs` | For `train`, `val`, `test`: `path`, `bytes`, `sha256`, `documents`, `chars` |
+| `rejected` | Counts by reason: `empty`, `too_short`, `too_long`, `duplicate`, `invalid_utf8`. With `--lossy`, `invalid_utf8` counts the documents that contained invalid bytes; they are kept, with U+FFFD in place of the bad bytes. |
+| `train_stats` | `corpus_stats` of the train split (`bytes`, `chars`, `lines`, `unique_chars`, `words`) |
+
+If the hashes in two manifests match, the inputs and outputs are byte-identical.
+DVC tracks `manifest.json` in git (not in the DVC cache), so a change in the
+data shows up in a `git diff`.
+
+### 5.3 Library helpers
+
+The cleaning steps live in `ferrum_core::dataset` as small functions you can
+combine: `strip_invisible`, `gutenberg_bodies`, `squeeze_spaces`,
+`normalize_nfkc`, `clean_corpus`, `corpus_stats`, and `validate_for_training`.
+
+1. **`clean_corpus(raw, &CleanOptions)`**: strip Gutenberg boilerplate, fold
+   punctuation, drop control characters, collapse whitespace, optionally
+   lowercase, optionally cap the size. `CleanOptions::default()` strips
+   Gutenberg, folds punctuation, drops control characters, and collapses
+   whitespace, and does **not** lowercase and does not cap. `prepare` calls it
+   with Gutenberg stripping handled separately and adds the other steps above.
 2. **`corpus_stats`**: characters, bytes, lines, words, and unique characters.
    A suspiciously low unique-character count points to a corrupt or one-note
    file.
 3. **`validate_for_training`**: fails fast, with a reason, if the corpus cannot
    train (for example, it is shorter than the context window).
 
-The GUI can also download corpora directly from a URL, from Hugging Face
-(including gated files with a token), or from Kaggle. It ships a small catalog:
-TinyStories, TinyStories V2 (GPT-4), WikiText-2, Shakespeare, and Poetry
-Foundation.
+The GUI **Datasets** tab can also download corpora directly from a URL, from
+Hugging Face (including gated files with a token), or from Kaggle. It ships a
+small catalog: TinyStories, TinyStories V2 (GPT-4), WikiText-2, Shakespeare,
+and Poetry Foundation.
 
-**Hold text back.** Keep a separate `heldout.txt` in the same style that the
-model never trains on. It is how you measure whether the model generalizes
-([§8](#8-evaluating-a-model)). Alternatively, `--val F` splits off the last
-fraction automatically ([§6.6](#66-validation-checkpoints-and-resuming)).
+### 5.4 The default corpus
+
+The DVC pipeline uses the TinyStories V2 (GPT-4) validation file, about 22 MB.
+Stories are already separated by `<|endoftext|>`.
+
+| | |
+|---|---|
+| URL | `https://huggingface.co/datasets/roneneldan/TinyStories/resolve/f54c09fd23315a6f9c86f9dc80f725de7d8f9c64/TinyStoriesV2-GPT4-valid.txt` |
+| Size | 22,502,601 bytes |
+| sha256 | `6874bae9a4c1a4e7edcf0e53b86c17817e9cf881fc75ff2368da457b80c0585d` |
+| Licence | CDLA-Sharing-1.0 (downloaded, never committed) |
+
+`scripts/fetch.sh <url> <sha256> <out>` downloads with `curl` and fails, leaving
+nothing behind, if the checksum does not match. On success it prints only
+`curl`'s progress meter.
+
+**Hold text back.** Keep a separate held-out file in the same style that the
+model never trains on. `prepare` makes `test.txt` for this. Alternatively,
+`--val F` on `train` splits off the last fraction automatically
+([§6.6](#66-validation-checkpoints-and-resuming)).
 
 **Checklist before you train**
 
@@ -373,7 +513,7 @@ fraction automatically ([§6.6](#66-validation-checkpoints-and-resuming)).
 - [ ] Cleaned of boilerplate, markup, and control characters
 - [ ] No large passages repeated many times
 - [ ] Comfortably longer than the context window, with real variety
-- [ ] Inspected: you looked at `corpus_stats` and *read a sample*
+- [ ] Inspected: you looked at `corpus_stats` or `manifest.json` and *read a sample*
 - [ ] Held-out text set aside
 
 ---
@@ -403,17 +543,33 @@ Minibatches of windows are drawn from a fresh random shuffle each epoch.
   full-precision masters (a straight-through estimator), so the int8 file you
   ship behaves like the model you trained.
 
-Training is int8 QAT, multi-threaded, and deterministic for a fixed seed and
-configuration. The model is saved as an int8-quantized FINF v5 file. If the
-model file already exists, `train` loads it instead of retraining; pass
-`--force` to retrain.
+Training is int8 QAT, multi-threaded, and deterministic for a fixed seed,
+configuration, and `--threads`. The model is saved as an int8 `gpt2`-architecture
+GGUF file (`--quant` picks f32 or int4 instead). If the model file already
+exists, `train` loads it instead of retraining; pass `--force` to retrain.
 
 ### 6.2 Command-line reference
 
 ```text
-train_transformer train <corpus.txt> <model.bin> [options]
-train_transformer run   <corpus.txt> <model.bin> <seed text> [options]   # train if needed, then generate
+train_transformer train <corpus.txt> <model.gguf> [options]
+train_transformer run   <corpus.txt> <model.gguf> <seed text> [options]   # train if needed, then generate
 ```
+
+`train_transformer --help` prints the same flags. Every subcommand uses a strict
+parser with its own allow-list of flags:
+
+| Mistake | What happens |
+|---|---|
+| Unknown flag | Error naming the subcommand and listing the valid flags, for example `unknown flag --contxt for 'train' (valid: --context --embed ...)` |
+| Value that does not parse (`--context 12x`) | Error naming the flag and the value; never a silent default |
+| Flag with no value (`--temp` at the end) | `--temp needs a value` |
+| `--resume` path that does not exist | Error before anything trains; use `--checkpoint` to start a new run |
+
+A flag given twice takes its last value, except the repeatable `--stop` and
+`--input`. A negative number is read as a value (`--temp -1`, which is then
+rejected by the range check). `--verbose` and `-v` are accepted everywhere.
+
+**Model file name.** Model files are GGUF. Use `.gguf`: `model.gguf`.
 
 **Architecture**
 
@@ -424,21 +580,21 @@ train_transformer run   <corpus.txt> <model.bin> <seed text> [options]   # train
 | `--heads N` | 4 | Attention heads per block |
 | `--blocks N` | 2 | Transformer blocks |
 | `--hidden N` | 64 | FFN hidden width (typically 4× `--embed`) |
-| `--vocab N` | 512 | `0` = character-level; `≥ 256` = byte-level BPE of that size |
+| `--vocab N` | 512 | `0` = character-level; `≥ 256` = byte-level BPE of that size (the end-of-text token counts toward it) |
 
 **Schedule and data**
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--epochs N` | 100 | Training epochs (ignored when `--tokens` is set) |
-| `--tokens N` | 0 (off) | Token budget, e.g. `5e7`; stops mid-epoch if need be |
+| `--tokens N` | 0 (off) | Token budget, e.g. `5e7`; stops mid-epoch if need be. The banner then shows `Epochs  : budget`. |
 | `--stride N` | 0 (= context) | Window stride; `1` = legacy full overlap |
 | `--batch N` | 16 | Sequences per optimizer step |
-| `--tokenizer PATH` | — | Reuse a saved BPE tokenizer; trained and saved there if missing |
-| `--val F` | — | Hold out the last fraction `F` for validation; keep the best epoch |
+| `--tokenizer PATH` | none | Reuse a saved BPE tokenizer (a GGUF file); trained and saved there if missing |
+| `--val F` | none | Hold out the last fraction `F` for validation; keep the best epoch. A tokenizer trained in the same run sees only the train portion. |
 | `--patience N` | 0 | With `--val`: stop after `N` epochs without improvement (0 = never) |
 
-**Optimization**
+**Optimization and output**
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -448,21 +604,28 @@ train_transformer run   <corpus.txt> <model.bin> <seed text> [options]   # train
 | `--clip F` | 0 (off) | Global gradient-norm clipping threshold |
 | `--weight_decay F` | 0 | AdamW decoupled weight decay |
 | `--dropout F` | 0 | FFN-hidden dropout during training |
-| `--tie` | off | Tie the LM head to the token embedding (saves `vocab × embed` parameters) |
-| `--no-qat` | off | Plain fp32 training instead of int8 QAT |
+| `--tie` | off | Tie the LM head to the token embedding. The parameter count drops by `vocab × embed`, and the file shrinks by the same amount, because a tied model has no `output.weight` tensor. |
+| `--no-qat` | off | Plain f32 training. **QAT is int8 only** (Q8_0). There is no int4 QAT. |
+| `--quant f32\|int8\|int4` | `int8` | Precision of the saved file. `int8` is GGUF Q8_0, `int4` is Q4_0 (converted after training, so lossy). |
 
 **Run control**
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--checkpoint PATH` | — | Write training state (weights + Adam moments + RNG) |
+| `--checkpoint PATH` | none | Write training state (weights + Adam moments + RNG) to a GGUF checkpoint |
 | `--checkpoint-every N` | 0 | Checkpoint every `N` optimizer steps (always at the end) |
-| `--resume PATH` | — | Resume from that checkpoint and keep writing to it |
-| `--threads N` | 0 (auto) | Data-parallel training workers; `1` = serial |
+| `--resume PATH` | none | Resume from that checkpoint and keep writing to it. A resumed run reports the right epoch and step, and with `--val` it restores the best validation score. |
+| `--threads N` | 0 (auto) | Data-parallel training workers; `1` = serial. See [§6.8](#68-multi-threading-and-determinism). |
 | `--seed N` | 1337 | RNG seed |
-| `--force` | — | Retrain even if the model file exists |
-| `--sample` | — | Print a short sample after training |
-| `--verbose`, `-v` | — | Stream the engine's internal trace |
+| `--force` | off | Retrain even if the model file exists |
+| `--sample` | off | Print a short sample after training |
+| `--verbose`, `-v` | off | Prints a progress line every 10 optimizer steps: `[train] step S/T  tokens/s R  elapsed Xs`. It does not print per-op logs. |
+| `--debug` | off | Streams the engine's internal trace. Very verbose; use it to debug, not to watch progress. |
+
+The sampling flags `run` shares with `generate` are in [§7](#7-generating-text).
+`prepare` is in [§5.1](#51-train_transformer-prepare), `eval` in
+[§8](#8-evaluating-a-model), and the export commands in
+[§9.6](#96-one-command-exports).
 
 ### 6.3 Choosing a tokenizer
 
@@ -528,38 +691,55 @@ If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
 `--tokenizer` so the vocabulary is guaranteed identical. One detail: a resumed
 run restarts its partially-finished epoch with a fresh shuffle instead of
-replaying the exact remaining batches.
+replaying the exact remaining batches, so a resumed run ends close to, but not
+bit-identical with, an uninterrupted one ([Samples §4](Samples.md#4-training-controls)).
+A mid-run interrupt does not save on exit; the checkpoint on disk is the last
+periodic one.
 
 ```bash
-train_transformer train big.txt model.bin --context 128 --embed 128 --heads 4 --blocks 4 \
+train_transformer train big.txt model.gguf --context 128 --embed 128 --heads 4 --blocks 4 \
     --hidden 512 --vocab 2048 --lr 0.003 --tokens 5e7 --cosine --warmup 200 --clip 1 --tie \
     --tokenizer tok.gguf --checkpoint run.fckp --checkpoint-every 500
 # …power cut at step 9,000…
-train_transformer train big.txt model.bin <same flags> --resume run.fckp
+train_transformer train big.txt model.gguf <same flags> --resume run.fckp
 ```
 
 ### 6.7 Sizing a run for your machine
 
-Measured on an i5-1135G7 (4 cores / 8 threads, 16 GB) with int8 QAT, batch 16,
-and 8 threads:
+Measured on 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz (4 cores / 8 threads, 15 GiB) on 2026-10-26, with int8 QAT, batch 16,
+8 threads, and the first 8 MB of the prepared TinyStories training split. Each row
+is one short `train` run (16 to 200 steps); tokens/s is the tokens trained divided
+by the "Trained in" time, and the peak is the process's resident set from
+`/usr/bin/time -v`, which includes training the BPE tokenizer. The binary was the
+low-memory build (no LTO), so a shipped build is a little faster, and the desktop
+session was running.
 
-| Params | Config (T = context, C = width, L = layers) | Sec/step | Tokens/s | Peak RAM | Tokens/day |
+| Params | Config (T = context, C = width, L = layers, H = heads, F = FFN hidden, V = vocabulary) | Sec/step | Tokens/s | Peak RAM | Tokens/day |
 |---|---|---|---|---|---|
-| 0.17M | T64, C64, L2 | 0.04 | 24,700 | 36 MB | 2.1B |
-| 1.34M | T128, C128, L4 | 0.45 | 4,520 | 245 MB | 391M |
-| 6.9M | T256, C256, L6 | 4.5 | 913 | 1.3 GB | 79M |
-| 20.6M | T256, C384, L8 | 11.9 | 345 | 2.5 GB | 30M |
-| 33.8M | T256, C512, L8 | 21.3 | 193 | 3.2 GB | 17M |
+| 0.17M | T64, C64, L2, H4, F256, V512 | 0.06 | 16,113 | 176 MB | 1.4B |
+| 1.33M | T128, C128, L4, H4, F512, V2048 | 0.64 | 3,202 | 297 MB | 277M |
+| 6.90M | T256, C256, L6, H8, F1024, V4096 | 6.28 | 652 | 1.4 GB | 56M |
+| 20.59M | T256, C384, L8, H8, F1536, V8192 | 15.27 | 268 | 3.0 GB | 23M |
+
+The 33.8M configuration (T256, C512, L8) was not re-run. The memory check in
+`train` estimated 6.2 GB for it and refused to start, because only 6.1 GB (three
+quarters of the available RAM) was allowed at that moment.
 
 **RAM is dominated by activations**, not by the 16 bytes per parameter of
 weights and optimizer state. RAM is rarely the limit; compute is.
 
-| Goal | Reachable size | Example: time to 20 tokens/param |
+| Goal | Reachable size | Basis |
 |---|---|---|
-| Heavily over-trained, minutes to hours | 0.1M–2M | 1.3M model: about 1.7 h |
-| Compute-optimal in 24 h | ≈5M | 6.9M model: about 1.75 days |
-| Compute-optimal in a week | ≈12–15M | 20.6M model: about 14 days |
-| Compute-optimal in a month | ≈25–30M | 33.8M model: about 40 days |
+| Heavily over-trained, minutes to hours | 0.1M to 2M | The 1.33M model sees 277M tokens a day, about 207 tokens per parameter |
+| Compute-optimal (20 tokens/param) in 24 h | about 4M | Interpolated between the 1.33M and 6.9M runs |
+| Compute-optimal in a week | about 12M | Interpolated between the 6.9M and 20.6M runs |
+| Compute-optimal in a month | about 27M | Extrapolated; the largest run measured is 20.6M |
+
+The 1.33M model reaches 20 tokens per parameter in about 2.3 h, the 6.9M model
+in about 2.5 days, and the 20.6M model in about 17.8 days. Tokens per day fall
+roughly in proportion to the parameter count while the tokens needed grow in
+proportion to it, so the time to a compute-optimal model grows a little less
+than with the square of the size.
 
 **Starting points by size**
 
@@ -569,9 +749,10 @@ weights and optimizer state. RAM is rarely the limit; compute is.
 | ~1.5M (hours) | 128 | 128 | 4 | 4 | 512 | 2048 | 3e-3 |
 | ~7M (a day or two) | 256 | 256 | 8 | 6 | 1024 | 4096 | 1e-3 |
 
-Throughput is measured; the presets are reasonable defaults, not tuned
-optima. A GPU is never used, so a small discrete GPU (for example, a 2 GB
-MX330) adds nothing.
+All rows used `--lr 3e-3` and `--seed 1`; the learning rate does not change the speed.
+Throughput is
+measured; the presets are reasonable defaults, not tuned optima. A GPU is never
+used, so a small discrete GPU (for example, a 2 GB MX330) adds nothing.
 
 ### 6.8 Multi-threading and determinism
 
@@ -582,8 +763,16 @@ There are two independent knobs:
   reproducible, and `--threads 1` is bit-identical to the serial trainer.
   Changing the shard count can change the low bits of the weights, because
   floating-point addition is not associative.
-- **`FERRUM_NUM_THREADS=N`** sizes the matmul worker pool used by both
-  training and generation. It never changes results.
+- **`FERRUM_NUM_THREADS=N`** sizes the matmul worker pool used by training,
+  generation, and evaluation. The pool splits work by rows or columns without
+  changing any per-element arithmetic, so it never changes a result. It does
+  set the default shard count of the data-parallel trainer, though: with
+  `--threads 0` (auto), the number of shards is `FERRUM_NUM_THREADS` or the
+  core count. A different shard count trains different weights (the
+  reference model reaches a different perplexity at 1 and at 8 shards), so
+  pass `--threads N` explicitly to reproduce a run on another machine. Only
+  training is affected; `generate` and `eval` give identical output at any
+  `FERRUM_NUM_THREADS`.
 
 ### 6.9 Library equivalents
 
@@ -613,6 +802,7 @@ pub struct TransformerConfig {
     pub checkpoint_path: String,  // ""  (no checkpoints)
     pub checkpoint_every: u64,    // 0   (only at the end)
     pub resume: bool,             // false
+    pub log_every_steps: u64,     // 0     (progress line every N steps; CLI -v = 10)
 }
 ```
 
@@ -633,7 +823,7 @@ let slm = GenerativeSLM::train_transformer_config_validated(&corpus, &cfg, 0, &v
 })?;
 
 // Train once, then load from disk on later runs:
-let (slm, was_loaded) = GenerativeSLM::load_or_train("model.bin", &corpus, &cfg, &mut rng, |_, _| {})?;
+let (slm, was_loaded) = GenerativeSLM::load_or_train("model.gguf", &corpus, &cfg, &mut rng, |_, _| {})?;
 ```
 
 The older positional functions `GenerativeSLM::train_transformer(corpus,
@@ -645,59 +835,117 @@ For full control, drive `TransformerNet` directly ([§12.3](#123-training-primit
 
 ### 6.10 A worked walkthrough
 
-This uses a short paragraph as the corpus, which is enough to see the pipeline
-end to end. Real models want megabytes.
+This uses a few sentences as the corpus, which is enough to see the pipeline
+end to end. Real models want megabytes ([Samples §1](Samples.md#1-quick-start-a-500k-slm-on-tinystories)
+trains a real one). Every output below is from a real run
+([Samples](Samples.md) lists the machine).
 
 ```bash
 cargo build -p slm_cli --release
-BIN=./target/release/train_transformer
+export PATH="$PWD/target/release:$PATH"
 
-$BIN train corpus.txt model.bin --epochs 60 --context 12 --embed 32 --heads 4 \
+cat > corpus.txt <<'EOF'
+the quick brown fox jumps over the lazy dog. the town wakes slowly each morning, and the baker opens his shop while the streets are still quiet. children walk to school past the old stone bridge, and the river runs down to the sea carrying leaves and small boats. by noon the market is full of voices, and the fox watches from the hill. in the evening the lamps are lit one by one, the shops close, and the streets grow quiet again. the quick brown fox goes home to sleep, and the town sleeps too.
+EOF
+cat > heldout.txt <<'EOF'
+the lazy dog wakes slowly each morning, and the baker walks to the old stone bridge while the streets are quiet. children carry small boats to the river, and by noon the market is full of leaves and voices. in the evening the lamps are lit and the town sleeps.
+EOF
+
+train_transformer train corpus.txt model.gguf --epochs 60 --context 12 --embed 32 --heads 4 \
     --blocks 2 --hidden 64 --vocab 300 --seed 7 --stride 1
 ```
 
 ```text
-  epoch     3/60   loss = 2.596811
-  epoch    30/60   loss = 0.189039
-  epoch    60/60   loss = 0.152412
-Saved 40055 bytes → model.bin (int8-quantized FINF v5)
+╔══════════════════════════════════════════════════════════╗
+  ferrum transformer SLM trainer (int8 QAT)
+  Corpus  : corpus.txt  (498 chars)
+  Context : 12   Embed: 32   Hidden: 64
+  Heads   : 4   Blocks: 2
+  Tokenizer: byte-level BPE (vocab 300)
+  Epochs  : 60   LR: 0.01   Batch: 16   Seed: 7
+  Threads : 8 (data-parallel minibatch training)
+╚══════════════════════════════════════════════════════════╝
+
+  epoch     1/60   loss = 4.383340
+  epoch     3/60   loss = 2.058480
+  epoch     6/60   loss = 0.695912
+  epoch     9/60   loss = 0.403406
+  epoch    12/60   loss = 0.309260
+  epoch    15/60   loss = 0.273127
+  epoch    18/60   loss = 0.276861
+  epoch    21/60   loss = 0.259686
+  epoch    24/60   loss = 0.231830
+  epoch    27/60   loss = 0.226736
+  epoch    30/60   loss = 0.223918
+  epoch    33/60   loss = 0.223233
+  epoch    36/60   loss = 0.240042
+  epoch    39/60   loss = 0.239465
+  epoch    42/60   loss = 0.218993
+  epoch    45/60   loss = 0.216633
+  epoch    48/60   loss = 0.202404
+  epoch    51/60   loss = 0.195243
+  epoch    54/60   loss = 0.199890
+  epoch    57/60   loss = 0.187257
+  epoch    60/60   loss = 0.188075
+
+Trained in 5.80s.
+  vocab = 300 BPE tokens   context = 12   output_dim = 300
+Saved 50264 bytes → model.gguf (int8 GGUF)
 Reload check: OK (6 layers).
+exit=0
 ```
 
 (`--stride 1` is used here only because the corpus is a few hundred
 characters. On real data, leave the default.)
 
 ```bash
-$BIN info model.bin
+train_transformer info model.gguf
 ```
 
 ```text
-Format    : FINF v5 (int8-quantized)
+Model     : model.gguf  (50264 bytes)
+Format    : GGUF v3 (gpt2, int8)
+Params    : 36736
+Name      : GenerativeSLM Transformer
 Task      : TransformerSLM
 Input dim : 12
 Output dim: 300
-Tokenizer : byte-level BPE (300 tokens, 44 merges)
+Tokenizer : byte-level BPE (300 tokens, 43 merges)
 Layers    : 6
 ```
 
 ```bash
-$BIN generate model.bin "the quick brown" --chars 60 --temp 0.2
-# the quick brown to school. by evening the streets grow quiet again and the
+train_transformer generate model.gguf "the quick brown" --chars 60 --temp 0.2 --gen-seed 1
+train_transformer eval model.gguf heldout.txt
+train_transformer eval model.gguf corpus.txt
+```
 
-$BIN eval model.bin heldout.txt
-# Predictions  : 72
-# Cross-entropy: 1.3112 nats/token
-# Bits/token   : 1.8917
-# Perplexity   : 3.7107
+```text
+the quick brown fox jumps over the lazy dog. the town wakes slowly each mor
 
-$BIN eval model.bin corpus.txt
-# Perplexity   : 1.0036   ← near-perfect on text it has memorized
+Model        : model.gguf
+Held-out text: heldout.txt  (261 chars)
+Predictions  : 151
+Cross-entropy: 2.3796 nats/token
+Bits/token   : 3.4331
+Perplexity   : 10.8007
+Bits/byte    : 1.9862
+Seconds      : 0.00
+
+Model        : model.gguf
+Held-out text: corpus.txt  (498 chars)
+Predictions  : 274
+Cross-entropy: 0.0416 nats/token
+Bits/token   : 0.0600
+Perplexity   : 1.0425
+Bits/byte    : 0.0330
+Seconds      : 0.02
 ```
 
 A model that learned nothing scores a perplexity equal to its vocabulary size
-(300 here), so held-out 3.7 means it learned real structure. The gap between
-1.0 on seen text and 3.7 on unseen text is the textbook sign of memorization on
-a tiny corpus. More data, regularization, and a right-sized model close it.
+(300 here), so a held-out 10.8 means it learned real structure. The gap between
+1.04 on seen text and 10.8 on unseen text is the textbook sign of memorization
+on a tiny corpus. More data, regularization, and a right-sized model close it.
 Iterate in this order: **more and better data → right-size the model →
 regularize → tune `--vocab` → tune `--lr` and the budget**. Re-run `eval` after
 each change.
@@ -707,31 +955,63 @@ each change.
 ## 7. Generating text
 
 ```text
-train_transformer generate <model.bin> <seed text> [--chars N] [--temp F] [--gen-seed N] [--stream]
+train_transformer generate <model.gguf> <seed text> [--chars N] [--max-tokens N] [--temp F] [--gen-seed N]
+                           [--top-k N] [--top-p F] [--repetition-penalty F] [--stop S]... [--stream]
 ```
+
+`run` takes the same flags after its training flags. [Samples §6](Samples.md#6-generation)
+runs each of them.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--chars N` | 200 | Characters to generate (characters even for BPE models) |
-| `--temp F` | 0.8 | Sampling temperature; 0.1–0.3 for faithful, 0.7+ for varied |
+| `--max-tokens N` | off | Token budget instead of a character count. With `--max-tokens` or `--stop` set, `--chars` is ignored, and a `--stop` run without `--max-tokens` uses the `--chars` value as its token budget. |
+| `--temp F` | 0.8 | Sampling temperature. **`0` is exact argmax (greedy).** 0.1–0.3 for faithful, 0.7+ for varied. |
 | `--gen-seed N` | time-based | Fix it for reproducible output |
-| `--stream` | — | Print the completion live, fragment by fragment |
+| `--top-k N` | 0 (off) | Sample only from the `N` most likely tokens |
+| `--top-p F` | 1.0 (off) | Nucleus sampling, in `[0, 1]` |
+| `--repetition-penalty F` | 1.0 (off) | Penalize tokens already generated; must be positive |
+| `--stop S` | none | Stop when `S` appears. Repeatable. The output ends before the first match. |
+| `--stream` | off | Print the completion live (with `--max-tokens` or `--stop` the completion is printed whole at the end) |
 
-- The output is the **seed followed by** exactly `--chars` new characters,
-  unless generation is cut short.
-- BPE models encode the seed, left-pad short prompts, and sample subword
-  tokens. Character-level models need a seed of at least `context_len`
-  characters.
+- The output is the **seed followed by** the continuation.
+- Temperature `0` is exact argmax and picks the first maximum on an exact tie
+  (the llama.cpp rule). The old behaviour clamped `0` to `0.01`; that clamp is
+  gone.
+- If the tokenizer has an end-of-text token (every newly trained model does),
+  generation stops when the model emits it. The CLI does not print the stop
+  reason.
+- BPE models encode the seed and sample subword tokens. Character-level models
+  need every seed character to be in the vocabulary.
 - Streaming is UTF-8-safe: a partial multi-byte character is held back until
   it completes, so a `U+FFFD` placeholder is never shown.
-- Generation uses a per-block **KV cache**, so each new token costs
-  O(context) instead of recomputing the whole window.
+- With the same `--gen-seed`, the output is identical at any `FERRUM_NUM_THREADS`.
 
-The library adds top-k, top-p (nucleus), repetition penalty, and stop strings:
+### 7.1 Generation cost
+
+A per-block **KV cache** means each new token attends to the cached keys and
+values instead of recomputing the window. Learned absolute positions forbid
+sliding the cache one token at a time. When the cache is full, Ferrum
+**re-primes** from the last `context_len / 2` tokens. That is one re-prime per
+`context_len / 2` generated tokens. The cost per generated token is therefore
+bounded, and generating many times the window length takes linear time. Output
+text is decoded incrementally, not re-decoded in full on every step.
+
+The library adds `generate_tokens`, which takes a token budget and a list of
+stop strings and returns the continuation only:
 
 ```rust
 use ferrum_core::{Rng, SamplingParams};
 
+let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1 };
+let g = slm.generate_tokens("Once upon a time", 100, &["\n\n".to_string()], &p, &mut Rng::new(1))?;
+println!("{} ({} tokens, {:?})", g.text, g.n_tokens, g.stop_reason);
+```
+
+`stop_reason` is `MaxTokens`, `Stop`, or `Eos`. The older `generate`,
+`generate_with`, `generate_until`, and `generate_stream` are unchanged:
+
+```rust
 let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1 };
 let text  = slm.generate_with("Once upon a time", 200, &p, &mut Rng::new(1))?;
 let reply = slm.generate_continuation("Q: hi\nA:", 80, 0.5, &mut Rng::new(1))?; // without the seed
@@ -752,8 +1032,15 @@ Training loss shows the model is *fitting*. Perplexity on unseen text shows
 whether it *generalizes*.
 
 ```bash
-train_transformer eval model.bin heldout.txt
+train_transformer eval model.gguf heldout.txt --json metrics/heldout.json
 ```
+
+```text
+train_transformer eval <model.gguf> <text.txt> [--json <path>]
+```
+
+`--json` writes `{"perplexity", "cross_entropy_nats", "bits_per_token", "bits_per_byte", "tokens", "bytes", "seconds"}`.
+DVC tracks this file as a metric.
 
 ```rust
 let e = slm.evaluate(&std::fs::read_to_string("heldout.txt")?)?;
@@ -761,15 +1048,31 @@ println!("ppl {:.3}  bits/token {:.3}  CE {:.3} nats  ({} predictions)",
          e.perplexity, e.bits_per_token, e.cross_entropy, e.num_predictions);
 ```
 
-- Lower is better, and **1.0 is perfect**.
-- A model that learned nothing scores the **vocabulary size**.
-- A large train-versus-held-out gap means **memorization**. That points to a
-  data problem (too small or too repetitive), not a model that is too small.
-- Evaluation uses the shipped int8-aware weights and the same forward path as
-  generation. The text must be longer than the context window.
-- To compare models with **different tokenizers**, compare bits per *byte*
-  (bits/token × tokens ÷ bytes). Per-token numbers are not comparable across
+- **Every token is scored.** The first token is conditioned on a start
+  position (BOS, which is the EOS id), so `num_predictions` equals the token
+  count. Earlier versions skipped the first window, so perplexities from before
+  this change are not comparable ([Status §7](Status.md#7-backward-compatibility)).
+- Texts longer than the context window use sliding windows with stride
+  `context_len / 2`. Each token is scored exactly once, with at least
+  `context_len / 2` tokens of history (except in the first window).
+- Lower is better, and **1.0 is perfect**. A model that learned nothing scores
+  about the vocabulary size.
+- Each token's probability is floored at 1e-12, which is a per-token floor of
+  −27.63 nats.
+- A large train-versus-held-out gap means **memorization**, which points to a
+  data problem rather than a model that is too small.
+- Evaluation uses the shipped weights and the same forward path as generation.
+- For a character-level model, an unknown character is an error in the scoring
+  API, and `evaluate()` reports how many it met.
+- To compare models with **different tokenizers**, compare **bits per byte**
+  (`bits_per_byte` in the JSON). Per-token numbers are not comparable across
   vocabularies.
+
+**Speed.** Evaluation runs one padded forward pass per window instead of one
+pass per token. On the 507,552-parameter reference model it scores a 30 KB
+held-out file in about 1.5 s; the 1.1 MB test split of the default corpus takes
+about a minute ([Samples §5](Samples.md#5-evaluation) and
+[§9](Samples.md#9-benchmarking)).
 
 ### 8.2 Other checks
 
@@ -777,18 +1080,36 @@ println!("ppl {:.3}  bits/token {:.3}  CE {:.3} nats  ({} predictions)",
 |---|---|
 | **Seed fidelity** | `generate(seed, …)` always starts with `seed`. If not, the file is corrupt. |
 | **Tokenizer compression** | `text.len() / tok.encode(text).len()` bytes per token; higher packs more text per step |
-| **Size** | `to_bytes()` (f32) vs `to_bytes_quantized()` (int8, ≈4×) vs `to_bytes_quantized_int4()` (≈8×). Tensors under 64 values stay f32, so ratios are slightly below 4×/8×. |
-| **Quantization fidelity** | Compare `slm.model.forward(x)` before and after a save/load round trip; int8 drift stays below about half a quantization step thanks to QAT. int4's grid is coarser. |
+| **Size** | `to_bytes()` (f32) vs `to_bytes_quantized()` (int8, ≈4×) vs `to_bytes_quantized_int4()` (≈8×). Matrices whose row length is not a multiple of 32 stay f32, so ratios are slightly below 4×/8×. |
+| **Quantization fidelity** | An int8 file reloads bit-identically to the QAT model that trained it, so `evaluate()` gives the same numbers before and after saving. int4's grid is coarser ([Samples §5](Samples.md#5-evaluation)). |
 | **Speed** | `time train_transformer generate …`; compare `FERRUM_NUM_THREADS=1` vs auto. Outputs are identical, only wall-clock changes. |
 | **Reproducibility** | Same seed, same output; reloaded model matches in-memory model; same corpus and vocab give the same BPE merges. |
+| **Standard benchmarks** | LightEval through `ferrum-serve` ([§9.8](#98-evaluating-with-lighteval)) |
+
+### 8.3 The scoring API
+
+```rust
+let s = slm.score("The cat sat on the", " mat")?;   // log p(continuation | context)
+let r = slm.score_rolling(&text)?;                   // every token, the first conditioned on BOS
+// Score { logprob: f64, n_tokens: usize, greedy: bool }
+```
+
+`score` follows the lm-eval-harness convention. Trailing whitespace in the
+context moves to the front of the continuation. The continuation tokens are the
+suffix of the joint encoding after the context's length. An empty continuation
+scores `0.0` over `0` tokens. `greedy` is true when every scored token was the
+argmax. The server and LightEval use this API.
 
 ---
 
-## 9. External models (GGUF): run, fine-tune, export
+## 9. GGUF: Ferrum models, other runtimes, serving, and external models
 
-Ferrum imports small open-weight **Llama/Qwen** checkpoints in GGUF, the
-standard open-model format. It runs them, fine-tunes them, and writes them back
-out.
+GGUF is the one file format Ferrum uses. Everything it writes is GGUF v3: the
+models you train, training checkpoints, and tokenizer files. §9.1 to §9.4 cover
+the **imported** Llama/Qwen checkpoints: Ferrum runs them, fine-tunes them, and
+writes them back out. §9.5 to §9.9 cover your own models: running them in other
+tools, serving them, evaluating them, and the DVC pipeline. The file layout is in
+[§12.7](#127-the-ferrum-gguf-format).
 
 **Formats read:** `F32, F16, Q8_0, Q8_1, Q4_0, Q4_1, Q5_0, Q5_1` and the k-quants
 `Q2_K, Q3_K, Q4_K, Q5_K, Q6_K`. The `IQ*` families are rejected with a clear
@@ -820,8 +1141,8 @@ train_transformer run-gguf <model.gguf> [prompt] [options]
 - **Memory guard.** Before loading, Ferrum estimates the resident footprint
   and refuses with a warning if it will not fit (override with `--force`).
 - **Expectations.** Decode is memory-bandwidth-bound: each token streams every
-  weight once. A ~1B model decodes at about **7 tokens/s at int4** after about
-  **30 s of prefill** for a 512-token prompt. That is a patient demo, not a
+  weight once. A ~1B model decodes at about **6.7 tokens/s at int4** after about
+  **25 s of prefill** for a 512-token prompt (estimates from the benchmark in §13). That is a patient demo, not a
   chatbot ([§13.4](#134-quantized-decode-and-the-gguf-runner)).
 - **Fidelity.** Import dequantizes and re-quantizes onto Ferrum's per-row
   grid. That is lossy and **not bit-exact to llama.cpp**. `--quant f32` avoids
@@ -895,6 +1216,273 @@ let loss = trainer.train_step(&tok.encode("training text"))?;   // one AdamW ste
 trainer.model.write_gguf(&gguf, GgufQuant::Q4K, "out.gguf")?;  // export the fine-tuned model
 ```
 
+### 9.5 Running Ferrum models in llama.cpp, Ollama, and LM Studio
+
+A Ferrum BPE transformer SLM is a `gpt2`-architecture GGUF. Other runtimes load
+it without changes. The same f32 file gives the same greedy continuation in
+Ferrum and in llama.cpp; the test `llama_cpp_greedy_matches_ferrum_f32` checks
+this. Versions the commands were verified with:
+
+| Tool | Version | Verified how |
+|---|---|---|
+| llama.cpp | b11521 | `llama-completion`, `llama-tokenize` |
+| Ollama | v0.40.2 (bundled llama-server) | `ollama create`, `/api/generate` |
+| LM Studio | 0.4.18 (llama.cpp-linux-x86_64-avx2 2.23.1) | `lms import`, `lms load`, `/v1/completions` |
+
+A stock GPT-2 124M Q8_0 GGUF gave identical 16-token greedy output in all three
+tools, which fixed the method. [Samples §7](Samples.md#7-serving-and-running-your-model-in-llamacpp-ollama-and-lm-studio)
+runs every command below on the reference model.
+
+**llama.cpp**
+
+```bash
+llama-completion -m models/slm.gguf -p "Once upon a time" -n 16 --temp 0 -no-cnv --no-warmup </dev/null 2>/dev/null
+llama-tokenize   -m models/slm.gguf -p "Once upon a time" --ids --log-disable
+```
+
+**Ollama**
+
+```bash
+OLLAMA_HOST=127.0.0.1:11545 OLLAMA_MODELS=./ollama-models ollama serve &
+printf 'FROM "%s"\nTEMPLATE "{{ .Prompt }}"\nPARAMETER num_predict 16\n' "$PWD/models/slm.gguf" > Modelfile
+OLLAMA_HOST=127.0.0.1:11545 OLLAMA_MODELS=./ollama-models ollama create ferrum-tiny -f Modelfile
+curl -s http://127.0.0.1:11545/api/generate \
+  -d '{"model":"ferrum-tiny","prompt":"Once upon a time","raw":true,"stream":false,"options":{"temperature":0,"num_predict":16}}'
+```
+
+Use `raw: true`. A Ferrum model has no chat template.
+
+**LM Studio**
+
+```bash
+lms import -y -l --user-repo ferrum-test/slm models/slm.gguf
+lms ls --json                       # find the entry whose path matches; its modelKey is KEY
+lms load KEY --gpu off --identifier ferrum-tiny -y
+lms server start -p 1234
+curl -s http://127.0.0.1:1234/v1/completions \
+  -d '{"model":"ferrum-tiny","prompt":"Once upon a time","max_tokens":17,"temperature":0,"repeat_penalty":1.0}'
+```
+
+Two LM Studio details. `max_tokens` N returns N−1 visible tokens, so ask for 17
+to see 16. And its default repeat penalty (1.1) changes the output, so set
+`repeat_penalty` to 1.0 when you compare with Ferrum.
+
+**What to expect**
+
+- **f32:** greedy output equals Ferrum's.
+- **Q8_0:** llama.cpp quantizes activations in its Q8_0 matmuls, which can flip
+  near-ties late in a generation. The compatibility test compares Ferrum's
+  output with llama.cpp's and asserts equality only over the first 8 tokens.
+- **Q4_0:** the test only checks that llama.cpp loads the file and generates.
+- **Prompts** are tokenized the same way as in Ferrum, because the file declares
+  `tokenizer.ggml.pre = "gpt-2"` and Ferrum uses the same pre-tokenizer.
+
+**Finding the tools.** The export commands (§9.6) look for `ollama` and `lms` in
+this order: the `--bin` flag, the environment variable (`FERRUM_OLLAMA`,
+`FERRUM_LMS`), `PATH`, then the default install location
+(`~/.local/bin/ollama`, `~/.lmstudio/bin/lms`). If none has it, the error lists
+all four places. The compatibility tests and `scripts/verify_runtimes.sh` also
+find llama.cpp this way, through `FERRUM_LLAMA_BIN` (the directory holding
+`llama-completion`), then `PATH`, then `~/.local/opt/llama.cpp-b11521`. They skip
+a missing tool, but fail instead when `FERRUM_REQUIRE_RUNTIMES=1` is set.
+`FERRUM_VERIFY_RUNTIMES=1` also runs the Ollama and LM Studio checks in
+`test_runtime_compat` (it starts those tools).
+
+**What does not run there.** Character-level models (no BPE vocabulary) and
+Ferrum-ML tabular MLPs are valid GGUF files, but llama.cpp has no architecture
+for them. Use `train_transformer` or the Ferrum library for those.
+
+### 9.6 One-command exports
+
+```text
+train_transformer export-ollama   <model.gguf> <name> [--bin P] [--modelfile-only out.Modelfile]
+train_transformer export-lmstudio <model.gguf> [--repo ferrum/<stem>] [--bin P]
+```
+
+| Command | What it does |
+|---|---|
+| `export-ollama` | Writes a Modelfile and runs `ollama create <name> -f Modelfile`. `--modelfile-only out.Modelfile` writes the Modelfile and stops. `--bin` names the `ollama` binary. |
+| `export-lmstudio` | Runs `lms import -y -l` on the file, then looks the import up with `lms ls --json` and prints its `modelKey`. `-l` links the file instead of copying it. `--repo` sets the `publisher/name` (default `ferrum/<file stem>`). `--bin` names `lms`. |
+
+The Modelfile contains:
+
+```text
+FROM "<absolute path to the GGUF>"
+TEMPLATE "{{ .Prompt }}"
+PARAMETER stop "<|endoftext|>"
+PARAMETER temperature 0.8
+PARAMETER num_ctx <context_length of the model>
+```
+
+Rules for both commands:
+
+- A GGUF that llama.cpp cannot run (generic layout, character-level, tabular) is
+  **refused before any tool runs**. The error says why and how to fix it.
+- A missing tool gives an error that lists the four places searched (§9.5).
+- If the Ollama server is not running, `ollama create` fails and the error says
+  to start it with `ollama serve`. `ollama create` talks to `OLLAMA_HOST`.
+- After export you can use `ollama run <name>` or load the model in LM Studio.
+- `train` prints a one-line warning when it writes a plain `ferrum`-architecture
+  GGUF (`--vocab 0`) that these tools cannot load.
+
+### 9.7 Serving: `ferrum-serve`
+
+```text
+ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
+             [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
+```
+
+The server binds to loopback by default and prints the model and address when
+it is ready. Unknown flags are errors. It holds one loaded model on **one
+dedicated model thread** and handles **one request at a time**, because
+`GenerativeSLM` is not `Send` or `Sync`. Each matmul still uses every core.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /health` | none | `"ok"` |
+| `GET /v1/info` | none | `{params, context_len, vocab, quant, tokenizer, model_sha256}` |
+| `POST /v1/loglikelihood` | `{"requests":[{"context","continuation"}]}` | `{"results":[{"logprob","n_tokens","greedy"}]}` |
+| `POST /v1/loglikelihood_rolling` | `{"texts":[...]}` | `{"results":[{"logprob","n_tokens"}]}` |
+| `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed"}]}` | `{"results":[{"text","n_tokens"}]}` |
+
+`generate` defaults: `temperature` 0 (greedy), `max_tokens` 64, `top_k` 0, `top_p` 1,
+`seed` 0. `temperature` must be finite and at least 0, `top_p` in (0, 1].
+POST requests must send `Content-Type: application/json`; without it the server
+answers `400`, and `curl -d` does not set it for you.
+
+```bash
+curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/loglikelihood \
+  -d '{"requests":[{"context":"The cat sat on the","continuation":" mat"}]}'
+```
+
+**Limits.** They are checked before any compute.
+
+| Limit | Default | Error |
+|---|---|---|
+| Body size (`--max-body`) | 8 MiB | `413` |
+| Batch length (`--max-batch`) | 64 | `400` |
+| Characters per text (`--max-chars`) | 65,536 | `400` |
+| `max_tokens` per generate request (`--max-tokens`) | 4,096 | `400` |
+| Stop strings per generate request | 16 of at most 1,024 bytes | `400` |
+| POST requests in flight | 32 | `503`, before the body is read |
+| Malformed JSON or a missing field | | `400` |
+| Model error (for example an unknown character in a character-level model) | | `422` |
+
+Errors have the form `{"error": "..."}`. An empty `requests` array returns `200`
+with `{"results": []}`. A model error, or a panic in the model thread, does not
+stop the server. Ctrl-C shuts it down.
+
+There is no authentication and no TLS. Do not bind it to a public address. The
+routes are Ferrum's own; there are no OpenAI-compatible routes.
+
+### 9.8 Evaluating with LightEval
+
+`eval/lighteval/` lets Hugging Face LightEval **0.13.0** (Python 3.10 or newer)
+evaluate a Ferrum model through `ferrum-serve`.
+
+```bash
+python3 -m venv eval/lighteval/.venv
+eval/lighteval/.venv/bin/pip install -r eval/lighteval/requirements.txt
+eval/lighteval/run.sh --model models/slm.gguf --test data/prepared/test.txt \
+    --out metrics/lighteval.json --max-samples 200
+```
+
+`run.sh` builds and starts `ferrum-serve`, waits for it to report its address
+and answer `/health`, runs
+`lighteval custom ferrum ferrum_model.py "<tasks>" --custom-tasks ferrum_tasks.py`,
+stops the server, and writes a summary:
+`{"tasks": {"<task>|0": {"<metric>": value}}, "lighteval_version": "0.13.0", "model": ..., "max_samples": ...}`.
+
+| Option | Meaning |
+|---|---|
+| `--model`, `--test`, `--out` | Required: model file, test split, summary path |
+| `--max-samples N` | Cap samples per task |
+| `--wikitext` | Add `wikitext:103:document_level` |
+| `--port P` | Server port (default 8765) |
+
+`FERRUM_SERVE_WAIT` (seconds, default 60) caps the wait for the server to load the
+model and answer `/health`. `FERRUM_LIGHTEVAL_VENV` names a different virtual
+environment. `run.sh` stops the server (and LightEval) on every exit path,
+including Ctrl-C and `kill`. Each run uses its own LightEval sample cache under
+`eval/lighteval/out/cache`, because LightEval's default cache is keyed by the
+model *config*, not the weights, and would answer a second model from the first
+one's results. The `blimp` and `arc` tasks download their datasets from Hugging
+Face on first use; set `HF_HOME` to choose where they are cached.
+
+**Tasks.**
+
+| Task | What it measures | Metrics |
+|---|---|---|
+| `ferrum_heldout` | Rolling log-likelihood of the test documents | word and byte perplexity, bits per byte |
+| `tinystories_cloze` | Multiple choice: the true next sentence versus 3 sentences from other stories (fixed seed) | `loglikelihood_acc` (reported as `acc`) |
+| `blimp:anaphor_gender_agreement`, `blimp:anaphor_number_agreement`, `blimp:regular_plural_subject_verb_agreement_1` | Grammatical versus ungrammatical sentence pairs | accuracy |
+| `arc:easy` | Science questions | accuracy |
+
+A 500K-parameter model will score near chance on `arc:easy` (25% for four
+choices). That is expected. [Samples §8](Samples.md#8-testing-with-lighteval)
+shows a real run of the reference model.
+
+`FerrumModel` reads the server address from `FERRUM_URL` (default
+`http://127.0.0.1:8080`; `run.sh` sets it) and uses only the Python standard
+library to talk to it.
+
+**Two LightEval 0.13.0 workarounds.**
+
+1. `FerrumModel` does not call `super().__init__()` (it raises in 0.13.0). It
+   sets `self.config` and the sample cache directly.
+2. `loglikelihood_rolling` is not cached, because 0.13.0's perplexity cache
+   drops results. `requirements.txt` also pins `xxhash<4`, because xxhash 4.x
+   crashes the details logger, and `datasets<5`.
+
+LightEval's litellm and TGI backends cannot run log-likelihood tasks, which is
+why Ferrum plugs in as a custom model class.
+
+### 9.9 DVC pipeline
+
+`dvc repro` reproduces data, model, and metrics from `params.yaml`.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
+.venv/bin/dvc repro
+.venv/bin/dvc dag
+.venv/bin/dvc metrics show
+```
+
+| Stage | Command (from `dvc.yaml`) | Outputs |
+|---|---|---|
+| `fetch` | `scripts/fetch.sh <url> <sha256> data/raw/tinystories.txt` | `data/raw/tinystories.txt` |
+| `prepare` | `train_transformer prepare ... --dedup --nfkc` | `data/prepared/{train,val,test}.txt`, `manifest.json` |
+| `train` | `train_transformer train data/prepared/train.txt models/slm.gguf ... --force` | `models/slm.gguf`, `models/tokenizer.gguf` |
+| `eval` | `train_transformer eval ... --json` on `val.txt` and `test.txt` | `metrics/val.json`, `metrics/test.json` |
+| `lighteval` (opt-in, in `eval/lighteval/dvc.yaml`) | `eval/lighteval/run.sh ...` | `metrics/lighteval.json` |
+
+`params.yaml` holds the knobs:
+
+| Section | Keys |
+|---|---|
+| `fetch` | `url`, `sha256` |
+| `prepare` | `min_chars`, `max_chars`, `val_frac`, `test_frac`, `seed` |
+| `model` | `context`, `embed`, `heads`, `blocks`, `hidden`, `vocab` (default: the 507,552-parameter reference) |
+| `train` | `tokens`, `lr`, `warmup`, `clip`, `val`, `patience`, `quant`, `seed` |
+
+Edit a value, run `dvc repro`, then `dvc params diff` and `dvc metrics diff` to
+see what changed. Stages whose inputs did not change are skipped. The
+`lighteval` stage is kept out of the root pipeline, so a plain `dvc repro` does
+not need the LightEval environment; run it with
+`dvc repro eval/lighteval/dvc.yaml:lighteval`.
+
+Notes:
+
+- `data/` and `models/` are git-ignored and tracked by DVC. `dvc.lock` is
+  committed. `.dvc/` is initialised with **no remote**; a remote is out of scope.
+- Training is deterministic for a fixed `--threads` (the pipeline leaves it at
+  auto), so `dvc repro --force train` gives the same `models/slm.gguf` sha256 on
+  the same machine. On a machine with a different core count the data-parallel
+  shard count changes, and so do the trained weights
+  ([§6.8](#68-multi-threading-and-determinism)).
+- `train` always reads the whole prepared train split into memory.
+- Metrics files use `cache: false`, so they live in git.
+
 ---
 
 ## 10. The GUI (Ferrum SLM Studio)
@@ -948,7 +1536,7 @@ tauri ios init && cargo tauri ios dev` (macOS only).
 | **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart |
 | **Generate** | Prompt, characters, temperature, optional streaming |
 | **Evaluate** | Score a model on held-out text; each run adds a table row (perplexity, CE, bits/token, uniform baseline) |
-| **Models** | Inspect or reload a `.bin`: format, task, dimensions, tokenizer, layers |
+| **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
 | **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, top-k/top-p/repetition penalty, chat format, optional fine-tune overlay |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary |
@@ -973,7 +1561,7 @@ backend is unavailable (for example, in a plain web preview), a banner says so.
    baseline column.
 5. **Models:** inspect the file you just made.
 6. **GGUF → Fine-tune → Export:** the separate "someone else's model" path
-   ([§9](#9-external-models-gguf-run-fine-tune-export)).
+   ([§9](#9-gguf-ferrum-models-other-runtimes-serving-and-external-models)).
 
 ### 10.5 Platform support
 
@@ -1010,23 +1598,23 @@ not known in advance.
 
 ## 11. Deploying models
 
-A trained model is one self-contained `.bin` (FINF). It carries weights,
-metadata, and, for BPE models, the tokenizer. There is nothing else to ship.
-
-> **GGUF is an import/export path, not Ferrum's deployment format.** Deploy
-> your own models as FINF. Export Llama/Qwen fine-tunes as GGUF for the wider
-> ecosystem.
+A trained model is one self-contained `.gguf` file (GGUF v3, `gpt2`
+architecture). It carries weights, metadata, and, for BPE models, the
+tokenizer. There is nothing else to ship, and the same file runs in Ferrum
+(native and WASM), in llama.cpp, in Ollama, and in LM Studio
+([§9.5](#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio)).
 
 ### 11.1 Native (server, desktop, edge box)
 
 ```bash
 cargo build --release -p slm_cli
-scp target/release/train_transformer model.bin user@host:/opt/ferrum/
-ssh user@host /opt/ferrum/train_transformer generate /opt/ferrum/model.bin "prompt" --chars 200
+scp target/release/train_transformer model.gguf user@host:/opt/ferrum/
+ssh user@host /opt/ferrum/train_transformer generate /opt/ferrum/model.gguf "prompt" --chars 200
 ```
 
 To embed inference in your own service, depend on `ferrum_core` and call
-`GenerativeSLM::load` and `generate`, with no model server. Set
+`GenerativeSLM::load` and `generate`, with no model server, or run
+`ferrum-serve` ([§9.7](#97-serving-ferrum-serve)) for an HTTP interface. Set
 `FERRUM_NUM_THREADS` to bound CPU use per process.
 
 ### 11.2 Embedded and constrained targets
@@ -1045,13 +1633,13 @@ cargo install wasm-bindgen-cli --version 0.2.122
 bash scripts/build_wasm.sh        # → slm_wasm/pkg/{slm_wasm.js, slm_wasm_bg.wasm}
 ```
 
-Serve `pkg/` and your `model.bin` from any static host. There is no backend,
+Serve `pkg/` and your `model.gguf` from any static host. There is no backend,
 and the visitor's input never leaves their machine.
 
 ```js
 import init, { TransformerSLMModel } from "./pkg/slm_wasm.js";
 await init();
-const bytes = new Uint8Array(await (await fetch("model.bin")).arrayBuffer());
+const bytes = new Uint8Array(await (await fetch("model.gguf")).arrayBuffer());
 const slm = new TransformerSLMModel(bytes);
 const meta = JSON.parse(slm.metadata());          // class_names, input_dim, tokenizer_state, …
 let probs = slm.prime(new Float32Array(contextIds)); // KV-cached: prime once…
@@ -1066,18 +1654,18 @@ WASM runs single-threaded but is otherwise the same engine.
 
 ### 11.4 Air-gapped deployment
 
-Train on a connected machine, then carry the single `model.bin` and the static
+Train on a connected machine, then carry the single `model.gguf` and the static
 binary in on physical media. Nothing is fetched at runtime, so there is nothing
 to update in the field.
 
 ### 11.5 Versioning and compatibility
 
-- FINF **v4** stores f32 weights. **v5** adds int8 and int4, chosen per weight
-  vector. The loader reads both and rejects unknown encodings rather than
-  misreading them.
-- Models from before the tokenizer field load as character-level.
-- Legacy **one-hot MLP** SLM files still load and inspect, but generation and
-  evaluation reject them. Their trainer was retired ([Status §2](Status.md#2-the-2026-10-03-restructuring)).
+- FINF `.bin` files do not load. Retrain, or convert with an older Ferrum
+  release. Status §7 has the full list of breaking changes.
+- Models are GGUF v3 with `ferrum.format = 1`. A future format change will bump
+  that number.
+- `TransformerConfig` grows only by fields with defaults. Use
+  `..TransformerConfig::default()`.
 - The file fully determines architecture, vocabulary, and tokenizer, so there
   is no version skew between a model and its config.
 
@@ -1149,8 +1737,8 @@ generation.
 | Group | Methods |
 |---|---|
 | Train | `train_transformer_config`, `train_transformer_config_threaded`, `train_transformer_config_validated`, `load_or_train`; legacy positional `train_transformer[_with_callback / _threaded_with_callback]` |
-| Generate | `generate`, `generate_with`, `generate_continuation[_with]`, `generate_stream[_with]`, `generate_until`, `generate_stream_until` |
-| Evaluate | `evaluate(text) -> Evaluation { num_predictions, cross_entropy, bits_per_token, perplexity }` |
+| Generate | `generate`, `generate_with`, `generate_continuation[_with]`, `generate_stream[_with]`, `generate_until`, `generate_stream_until`, `generate_tokens` (token budget, stop strings, returns the stop reason) |
+| Evaluate | `evaluate(text) -> Evaluation { num_predictions, cross_entropy, bits_per_token, perplexity }`; `score(context, continuation)` and `score_rolling(text)` return `Score { logprob, n_tokens, greedy }` (§8.3) |
 | Persist | `to_bytes` (f32), `to_bytes_quantized` (int8), `to_bytes_quantized_int4`, `save` (int8), `save_int4`, `load`, `from_bytes` |
 
 `SamplingParams { temperature, top_k, top_p, repetition_penalty }`;
@@ -1170,9 +1758,12 @@ let [bos, eos, pad, unk] = tok.add_standard_special_tokens();
 let framed = tok.encode_framed("text", true, true);      // <bos> … <eos>
 ```
 
-Text is pre-split at whitespace boundaries, so merges never span a space.
-Encoding is rank-based, applying the earliest-learned merge first. Special
-tokens get ids above the byte and merge range and decode to nothing.
+Text is pre-split with the GPT-2 regex that llama.cpp uses
+(`tokenizer.ggml.pre = "gpt-2"`), so merges never span a word boundary and
+llama.cpp tokenizes prompts exactly as Ferrum does. Encoding is rank-based,
+applying the earliest-learned merge first. `<|endoftext|>` is always a
+reserved special token, counted in the vocabulary size; the literal string
+encodes to that one id.
 
 ### 12.6 Quantization
 
@@ -1181,52 +1772,147 @@ or **per channel** (one scale per output row).
 
 - `fake_quantize_int8` and `fake_quantize_int8_per_channel` snap values onto
   the grid in place (used by QAT).
-- Tensors shorter than `QUANT_MIN_LEN = 64` stay f32, and non-finite tensors
-  are left untouched.
+- The weight-snapping grid used by Ferrum's own models is GGUF **Q8_0**
+  (blocks of 32 along each weight row with an f16 scale, §12.7). Matrices whose
+  row length is not a multiple of 32 stay f32, and non-finite tensors are left
+  untouched. The per-tensor and per-channel helpers above serve the imported
+  Llama stack.
 - `QWeight` holds int8 or int4 weights packed in memory. int4 uses a
   **split-half** layout: byte `b`'s low nibble is column `b` and its high
   nibble is column `half + b`. That makes each nibble lane unit-stride, so the
   decode loop autovectorizes like int8. An interleaved layout ran several
   times slower.
 
-### 12.7 The FINF model format
+### 12.7 The Ferrum GGUF format
 
-```text
-4 bytes  "FINF"
-u32      version (4 = f32, 5 = int8/int4-capable)
-u32      norm_len;  [bytes] normalizer (empty for SLMs)
-u32      meta_len;  [bytes] ModelMetadata JSON
-u32      num_layers
-per layer: u8 tag (0 Linear, 1 Activation, 2 Embedding, 3 LayerNorm, 4 TransformerBlock, 5 Flatten) + payload
-```
+Every file Ferrum writes is GGUF v3. There are four kinds.
 
-In v5, each weight *vector* carries a one-byte encoding marker, so one file can
-mix precisions:
+| Kind | `general.architecture` | Runs in llama.cpp |
+|---|---|---|
+| BPE transformer SLM (what `train` writes) | `gpt2` | Yes |
+| Generic Ferrum model (character-level SLMs, Ferrum-ML tabular MLPs) | `ferrum` | No |
+| Training checkpoint | `ferrum-checkpoint` (`ferrum-llama-checkpoint` for Llama fine-tunes) | No |
+| Reusable tokenizer file | `ferrum-tokenizer` | No |
 
-| Marker | Encoding |
-|:-:|---|
-| 0 | raw f32 |
-| 1 | int8, per tensor (f32 scale + i8 values) |
-| 2 | int8, per channel (one f32 scale per row) |
-| 3 | int4, per tensor |
-| 4 | int4, per channel (the `to_bytes_quantized_int4` default) |
+#### The GPT-2 layout
 
-The loader bounds-checks every dimension before allocating. Quantized matrices
-load **packed** and stay quantized in memory. `ModelMetadata` (JSON) holds
-`task`, `feature_names`, `feature_ranges`, `class_names`, `input_dim`,
-`output_dim`, and `tokenizer_state` (the BPE merge list; empty for
-character-level models).
+Ferrum's own transformer matches GPT-2: learned absolute positions, pre-LayerNorm
+(epsilon 1e-5, with bias), dense multi-head attention with biases, a **GELU**
+feed-forward block (the tanh approximation llama.cpp uses as `ggml_gelu`), and
+an LM head **without a bias**.
 
-**Training checkpoints** are a separate format:
-- `.fckp` (magic `FCKP`) for native transformers: architecture, QAT/tying
-  flags, step, RNG, then weights and Adam moments.
-- `.flck` for Llama fine-tunes: shape header, then weights, m, and v.
+Metadata that llama.cpp reads:
+
+| Key | Type | Value |
+|---|---|---|
+| `general.architecture` | string | `gpt2` |
+| `gpt2.context_length`, `gpt2.embedding_length`, `gpt2.block_count`, `gpt2.feed_forward_length`, `gpt2.attention.head_count` | u32 | model dimensions |
+| `gpt2.attention.layer_norm_epsilon` | f32 | 1e-5 |
+| `tokenizer.ggml.model` | string | `gpt2` |
+| `tokenizer.ggml.pre` | string | `gpt-2` |
+| `tokenizer.ggml.tokens`, `.merges`, `.token_type` | arrays | the vocabulary in GPT-2 bytes-to-unicode form |
+| `tokenizer.ggml.bos_token_id`, `.eos_token_id` | u32 | both the id of `<|endoftext|>` |
+| `tokenizer.ggml.add_bos_token`, `.add_eos_token` | bool | false |
+| `general.file_type` | u32 | 0 all F32, 7 mostly Q8_0, 2 mostly Q4_0 |
+| `general.quantization_version` | u32 | 2 |
+
+Tensors (GGML dims `[ne0, ne1]`):
+
+| Tensor | Dims |
+|---|---|
+| `token_embd.weight` | `[n_embd, n_vocab]` |
+| `position_embd.weight` | `[n_embd, n_ctx]` |
+| `blk.N.attn_norm.{weight,bias}` | `[n_embd]` |
+| `blk.N.attn_qkv.{weight,bias}` | `[n_embd, 3·n_embd]` and `[3·n_embd]`, ordered Q, K, V |
+| `blk.N.attn_output.{weight,bias}` | `[n_embd, n_embd]` and `[n_embd]` |
+| `blk.N.ffn_norm.{weight,bias}` | `[n_embd]` |
+| `blk.N.ffn_up.{weight,bias}` | `[n_embd, n_ff]` and `[n_ff]` |
+| `blk.N.ffn_down.{weight,bias}` | `[n_ff, n_embd]` and `[n_embd]` |
+| `output_norm.{weight,bias}` | `[n_embd]` |
+| `output.weight` | `[n_embd, n_vocab]`; **omitted when the head is tied** (llama.cpp falls back to `token_embd`) |
+
+Ferrum stores weights as row-major `[in, out]`, so they are written transposed.
+This is why `--tie` shrinks the file as well as the parameter count.
+
+#### Ferrum extras
+
+Keys in the `ferrum.` namespace are ignored by llama.cpp.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `ferrum.format` | u32 | 1 |
+| `ferrum.quant` | string | `f32`, `int8`, or `int4` |
+| `ferrum.metadata` | string | `ModelMetadata` JSON: task, class names, dimensions |
+| `ferrum.normalizer` | string | Normalizer state (empty for SLMs) |
+
+`train_transformer info` reads these. A GPT-2 GGUF that Ferrum did not write
+also loads, with its metadata rebuilt from the `gpt2.*` keys.
+
+#### Quantization rules
+
+| Type | Used for |
+|---|---|
+| F32 | `quant = f32`; all 1-D tensors (biases, LayerNorm); `position_embd`; and any matrix whose row length (`ne0`) is not a multiple of 32 (stored exactly, never as F16) |
+| Q8_0 | `int8`: blocks of 32 values along each weight row, one f16 scale per block |
+| Q4_0 | `int4`: same block size, 4 bits per value; lossy |
+
+- Q8_0 and Q4_0 need the row length (`ne0`, the input width) to be a multiple of
+  32. Keep `--embed`, `--hidden`, and `--vocab` multiples of 32 so every matrix
+  quantizes. The 507,552-parameter reference is built that way.
+- `position_embd` stays F32 when quantizing, following llama-quantize.
+- Because ineligible tensors are F32, an int8 file reloads bit-identically for
+  **every** tensor.
+- Loaded Ferrum GGUF weights are dequantized to f32 in memory. The packed
+  int8/int4 kernels are for imported Llama models.
+
+#### QAT equals Q8_0
+
+Quantization-aware training simulates **Q8_0 exactly**: 32-element blocks along
+each weight row, the scale computed as `max|x| / 127` and rounded to f16, and
+values rounded to int8. Because the training step and the file writer share one
+encoder, an int8 file reloads **bit-identically** to the model you trained.
+`evaluate()` returns the same numbers before and after saving. **QAT is int8
+only.** int4 export is lossy and is applied after training.
+
+#### Tokenizer
+
+The tokenizer is byte-level BPE. Text is pre-split with the GPT-2 regex that
+llama.cpp uses for `tokenizer.ggml.pre = "gpt-2"`, and tokens and merges are
+stored in the GPT-2 bytes-to-unicode form. `<|endoftext|>` is registered as a
+special token during BPE training and **is always reserved**, so every model has
+a real `eos_token_id`. The literal string `<|endoftext|>` in text encodes to
+that one id.
+
+#### The generic codec (not runnable in llama.cpp)
+
+Character-level SLMs and Ferrum-ML tabular classifiers do not fit the GPT-2
+layout. They use a generic layer list: `ferrum.layer_count`,
+`ferrum.layer.{i}.type` (`linear`, `activation`, `flatten`, `embedding`,
+`layernorm`, `transformer_block`), per-layer dimension keys, and `l{i}.*`
+tensors, with matrices in F32, Q8_0, or Q4_0 under the same 32-wide rule. These
+are valid GGUF, so general GGUF tools can read their metadata, but llama.cpp
+cannot run them: it has no MLP-classifier architecture and no character-level
+tokenizer.
+
+#### Checkpoints and the tokenizer file
+
+A training checkpoint is a GGUF container with `ferrum.ckpt.version = 1`, the
+scalar settings (`vocab`, `context`, `embed`, `heads`, `hidden`, `blocks`,
+`qat`, `tie`, `step`, `rng`), and three f32 tensors per parameter (`p{i}.data`,
+`p{i}.m`, `p{i}.v`: the weights and the two Adam moments). A tokenizer file holds
+`tokenizer.ferrum.state`. Both are for Ferrum only. Checkpoints written before
+this change (magic `FCKP`) do not load; the error tells you to retrain. Old
+tokenizer files in the `256;257...` text form are also rejected.
+
+Files are written atomically. The loader bounds-checks every dimension before it
+allocates, and a file that is valid GGUF but not a Ferrum model (for example a
+Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
 
 ### 12.8 GGUF reader, tokenizer, runner, trainer, writer
 
 | Module | Key API | Notes |
 |---|---|---|
-| `gguf` | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts |
+| `gguf` (directory: `format`, `cursor`, `header`, `tensors`, `dequant`, `llama`) | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts |
 | `gguf_tokenizer` | `GgufTokenizer::from_gguf`, `encode`, `decode` | BPE exact; SPM decode exact, encode greedy longest-match |
 | `llm` | `LlamaModel::{forward, generate}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
 | `llm_train` | `LlamaTrainer::{new, set_lr, set_lr_schedule, set_grad_clip, train_step, train_batch, finetune_epoch_threaded, save_checkpoint, load_checkpoint_into}` | finite-difference-checked backward pass; AdamW; `.flck` checkpoints; rejects quantized weights |
@@ -1237,67 +1923,80 @@ character-level models).
 
 ## 13. Performance and benchmarks
 
-All numbers were measured on this project on an i5-1135G7 (4c/8t, 16 GB),
-with release builds (LTO, 1 codegen unit), CPU only. Treat them as indicative
-and run on an idle machine. Background load roughly halved one figure in an
-earlier run.
+All numbers were measured on this project on 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz (4 cores / 8 threads, 15 GiB) on
+2026-10-26. They are medians of three runs of release builds made with the low-memory
+settings (no LTO, 16 codegen units), CPU only, with the desktop session running, so
+treat them as indicative; a shipped build and an idle machine are somewhat faster.
+The logs behind them, and the earlier builds used for the before and after
+comparison, are described in [Samples §9](Samples.md#9-benchmarking).
 
 ### 13.1 Determinism (verified)
 
-- Generating 2,000 characters at `FERRUM_NUM_THREADS=1,2,4,8` produced
-  byte-identical files.
-- The same training config produced byte-identical models twice, including
-  when only the matmul pool size changed. Changing the data-parallel shard
-  count can change low bits ([§6.8](#68-multi-threading-and-determinism)).
+- `cargo test -p slm_cli --release --test determinism` trains, generates, and
+  evaluates through the CLI at `FERRUM_NUM_THREADS=1` and `4` (with `--threads`
+  fixed) and requires identical bytes.
+- The same training config produced byte-identical models twice (Samples 1, and
+  again in Sample 2's lock check). Changing the data-parallel shard count changes
+  low bits of the weights ([§6.8](#68-multi-threading-and-determinism)); the
+  matmul pool size alone does not.
 
 ### 13.2 End-to-end scaling
 
-Measured on a small model (context 16, embedding 64, 2 blocks, character-level):
+Measured with `scripts/bench_slm.sh` on the 507,552-parameter reference model
+(`FERRUM_NUM_THREADS` sets the matmul pool and, with `--threads` auto, the
+number of training workers):
 
-| | 1 thread | 8 threads | Speedup |
-|---|---|---|---|
-| Training, 10 epochs | 44.65 s | 36.50 s | 1.22× |
-| Generating 2,000 chars | 0.73 s | 0.67 s | 1.09× |
+| `FERRUM_NUM_THREADS` | Train tokens/s (range of 3) | Speedup | Eval s | Generate ms/token | Held-out perplexity |
+|---|---|---|---|---|---|
+| 1 | 2,900 (2,799 to 3,322) | 1.00× | 2.28 | 0.256 | 81.70 |
+| 2 | 6,058 (5,351 to 6,256) | 2.09× | 1.71 | 0.260 | 76.46 |
+| 4 | 6,764 (5,857 to 7,810) | 2.33× | 1.91 | 0.309 | 78.70 |
+| 8 | 7,090 (4,918 to 7,407) | 2.44× | 1.55 | 0.291 | 74.24 |
 
 Small models scale poorly. Much of a training step is serial (softmax, small
 per-head matmuls, the optimizer), and generation is a chain of small dependent
-matmuls. Larger models, where big matmuls dominate, approach the kernel
+matmuls, so eight threads give 2.4× on training, 1.5× on
+evaluation, and nothing on generation. The one-thread row runs the serial trainer; two workers
+overlap some of its serial work, which is why the step from 1 to 2 threads is
+larger than 2×. Larger models, where big matmuls dominate, approach the kernel
 ceiling below. For faster generation, prefer a BPE vocabulary (fewer steps per
 character) and a smaller network over more cores.
 
 ### 13.3 Kernel throughput (synthetic ~1B-class shapes)
 
-| Square GEMM | 8 threads | 1 thread | Speedup |
+| Square GEMM | 8 threads (GFLOP/s) | 1 thread (GFLOP/s) | Speedup |
 |---|---|---|---|
-| 256² | 68.0 GFLOP/s | 17.2 | 4.0× |
-| 512² | 52.9 | 16.1 | 3.3× |
-| 1024² | 42.3 | 13.5 | 3.1× |
-| 2048² | 35.7 | 14.6 | 2.4× |
+| 256² | 69.4 | 21.6 | 3.2× |
+| 512² | 51.4 | 17.7 | 2.9× |
+| 1024² | 42.0 | 14.2 | 3.0× |
+| 2048² | 40.3 | 13.6 | 3.0× |
 
-The cache-tiled kernel holds about 36 GFLOP/s at 2048². The kernels use no
-explicit SIMD, so the vector units are mostly idle. That is the main remaining
-headroom: `target-cpu=native` gains nothing, and the fix has to be
-register-blocked micro-kernels.
+The cache-tiled kernel with a 4×8 register tile holds about 40 GFLOP/s at 2048²
+on 8 threads, and 14 on one. The kernels use no explicit SIMD (`unsafe` is
+forbidden, so there are no intrinsics) and rely on what the compiler
+auto-vectorizes. Building with `RUSTFLAGS="-C target-cpu=native"` raised the 2048² rate from 32.7 to 54.9 GFLOP/s (median of three back-to-back runs of each build), but it did not speed up the reference model: training ran at 6,004 tokens/s against 6,542 for the default build (medians of three, same perplexity), because its matmuls are small. A native build also ties the binary to one CPU, so the shipped build does not use it.
 
-**f32 decode GEMV** (`m = 1`) runs serially at any thread count, at 5.5–8.2 GB/s
-of weights streamed. A synthesized f32 1B decode step reaches **1.4–1.6
-tokens/s**.
+**f32 decode GEMV** (`m = 1`) runs serially at any thread count, at 8.0 GB/s (2048×2048), 7.5 (2048×8192), 5.2 (8192×2048), 4.6 (2048×32000)
+of weights streamed on 8 threads. A synthesized f32 1B decode step reaches
+**1.2 tokens/s** at 8 threads and 0.9 at one thread.
 
 ### 13.4 Quantized decode and the GGUF runner
 
 | Synthesized 1B decode step | f32 (8 threads) | int4 (8 threads) | int4 (1 thread) |
 |---|---|---|---|
-| ms/token | 632.8 | **144.1** | 256.1 |
-| tokens/s | 1.58 | **6.94** | 3.90 |
+| ms/token | 807 | **150** | 253 |
+| tokens/s | 1.24 | **6.68** | 3.95 |
 | Bytes streamed per token | 3.48 GB | 0.44 GB | 0.44 GB |
 
-- **int4** is the right default for the GGUF runner: about 4–5× f32, at half
+- **int4** is the right default for the GGUF runner: about 5.4× f32 on 8 threads, at half
   int8's RAM.
-- **int8** is slightly faster per call (no nibble unpack). Choose it when RAM
-  is ample.
+- **int8** is faster per call on three of the four shapes measured (for example
+  `ffn up`: 1002 µs int8 against 1335 µs int4, at 8 threads), because there is no nibble
+  unpack. Choose it when RAM is ample.
 - The column split spreads the `m = 1` GEMV across cores for both.
-- Net result for a 1B model: about 7 tokens/s decode, and about 30 s (512
-  tokens) to 2 min (2,048 tokens) of compute-bound prefill.
+- Net result for a 1B model: about 6.7 tokens/s decode. Prefill is compute-bound:
+  at the measured 40 GFLOP/s, 2 FLOPs per parameter per token comes to about
+  25 s for 512 tokens and 102 s for 2,048 (an estimate from the GEMM rate, not a measurement).
 
 ### 13.5 Feasibility at 1B and beyond
 
@@ -1309,7 +2008,7 @@ about 6·N·T FLOPs and needs about 16 bytes per parameter resident.
 |---|---|
 | **Load** | Yes for supported quants: about 0.5 GB int4 plus the f32 token embedding; 2–3.5 GB peak during import. 7B F16 sources do not fit the no-mmap path. |
 | **Run** | Yes, slowly (above) |
-| **Fine-tune / train** | **No.** Optimizer state alone is about 16 GB, and 100M tokens through 1B parameters would take about 200 days at about 36 GFLOP/s. |
+| **Fine-tune / train** | **No.** Optimizer state alone is about 16 GB, and 100M tokens through 1B parameters would take about 172 days at the measured 40 GFLOP/s. |
 
 ### 13.6 Reproducing
 
@@ -1318,8 +2017,9 @@ cargo build --release -p slm_cli
 cargo bench --bench gemm                          # auto threads
 FERRUM_NUM_THREADS=1 cargo bench --bench gemm     # serial
 cargo bench --bench gemm -- 512 1024 4096         # custom GEMM sizes
+scripts/bench_slm.sh data/prepared/train.txt      # train / eval / generate speed
 for t in 1 2 4 8; do FERRUM_NUM_THREADS=$t target/release/train_transformer \
-  generate model.bin "a long enough seed text here" --chars 2000 --gen-seed 42 > out_$t.txt; done
+  generate model.gguf "a long enough seed text here" --chars 2000 --gen-seed 42 > out_$t.txt; done
 md5sum out_*.txt                                  # identical
 ```
 
@@ -1356,7 +2056,7 @@ without a GPU, a Python runtime, or a network connection**.
 
 | # | Use case | Why Ferrum fits |
 |---|---|---|
-| 1 | Offline text generation on edge devices | One `.bin`, CPU only, 4× smaller via int8, nothing to install |
+| 1 | Offline text generation on edge devices | One `.gguf`, CPU only, about 3× smaller via int8 (30% of the f32 file for the reference model), nothing to install |
 | 2 | Running and fine-tuning small open models offline | GGUF import with its own tokenizer, AdamW fine-tune, export back to GGUF; private but slow (a few tokens/s at 1B) |
 | 3 | Domain autocomplete (shell history, logs, code, templates) | BPE captures flags, paths, and identifiers; deterministic suggestions; millisecond latency |
 | 4 | Privacy-preserving on-device modeling | Nothing leaves the machine; no telemetry; auditable code |
@@ -1403,15 +2103,16 @@ enough for a week on battery.
 
 **What dependencies does it have?** `ferrum_core` has two pure-Rust Unicode-table crates
 (`unicode-general-category`, `unicode-normalization`); `slm_cli` adds `sha2` and `serde_json`,
-`slm_server` adds `axum`/`tokio`/`serde`. `slm_wasm` uses `wasm-bindgen`, and the GUI uses Tauri.
+`slm_server` adds `axum`/`tokio`/`serde`/`serde_json`/`sha2`. `slm_wasm` uses `wasm-bindgen`, and the GUI uses Tauri plus a few helper crates
+([§2.2.1](#221-what-is-used-and-what-was-tried-and-not-kept)).
 
 **Character-level or BPE?** BPE (`--vocab 512–4096`) for real text,
 multilingual text, or anything long. Character-level (`--vocab 0`) for tiny
 corpora and maximum transparency.
 
-**Where does the tokenizer live?** Inside the model file
-(`tokenizer_state`). With `--tokenizer`, it is also saved to disk so later
-runs reuse it.
+**Where does the tokenizer live?** Inside the model file (the `tokenizer.ggml.*`
+keys). With `--tokenizer`, it is also saved to disk as its own GGUF file so
+later runs reuse it.
 
 **Is BPE compatible with QAT?** Yes. Tokenization changes only the token
 stream. QAT acts on the weights.
@@ -1428,8 +2129,16 @@ prefer `--tokens` to `--epochs` for real runs.
 `--checkpoint`. Re-run with `--resume <file>`.
 
 **Can it run models I downloaded?** Llama/Qwen GGUFs, yes
-([§9](#9-external-models-gguf-run-fine-tune-export)). Other architectures are
-rejected.
+([§9.1](#91-running-run-gguf)). Other architectures are rejected.
+
+**Can llama.cpp, Ollama, or LM Studio run the models I train?** Yes, if they are
+BPE models (`--vocab 256` or more): they are `gpt2`-architecture GGUF files
+([§9.5](#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio)).
+Character-level models are not.
+
+**Can I get the probabilities of a text, or serve a model?** Yes: the
+`score` library API ([§8.3](#83-the-scoring-api)) and `ferrum-serve`
+([§9.7](#97-serving-ferrum-serve)).
 
 **Can I fine-tune them?** Yes, with full AdamW at f32. That works up to about
 135M parameters comfortably on 16 GB. 1B is out of reach (about 16 GB of
@@ -1449,9 +2158,9 @@ short or repetitive corpus may have too few tokens. Use more text, a smaller
 deterministic for a fixed seed and configuration, and identical across matmul
 thread counts.
 
-**Will my old models load?** v4 and v5 FINF files load. Pre-tokenizer files
-default to character-level. Legacy one-hot MLP models load but cannot
-generate.
+**Will my old models load?** No. FINF `.bin` files, `FCKP` checkpoints, and
+old tokenizer files no longer load (deliberate; retrain). See
+[Status §7](Status.md#7-backward-compatibility).
 
 **Where did the tabular trainer and the web playground go?** The tabular
 trainer is in `../Ferrum-ML`. The old one-hot web playground is archived in
