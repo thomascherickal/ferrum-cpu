@@ -25,12 +25,27 @@ fn serial() -> common::RuntimeLock {
     common::runtime_lock()
 }
 
-fn gpt2() -> PathBuf {
-    let p = std::env::var_os("FERRUM_TEST_GGUF")
+fn gpt2_path() -> PathBuf {
+    std::env::var_os("FERRUM_TEST_GGUF")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(DEV).join("gpt2gguf/gpt2-q8_0.gguf"));
+        .unwrap_or_else(|| Path::new(DEV).join("gpt2gguf/gpt2-q8_0.gguf"))
+}
+
+fn gpt2() -> PathBuf {
+    let p = gpt2_path();
     assert!(p.is_file(), "missing test model {}", p.display());
     p
+}
+
+/// The GPT-2 test model, or `None` (a skip) when it is absent and runtimes are not required.
+fn gpt2_or_skip() -> Option<PathBuf> {
+    let p = gpt2_path();
+    let found = if p.is_file() {
+        Ok(p)
+    } else {
+        Err(format!("missing test model {}", p.display()))
+    };
+    require_or_skip(found)
 }
 
 fn exporter(args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
@@ -223,27 +238,30 @@ impl Drop for TmpDir {
     }
 }
 
-fn spaced_link(tag: &str) -> (TmpDir, PathBuf) {
+fn spaced_link(tag: &str, target: &Path) -> (TmpDir, PathBuf) {
     let dir = std::env::temp_dir().join(format!("ferrum e1 {tag} {}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir); // a stale dir from a crashed run would make symlink fail with EEXIST
     std::fs::create_dir_all(&dir).unwrap();
     let guard = TmpDir(dir.clone());
     let link = dir.join("gpt2 q8.gguf");
-    std::os::unix::fs::symlink(gpt2(), &link).unwrap();
+    std::os::unix::fs::symlink(target, &link).unwrap();
     (guard, link)
 }
 
 #[test]
 fn spaced_link_survives_a_stale_dir_and_cleans_up() {
-    let (first, link1) = spaced_link("stale");
+    let target = std::env::temp_dir().join(format!("ferrum_e1_target_{}", std::process::id()));
+    std::fs::write(&target, b"x").unwrap();
+    let (first, link1) = spaced_link("stale", &target);
     let dir = first.0.clone();
     std::mem::forget(first); // simulate a crashed run that never cleaned up
     assert!(link1.exists());
-    let (second, link2) = spaced_link("stale"); // same tag + pid -> same dir; must not EEXIST
+    let (second, link2) = spaced_link("stale", &target); // same tag + pid -> same dir; must not EEXIST
     assert_eq!(link1, link2);
     assert!(link2.exists());
     drop(second);
     assert!(!dir.exists(), "guard must remove the dir on drop");
+    let _ = std::fs::remove_file(&target);
 }
 
 #[test]
@@ -254,7 +272,7 @@ fn export_ollama_then_generate() {
         return;
     };
     let srv = Ollama::start(bin);
-    let (_tmp, model) = spaced_link("gen");
+    let (_tmp, model) = spaced_link("gen", &gpt2());
     let _guard = OllamaModel(&srv, "ferrum-e1-gen");
     let (ok, text) = exporter(
         &["export-ollama", model.to_str().unwrap(), "ferrum-e1-gen"],
@@ -458,11 +476,12 @@ fn cli_refuses_non_runnable_gguf_and_writes_modelfile() {
         let (ok, text) = exporter(&args, &[]);
         assert!(!ok && text.contains("not runnable in llama.cpp"), "{text}");
     }
+    let Some(model) = gpt2_or_skip() else { return };
     let out = dir.join("m.Modelfile");
     let (ok, text) = exporter(
         &[
             "export-ollama",
-            gpt2().to_str().unwrap(),
+            model.to_str().unwrap(),
             "n",
             "--modelfile-only",
             out.to_str().unwrap(),

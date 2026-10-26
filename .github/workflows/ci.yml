@@ -107,7 +107,7 @@ jobs:
       - name: cargo-deny (workspace)
         run: cargo deny check
       - name: cargo-deny (ferrum_gui)
-        run: cargo deny --manifest-path ferrum_gui/Cargo.toml check --config deny.toml
+        run: cargo deny --manifest-path ferrum_gui/Cargo.toml check
 
   wasm:
     name: Build (wasm32-unknown-unknown)

@@ -43,9 +43,7 @@ impl Param {
         }
     }
     pub(super) fn zero_grad(&mut self) {
-        for g in &mut self.grad.data {
-            *g = 0.0;
-        }
+        self.grad.data.fill(0.0);
     }
     pub(super) fn step(&mut self, adam: &Adam, t: u64) -> Result<()> {
         // Decoupled weight decay (AdamW) applies to weight matrices only — never
