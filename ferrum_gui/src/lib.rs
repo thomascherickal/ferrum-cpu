@@ -14,6 +14,7 @@
 //! | `finetune-done` | [`commands::FinetuneResult`]         | GGUF fine-tune done   |
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
 //! | `export-progress` | `String` (one phase line)          | GGUF export phase     |
+//! | `prepare-progress` | `{ file, files, path, bytesDone, bytesTotal, documents }` | dataset preparation |
 
 #![forbid(unsafe_code)]
 
@@ -27,6 +28,7 @@ pub mod hardware;
 mod jobs;
 mod paths;
 mod preflight;
+mod prepare;
 #[cfg(test)]
 mod test_support;
 
@@ -61,6 +63,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::train_slm,
             commands::generate_slm,
             evaluate::evaluate_slm,
+            prepare::prepare_dataset,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,

@@ -26,10 +26,19 @@ serde_json = "1"
 sysinfo = "0.33"
 ureq = "2"
 ferrum_core = { path = "../ferrum_core" }
+# The CLI package is also a library: dataset preparation and the Ollama / LM Studio export
+# run the same code as `train_transformer prepare` / `export-ollama` (it brings sha2 into this
+# lockfile, already used by slm_cli; no other crate).
+slm_cli = { path = "../slm_cli" }
 
 # Optimize the engine even in debug builds: the tests train and run tiny models,
 # and an unoptimized matmul would make them (and `cargo tauri dev`) needlessly slow.
 [profile.dev.package.ferrum_core]
+opt-level = 3
+# Preparing a dataset hashes and cleans every document; unoptimized that is far too slow to try.
+[profile.dev.package.slm_cli]
+opt-level = 3
+[profile.dev.package.sha2]
 opt-level = 3
 
 [dev-dependencies]

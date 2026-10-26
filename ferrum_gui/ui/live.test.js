@@ -101,6 +101,28 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     assert.ok(!estimateCalls().some((c) => c.args.kind === "instant"));
   }
 
+  // 1b. The Prepare tab: its button asks for a "prepare" estimate with the input list (one path per
+  // line, blanks dropped) and the output folder, and re-asks when the list changes.
+  {
+    const { doc, live, flushTimers, estimateCalls } = build();
+    await live.start();
+    gotoTab(doc, "prepare");
+    await flushTimers();
+    const first = estimateCalls().filter((c) => c.args.kind === "prepare");
+    assert.strictEqual(first.length, 1);
+    assert.deepStrictEqual(first[0].args.params, { inputPaths: [], outDir: "" });
+    doc.getElementById("dpInputs").value = "/data/a.txt\n\n  /data/dir \n";
+    doc.getElementById("dpOut").value = "/out";
+    doc.getElementById("dpInputs").dispatch("input");
+    await flushTimers();
+    const last = estimateCalls().filter((c) => c.args.kind === "prepare").pop();
+    assert.deepStrictEqual(last.args.params, { inputPaths: ["/data/a.txt", "/data/dir"], outDir: "/out" });
+    const text = show(doc, live, "dpRun");
+    assert.ok(text.startsWith("Prepare") && text.includes("Estimated time: about"), text);
+    // The Stop and "use the splits" buttons are instant: no estimate is requested for them.
+    assert.ok(!estimateCalls().some((c) => c.args.kind === "instant"));
+  }
+
   // 2. A button tooltip says what it does AND an estimate; fields only help text.
   {
     const { doc, live, flushTimers, estimateCalls, calls } = build();

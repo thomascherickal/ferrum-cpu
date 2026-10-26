@@ -13,7 +13,7 @@
 (function (global) {
   const KINDS = [
     "instant", "download", "load_file", "clean_text", "train", "generate", "evaluate",
-    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability",
+    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare",
   ];
 
   // A "Browse..." button next to a path field.
@@ -21,6 +21,8 @@
     title: "Browse for " + what,
     does: mode === "save"
       ? "Opens the system 'save as' dialog and puts the file path you pick into the " + what + " field, so you do not have to type it."
+      : mode === "add" || mode === "adddir"
+        ? "Opens the system " + (mode === "add" ? "file" : "folder") + " picker and adds the path you choose as a new line in the input list, so you can build up several inputs without typing."
       : mode === "dir"
         ? "Opens the system folder picker and puts the folder you choose into the " + what + " field, so you do not have to type it."
         : "Opens the system file picker and puts the path of the file you choose into the " + what + " field, so you do not have to type it.",
@@ -854,7 +856,107 @@
     },
 
     // Tabs
+    // ── Prepare ───────────────────────────────────────────────────────────
+    dpInputs: {
+      title: "Input files and folders",
+      what: "The text files to prepare, one path per line. A folder means every file inside it, including sub-folders (hidden files and the output folder are skipped).",
+      how: "Type or paste paths, or use Add file and Add folder. Every file is read as it is, whatever its extension, so a stray picture or archive in a folder counts as invalid text. Files are read in sorted order in small pieces straight from disk, so a corpus larger than your memory is fine.",
+      beginner: "This is your raw material. If you have one big book as a text file, add just that file. If you have a folder of many small texts, add the folder and every text in it becomes part of the dataset.",
+    },
+    dpAddFile: browse("input file", "add"),
+    dpAddDir: browse("input folder", "adddir"),
+    dpOut: {
+      title: "Output folder",
+      what: "The folder where train.txt, val.txt, test.txt and manifest.json are written. It is created if it does not exist.",
+      how: "Files are first written next to their final names with a .part ending and renamed only when the whole run succeeded, so a failed or stopped run leaves any earlier files in this folder exactly as they were. The folder must not be one of the inputs' files, but it may be inside an input folder (it is skipped).",
+      beginner: "Pick an empty or new folder, for example prepared inside your project. You will point the Train tab at train.txt in this folder afterwards.",
+    },
+    dpOutBrowse: browse("output folder", "dir"),
+    dpVal: {
+      title: "Validation share",
+      what: "The fraction of documents kept aside as the validation set, between 0 and just under 1. Default 0.05, which is 5 percent.",
+      how: "Each document goes to train, validation or test by a fingerprint of its own text and the split seed, so the same document always lands in the same set and adding documents later does not move the old ones. With few documents a set can end up empty. Validation and test shares together must stay below 1.",
+      beginner: "Like keeping a few exam questions hidden from a student. Training never sees the validation text, so the Evaluate tab can tell you how the model does on text it has not memorised.",
+    },
+    dpTest: {
+      title: "Test share",
+      what: "The fraction of documents kept aside as the final test set. Default 0.05, which is 5 percent.",
+      how: "Chosen the same way as the validation share. Use the validation set while you tune a model and the test set once at the end, so your final score is not tuned to it. Set it to 0 if you do not want a test file (it is then empty).",
+      beginner: "The test set is the final exam. You only look at it when you are done experimenting, so the score is an honest one.",
+    },
+    dpSeed: {
+      title: "Split seed",
+      what: "A number mixed into the fingerprint that decides which set each document goes to. Default 42.",
+      how: "The same seed and the same documents always give the same split. Change it to get a different random-looking split of the same data. It is written in the manifest, so a run can be repeated exactly.",
+      beginner: "Think of it as the shuffle number. Keep it the same when you want to compare experiments fairly, change it when you want a different shuffle.",
+    },
+    dpMin: {
+      title: "Minimum characters",
+      what: "Documents shorter than this many characters (after cleaning) are dropped. Default 1, which only removes empty ones.",
+      how: "Counts characters, not bytes. Dropped documents are counted as too short in the result. Raising it removes fragments such as headings and page numbers that teach a model little.",
+      beginner: "A document with five letters cannot teach a model how sentences work. A minimum of 50 or so throws away scraps and keeps real text.",
+    },
+    dpMax: {
+      title: "Maximum characters",
+      what: "Documents longer than this many characters (after cleaning) are dropped. 0, the default, keeps documents of any length.",
+      how: "Useful when a few giant documents (a whole book in one file) would dominate a small dataset. Dropped documents are counted as too long. Nothing is cut: a document is kept whole or dropped whole.",
+      beginner: "If one file is a thousand times longer than the others, the model mostly learns that one file. A maximum keeps the mix balanced. Leave it at 0 if unsure.",
+    },
+    dpSep: {
+      title: "Document separator",
+      what: "The text that separates one document from the next inside a file. It starts as the standard end-of-text marker (see the default text of the field).",
+      how: "A file with no separator in it is one single document, which is why a single book needs a separator or more files to be split into train, validation and test. Clearing the field makes every file exactly one document. The splits you get back are joined with the standard marker.",
+      beginner: "A split by whole documents keeps stories or articles intact. If your file is one long text, you can use a blank line or a line of dashes between articles as the separator, if you type that here.",
+    },
+    dpDedup: {
+      title: "Drop duplicate documents",
+      what: "Keeps only the first copy of each document that appears more than once. Off by default.",
+      how: "Compares a short fingerprint of each cleaned document, so only the fingerprints are held in memory. Dropped copies are counted as duplicates. Removing repeats stops the same text from landing in both train and test, which would flatter the score.",
+      beginner: "If the same story appears twice, the model would see it twice and the test could contain something it already memorised. Dropping copies keeps the evaluation honest.",
+    },
+    dpNfkc: {
+      title: "Unicode NFKC",
+      what: "Rewrites look-alike characters into their plain forms, such as the single ligature character for fi into the two letters f and i. Off by default.",
+      how: "Applied after invisible characters are removed and before punctuation is folded. It shrinks the number of distinct characters, which helps small vocabularies. It can change text that relies on special forms, such as superscripts.",
+      beginner: "The same word can be typed with different hidden codes that look identical on screen. NFKC makes them the same, so the model does not treat one word as several.",
+    },
+    dpLower: {
+      title: "Lowercase",
+      what: "Converts every document to lowercase. Off by default.",
+      how: "Shrinks the vocabulary, which helps tiny models, but generated text will be all lowercase. Applied together with the other cleaning steps, before the length filters.",
+      beginner: "Capital letters double the number of letters a model must learn. For a first small model, lowercase text is easier to learn and still readable.",
+    },
+    dpGutenberg: {
+      title: "Strip Project Gutenberg boilerplate",
+      what: "Removes the license header and footer that Project Gutenberg puts around each book, and makes each book in a file its own document. Off by default.",
+      how: "Looks for the START and END markers of Gutenberg texts. A file may hold several books; each becomes one document. Text without the markers passes through unchanged.",
+      beginner: "Gutenberg books start with pages of legal text. Left in, a small model would learn to write legal text, so it is better removed.",
+    },
+    dpLossy: {
+      title: "Replace invalid UTF-8 bytes",
+      what: "Instead of stopping at the first byte that is not valid text, replaces such bytes with the replacement character and carries on. Off by default.",
+      how: "Without it the run stops with an error naming the file and the byte position, so you can fix the file. With it, documents that needed repairs are still kept and the number of repaired documents is shown in the result.",
+      beginner: "Some old files use a different character encoding and contain bytes that are not valid text. Strict mode tells you about them; this switch papers over them, at the price of a few odd characters.",
+    },
+    dpRun: {
+      title: "Prepare",
+      does: "Reads the inputs from disk, cleans and filters every document, splits them into train, validation and test files by a fingerprint of the text, and writes the files plus manifest.json with checksums. Shows progress and a summary of what was kept and rejected.",
+      kind: "prepare",
+      how: "It does exactly what the train_transformer prepare command does, so you can repeat a run on the command line from the arguments recorded in the manifest.",
+      beginner: "Nothing in your inputs is changed. New files are written to the output folder, and only when everything worked.",
+    },
+    dpCancel: {
+      title: "Stop preparing",
+      does: "Stops the preparation between documents. No output file is changed: files from an earlier run in the same folder stay as they were and no partial files are left behind.",
+      kind: "instant",
+    },
+    dpUse: {
+      title: "Use the splits in Train and Evaluate",
+      does: "Fills the Train tab's corpus with train.txt and the Evaluate tab's held-out and test files with val.txt and test.txt from the run that just finished (empty splits are skipped).",
+      kind: "instant",
+    },
     "tab-datasets": tab("Datasets", "download, load, clean and save the text your model learns from."),
+    "tab-prepare": tab("Prepare", "clean, deduplicate and split text files into train, validation and test sets with a manifest."),
     "tab-train": tab("Train", "train a new small transformer language model from scratch on your corpus."),
     "tab-generate": tab("Generate", "write new text with a trained model, optionally streamed live."),
     "tab-evaluate": tab("Evaluate", "score models on text they have not seen, using perplexity."),

@@ -91,6 +91,19 @@ async function pickDir(targetId) {
 bySel(".browse").forEach((b) => b.addEventListener("click", () => pickOpen(b.dataset.target)));
 bySel(".browse-save").forEach((b) => b.addEventListener("click", () => pickSave(b.dataset.target)));
 bySel(".browse-dir").forEach((b) => b.addEventListener("click", () => pickDir(b.dataset.target)));
+// "Add file/folder": append the picked paths as new lines of a list (the Prepare inputs).
+async function pickAdd(targetId, directory) {
+  if (!dialog) { toast("File dialog unavailable; type the path manually.", "info"); return; }
+  try {
+    const picked = await dialog.open({ multiple: true, directory });
+    const paths = (Array.isArray(picked) ? picked : picked ? [picked] : []).map((p) => (typeof p === "string" ? p : p.path || p));
+    if (!paths.length) return;
+    const box = $(targetId);
+    box.value = (box.value.trim() ? box.value.replace(/\n*$/, "\n") : "") + paths.join("\n");
+  } catch (e) { toast("dialog error: " + e, "error"); }
+}
+bySel(".browse-add").forEach((b) => b.addEventListener("click", () => pickAdd(b.dataset.target, false)));
+bySel(".browse-add-dir").forEach((b) => b.addEventListener("click", () => pickAdd(b.dataset.target, true)));
 
 // ── Job control: a Stop button per long job, shown while it runs ─────────────
 const stopAsked = {}; // kind -> the user pressed Stop for the job running now
@@ -111,6 +124,7 @@ wireStop("genCancel", "generate");
 wireStop("ggCancel", "run");
 wireStop("ftCancel", "finetune");
 wireStop("exCancel", "export");
+wireStop("dpCancel", "prepare");
 
 // ── Terminal (bottom dock) ───────────────────────────────────────────────────
 const termOut = $("termOut");
@@ -265,6 +279,9 @@ $("dsSave").addEventListener("click", async () => {
     if (!$("trCorpus").value) $("trCorpus").value = path;
   } catch (e) { setErr("errDsSave", String(e)); }
 });
+
+// ── Prepare (clean + split; the tab lives in prepare_tab.js) ─────────────────────
+const prepareTab = window.FerrumPrepareTab.create({ $, invoke, toast, setErr, clearErr, jobRunning, stopAsked });
 
 // ── Train ─────────────────────────────────────────────────────────────────────
 
@@ -919,6 +936,7 @@ async function wireEvents() {
     if (ftLossHistory.length > 1000) ftLossHistory.shift();
     drawFtChart();
   });
+  await listen("prepare-progress", (e) => prepareTab.onProgress(e.payload));
   await listen("export-progress", (e) => { $("exStatus").textContent = e.payload; });
   await listen("gen-fragment", (e) => { if (generating) $("genOut").textContent += e.payload; });
 }

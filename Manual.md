@@ -394,8 +394,9 @@ chat_format             chat-template detection and rendering for instruct model
 Any UTF-8 text file is a corpus. For a good one, use `prepare`: a repeatable,
 streaming cleaner and splitter that records exactly what it did
 ([Samples §3](Samples.md#3-cleaning-your-own-corpus) runs it on a deliberately messy input).
-The same cleaning steps are available as library functions and in the GUI's
-**Datasets** tab ([§10.3](#103-the-tabs)).
+The same cleaning steps are available as library functions, in the GUI's
+**Datasets** tab for a quick single-file clean, and in its **Prepare** tab, which
+runs this command's code ([§10.3](#103-the-tabs)).
 
 ### 5.1 `train_transformer prepare`
 
@@ -1745,13 +1746,15 @@ tauri ios init && cargo tauri ios dev` (macOS only).
 
 The Datasets tab's `clean_text` command wraps `clean_corpus` with its own
 option set: Gutenberg boilerplate, lowercase, whitespace, punctuation, control
-characters, and a maximum length. It has no NFKC, dedup, minimum length,
-document separators, train/val/test split, or manifest; use `train_transformer
-prepare` (§5.1) for those.
+characters, and a maximum length, on one text held in the window. It has no
+NFKC, dedup, minimum length, document separators, train/val/test split, or
+manifest; the **Prepare** tab (below) or `train_transformer prepare` (§5.1) has
+those.
 
 | Tab | What you do there |
 |---|---|
 | **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
+| **Prepare** | `train_transformer prepare` in a form: input files and folders (several, added with the pickers), an output folder, validation and test shares, split seed, minimum and maximum characters, document separator, and the switches *drop duplicates*, *NFKC*, *lowercase*, *strip Gutenberg*, *replace invalid UTF-8*. A progress bar, **Stop**, and a summary (documents per split, rejected counts by reason, repaired documents, manifest path, and the line the CLI would print); **Use the splits in Train and Evaluate** fills those tabs. See *Preparing a dataset* below |
 | **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart; a **pre-flight check** under the form (below) |
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
@@ -1762,6 +1765,26 @@ prepare` (§5.1) for those.
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
+
+**Preparing a dataset.** The Prepare tab's `prepare_dataset` command calls
+`slm_cli::prepare::prepare`, the library function behind `train_transformer prepare`
+(`slm_cli` is also a library for this reason, and `ferrum_gui` depends on it by path:
+the pipeline needs `sha2` and `serde_json`, which `ferrum_core` may not). The inputs
+are read in 1 MiB chunks straight from disk and the splits are written there, so a
+corpus never passes through the window and memory does not grow with its size. For
+the same options the files are byte-identical to the command's, including
+`manifest.json`, whose `args` are the equivalent command line (so a GUI run can be
+repeated in a terminal); a test checks that against the library call. Progress
+arrives as `prepare-progress` events (file, bytes done of total, documents read). **Stop**
+(`cancel_job("prepare")`) is checked between documents and ends the run with every earlier
+output untouched and no `*.part` file left. The CLI's errors are shown as they are, with the
+flag names turned into the tab's wording: an empty train split (`train split is empty: N
+documents found, need at least 3 ...`), invalid UTF-8 with the file and byte offset (tick
+*Replace invalid UTF-8 bytes*), an input that is one of the run's own outputs. Every path
+goes through the path guard (an input may be a file or a folder). The button's estimate
+(`prepare`) reads the input sizes from disk: about 18 MB/s on one thread (22.5 MB of
+TinyStories took 0.62 s plain and 1.18 s with dedup, NFKC and lowercase), RAM roughly flat
+(7 MB measured on that input).
 
 **Train pre-flight.** Under the Train form a panel (the `preflight_train` command,
 refreshed 300 ms after any change) shows the parameter count (`TransformerNet::check_size`),
@@ -1776,7 +1799,7 @@ with the numbers and a box *I know, try anyway* appears; ticking it sends `force
 `TransformerConfig::skip_memory_check`, which skips the engine's refusal (the CLI never does;
 the system may kill the process if the run really does not fit).
 
-**Stopping a job.** Train, Generate, GGUF, Fine-tune and Export show a Stop button
+**Stopping a job.** Prepare, Train, Generate, GGUF, Fine-tune and Export show a Stop button
 while they run (the `cancel_job` command; one running job per kind, so starting a
 second training run, say, fails at once with "a training job is already running").
 *Train* and *Fine-tune* stop after the current optimizer step through the engine's
@@ -1895,7 +1918,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
@@ -1904,6 +1927,7 @@ src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, l
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
+src/prepare.rs    the Prepare tab: `prepare_dataset` over `slm_cli::prepare` (the CLI's pipeline), progress events, cancel
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
 src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)
@@ -1912,7 +1936,7 @@ capabilities/     Tauri v2 permissions (event listen/unlisten + dialog open/save
 
 Heavy commands run on blocking tasks and stream events back to the UI
 (`engine-log`, `train-progress`, `train-done`, `gen-fragment`,
-`finetune-progress`, `export-progress`), so the window stays responsive. Under
+`finetune-progress`, `export-progress`, `prepare-progress`), so the window stays responsive. Under
 a token budget, `train-progress` sends `total: null` because the epoch count is
 not known in advance.
 
@@ -1925,11 +1949,11 @@ few seconds:
 | Layer | What it checks | Where |
 |---|---|---|
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
-| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused) | `src/ipc_tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
-| Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+| Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and

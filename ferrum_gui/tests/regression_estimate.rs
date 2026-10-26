@@ -253,3 +253,50 @@ fn tiny_gguf_run_finetune_export_estimates_match() {
     );
     assert_in_band("gguf export", secs(&est), measured);
 }
+
+#[test]
+fn prepare_estimate_matches_the_measured_wall_time() {
+    use slm_cli::prepare::{prepare, PrepareOptions};
+    let d = dir("prepare");
+    // ~6 MB of 1,000-character documents: long enough that milliseconds are not the answer.
+    let doc = |i: usize| format!("Document {i}: {}", TEXT.repeat(8));
+    let docs: Vec<String> = (0..6000).map(doc).collect();
+    let src = d.0.join("in.txt");
+    std::fs::write(&src, docs.join(ferrum_core::DOC_SEP)).unwrap();
+    let path = src.to_string_lossy().into_owned();
+    let out = d.0.join("out").to_string_lossy().into_owned();
+    let t = Instant::now();
+    prepare(
+        &PrepareOptions {
+            inputs: vec![path.clone()],
+            out: out.clone(),
+            doc_sep: ferrum_core::DOC_SEP.into(),
+            lossy: false,
+            nfkc: true,
+            lowercase: false,
+            strip_gutenberg: false,
+            min_chars: 1,
+            max_chars: 0,
+            dedup: true,
+            val_frac: 0.05,
+            test_frac: 0.05,
+            seed: 42,
+            args: vec![],
+            stop: ferrum_core::StopCondition::none(),
+        },
+        &mut |_| {},
+    )
+    .unwrap();
+    let measured = t.elapsed().as_secs_f64();
+    let est = estimate_now(
+        JobKind::Prepare,
+        JobParams {
+            input_paths: vec![path],
+            out_dir: out,
+            ..JobParams::default()
+        },
+        None,
+    );
+    assert_in_band("prepare ~6 MB", secs(&est), measured);
+    assert!(est.fits_in_ram);
+}

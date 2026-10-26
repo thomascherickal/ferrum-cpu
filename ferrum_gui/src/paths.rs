@@ -23,15 +23,27 @@ const FORBIDDEN_ROOTS: [&str; 3] = ["/dev", "/proc", "/sys"];
 /// (the file may be new, but if it exists it must be a regular file).
 /// `label` names the field in the error message ("model path", ...).
 pub fn checked_path(label: &str, p: &str, must_exist: bool) -> Result<PathBuf, String> {
-    check(label, p, must_exist, false)
+    check(label, p, must_exist, Want::File)
 }
 
 /// Validate a *directory* path (a download folder). It may not exist yet.
 pub fn checked_dir(label: &str, p: &str) -> Result<PathBuf, String> {
-    check(label, p, false, true)
+    check(label, p, false, Want::Dir)
 }
 
-fn check(label: &str, p: &str, must_exist: bool, want_dir: bool) -> Result<PathBuf, String> {
+/// Validate a corpus input: an existing regular file *or* directory.
+pub fn checked_input(label: &str, p: &str) -> Result<PathBuf, String> {
+    check(label, p, true, Want::Either)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Want {
+    File,
+    Dir,
+    Either,
+}
+
+fn check(label: &str, p: &str, must_exist: bool, want: Want) -> Result<PathBuf, String> {
     if p.trim().is_empty() {
         return Err(format!("{label}: please provide a path"));
     }
@@ -62,13 +74,17 @@ fn check(label: &str, p: &str, must_exist: bool, want_dir: bool) -> Result<PathB
     }
 
     match std::fs::metadata(&path) {
-        Ok(m) if want_dir && !m.is_dir() => Err(format!("{label}: {p} is not a directory")),
-        Ok(m) if !want_dir && m.is_dir() => {
+        Ok(m) if want == Want::Dir && !m.is_dir() => {
+            Err(format!("{label}: {p} is not a directory"))
+        }
+        Ok(m) if want == Want::File && m.is_dir() => {
             Err(format!("{label}: {p} is a directory, expected a file"))
         }
-        Ok(m) if !want_dir && !m.is_file() => Err(format!(
-            "{label}: {p} is not a regular file (device, pipe or socket)"
-        )),
+        Ok(m) if want != Want::Dir && !(m.is_file() || (want == Want::Either && m.is_dir())) => {
+            Err(format!(
+                "{label}: {p} is not a regular file (device, pipe or socket)"
+            ))
+        }
         Ok(_) => Ok(path),
         Err(e) if e.kind() == ErrorKind::NotFound && !must_exist => Ok(path),
         Err(e) if e.kind() == ErrorKind::NotFound => Err(format!("{label}: {p} does not exist")),
@@ -167,6 +183,24 @@ mod tests {
         assert!(checked_dir("p", f.to_str().unwrap())
             .unwrap_err()
             .contains("not a directory"));
+    }
+
+    #[test]
+    fn input_may_be_a_file_or_a_folder_but_must_exist() {
+        let d = tmp("input");
+        let f = d.join("a.txt");
+        std::fs::write(&f, "x").unwrap();
+        assert!(checked_input("p", d.to_str().unwrap()).is_ok());
+        assert!(checked_input("p", f.to_str().unwrap()).is_ok());
+        assert!(checked_input("p", d.join("nope").to_str().unwrap())
+            .unwrap_err()
+            .contains("does not exist"));
+        assert!(checked_input("p", "/dev/null")
+            .unwrap_err()
+            .contains("not allowed"));
+        assert!(checked_input("p", "")
+            .unwrap_err()
+            .contains("provide a path"));
     }
 
     #[test]

@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { documentFromHtml } = require("./testdom.js");
 
-const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "app.js"];
+const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "prepare_tab.js", "app.js"];
 const read = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 
 // Canvas context that accepts any drawing call.

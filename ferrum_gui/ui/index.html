@@ -25,6 +25,7 @@
   <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
   <nav id="tabs">
     <button class="tab active" id="tab-datasets" data-tab="datasets">Datasets</button>
+    <button class="tab" id="tab-prepare" data-tab="prepare">Prepare</button>
     <button class="tab" id="tab-train" data-tab="train">Train</button>
     <button class="tab" id="tab-generate" data-tab="generate">Generate</button>
     <button class="tab" id="tab-evaluate" data-tab="evaluate">Evaluate</button>
@@ -140,6 +141,56 @@
         <button id="dsSave" class="primary">Save corpus</button>
       </div>
       <span class="err" id="errDsSave"></span>
+    </section>
+
+    <!-- ── Prepare (clean + split text files, like `train_transformer prepare`) ── -->
+    <section class="panel" id="panel-prepare">
+      <h2>Prepare — clean, deduplicate and split a dataset</h2>
+      <p class="hint">Reads text files or whole folders straight from disk (a big corpus never
+        goes through this window), cleans every document, and writes
+        <code>train.txt</code>, <code>val.txt</code>, <code>test.txt</code> and a
+        <code>manifest.json</code> that records what was done. It runs the same code as
+        <code>train_transformer prepare</code>, so the same options give the same files.</p>
+
+      <label>Input files and folders (one per line)
+        <textarea id="dpInputs" rows="3" placeholder="/path/to/book.txt&#10;/path/to/folder-of-texts"></textarea>
+      </label>
+      <div class="row">
+        <button class="ghost browse-add" id="dpAddFile" data-target="dpInputs">Add file…</button>
+        <button class="ghost browse-add-dir" id="dpAddDir" data-target="dpInputs">Add folder…</button>
+      </div>
+      <div class="row">
+        <label>Output folder <input type="text" id="dpOut" placeholder="/path/to/prepared" /></label>
+        <button class="ghost browse-dir" id="dpOutBrowse" data-target="dpOut">Browse…</button>
+      </div>
+
+      <div class="grid">
+        <label>Validation share <input type="number" id="dpVal" value="0.05" min="0" max="0.99" step="0.01" /></label>
+        <label>Test share <input type="number" id="dpTest" value="0.05" min="0" max="0.99" step="0.01" /></label>
+        <label>Split seed <input type="number" id="dpSeed" value="42" min="0" /></label>
+        <label>Min chars <input type="number" id="dpMin" value="1" min="0" /></label>
+        <label>Max chars (0=off) <input type="number" id="dpMax" value="0" min="0" /></label>
+        <label>Document separator <input type="text" id="dpSep" value="&lt;|endoftext|&gt;" /></label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="dpDedup" /> Drop duplicate documents</label>
+        <label class="chk"><input type="checkbox" id="dpNfkc" /> Unicode NFKC</label>
+        <label class="chk"><input type="checkbox" id="dpLower" /> Lowercase</label>
+        <label class="chk"><input type="checkbox" id="dpGutenberg" /> Strip Project Gutenberg boilerplate</label>
+        <label class="chk"><input type="checkbox" id="dpLossy" /> Replace invalid UTF-8 bytes</label>
+      </div>
+      <span class="err" id="errPrepare"></span>
+
+      <div class="row">
+        <button id="dpRun" class="primary">Prepare</button>
+        <button id="dpCancel" class="ghost hidden">Stop</button>
+        <div class="progress"><div class="bar" id="dpBar"></div></div>
+        <span id="dpStatus" class="muted">idle</span>
+      </div>
+      <div id="dpResult" class="result"></div>
+      <div class="row">
+        <button id="dpUse" class="ghost hidden">Use the splits in Train and Evaluate</button>
+      </div>
     </section>
 
     <!-- ── Train ─────────────────────────────────────────────────────────── -->
@@ -543,6 +594,7 @@
   <script src="tooltip.js"></script>
   <script src="estimate_view.js"></script>
   <script src="live.js"></script>
+  <script src="prepare_tab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -17,12 +17,14 @@
   const num = (doc, id) => { const e = doc.getElementById(id); const v = e ? parseFloat(e.value) : NaN; return Number.isFinite(v) ? v : 0; };
   const int = (doc, id) => Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(num(doc, id))));
   const str = (doc, id) => { const e = doc.getElementById(id); return e && e.value ? String(e.value).trim() : ""; };
+  const lines = (doc, id) => { const e = doc.getElementById(id); return e && e.value ? String(e.value).split("\n").map((s) => s.trim()).filter(Boolean) : []; };
   const len = (doc, id) => { const e = doc.getElementById(id); return e && e.value ? e.value.length : 0; };
 
   const PARAMS = {
     dsDownload: (d) => ({ maxMb: num(d, "dsMaxMb") }),
     dsLoadFile: (d) => ({ textPath: str(d, "dsFile") }),
     dsClean: (d) => ({ textChars: len(d, "dsRaw") }),
+    dpRun: (d) => ({ inputPaths: lines(d, "dpInputs"), outDir: str(d, "dpOut") }),
     trStart: (d) => ({
       corpusPath: str(d, "trCorpus"), contextLen: int(d, "trContext"), embedDim: int(d, "trEmbed"),
       numHeads: int(d, "trHeads"), numBlocks: int(d, "trBlocks"), hiddenDim: int(d, "trHidden"),

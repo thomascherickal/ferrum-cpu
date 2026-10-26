@@ -644,6 +644,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         CleanOpts, ExportParams, FinetuneParams, GenParams, GgufRunParams, TrainParams,
     };
     use crate::evaluate::EvalParams;
+    use crate::prepare::PrepareParams;
     let fixture: Value =
         serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
     macro_rules! parses {
@@ -669,6 +670,19 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     assert_eq!((g.quant.as_str(), g.top_k, g.raw), ("int4", 40, true));
     assert_eq!(parses!("finetune_gguf", FinetuneParams).epochs, 3);
     assert_eq!(parses!("export_gguf", ExportParams).quant, "q8_0");
+    let p = parses!("prepare_dataset", PrepareParams);
+    assert_eq!(
+        (
+            p.inputs.len(),
+            p.seed,
+            p.min_chars,
+            p.max_chars,
+            p.dedup,
+            p.lossy
+        ),
+        (2, 7, 50, 20_000, true, true)
+    );
+    assert_eq!(p.doc_sep, ferrum_core::DOC_SEP);
     assert!(
         serde_json::from_value::<CleanOpts>(fixture["clean_text"]["opts"].clone())
             .unwrap()
@@ -679,4 +693,125 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     let (_app, w) = app();
     let r = call(&w, "clean_text", fixture["clean_text"].clone()).unwrap();
     assert_eq!(r["cleaned"].as_str().unwrap().trim_end(), "hello  there"); // lowercased; inner spaces are kept
+}
+
+#[test]
+fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
+    use crate::jobs::Job;
+    use tauri::Manager;
+    let (app, w) = app();
+    let progress = collect(&app, "prepare-progress");
+    let dir = tmp("prepare");
+    let docs: Vec<String> = (0..40)
+        .map(|i| format!("Story number {i}: once upon a time there was a small fox."))
+        .collect();
+    let a = dir.join("a.txt");
+    std::fs::write(&a, docs.join(ferrum_core::DOC_SEP)).unwrap();
+    let out = dir.join("out");
+    let body = |extra: Value| {
+        let mut p = json!({"inputs": [a.to_string_lossy()], "outDir": out.to_string_lossy(),
+            "valFrac": 0.1, "testFrac": 0.1, "seed": 1, "minChars": 5, "maxChars": 0,
+            "docSep": ferrum_core::DOC_SEP, "dedup": true, "nfkc": false, "lowercase": false,
+            "stripGutenberg": false, "lossy": false});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        json!({"params": p})
+    };
+
+    // A job in the same kind's slot refuses a second start; cancel reaches it.
+    {
+        let state = app.state::<crate::AppState>();
+        let held = state.jobs.start(Job::Prepare).unwrap();
+        let e = call(&w, "prepare_dataset", body(json!({}))).unwrap_err();
+        assert_eq!(
+            e.as_str().unwrap(),
+            "a dataset preparation is already running"
+        );
+        assert_eq!(
+            call(&w, "cancel_job", json!({"kind": "prepare"})).unwrap(),
+            true
+        );
+        assert!(held.cancelled());
+    }
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "prepare"})).unwrap(),
+        false
+    );
+    assert!(!out.exists(), "a refused start writes nothing");
+
+    // The run: camelCase result, files on disk, progress events with the documented keys.
+    let r = call(&w, "prepare_dataset", body(json!({}))).unwrap();
+    let docs_in = |name: &str| r[name]["documents"].as_u64().unwrap();
+    assert_eq!(docs_in("train") + docs_in("val") + docs_in("test"), 40);
+    assert_eq!(r["files"], 1);
+    assert_eq!(r["rejected"]["duplicate"], 0);
+    assert_eq!(r["lossyRepaired"], 0);
+    assert_eq!(
+        r["manifestPath"],
+        out.join("manifest.json").to_string_lossy().as_ref()
+    );
+    assert!(r["summary"].as_str().unwrap().starts_with("prepared "));
+    let train = std::fs::read_to_string(out.join("train.txt")).unwrap();
+    assert_eq!(r["train"]["bytes"].as_u64().unwrap(), train.len() as u64);
+    // The manifest records the equivalent command line.
+    let m: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(m["args"][0], "--input");
+    assert!(m["args"].as_array().unwrap().iter().any(|x| x == "--dedup"));
+    wait_for(&progress, 2); // the start of the file and the closing report
+    let first: Value = serde_json::from_str(&progress.lock().unwrap()[0]).unwrap();
+    for k in [
+        "file",
+        "files",
+        "path",
+        "bytesDone",
+        "bytesTotal",
+        "documents",
+    ] {
+        assert!(first.get(k).is_some(), "progress lacks {k}: {first}");
+    }
+
+    // Errors reach the UI as plain strings in the GUI's words; a bad path never runs.
+    let bad = dir.join("bad.txt");
+    std::fs::write(&bad, b"text \xff more").unwrap();
+    let e = call(
+        &w,
+        "prepare_dataset",
+        body(json!({"inputs": [bad.to_string_lossy()]})),
+    )
+    .unwrap_err();
+    assert!(
+        e.as_str().unwrap().contains("invalid UTF-8 at byte 5"),
+        "{e}"
+    );
+    assert!(e.as_str().unwrap().contains(&*bad.to_string_lossy()), "{e}");
+    let e = call(
+        &w,
+        "prepare_dataset",
+        body(json!({"inputs": ["/proc/cpuinfo"]})),
+    )
+    .unwrap_err();
+    assert!(e.as_str().unwrap().contains("not allowed"), "{e}");
+    let e = call(
+        &w,
+        "prepare_dataset",
+        body(json!({"outDir": "/proc/prepared"})),
+    )
+    .unwrap_err();
+    assert!(e.as_str().unwrap().contains("not allowed"), "{e}");
+    assert!(
+        call(&w, "prepare_dataset", json!({"params": {"outDir": "x"}})).is_err(),
+        "inputs are required"
+    );
+    // The estimate takes the same list and reads its size from disk.
+    let est = call(
+        &w,
+        "estimate_job",
+        json!({"kind": "prepare", "params": {
+        "inputPaths": [a.to_string_lossy()], "outDir": out.to_string_lossy()}}),
+    )
+    .unwrap();
+    assert!(est["seconds"].as_f64().unwrap() > 0.0 && est["peakRamMb"].as_f64().is_some());
+    let _ = std::fs::remove_dir_all(dir);
 }

@@ -121,6 +121,8 @@ class Document {
 // Build a Document from the real index.html: every element becomes an Element
 // with its attributes (so ids, classes and data-* work), nested as in the
 // markup. Text nodes, comments and <head>/<script> contents are skipped.
+// The entities a browser decodes inside an attribute value (the page uses these four and &#10;).
+const unescapeAttr = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#10;/g, "\n").replace(/&amp;/g, "&");
 const VOID = new Set(["input", "img", "br", "hr", "meta", "link"]);
 function documentFromHtml(html) {
   const doc = new Document();
@@ -136,7 +138,7 @@ function documentFromHtml(html) {
     }
     const el = doc.createElement(tag);
     for (const a of attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
-      el.setAttribute(a[1], a[2] === undefined ? "" : a[2]);
+      el.setAttribute(a[1], a[2] === undefined ? "" : unescapeAttr(a[2]));
     }
     if (tag === "input") {
       el.value = el.getAttribute("value") || "";

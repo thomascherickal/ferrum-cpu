@@ -402,6 +402,98 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("exStatus").textContent, "encoding + writing (q8_0)…");
   }
 
+  // ── Prepare (G3): the form, the exact arguments, progress, result, errors, stop ──
+  {
+    const PREPARED = {
+      outDir: "/out", manifestPath: "/out/manifest.json", files: 2, seconds: 0.4,
+      train: { path: "/out/train.txt", documents: 90, chars: 9000, bytes: 9100 },
+      val: { path: "/out/val.txt", documents: 5, chars: 500, bytes: 510 },
+      test: { path: "/out/test.txt", documents: 0, chars: 0, bytes: 0 },
+      rejected: { duplicate: 2, empty: 0, invalid_utf8: 0, too_long: 0, too_short: 1 }, lossyRepaired: 3,
+      summary: "prepared a b -> /out  (train=90 val=5 test=0)  rejected duplicate=2 too_short=1  lossy_repaired=3",
+    };
+    const a = await start({ prepare_dataset: async () => PREPARED });
+    await a.click("tab-prepare");
+    assert.ok(a.$("panel-prepare").classList.contains("active"));
+    // The defaults are the CLI's.
+    assert.deepStrictEqual(["dpVal", "dpTest", "dpSeed", "dpMin", "dpMax", "dpSep"].map((i) => a.$(i).value), ["0.05", "0.05", "42", "1", "0", "<|endoftext|>"]);
+    await a.click("dpRun");
+    assert.strictEqual(a.$("errPrepare").textContent, "Add at least one input file or folder");
+    a.set("dpInputs", "/data/a.txt\n\n  /data/folder  \n"); await a.click("dpRun");
+    assert.strictEqual(a.$("errPrepare").textContent, "Output folder is required");
+    a.set("dpOut", "/out"); a.set("dpVal", "0.6"); a.set("dpTest", "0.5"); await a.click("dpRun");
+    assert.ok(a.$("errPrepare").textContent.includes("add up to less than 1"), a.$("errPrepare").textContent);
+    a.set("dpVal", "0.05"); a.set("dpTest", "1"); await a.click("dpRun");
+    assert.ok(a.$("errPrepare").textContent.startsWith("Test share must be at least 0 and below 1"));
+    a.set("dpTest", "0.05"); a.set("dpSeed", "-3"); await a.click("dpRun");
+    assert.ok(a.$("errPrepare").textContent.startsWith("Split seed must be a whole number"));
+    assert.strictEqual(a.of("prepare_dataset").length, 0, "nothing is sent for an invalid form");
+
+    a.set("dpSeed", "7"); a.set("dpMin", "50"); a.set("dpMax", "20000");
+    for (const id of ["dpDedup", "dpNfkc", "dpLossy"]) a.$(id).checked = true;
+    await a.click("dpRun");
+    assert.strictEqual(a.$("errPrepare").textContent, "");
+    const sent = a.of("prepare_dataset")[0].args.params;
+    captured.prepare_dataset = sent;
+    assert.deepStrictEqual(sent, {
+      inputs: ["/data/a.txt", "/data/folder"], outDir: "/out", valFrac: 0.05, testFrac: 0.05, seed: 7, minChars: 50, maxChars: 20000,
+      docSep: "<|endoftext|>", dedup: true, nfkc: true, lowercase: false, stripGutenberg: false, lossy: true,
+    });
+    const text = a.$("dpResult").textContent;
+    assert.ok(text.includes("Prepared 2 file(s)") && text.includes("train: 90 documents, 9,000 characters, 9,100 bytes -> /out/train.txt"), text);
+    assert.ok(text.includes("rejected: duplicate=2  too short=1") && text.includes("repaired invalid UTF-8 in 3") && text.includes("manifest: /out/manifest.json"), text);
+    assert.ok(text.includes("(train=90 val=5 test=0)"), "the CLI summary line is shown");
+    assert.strictEqual(a.$("dpStatus").textContent, "done");
+    assert.strictEqual(a.$("dpBar").style.width, "100%");
+    assert.ok(!a.$("dpUse").classList.contains("hidden"));
+    assert.strictEqual(a.$("dpRun").disabled, false, "button re-enabled");
+
+    // Progress events drive the bar and status.
+    a.emit("prepare-progress", { file: 1, files: 2, path: "/data/a.txt", bytesDone: 5000000, bytesTotal: 20000000, documents: 4096 });
+    assert.strictEqual(a.$("dpBar").style.width, "25%");
+    assert.strictEqual(a.$("dpStatus").textContent, "file 1/2 - 5.0 MB of 20.0 MB - 4,096 documents read");
+
+    // "Use the splits": train always, val/test only when they have documents.
+    a.set("evFile", ""); a.set("evTestFile", "");
+    await a.click("dpUse");
+    assert.deepStrictEqual(["trCorpus", "evFile", "evTestFile"].map((i) => a.$(i).value), ["/out/train.txt", "/out/val.txt", ""]);
+  }
+  {
+    // The browse buttons append to the list (several paths at once, a folder too).
+    const a = await start({}, { dialogs: { open: ["/p/one.txt", "/p/two.txt"], dir: "/p/dir" } });
+    await a.click("dpAddFile");
+    assert.strictEqual(a.$("dpInputs").value, "/p/one.txt\n/p/two.txt");
+    await a.click("dpAddDir");
+    assert.strictEqual(a.$("dpInputs").value, "/p/one.txt\n/p/two.txt\n/p/dir");
+    await a.click("dpOutBrowse");
+    assert.strictEqual(a.$("dpOut").value, "/p/dir", "the output field takes a single folder");
+  }
+  {
+    // Errors are shown as the backend wrote them (path and byte offset included); Stop is wired.
+    const bad = "/data/a.txt: invalid UTF-8 at byte 14 (tick 'Replace invalid UTF-8 bytes' to repair them instead)";
+    const a = await start({ prepare_dataset: async () => { throw bad; } });
+    a.set("dpInputs", "/data/a.txt"); a.set("dpOut", "/out");
+    await a.click("dpRun");
+    assert.strictEqual(a.$("errPrepare").textContent, bad);
+    assert.strictEqual(a.$("dpStatus").textContent, "error");
+    assert.strictEqual(a.$("dpRun").disabled, false);
+    assert.ok(a.$("dpUse").classList.contains("hidden"));
+
+    let release;
+    const a2 = await start({ prepare_dataset: () => new Promise((_, rej) => { release = rej; }), cancel_job: async () => true });
+    a2.set("dpInputs", "/data/a.txt"); a2.set("dpOut", "/out");
+    assert.ok(a2.$("dpCancel").classList.contains("hidden"));
+    a2.$("dpRun").dispatch("click"); await settle(4);
+    assert.ok(!a2.$("dpCancel").classList.contains("hidden") && a2.$("dpRun").disabled);
+    await a2.click("dpCancel");
+    assert.deepStrictEqual(a2.of("cancel_job")[0].args, { kind: "prepare" });
+    release("prepare cancelled; no output files were changed");
+    await settle(6);
+    assert.strictEqual(a2.$("dpStatus").textContent, "stopped; no files were changed");
+    assert.strictEqual(a2.$("errPrepare").textContent, "");
+    assert.ok(a2.$("dpCancel").classList.contains("hidden") && !a2.$("dpRun").disabled);
+  }
+
   // ── Train pre-flight (G8): numbers, the llama.cpp badge, and a blocked Start ──
   {
     const a = await start();
@@ -620,7 +712,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
   {
     const file = require("node:path").join(__dirname, "command_params.fixture.json");
     const sorted = Object.fromEntries(Object.keys(captured).sort().map((k) => [k, captured[k]]));
-    assert.strictEqual(Object.keys(sorted).length, 7, "every flow captured its arguments");
+    assert.strictEqual(Object.keys(sorted).length, 8, "every flow captured its arguments");
     if (process.env.UPDATE_FIXTURE) require("node:fs").writeFileSync(file, JSON.stringify(sorted, null, 2) + "\n");
     assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/app_flows.test.js");
   }

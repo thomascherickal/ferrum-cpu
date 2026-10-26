@@ -1,4 +1,11 @@
 {
+  "dpRun": {
+    "kind": "prepare",
+    "params": {
+      "inputPaths": [],
+      "outDir": ""
+    }
+  },
   "dsClean": {
     "kind": "clean_text",
     "params": {

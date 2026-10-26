@@ -586,6 +586,7 @@ fn every_kind_returns_an_estimate_and_a_gpu_never_changes_it() {
         JobKind::GgufFinetune,
         JobKind::GgufExport,
         JobKind::Capability,
+        JobKind::Prepare,
     ];
     let mut nogpu = hw(8, Some(14_000));
     nogpu.gpus.clear();
@@ -643,4 +644,32 @@ fn json_in_and_out_match_what_the_ui_sends_and_reads() {
         assert!(v.get(key).is_some(), "missing {key}");
     }
     assert_eq!(v["kind"], "train");
+}
+
+#[test]
+fn prepare_needs_an_input_then_scales_with_its_size_at_the_measured_rate() {
+    let h = hw(8, Some(14_000));
+    let none = estimate(JobKind::Prepare, &JobParams::default(), &h, None);
+    assert!(none.seconds.is_none());
+    assert!(none.notes.iter().any(|n| n.contains("Add an input")));
+    let with = |bytes: u64| JobParams {
+        input_bytes: Some(bytes),
+        ..JobParams::default()
+    };
+    // 22.5 MB measured 0.62 to 1.18 s on the reference machine; the estimate sits in that range
+    // or just above (it is rounded down in speed).
+    let tiny_stories = estimate(JobKind::Prepare, &with(22_500_000), &h, None);
+    let s = secs(&tiny_stories);
+    assert!((0.9..=1.6).contains(&s), "{s}");
+    assert_eq!(tiny_stories.threads_used, 1, "preparation is serial");
+    // Twice the data takes about twice as long; RAM stays small and grows only with the dedup set.
+    let double = estimate(JobKind::Prepare, &with(45_000_000), &h, None);
+    assert!((secs(&double) / s - 2.0).abs() < 0.1);
+    assert!(tiny_stories.peak_ram_mb.unwrap() < 40.0);
+    let gigabyte = estimate(JobKind::Prepare, &with(1_000_000_000), &h, None);
+    assert!(gigabyte.peak_ram_mb.unwrap() < 100.0 && gigabyte.fits_in_ram);
+    assert!(tiny_stories
+        .notes
+        .iter()
+        .any(|n| n.contains("RAM does not grow")));
 }

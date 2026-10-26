@@ -62,6 +62,24 @@
     "stream": true,
     "verbose": false
   },
+  "prepare_dataset": {
+    "inputs": [
+      "/data/a.txt",
+      "/data/folder"
+    ],
+    "outDir": "/out",
+    "valFrac": 0.05,
+    "testFrac": 0.05,
+    "seed": 7,
+    "minChars": 50,
+    "maxChars": 20000,
+    "docSep": "<|endoftext|>",
+    "dedup": true,
+    "nfkc": true,
+    "lowercase": false,
+    "stripGutenberg": false,
+    "lossy": true
+  },
   "run_gguf": {
     "modelPath": "/g.gguf",
     "prompt": "hello",

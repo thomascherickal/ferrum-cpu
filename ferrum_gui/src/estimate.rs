@@ -94,6 +94,10 @@ const FT_THREAD_SCALE: [(f64, f64); 3] = [(1.0, 1.0), (3.0, 2.1), (8.0, 3.4)];
 const FT_PEAK_FACTOR: usize = 12;
 /// Cleaning text, bytes/s: 115 MB/s measured on a 1.6 MB text, rounded down.
 const CLEAN_BYTES_PER_S: f64 = 100e6;
+/// `prepare` (clean, NFKC, dedup, hash, split), bytes of input per second on one thread: 22.5 MB
+/// of TinyStories took 0.62 s plain, 0.93 s with dedup + NFKC and 1.18 s with lowercase too
+/// (release, 2026-10-27); the slowest is rounded down. Its RAM stays near 7 MB on that input.
+const PREPARE_BYTES_PER_S: f64 = 18e6;
 /// Reading a file from disk, bytes/s. Assumed, not measured.
 const DISK_BYTES_PER_S: f64 = 200e6;
 /// Download speed assumption, bytes/s, and the range shown around it.
@@ -124,6 +128,8 @@ pub enum JobKind {
     GgufFinetune,
     GgufExport,
     Capability,
+    /// The Prepare tab: clean and split text files into train/val/test.
+    Prepare,
 }
 
 /// Facts about a Ferrum SLM file (`generate`, `evaluate`), read from its GGUF header.
@@ -184,11 +190,16 @@ pub struct JobParams {
     /// The Evaluate tab's optional second (test) file.
     pub test_path: String,
     pub resume_path: String,
+    /// The Prepare tab's input files and folders, and its output folder.
+    pub input_paths: Vec<String>,
+    pub out_dir: String,
     // Resolved by `estimate_cmd` (tests set them directly).
     pub corpus_bytes: Option<u64>,
     pub text_bytes: Option<u64>,
     pub test_bytes: Option<u64>,
     pub resume_bytes: Option<u64>,
+    /// Bytes of every file under `input_paths`.
+    pub input_bytes: Option<u64>,
     pub slm: Option<SlmFacts>,
     pub gguf: Option<GgufFacts>,
 }
@@ -434,7 +445,27 @@ pub fn estimate(
         JobKind::GgufRun => gguf_run(d, p, speed, bw_speed),
         JobKind::GgufFinetune => finetune(d, p, speed),
         JobKind::GgufExport => export(d, p),
+        JobKind::Prepare => prepare(d, p, speed),
     }
+}
+
+fn prepare(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
+    let Some(bytes) = p.input_bytes else {
+        d.note("Add an input file or folder to get an estimate.");
+        return d.done(None, (1.0, 1.0), None, None);
+    };
+    d.threads = 1;
+    let secs = 0.05 + bytes as f64 / (PREPARE_BYTES_PER_S * speed);
+    d.note(format!(
+        "{:.1} MB of input at about {:.0} MB/s on one thread (cleaning, hashing and splitting are serial); NFKC, lowercase and dedup make it slower.",
+        bytes as f64 / 1e6,
+        PREPARE_BYTES_PER_S / 1e6 * speed
+    ));
+    d.note("Streams in 1 MiB chunks, so RAM does not grow with the corpus; a file without the document separator is one document and is held whole (a few times over while cleaning).");
+    // 7 MB measured on 22.5 MB; the dedup set holds 16 bytes per kept document.
+    let peak = 16e6 + bytes as f64 / 30.0;
+    let limit = d.hw.ram_available_mb.map(|a| a as f64 * GGUF_RAM_FRACTION);
+    d.done(Some(secs), (0.5, 2.5), Some(peak), limit)
 }
 
 fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {

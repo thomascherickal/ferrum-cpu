@@ -3,7 +3,7 @@
 
 use crate::estimate::{estimate, Estimate, GgufFacts, JobKind, JobParams, SlmFacts, Throughput};
 use crate::hardware;
-use crate::paths::checked_path;
+use crate::paths::{checked_input, checked_path};
 use crate::AppState;
 use ferrum_core::Gguf;
 use tauri::State;
@@ -71,6 +71,28 @@ pub fn gguf_facts(path: &str) -> Option<GgufFacts> {
     })
 }
 
+/// Bytes of every file the Prepare tab would read (`None` while no input is usable).
+/// ponytail: walks the folders on every (debounced) form change; a huge tree makes the tooltip slow.
+fn input_bytes(p: &JobParams) -> Option<u64> {
+    let inputs: Vec<String> = p
+        .input_paths
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| checked_input("input", s).is_ok())
+        .collect();
+    if inputs.is_empty() {
+        return None;
+    }
+    let files =
+        slm_cli::prepare::expand_inputs(&inputs, std::path::Path::new(p.out_dir.trim())).ok()?;
+    Some(
+        files
+            .iter()
+            .map(|f| std::fs::metadata(f).map_or(0, |m| m.len()))
+            .sum(),
+    )
+}
+
 /// Fill in everything the pure estimate needs from the paths in `p`.
 pub fn resolve(kind: JobKind, p: &mut JobParams) {
     p.corpus_bytes = file_len(&p.corpus_path).or(p.corpus_bytes);
@@ -86,6 +108,7 @@ pub fn resolve(kind: JobKind, p: &mut JobParams) {
         JobKind::GgufRun | JobKind::GgufFinetune | JobKind::GgufExport | JobKind::GgufInfo => {
             p.gguf = gguf_facts(&p.model_path)
         }
+        JobKind::Prepare => p.input_bytes = input_bytes(p).or(p.input_bytes),
         _ => {}
     }
 }
@@ -107,4 +130,41 @@ pub async fn estimate_job(
     tauri::async_runtime::spawn_blocking(move || estimate_now(kind, params, bench))
         .await
         .map_err(|e| format!("task error: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_input_size_sums_files_and_folders_and_skips_hidden_files_and_the_output() {
+        let d = std::env::temp_dir().join(format!("ferrum_gui_estcmd_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub/out")).unwrap();
+        std::fs::write(d.join("a.txt"), vec![b'a'; 100]).unwrap();
+        std::fs::write(d.join("sub/b.txt"), vec![b'b'; 50]).unwrap();
+        std::fs::write(d.join("sub/.hidden"), vec![b'h'; 1000]).unwrap();
+        std::fs::write(d.join("sub/out/train.txt"), vec![b't'; 1000]).unwrap();
+        let p = |inputs: &[String]| JobParams {
+            input_paths: inputs.to_vec(),
+            out_dir: d.join("sub/out").to_string_lossy().into(),
+            ..JobParams::default()
+        };
+        let a = d.join("a.txt").to_string_lossy().into_owned();
+        let sub = d.join("sub").to_string_lossy().into_owned();
+        assert_eq!(input_bytes(&p(&[a.clone(), sub.clone()])), Some(150));
+        // Unusable entries (blank, missing, a device) are ignored; nothing usable gives no size.
+        let junk = [
+            "".to_string(),
+            "/dev/null".to_string(),
+            "/nope/x".to_string(),
+        ];
+        assert_eq!(input_bytes(&p(&junk)), None);
+        assert_eq!(input_bytes(&p(&[a, junk[1].clone()])), Some(100));
+        // Through `resolve`, which is what `estimate_job` calls.
+        let mut jp = p(&[sub]);
+        resolve(JobKind::Prepare, &mut jp);
+        assert_eq!(jp.input_bytes, Some(50));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }
