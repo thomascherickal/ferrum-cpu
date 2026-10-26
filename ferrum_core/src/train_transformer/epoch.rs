@@ -2,28 +2,11 @@
 use crate::error::{InferError, Result};
 use crate::optim::Adam;
 use crate::rng::Rng;
+use crate::train_transformer::source::TokenSource;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::train_transformer::threaded::epoch_sharded;
 use crate::train_transformer::TransformerNet;
 use crate::verbose;
-
-/// A stored token id that widens to `usize` at the window boundary, so a corpus
-/// can be held as `u32` (half the RAM) while the model code keeps using `usize`.
-pub(crate) trait TokenId: Copy + Send + Sync {
-    fn widen(self) -> usize;
-}
-
-impl TokenId for usize {
-    fn widen(self) -> usize {
-        self
-    }
-}
-
-impl TokenId for u32 {
-    fn widen(self) -> usize {
-        self as usize
-    }
-}
 
 impl TransformerNet {
     /// Training-window start positions for one epoch over `n_tokens`, in a
@@ -116,15 +99,22 @@ pub fn train_transformer_steps(
     on_step: &mut StepHook,
 ) -> Result<f32> {
     steps_over(
-        net, tokens, batch_size, adam, rng, threads, max_steps, on_step,
+        net,
+        &mut { tokens },
+        batch_size,
+        adam,
+        rng,
+        threads,
+        max_steps,
+        on_step,
     )
 }
 
-/// [`train_transformer_steps`] over any stored token width.
+/// [`train_transformer_steps`] over any [`TokenSource`] (ids in memory or streamed from disk).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn steps_over<T: TokenId>(
+pub(crate) fn steps_over<S: TokenSource>(
     net: &mut TransformerNet,
-    tokens: &[T],
+    tokens: &mut S,
     batch_size: usize,
     adam: &Adam,
     rng: &mut Rng,
@@ -143,9 +133,9 @@ pub(crate) fn steps_over<T: TokenId>(
     epoch_serial(net, tokens, batch_size, adam, rng, max_steps, on_step)
 }
 
-fn epoch_serial<T: TokenId>(
+fn epoch_serial<S: TokenSource>(
     net: &mut TransformerNet,
-    tokens: &[T],
+    tokens: &mut S,
     batch_size: usize,
     adam: &Adam,
     rng: &mut Rng,
@@ -166,8 +156,7 @@ fn epoch_serial<T: TokenId>(
         let mut input = Vec::with_capacity(batch.len() * t);
         let mut targets = Vec::with_capacity(batch.len() * t);
         for &start in batch {
-            input.extend(tokens[start..start + t].iter().map(|&x| x.widen()));
-            targets.extend(tokens[start + 1..start + t + 1].iter().map(|&x| x.widen()));
+            tokens.cut(start, t, &mut input, &mut targets)?;
         }
         // Weight tying: mirror tok_embᵀ into the head before the forward (T9).
         net.sync_tied_head();

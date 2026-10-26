@@ -16,6 +16,7 @@ mod limits;
 mod optimizer;
 mod param;
 mod qat;
+mod source;
 mod step_metrics;
 #[cfg(test)]
 mod test_support;
@@ -26,6 +27,7 @@ pub use self::checkpoint::CheckpointInfo;
 pub(crate) use self::epoch::steps_over;
 pub use self::epoch::{train_transformer_epoch, train_transformer_steps, StepHook};
 pub use self::forward::FwdCache;
+pub(crate) use self::source::{Prefix, TokenSource};
 pub use self::step_metrics::StepMetrics;
 pub use self::threaded::train_transformer_epoch_threaded;
 

@@ -227,10 +227,17 @@ pub(super) fn epoch_ends(corpus: &str, cfg: &TransformerConfig) -> Vec<u64> {
     let mut rng = Rng::new(1);
     let mut net = prepare_net(cfg, tc.vocab_size, &mut rng).unwrap();
     let mut ends = Vec::new();
-    run_training(&mut net, &tc.tokens, cfg, 1, &mut rng, |n, _, _| {
-        ends.push(n.step_count());
-        Ok(true)
-    })
+    run_training(
+        &mut net,
+        &mut tc.tokens.as_slice(),
+        cfg,
+        1,
+        &mut rng,
+        |n, _, _| {
+            ends.push(n.step_count());
+            Ok(true)
+        },
+    )
     .unwrap();
     ends
 }

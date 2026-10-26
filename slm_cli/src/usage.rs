@@ -5,7 +5,7 @@ use crate::args::{Kind, Spec};
 /// The synopsis after `train_transformer ` for each command (aliases map to their command).
 fn synopsis(cmd: &str) -> &'static str {
     match cmd {
-        "train" => "train <corpus.txt> <model.gguf> [options]",
+        "train" => "train <corpus.txt|tokens.gguf> <model.gguf> [options]",
         "run" => "run <corpus.txt> <model.gguf> <seed text> [options]",
         "generate" | "gen" => "generate <model.gguf> <seed text> [options]",
         "run-gguf" | "gguf" => "run-gguf <model.gguf> [prompt] [options]",
@@ -53,7 +53,7 @@ pub(crate) fn print_usage() {
         "train_transformer — ferrum causal transformer SLM trainer & generator\n\
          (int8 quantization-aware training; weights cached on disk)\n\n\
          USAGE:\n\
-         \x20 train_transformer train    <corpus.txt> <model.gguf> [options]\n\
+         \x20 train_transformer train    <corpus.txt|tokens.gguf> <model.gguf> [options]\n\
          \x20 train_transformer run      <corpus.txt> <model.gguf> <seed text> [options]\n\
          \x20 train_transformer generate <model.gguf>  <seed text> [options]\n\
          \x20 train_transformer run-gguf <model.gguf> [prompt] [options]\n\
@@ -85,6 +85,8 @@ pub(crate) fn print_usage() {
          \x20 --metrics-csv F   (one row per step: step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed)\n\
          \x20 --verbose|-v   (progress line every 10 steps: tokens/s, grad norm, elapsed, ETA)   --debug   (engine internals)\n\
          \x20 (--vocab 0 = character-level; >=256 = byte-level BPE, default 512)\n\
+         \x20 (tokens.gguf = a `tokenize` output, detected by content: windows are streamed from disk, so the\n\
+         \x20  corpus may exceed RAM; needs --tokenizer with the file it was made with; --val holds out the token tail)\n\
          \x20 (--threads 0 = auto-detect cores [default]; 1 = serial training)\n\n\
          PREPARE options:\n\
          \x20 --input P (file or dir)  --out DIR  --doc-sep S (default <|endoftext|>)\n\

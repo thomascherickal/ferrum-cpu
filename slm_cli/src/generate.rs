@@ -17,6 +17,12 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
     let seed_text = args.positional[2..].join(" ");
+    if ferrum_core::is_gguf_file(corpus_path) {
+        return Err(format!(
+            "{corpus_path} is a token file; `run` needs a text corpus (use `train` on the token file, then `generate`)"
+        )
+        .into());
+    }
     let corpus = read_corpus(corpus_path)?;
 
     let slm = if std::path::Path::new(model_path).exists() && !args.has("force") {

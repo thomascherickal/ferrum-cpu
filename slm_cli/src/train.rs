@@ -3,13 +3,30 @@
 use crate::args::*;
 use crate::util::*;
 use crate::validate::*;
-use ferrum_core::{GenerativeSLM, Rng, ValidationConfig};
+use ferrum_core::{ByteBpeTokenizer, GenerativeSLM, Rng, TokenFile, ValidationConfig};
 use std::time::Instant;
+
+/// What `train` learns from: text held in memory, or a token file streamed from disk (with the
+/// tokenizer it was made with).
+pub(crate) enum Input<'a> {
+    Text(&'a str),
+    Tokens(&'a mut TokenFile, &'a ByteBpeTokenizer),
+}
 
 /// Train a transformer SLM on `corpus` (QAT, int8) and save it to
 /// `model_path`. Returns the trained model.
 pub(crate) fn train_and_save(
     corpus: &str,
+    corpus_path: &str,
+    model_path: &str,
+    args: &Args,
+) -> Result<GenerativeSLM, Box<dyn std::error::Error>> {
+    train_and_save_input(Input::Text(corpus), corpus_path, model_path, args)
+}
+
+/// [`train_and_save`] over either kind of [`Input`].
+pub(crate) fn train_and_save_input(
+    input: Input,
     corpus_path: &str,
     model_path: &str,
     args: &Args,
@@ -72,7 +89,14 @@ pub(crate) fn train_and_save(
     // 0 = auto-detect the machine's parallelism; 1 = serial.
     let threads: usize = args.get("threads", 0);
     let mut rng = Rng::new(seed);
-    let chars = corpus.chars().filter(|&c| c != '\r').count();
+    let corpus_desc = match &input {
+        Input::Text(c) => format!("{} chars", c.chars().filter(|&ch| ch != '\r').count()),
+        Input::Tokens(f, _) => format!(
+            "{} tokens, {} documents, streamed from disk",
+            f.len(),
+            f.documents()
+        ),
+    };
 
     println!("╔══════════════════════════════════════════════════════════╗");
     let mode = match (cfg.qat, quant) {
@@ -84,11 +108,11 @@ pub(crate) fn train_and_save(
     if let Some(p) = preset {
         println!("  Preset  : {} (explicit flags override it)", p.name);
     }
-    println!("  Corpus  : {corpus_path}  ({chars} chars)");
-    let tok_desc = if cfg.vocab_size == 0 {
-        "character-level".to_string()
-    } else {
-        format!("byte-level BPE (vocab {})", cfg.vocab_size)
+    println!("  Corpus  : {corpus_path}  ({corpus_desc})");
+    let tok_desc = match &input {
+        Input::Tokens(_, tok) => format!("byte-level BPE (vocab {})", tok.vocab_size()),
+        Input::Text(_) if cfg.vocab_size == 0 => "character-level".to_string(),
+        Input::Text(_) => format!("byte-level BPE (vocab {})", cfg.vocab_size),
     };
     println!(
         "  Context : {}   Embed: {}   Hidden: {}",
@@ -132,15 +156,15 @@ pub(crate) fn train_and_save(
     let budgeted = cfg.max_tokens > 0;
     let report_every = (epochs / 20).max(1);
     // Budgeted runs have no known epoch count: report at most every 5 s.
-    let mut last_report: Option<Instant> = None;
-    let mut report = |ep: usize, line: String| {
+    let last_report: std::cell::Cell<Option<Instant>> = std::cell::Cell::new(None);
+    let report = |ep: usize, line: String| {
         let due = if budgeted {
-            last_report.is_none_or(|t| t.elapsed().as_secs() >= 5)
+            last_report.get().is_none_or(|t| t.elapsed().as_secs() >= 5)
         } else {
             ep == 1 || ep.is_multiple_of(report_every) || ep == epochs
         };
         if due {
-            last_report = Some(Instant::now());
+            last_report.set(Some(Instant::now()));
             println!("{line}");
         }
     };
@@ -155,40 +179,59 @@ pub(crate) fn train_and_save(
     // Early stopping, tracked from the per-epoch callback: (last epoch, best epoch, epochs since best).
     let (mut last_epoch, mut best_epoch, mut stale) = (0, 0, 0);
     let patience: usize = args.get("patience", 0);
-    let slm = if args.value("val").is_some() {
-        let val = ValidationConfig {
-            val_fraction: args.get("val", 0.1),
-            patience,
-        };
-        GenerativeSLM::train_transformer_config_validated(
+    let mut on_epoch =
+        |ep: usize, loss: f32| report(ep, format!("  epoch {ep:>5}{total}   loss = {loss:.6}"));
+    let mut on_val = |p: &ferrum_core::ValidationProgress| {
+        (last_epoch, stale) = (p.epoch, if p.is_best { 0 } else { stale + 1 });
+        if p.is_best {
+            best_epoch = p.epoch;
+        }
+        let best = if p.is_best { "  *best" } else { "" };
+        report(
+            p.epoch,
+            format!(
+                "  epoch {:>5}{total}   loss = {:.6}   val ppl = {:.3}{best}",
+                p.epoch, p.train_loss, p.val.perplexity
+            ),
+        );
+    };
+    let val = args.value("val").map(|_| ValidationConfig {
+        val_fraction: args.get("val", 0.1),
+        patience,
+    });
+    let slm = match (input, val) {
+        (Input::Text(corpus), Some(val)) => GenerativeSLM::train_transformer_config_validated(
             corpus,
             &cfg,
             threads,
             &val,
             &mut rng,
-            |p| {
-                (last_epoch, stale) = (p.epoch, if p.is_best { 0 } else { stale + 1 });
-                if p.is_best {
-                    best_epoch = p.epoch;
-                }
-                let best = if p.is_best { "  *best" } else { "" };
-                report(
-                    p.epoch,
-                    format!(
-                        "  epoch {:>5}{total}   loss = {:.6}   val ppl = {:.3}{best}",
-                        p.epoch, p.train_loss, p.val.perplexity
-                    ),
-                );
-            },
-        )?
-    } else {
-        GenerativeSLM::train_transformer_config_threaded(
+            &mut on_val,
+        )?,
+        (Input::Text(corpus), None) => GenerativeSLM::train_transformer_config_threaded(
             corpus,
             &cfg,
             threads,
             &mut rng,
-            |ep, loss| report(ep, format!("  epoch {ep:>5}{total}   loss = {loss:.6}")),
-        )?
+            &mut on_epoch,
+        )?,
+        (Input::Tokens(file, tok), Some(val)) => GenerativeSLM::train_transformer_tokens_validated(
+            file,
+            tok,
+            &cfg,
+            threads,
+            &val,
+            &mut rng,
+            &mut on_val,
+        )?,
+        (Input::Tokens(file, tok), None) => GenerativeSLM::train_transformer_tokens(
+            file,
+            tok,
+            &cfg,
+            threads,
+            &mut rng,
+            &mut on_epoch,
+        )?,
     };
 
     println!("\nTrained in {:.2}s.", t0.elapsed().as_secs_f32());
@@ -251,23 +294,44 @@ pub(crate) fn print_sample(
         .filter(|&c| c != '\r')
         .take(context_len)
         .collect();
+    print_sample_from(slm, &seed_text)
+}
+
+/// [`print_sample`] with the seed text already chosen.
+pub(crate) fn print_sample_from(
+    slm: &GenerativeSLM,
+    seed_text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut g_rng = Rng::new(time_seed());
-    let sample = slm.generate(&seed_text, 120, 0.7, &mut g_rng)?;
+    let sample = slm.generate(seed_text, 120, 0.7, &mut g_rng)?;
     println!("\n── sample ──\n{sample}\n────────────");
     Ok(())
 }
 
 pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.positional.len() < 2 {
-        return Err("usage: train_transformer train <corpus.txt> <model.gguf> [options]".into());
+        return Err(
+            "usage: train_transformer train <corpus.txt | tokens.gguf> <model.gguf> [options]"
+                .into(),
+        );
     }
     // Before the model-exists shortcut too, so a typo'd --resume never goes unnoticed.
     require_resume_file(args.value("resume"), ".fckp")?;
     let corpus_path = &args.positional[0];
     let model_path = &args.positional[1];
-    let corpus = read_corpus(corpus_path)?;
+    // A GGUF corpus is a pre-tokenized file (see `tokenize`); detected by content, not extension.
+    let tokens = ferrum_core::is_gguf_file(corpus_path);
+    let corpus = if tokens {
+        String::new()
+    } else {
+        read_corpus(corpus_path)?
+    };
+    let mut token_input = tokens
+        .then(|| crate::token_train::open(args, corpus_path))
+        .transpose()?;
 
-    let slm = if std::path::Path::new(model_path).exists() && !args.has("force") {
+    let model_exists = std::path::Path::new(model_path).exists() && !args.has("force");
+    let slm = if model_exists {
         let slm = GenerativeSLM::load(model_path)?;
         println!(
             "Model {model_path} already exists — loaded saved weights ({} layers, vocab {}).",
@@ -276,12 +340,19 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         );
         println!("Skipping training. Pass --force to retrain from scratch.");
         slm
+    } else if let Some((file, tok)) = token_input.as_mut() {
+        train_and_save_input(Input::Tokens(file, tok), corpus_path, model_path, args)?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
 
     if args.has("sample") {
-        print_sample(&slm, &corpus)?;
+        match token_input.as_mut() {
+            Some((file, tok)) => {
+                print_sample_from(&slm, &crate::token_train::sample_seed(file, tok)?)?
+            }
+            None => print_sample(&slm, &corpus)?,
+        }
     }
     Ok(())
 }

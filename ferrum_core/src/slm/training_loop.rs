@@ -5,7 +5,7 @@ use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
 use crate::slm::memory::{available_memory_bytes, check_train_memory};
 use crate::slm::metrics_log::{format_eta, CsvLog, Row};
-use crate::train_transformer::{steps_over, TransformerNet};
+use crate::train_transformer::{steps_over, TokenSource, TransformerNet};
 
 /// A fresh (or checkpoint-resumed) training net configured from `cfg`.
 pub(super) fn prepare_net(
@@ -94,15 +94,16 @@ fn write_checkpoint(path: &str, net: &TransformerNet, rng: &Rng) -> Result<()> {
 /// epochs, or until `cfg.max_tokens` is spent, checkpointing as configured.
 /// `on_epoch(net, epoch, mean_loss)` runs after each (possibly partial) epoch
 /// and returns `false` to stop early.
-pub(super) fn run_training<F>(
+pub(super) fn run_training<S, F>(
     net: &mut TransformerNet,
-    tokens: &[u32],
+    tokens: &mut S,
     cfg: &TransformerConfig,
     threads: usize,
     rng: &mut Rng,
     mut on_epoch: F,
 ) -> Result<()>
 where
+    S: TokenSource,
     F: FnMut(&TransformerNet, usize, f32) -> Result<bool>,
 {
     let t = net.context_len();

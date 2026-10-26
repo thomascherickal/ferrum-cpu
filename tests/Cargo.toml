@@ -71,3 +71,7 @@ path = "tests/test_tiny_library.rs"
 [[test]]
 name = "test_bench_script"
 path = "tests/test_bench_script.rs"
+
+[[test]]
+name = "test_token_training"
+path = "tests/test_token_training.rs"

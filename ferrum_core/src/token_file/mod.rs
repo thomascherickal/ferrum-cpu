@@ -14,7 +14,7 @@
 mod reader;
 mod writer;
 
-pub use reader::TokenFile;
+pub use reader::{is_gguf_file, TokenFile};
 pub use writer::{write_token_file, TokenSink};
 
 use crate::gguf::{GGML_I16, GGML_I32};

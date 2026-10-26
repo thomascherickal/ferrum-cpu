@@ -11,7 +11,7 @@
 //! ## Usage
 //!
 //! ```text
-//! train_transformer train    <corpus.txt> <model.gguf> [options]
+//! train_transformer train    <corpus.txt|tokens.gguf> <model.gguf> [options]
 //! train_transformer run      <corpus.txt> <model.gguf> <seed text> [options]
 //! train_transformer generate <model.gguf>  <seed text> [options]
 //! train_transformer run-gguf  <model.gguf> [prompt] [--resume ckpt.flck] [options]
@@ -82,6 +82,7 @@ mod resume;
 mod run_gguf;
 mod runtime_export;
 mod stop;
+mod token_train;
 mod tokenize;
 mod train;
 mod usage;

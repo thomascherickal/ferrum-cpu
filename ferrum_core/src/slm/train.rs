@@ -4,9 +4,10 @@ use crate::meta::{ModelMetadata, Normalizer, TaskType};
 use crate::rng::Rng;
 use crate::slm::config::{TransformerConfig, ValidationConfig, ValidationProgress};
 use crate::slm::corpus::{tokenize_for_lm_cfg, LmTokens};
+use crate::slm::scoring::Evaluation;
 use crate::slm::training_loop::{prepare_net, run_training};
 use crate::slm::{GenerativeSLM, TokenizerCache};
-use crate::train_transformer::TransformerNet;
+use crate::train_transformer::{TokenSource, TransformerNet};
 
 impl GenerativeSLM {
     /// Train a true decoder-only causal Transformer SLM on a raw text corpus.
@@ -147,16 +148,23 @@ impl GenerativeSLM {
             tc.tokens.len(), tc.vocab_size, !tc.tokenizer_state.is_empty(),
             cfg.context_len, cfg.embed_dim, cfg.num_heads, cfg.num_blocks, cfg.hidden_dim, threads);
         let mut net = prepare_net(cfg, tc.vocab_size, rng)?;
-        run_training(&mut net, &tc.tokens, cfg, threads, rng, |_, ep, loss| {
-            progress_callback(ep, loss);
-            Ok(true)
-        })?;
+        run_training(
+            &mut net,
+            &mut tc.tokens.as_slice(),
+            cfg,
+            threads,
+            rng,
+            |_, ep, loss| {
+                progress_callback(ep, loss);
+                Ok(true)
+            },
+        )?;
         Self::build_transformer_slm(&net, &tc)
     }
 
     /// Construct an inference [`GenerativeSLM`] from a trained transformer net
     /// and its tokenization (shared by the plain and validation-aware trainers).
-    fn build_transformer_slm(net: &TransformerNet, tc: &LmTokens) -> Result<Self> {
+    pub(super) fn build_transformer_slm(net: &TransformerNet, tc: &LmTokens) -> Result<Self> {
         let model_vocab = tc.vocab_size;
         let context_len = net.context_len();
         // QAT: ship exactly the Q8_0 values the training saw, so an int8 export
@@ -243,7 +251,7 @@ impl GenerativeSLM {
         threads: usize,
         val: &ValidationConfig,
         rng: &mut Rng,
-        mut progress_callback: F,
+        progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(&ValidationProgress),
@@ -277,31 +285,58 @@ impl GenerativeSLM {
             val.patience
         );
 
+        let mut source = tc.tokens.as_slice();
+        Self::validated_loop(
+            &tc,
+            &mut source,
+            cfg,
+            threads,
+            val,
+            rng,
+            &|c| c.evaluate(&val_text),
+            progress_callback,
+        )
+    }
+
+    /// The epoch loop shared by the validated trainers (text and token file): trains over
+    /// `source`, scores each epoch's model with `eval` on the held-out data, keeps the best
+    /// and stops early after `val.patience` epochs without improvement.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn validated_loop<S: TokenSource>(
+        tc: &LmTokens,
+        source: &mut S,
+        cfg: &TransformerConfig,
+        threads: usize,
+        val: &ValidationConfig,
+        rng: &mut Rng,
+        eval: &dyn Fn(&Self) -> Result<Evaluation>,
+        mut progress_callback: impl FnMut(&ValidationProgress),
+    ) -> Result<Self> {
         let mut net = prepare_net(cfg, tc.vocab_size, rng)?;
         let mut best: Option<Self> = None;
         let mut best_ce = f32::INFINITY;
         let mut stale = 0usize;
         // A resumed model is the incumbent: later epochs must beat its score.
         if net.step_count() > 0 {
-            let candidate = Self::build_transformer_slm(&net, &tc)?;
-            best_ce = candidate.evaluate(&val_text)?.cross_entropy;
+            let candidate = Self::build_transformer_slm(&net, tc)?;
+            best_ce = eval(&candidate)?.cross_entropy;
             best = Some(candidate);
         }
 
         run_training(
             &mut net,
-            &tc.tokens,
+            source,
             cfg,
             threads,
             rng,
             |net, ep, train_loss| {
                 // Score the in-progress model on the held-out split.
-                let candidate = Self::build_transformer_slm(net, &tc)?;
-                let eval = candidate.evaluate(&val_text)?;
+                let candidate = Self::build_transformer_slm(net, tc)?;
+                let ev = eval(&candidate)?;
 
-                let is_best = eval.cross_entropy < best_ce;
+                let is_best = ev.cross_entropy < best_ce;
                 if is_best {
-                    best_ce = eval.cross_entropy;
+                    best_ce = ev.cross_entropy;
                     best = Some(candidate);
                     stale = 0;
                 } else {
@@ -311,7 +346,7 @@ impl GenerativeSLM {
                 progress_callback(&ValidationProgress {
                     epoch: ep,
                     train_loss,
-                    val: eval,
+                    val: ev,
                     is_best,
                 });
 

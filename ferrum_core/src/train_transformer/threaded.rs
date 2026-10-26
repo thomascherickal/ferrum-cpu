@@ -4,7 +4,9 @@ use crate::optim::Adam;
 use crate::rng::Rng;
 use crate::train_transformer::epoch::train_transformer_steps;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::train_transformer::epoch::{check_loss_finite, StepHook, TokenId};
+use crate::train_transformer::epoch::{check_loss_finite, StepHook};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::train_transformer::source::TokenSource;
 use crate::train_transformer::TransformerNet;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::verbose;
@@ -52,9 +54,9 @@ pub fn train_transformer_epoch_threaded(
 
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::too_many_arguments)]
-pub(super) fn epoch_sharded<T: TokenId>(
+pub(super) fn epoch_sharded<S: TokenSource>(
     net: &mut TransformerNet,
-    tokens: &[T],
+    tokens: &mut S,
     batch_size: usize,
     adam: &Adam,
     rng: &mut Rng,
@@ -83,8 +85,7 @@ pub(super) fn epoch_sharded<T: TokenId>(
             let mut input = Vec::with_capacity(cur_bs * t);
             let mut targets = Vec::with_capacity(cur_bs * t);
             for &start in batch {
-                input.extend(tokens[start..start + t].iter().map(|&x| x.widen()));
-                targets.extend(tokens[start + 1..start + t + 1].iter().map(|&x| x.widen()));
+                tokens.cut(start, t, &mut input, &mut targets)?;
             }
 
             // Weight tying: mirror tok_embᵀ into the shared head before forking,

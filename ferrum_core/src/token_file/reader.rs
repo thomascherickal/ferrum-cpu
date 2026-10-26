@@ -9,6 +9,21 @@ fn bad(m: String) -> InferError {
     InferError::Format(m)
 }
 
+/// Whether `path` starts like a GGUF file (magic and a version this reader accepts): a cheap
+/// sniff so `train` can tell a token file from a text corpus by content, not by extension.
+/// A text file cannot match: bytes 4..8 would have to be the control characters `02 00 00 00`.
+pub fn is_gguf_file(path: &str) -> bool {
+    let mut head = [0u8; 8];
+    File::open(path)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .is_ok()
+        && head.starts_with(b"GGUF")
+        && matches!(
+            u32::from_le_bytes([head[4], head[5], head[6], head[7]]),
+            2 | 3
+        )
+}
+
 /// An open token file. Holds the file handle and a scratch buffer of one window, never the
 /// tokens: reading `len` ids costs `len * width` bytes of buffer, whatever the file's size.
 #[derive(Debug)]

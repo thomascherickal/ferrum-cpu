@@ -13,6 +13,7 @@ mod stream;
 #[cfg(test)]
 mod test_support;
 mod train;
+mod train_tokens;
 mod training_loop;
 
 pub use self::config::{TransformerConfig, ValidationConfig, ValidationProgress};

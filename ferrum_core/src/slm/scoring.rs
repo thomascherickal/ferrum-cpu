@@ -72,6 +72,20 @@ impl GenerativeSLM {
         Ok(finish_evaluation(-s.logprob, s.n_tokens))
     }
 
+    /// [`GenerativeSLM::evaluate`] over token ids that are already encoded (a held-out slice of
+    /// a token file): every id is scored, the first conditioned on [`GenerativeSLM::bos_id`].
+    pub fn evaluate_ids(&self, ids: &[usize]) -> Result<Evaluation> {
+        let mut with_bos = vec![self.bos_id()];
+        with_bos.extend_from_slice(ids);
+        let s = self.token_logprobs(&with_bos, 1)?;
+        if s.n_tokens == 0 {
+            return Err(InferError::DimMismatch(
+                "evaluation text must contain at least one token".into(),
+            ));
+        }
+        Ok(finish_evaluation(-s.logprob, s.n_tokens))
+    }
+
     /// log p(`continuation` | `context`) using the lm-eval-harness convention:
     /// trailing whitespace of `context` moves to the front of `continuation`;
     /// continuation tokens are the suffix of `encode(context + continuation)`
