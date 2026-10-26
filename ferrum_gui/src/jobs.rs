@@ -25,6 +25,7 @@ pub enum Job {
     Evaluate,
     Run,
     Prepare,
+    RuntimeExport,
 }
 
 impl Job {
@@ -38,6 +39,7 @@ impl Job {
             Job::Evaluate => "an evaluation job",
             Job::Run => "a GGUF run",
             Job::Prepare => "a dataset preparation",
+            Job::RuntimeExport => "an Ollama / LM Studio export",
         }
     }
 }
@@ -103,7 +105,7 @@ impl Drop for JobGuard {
 }
 
 /// Stop the running job of `kind` (`"train"`, `"finetune"`, `"export"`,
-/// `"generate"`, `"evaluate"`, `"run"` or `"prepare"`). Returns whether one was running.
+/// `"generate"`, `"evaluate"`, `"run"`, `"prepare"` or `"runtime_export"`). Returns whether one was running.
 #[tauri::command]
 pub fn cancel_job(state: State<'_, AppState>, kind: Job) -> Result<bool, String> {
     Ok(state.jobs.cancel(kind))
@@ -165,6 +167,7 @@ mod tests {
             ("evaluate", Job::Evaluate),
             ("run", Job::Run),
             ("prepare", Job::Prepare),
+            ("runtime_export", Job::RuntimeExport),
         ] {
             let k: Job = serde_json::from_value(serde_json::json!(name)).unwrap();
             assert_eq!(k, kind);

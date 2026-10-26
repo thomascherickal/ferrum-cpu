@@ -178,33 +178,129 @@ pub fn modelfile_for(model: &Path) -> Result<String, String> {
     Ok(ollama_modelfile(&abs, &s))
 }
 
-pub fn export_ollama(model: &Path, name: &str, bin: Option<&str>) -> Result<(), String> {
-    let modelfile = modelfile_for(model)?;
-    let tool = find_tool(
+/// The message of an export ended by the caller's cancel check.
+pub const CANCELLED: &str = "export cancelled; nothing was run";
+
+fn ollama_tool(bin: Option<&str>) -> Result<PathBuf, String> {
+    find_tool(
         bin,
         "FERRUM_OLLAMA",
         "ollama",
         home_fallback(".local/bin/ollama"),
-    )?;
+    )
+}
+
+fn lms_tool(bin: Option<&str>) -> Result<PathBuf, String> {
+    find_tool(bin, "FERRUM_LMS", "lms", home_fallback(".lmstudio/bin/lms"))
+}
+
+/// A command line for display: `tool arg ...`, arguments with spaces or quotes in double quotes.
+fn show_command(tool: &Path, args: &[&OsStr]) -> String {
+    std::iter::once(tool.as_os_str())
+        .chain(args.iter().copied())
+        .map(|a| {
+            let a = a.to_string_lossy();
+            if a.is_empty() || a.contains([' ', '"', '\'', '\t']) {
+                format!("\"{}\"", a.replace('"', "\\\""))
+            } else {
+                a.into_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What an export would do, without doing it (nothing is run or contacted).
+#[derive(Debug)]
+pub struct Preview {
+    /// The Modelfile text (Ollama only).
+    pub modelfile: Option<String>,
+    /// The tool that would run, or why it cannot be found.
+    pub tool: Result<PathBuf, String>,
+    /// The commands that would run, in order.
+    pub commands: Vec<String>,
+}
+
+/// The Modelfile and the `ollama create` command for `model` (refused first when it is not
+/// a runnable gpt2 GGUF). The Modelfile path in the command is a placeholder: a run writes it
+/// to a temporary directory.
+pub fn ollama_preview(model: &Path, name: &str, bin: Option<&str>) -> Result<Preview, String> {
+    let modelfile = modelfile_for(model)?;
+    let tool = ollama_tool(bin);
+    let path = Path::new("<temporary Modelfile>");
+    let shown = tool.as_deref().unwrap_or(Path::new("ollama"));
+    let commands = vec![show_command(
+        shown,
+        &[
+            "create".as_ref(),
+            name.as_ref(),
+            "-f".as_ref(),
+            path.as_os_str(),
+        ],
+    )];
+    Ok(Preview {
+        modelfile: Some(modelfile),
+        tool,
+        commands,
+    })
+}
+
+/// Write the Modelfile of `model` to `out` (the `--modelfile-only` mode) and return its text.
+pub fn write_modelfile(model: &Path, out: &Path) -> Result<String, String> {
+    let text = modelfile_for(model)?;
+    std::fs::write(out, &text).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(text)
+}
+
+/// What a finished `ollama create` was given.
+#[derive(Debug)]
+pub struct OllamaRun {
+    pub modelfile: String,
+    /// The command that ran (its Modelfile was a temporary file, removed afterwards).
+    pub command: String,
+    /// The tool's own output.
+    pub output: String,
+}
+
+pub fn export_ollama(model: &Path, name: &str, bin: Option<&str>) -> Result<(), String> {
+    ollama_run(model, name, bin, &|| false).map(|_| ())
+}
+
+/// `ollama create <name> -f <Modelfile>` for `model`. `cancelled` is polled once, before the tool
+/// starts (a running `ollama create` cannot be interrupted).
+pub fn ollama_run(
+    model: &Path,
+    name: &str,
+    bin: Option<&str>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<OllamaRun, String> {
+    let modelfile = modelfile_for(model)?;
+    let tool = ollama_tool(bin)?;
+    if cancelled() {
+        return Err(CANCELLED.into());
+    }
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("ferrum_modelfile_{}_{n}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mf = dir.join(format!("{}.Modelfile", name.replace('/', "_")));
-    std::fs::write(&mf, modelfile).map_err(|e| format!("{}: {e}", mf.display()))?;
-    let res = run_tool(
-        &tool,
-        &[
-            "create".as_ref(),
-            name.as_ref(),
-            "-f".as_ref(),
-            mf.as_os_str(),
-        ],
-    );
+    std::fs::write(&mf, &modelfile).map_err(|e| format!("{}: {e}", mf.display()))?;
+    let args: [&OsStr; 4] = [
+        "create".as_ref(),
+        name.as_ref(),
+        "-f".as_ref(),
+        mf.as_os_str(),
+    ];
+    let command = show_command(&tool, &args);
+    let res = run_tool(&tool, &args);
     let _ = std::fs::remove_dir_all(&dir);
     let (ok, text) = res?;
     if ok {
-        return Ok(());
+        return Ok(OllamaRun {
+            modelfile,
+            command,
+            output: text,
+        });
     }
     let hint = if text.contains("connect") || text.contains("refused") {
         "\nthe Ollama server is not running: start it with `ollama serve`"
@@ -248,6 +344,64 @@ fn model_key_for(json: &str, suffix: &str) -> Option<String> {
 const LISTING_ATTEMPTS: u32 = 30;
 const LISTING_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// `ferrum/<file stem>`, the repo `export-lmstudio` uses when none is given.
+pub fn default_lmstudio_repo(model: &Path) -> String {
+    format!(
+        "ferrum/{}",
+        model.file_stem().unwrap_or_default().to_string_lossy()
+    )
+}
+
+fn check_repo(repo: &str) -> Result<(), String> {
+    let (publisher, rest) = repo.split_once('/').unwrap_or(("", ""));
+    if publisher.is_empty() || rest.is_empty() || rest.contains('/') {
+        return Err(format!("--repo '{repo}' must look like <publisher>/<name>"));
+    }
+    Ok(())
+}
+
+/// The `lms import` and `lms ls --json` commands for `model` (refused first when it is not a
+/// runnable gpt2 GGUF); nothing is run.
+pub fn lmstudio_preview(model: &Path, repo: &str, bin: Option<&str>) -> Result<Preview, String> {
+    check_repo(repo)?;
+    let abs = std::path::absolute(model).map_err(|e| format!("{}: {e}", model.display()))?;
+    runnable_summary(&abs)?;
+    let tool = lms_tool(bin);
+    let shown = tool.as_deref().unwrap_or(Path::new("lms"));
+    let commands = lms_commands(shown, repo, &abs);
+    Ok(Preview {
+        modelfile: None,
+        tool,
+        commands,
+    })
+}
+
+fn lms_commands(tool: &Path, repo: &str, abs: &Path) -> Vec<String> {
+    vec![
+        show_command(
+            tool,
+            &[
+                "import".as_ref(),
+                "-y".as_ref(),
+                "-l".as_ref(),
+                "--user-repo".as_ref(),
+                repo.as_ref(),
+                abs.as_os_str(),
+            ],
+        ),
+        show_command(tool, &["ls".as_ref(), "--json".as_ref()]),
+    ]
+}
+
+/// What a finished LM Studio import found.
+#[derive(Debug)]
+pub struct LmsRun {
+    /// The `modelKey` to `lms load`.
+    pub key: String,
+    /// The commands that ran.
+    pub commands: Vec<String>,
+}
+
 pub fn export_lmstudio(model: &Path, repo: &str, bin: Option<&str>) -> Result<String, String> {
     export_lmstudio_with(model, repo, bin, LISTING_ATTEMPTS, LISTING_DELAY)
 }
@@ -259,13 +413,36 @@ fn export_lmstudio_with(
     attempts: u32,
     delay: std::time::Duration,
 ) -> Result<String, String> {
-    let (publisher, rest) = repo.split_once('/').unwrap_or(("", ""));
-    if publisher.is_empty() || rest.is_empty() || rest.contains('/') {
-        return Err(format!("--repo '{repo}' must look like <publisher>/<name>"));
-    }
+    lmstudio_core(model, repo, bin, attempts, delay, &|| false).map(|r| r.key)
+}
+
+/// `lms import` then `lms ls --json`, as `export-lmstudio`. `cancelled` is polled before each
+/// tool starts and while the listing is awaited.
+pub fn lmstudio_run(
+    model: &Path,
+    repo: &str,
+    bin: Option<&str>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<LmsRun, String> {
+    lmstudio_core(model, repo, bin, LISTING_ATTEMPTS, LISTING_DELAY, cancelled)
+}
+
+fn lmstudio_core(
+    model: &Path,
+    repo: &str,
+    bin: Option<&str>,
+    attempts: u32,
+    delay: std::time::Duration,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<LmsRun, String> {
+    check_repo(repo)?;
     let abs = std::path::absolute(model).map_err(|e| format!("{}: {e}", model.display()))?;
     runnable_summary(&abs)?;
-    let tool = find_tool(bin, "FERRUM_LMS", "lms", home_fallback(".lmstudio/bin/lms"))?;
+    let tool = lms_tool(bin)?;
+    let commands = lms_commands(&tool, repo, &abs);
+    if cancelled() {
+        return Err(CANCELLED.into());
+    }
     let (ok, text) = run_tool(
         &tool,
         &[
@@ -287,12 +464,17 @@ fn export_lmstudio_with(
         if attempt > 0 {
             std::thread::sleep(delay);
         }
+        if cancelled() {
+            return Err(format!(
+                "{CANCELLED} after the import; the model is imported but no key was looked up"
+            ));
+        }
         let (ok, json) = run_tool(&tool, &["ls".as_ref(), "--json".as_ref()])?;
         if !ok {
             return Err(format!("`lms ls --json` failed:\n{}", json.trim()));
         }
         if let Some(key) = model_key_for(&json, &suffix) {
-            return Ok(key);
+            return Ok(LmsRun { key, commands });
         }
     }
     Err(format!(
@@ -315,8 +497,7 @@ pub fn cmd_export_ollama(
         return Err(USAGE_OLLAMA.into());
     };
     if let Some(out) = modelfile_only {
-        let text = modelfile_for(Path::new(model))?;
-        std::fs::write(out, text).map_err(|e| format!("{out}: {e}"))?;
+        write_modelfile(Path::new(model), Path::new(out))?;
         println!("wrote {out}");
         return Ok(());
     }
@@ -337,11 +518,7 @@ pub fn cmd_export_lmstudio(
     let repo = match repo {
         Some(r) => r,
         None => {
-            let stem = Path::new(model)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            default_repo = format!("ferrum/{stem}");
+            default_repo = default_lmstudio_repo(Path::new(model));
             &default_repo
         }
     };
@@ -775,6 +952,140 @@ mod tests {
         std::fs::write(&noexec, "x").unwrap();
         let e = export_ollama(&model, "n", Some(s(&noexec))).unwrap_err();
         assert!(e.contains("cannot run"), "{e}");
+    }
+
+    // ---- previews, runs with details, cancel ----
+
+    #[test]
+    fn show_command_quotes_only_what_needs_it() {
+        let c = show_command(
+            Path::new("/bin/ollama"),
+            &[
+                "create".as_ref(),
+                "my name".as_ref(),
+                "a\"b".as_ref(),
+                "".as_ref(),
+            ],
+        );
+        assert_eq!(c, r#"/bin/ollama create "my name" "a\"b" """#);
+    }
+
+    #[test]
+    fn ollama_preview_shows_the_modelfile_and_command_and_runs_nothing() {
+        let d = tmp("ol_prev");
+        let marker = d.join("ran");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(32));
+        let tool = fake(&d, "ollama", &format!("touch {}", s(&marker)));
+        let p = ollama_preview(&model, "ferrum-x", Some(s(&tool))).unwrap();
+        assert_eq!(
+            p.modelfile.as_deref(),
+            Some(modelfile_for(&model).unwrap().as_str())
+        );
+        assert_eq!(p.tool.as_deref().unwrap(), tool.as_path());
+        assert_eq!(
+            p.commands,
+            vec![format!(
+                "{} create ferrum-x -f \"<temporary Modelfile>\"",
+                s(&tool)
+            )]
+        );
+        assert!(!marker.exists(), "a preview never runs the tool");
+        // The preview never depends on a tool being installed (a tool found on this machine
+        // is only looked up, never started).
+        let p = ollama_preview(&model, "n", Some("/nonexistent/ollama")).unwrap();
+        assert!(p.modelfile.is_some() && p.commands[0].contains(" create n -f "));
+        // Non-runnable models are refused, with the Manual pointer for a llama GGUF.
+        let llama = gguf(&d, "l.gguf", Some("llama"), Some(8));
+        assert!(ollama_preview(&llama, "n", None)
+            .err()
+            .unwrap()
+            .contains("Manual 9.5"));
+    }
+
+    #[test]
+    fn lmstudio_preview_lists_both_commands_and_validates_the_repo() {
+        let d = tmp("lm_prev");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(8));
+        let tool = lms(&d, "exit 0", "exit 0");
+        let p = lmstudio_preview(&model, "ferrum/m", Some(s(&tool))).unwrap();
+        assert!(p.modelfile.is_none());
+        assert_eq!(p.commands.len(), 2);
+        assert!(
+            p.commands[0].starts_with(&format!("{} import -y -l --user-repo ferrum/m ", s(&tool)))
+        );
+        assert!(
+            p.commands[0].ends_with("m.gguf") && p.commands[1] == format!("{} ls --json", s(&tool))
+        );
+        assert!(!d.join("args").exists(), "a preview never runs the tool");
+        assert!(lmstudio_preview(&model, "nope", Some(s(&tool)))
+            .err()
+            .unwrap()
+            .contains("<publisher>/<name>"));
+        assert_eq!(default_lmstudio_repo(&model), "ferrum/m");
+    }
+
+    #[test]
+    fn write_modelfile_returns_and_writes_the_text() {
+        let d = tmp("mf_out");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(48));
+        let out = d.join("o.Modelfile");
+        let text = write_modelfile(&model, &out).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), text);
+        assert!(text.contains("PARAMETER num_ctx 48"));
+        let e = write_modelfile(&model, &d.join("no/such/dir/o")).unwrap_err();
+        assert!(e.contains("o"), "{e}");
+    }
+
+    #[test]
+    fn runs_report_what_was_given_to_the_tool() {
+        let d = tmp("runs");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(8));
+        let tool = fake(&d, "ollama", "echo created $2");
+        let r = ollama_run(&model, "ferrum-x", Some(s(&tool)), &|| false).unwrap();
+        assert!(r.modelfile.starts_with("FROM \""));
+        assert!(
+            r.command
+                .starts_with(&format!("{} create ferrum-x -f ", s(&tool))),
+            "{}",
+            r.command
+        );
+        assert!(r.command.contains("ferrum-x.Modelfile") && r.output.trim() == "created ferrum-x");
+        let tool = lms(&d, "exit 0", &format!("cat {}/ls.json", s(&d)));
+        let r = lmstudio_run(&model, "ferrum/m", Some(s(&tool)), &|| false).unwrap();
+        assert_eq!(r.key, "ferrum/m");
+        assert_eq!(r.commands.len(), 2);
+    }
+
+    #[test]
+    fn cancel_stops_before_the_tool_starts_and_between_lmstudio_steps() {
+        let d = tmp("cancel");
+        let marker = d.join("ran");
+        let model = gguf(&d, "m.gguf", Some("gpt2"), Some(8));
+        let ollama = fake(&d, "ollama", &format!("touch {}", s(&marker)));
+        assert_eq!(
+            ollama_run(&model, "n", Some(s(&ollama)), &|| true)
+                .err()
+                .unwrap(),
+            CANCELLED
+        );
+        let lms_bin = fake(&d, "lms", &format!("touch {}", s(&marker)));
+        assert_eq!(
+            lmstudio_run(&model, "ferrum/m", Some(s(&lms_bin)), &|| true)
+                .err()
+                .unwrap(),
+            CANCELLED
+        );
+        assert!(!marker.exists(), "no tool was started");
+        // Cancelled after the import, while waiting for the listing.
+        let tool = lms(&d, "exit 0", "echo []");
+        let calls = std::cell::Cell::new(0);
+        let cancel_second = || {
+            calls.set(calls.get() + 1);
+            calls.get() >= 2
+        };
+        let e =
+            lmstudio_core(&model, "ferrum/m", Some(s(&tool)), 5, ZERO, &cancel_second).unwrap_err();
+        assert!(e.starts_with(CANCELLED) && e.contains("imported"), "{e}");
     }
 
     // ---- export_lmstudio ----

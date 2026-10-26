@@ -98,6 +98,11 @@ const CLEAN_BYTES_PER_S: f64 = 100e6;
 /// of TinyStories took 0.62 s plain, 0.93 s with dedup + NFKC and 1.18 s with lowercase too
 /// (release, 2026-10-27); the slowest is rounded down. Its RAM stays near 7 MB on that input.
 const PREPARE_BYTES_PER_S: f64 = 18e6;
+/// `ollama create` reads and hashes the model file into its store, bytes/s. Assumed, not measured
+/// (nothing in this repository starts Ollama while it measures); LM Studio's `import -l` links the
+/// file instead and then waits for its listing, up to `LMS_LISTING_WAIT_S`.
+const OLLAMA_CREATE_BYTES_PER_S: f64 = 200e6;
+const LMS_LISTING_WAIT_S: f64 = 15.0;
 /// Reading a file from disk, bytes/s. Assumed, not measured.
 const DISK_BYTES_PER_S: f64 = 200e6;
 /// Download speed assumption, bytes/s, and the range shown around it.
@@ -130,6 +135,8 @@ pub enum JobKind {
     Capability,
     /// The Prepare tab: clean and split text files into train/val/test.
     Prepare,
+    /// The Export tab's Ollama / LM Studio buttons (`JobParams::target` says which).
+    RuntimeExport,
 }
 
 /// Facts about a Ferrum SLM file (`generate`, `evaluate`), read from its GGUF header.
@@ -193,6 +200,8 @@ pub struct JobParams {
     /// The Prepare tab's input files and folders, and its output folder.
     pub input_paths: Vec<String>,
     pub out_dir: String,
+    /// `ollama`, `lmstudio` or `modelfile` (the Export tab's run-it-in buttons).
+    pub target: String,
     // Resolved by `estimate_cmd` (tests set them directly).
     pub corpus_bytes: Option<u64>,
     pub text_bytes: Option<u64>,
@@ -446,6 +455,33 @@ pub fn estimate(
         JobKind::GgufFinetune => finetune(d, p, speed),
         JobKind::GgufExport => export(d, p),
         JobKind::Prepare => prepare(d, p, speed),
+        JobKind::RuntimeExport => runtime_export(d, p),
+    }
+}
+
+fn runtime_export(mut d: Draft, p: &JobParams) -> Estimate {
+    let bytes = p.slm.as_ref().map_or(0, |s| s.file_bytes) as f64;
+    match p.target.as_str() {
+        "modelfile" => {
+            d.note("Reads the model header and writes a few lines of text; no tool is started.");
+            d.done(Some(0.05), (0.5, 20.0), None, None)
+        }
+        "lmstudio" => {
+            d.note("`lms import -l` links the file (nothing is copied), then `lms ls --json` is polled for up to 15 s while LM Studio indexes it; it needs the `lms` tool, found by the field, FERRUM_LMS, PATH, then the default install location.");
+            d.done(Some(1.0), (0.5, LMS_LISTING_WAIT_S + 1.0), None, None)
+        }
+        _ => {
+            d.note(format!(
+                "`ollama create` reads and hashes the file at an assumed {:.0} MB/s (not measured) and needs the Ollama server running (`ollama serve`); it cannot be stopped once it has started.",
+                OLLAMA_CREATE_BYTES_PER_S / 1e6
+            ));
+            d.done(
+                Some(1.0 + bytes / OLLAMA_CREATE_BYTES_PER_S),
+                (0.5, 5.0),
+                None,
+                None,
+            )
+        }
     }
 }
 

@@ -80,7 +80,6 @@ mod memory;
 mod preset;
 mod resume;
 mod run_gguf;
-mod runtime_export;
 mod stop;
 mod token_train;
 mod tokenize;
@@ -161,13 +160,13 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         "run-gguf" | "gguf" => cmd_run_gguf(&args),
         "finetune-gguf" | "finetune" => cmd_finetune_gguf(&args),
         "export-gguf" | "export" => cmd_export_gguf(&args),
-        "export-ollama" => runtime_export::cmd_export_ollama(
+        "export-ollama" => slm_cli::runtime_export::cmd_export_ollama(
             &args.positional,
             args.value("bin"),
             args.value("modelfile-only"),
         )
         .map_err(Into::into),
-        "export-lmstudio" => runtime_export::cmd_export_lmstudio(
+        "export-lmstudio" => slm_cli::runtime_export::cmd_export_lmstudio(
             &args.positional,
             args.value("repo"),
             args.value("bin"),

@@ -269,7 +269,7 @@ pub(crate) fn train_and_save_input(
     .map_err(|e| format!("cannot write {model_path}: {e}"))?;
     let size = std::fs::metadata(model_path)?.len();
     println!("Saved {size} bytes → {model_path} ({quant} GGUF)");
-    if let Some(w) = crate::runtime_export::plain_gguf_warning(std::path::Path::new(model_path)) {
+    if let Some(w) = slm_cli::runtime_export::plain_gguf_warning(std::path::Path::new(model_path)) {
         eprintln!("{w}");
     }
 

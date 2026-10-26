@@ -506,6 +506,48 @@
         <span id="exStatus" class="muted"></span>
       </div>
       <div id="exResult" class="result"></div>
+
+      <fieldset>
+        <legend>Run a Ferrum model in Ollama or LM Studio</legend>
+        <p class="hint">Only Ferrum's own byte-level BPE models (<code>gpt2</code> GGUF) run
+          there; anything else is refused before a tool starts (an imported llama model needs a
+          hand-written Modelfile, Manual section 9.5).
+          This runs the same code as <code>export-ollama</code> and <code>export-lmstudio</code>.
+          Use <strong>Show Modelfile and commands</strong> first: it starts nothing.</p>
+        <div class="row">
+          <label>Ferrum model (.gguf) <input type="text" id="rxPath" placeholder="/path/to/model.gguf (trained here, BPE vocabulary)" /></label>
+          <button class="ghost browse" id="rxPathBrowse" data-target="rxPath">Browse…</button>
+        </div>
+        <div class="grid">
+          <label>Ollama model name <input type="text" id="rxName" value="ferrum-model" /></label>
+          <label>LM Studio repo (optional) <input type="text" id="rxRepo" placeholder="publisher/name; empty = ferrum/&lt;file name&gt;" /></label>
+        </div>
+        <div class="row">
+          <label>ollama program (optional) <input type="text" id="rxOllamaBin" placeholder="empty = FERRUM_OLLAMA, PATH, ~/.local/bin/ollama" /></label>
+          <button class="ghost browse" id="rxOllamaBinBrowse" data-target="rxOllamaBin">Browse…</button>
+        </div>
+        <div class="row">
+          <label>lms program (optional) <input type="text" id="rxLmsBin" placeholder="empty = FERRUM_LMS, PATH, ~/.lmstudio/bin/lms" /></label>
+          <button class="ghost browse" id="rxLmsBinBrowse" data-target="rxLmsBin">Browse…</button>
+        </div>
+        <div class="row">
+          <label>Modelfile to write (for Write Modelfile only) <input type="text" id="rxModelfileOut" placeholder="/path/to/ferrum.Modelfile" /></label>
+          <button class="ghost browse-save" id="rxModelfileOutBrowse" data-target="rxModelfileOut">Save as…</button>
+        </div>
+        <span class="err" id="errRuntime"></span>
+        <div class="row">
+          <button id="rxPreview" class="ghost">Show Modelfile and commands</button>
+          <button id="rxOllama" class="primary">Export to Ollama</button>
+          <button id="rxLms" class="primary">Import into LM Studio</button>
+          <button id="rxWriteModelfile" class="ghost">Write Modelfile only</button>
+          <button id="rxCancel" class="ghost hidden">Stop</button>
+          <span id="rxStatus" class="muted"></span>
+        </div>
+        <label>Modelfile
+          <textarea id="rxModelfile" rows="6" readonly placeholder="The Modelfile appears here."></textarea>
+        </label>
+        <div id="rxResult" class="result"></div>
+      </fieldset>
     </section>
 
     <!-- ── System ────────────────────────────────────────────────────────── -->
@@ -595,6 +637,7 @@
   <script src="estimate_view.js"></script>
   <script src="live.js"></script>
   <script src="prepare_tab.js"></script>
+  <script src="runtime_tab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

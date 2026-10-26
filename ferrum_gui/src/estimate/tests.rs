@@ -587,6 +587,7 @@ fn every_kind_returns_an_estimate_and_a_gpu_never_changes_it() {
         JobKind::GgufExport,
         JobKind::Capability,
         JobKind::Prepare,
+        JobKind::RuntimeExport,
     ];
     let mut nogpu = hw(8, Some(14_000));
     nogpu.gpus.clear();
@@ -672,4 +673,45 @@ fn prepare_needs_an_input_then_scales_with_its_size_at_the_measured_rate() {
         .notes
         .iter()
         .any(|n| n.contains("RAM does not grow")));
+}
+
+#[test]
+fn runtime_export_estimates_depend_on_the_target_and_never_claim_a_ram_figure() {
+    let h = hw(8, Some(14_000));
+    let with = |target: &str, bytes: u64| JobParams {
+        target: target.into(),
+        slm: Some(SlmFacts {
+            file_bytes: bytes,
+            ..SlmFacts::default()
+        }),
+        ..JobParams::default()
+    };
+    let file = estimate(
+        JobKind::RuntimeExport,
+        &with("modelfile", 1 << 30),
+        &h,
+        None,
+    );
+    assert!(secs(&file) < 0.1 && file.notes.iter().any(|n| n.contains("no tool is started")));
+    let lms = estimate(JobKind::RuntimeExport, &with("lmstudio", 1 << 30), &h, None);
+    assert!(
+        lms.high_seconds.unwrap() > 15.0,
+        "the listing wait is in the range"
+    );
+    // Ollama copies the file: 1 GiB takes longer than 100 MB, and the tool must be running.
+    let big = secs(&estimate(
+        JobKind::RuntimeExport,
+        &with("ollama", 1 << 30),
+        &h,
+        None,
+    ));
+    let small = secs(&estimate(
+        JobKind::RuntimeExport,
+        &with("ollama", 100_000_000),
+        &h,
+        None,
+    ));
+    assert!(big > small && (4.0..8.0).contains(&big), "{big} {small}");
+    let o = estimate(JobKind::RuntimeExport, &with("ollama", 1 << 20), &h, None);
+    assert!(o.notes.iter().any(|n| n.contains("ollama serve")) && o.peak_ram_mb.is_none());
 }

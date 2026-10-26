@@ -29,6 +29,7 @@ mod jobs;
 mod paths;
 mod preflight;
 mod prepare;
+mod runtime_export;
 #[cfg(test)]
 mod test_support;
 
@@ -64,6 +65,8 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::generate_slm,
             evaluate::evaluate_slm,
             prepare::prepare_dataset,
+            runtime_export::preview_runtime_export,
+            runtime_export::export_to_runtime,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,

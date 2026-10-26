@@ -123,6 +123,24 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     assert.ok(!estimateCalls().some((c) => c.args.kind === "instant"));
   }
 
+  // 1c. The Export tab's run-it-in buttons: one request per button, with the target in the parameters;
+  // the preview and the Stop button cost nothing to ask for.
+  {
+    const { doc, live, flushTimers, estimateCalls } = build();
+    await live.start();
+    gotoTab(doc, "export");
+    doc.getElementById("rxPath").value = "/m/m.gguf";
+    doc.getElementById("rxPath").dispatch("input");
+    await flushTimers();
+    const by = (kind) => estimateCalls().filter((c) => c.args.kind === kind).map((c) => c.args.params);
+    assert.deepStrictEqual(by("runtime_export").slice(-3), [
+      { modelPath: "/m/m.gguf", target: "ollama" }, { modelPath: "/m/m.gguf", target: "lmstudio" }, { modelPath: "/m/m.gguf", target: "modelfile" },
+    ]);
+    assert.deepStrictEqual(by("model_info").slice(-1), [{ modelPath: "/m/m.gguf" }]);
+    assert.ok(show(doc, live, "rxOllama").includes("Estimated time: about"));
+    assert.ok(show(doc, live, "rxCancel").includes("Estimated time: instant"));
+  }
+
   // 2. A button tooltip says what it does AND an estimate; fields only help text.
   {
     const { doc, live, flushTimers, estimateCalls, calls } = build();

@@ -91,6 +91,33 @@
       "modelPath": ""
     }
   },
+  "rxLms": {
+    "kind": "runtime_export",
+    "params": {
+      "modelPath": "",
+      "target": "lmstudio"
+    }
+  },
+  "rxOllama": {
+    "kind": "runtime_export",
+    "params": {
+      "modelPath": "",
+      "target": "ollama"
+    }
+  },
+  "rxPreview": {
+    "kind": "model_info",
+    "params": {
+      "modelPath": ""
+    }
+  },
+  "rxWriteModelfile": {
+    "kind": "runtime_export",
+    "params": {
+      "modelPath": "",
+      "target": "modelfile"
+    }
+  },
   "trStart": {
     "kind": "train",
     "params": {

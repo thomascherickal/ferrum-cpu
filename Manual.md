@@ -1476,6 +1476,9 @@ for them. Use `train_transformer` or the Ferrum library for those.
 
 ### 9.6 One-command exports
 
+The GUI's Export tab has the same two exports as buttons ([§10.3](#103-the-tabs)): they call
+this code and show the Modelfile and the commands.
+
 ```text
 train_transformer export-ollama   <model.gguf> <name> [--bin P] [--modelfile-only out.Modelfile]
 train_transformer export-lmstudio <model.gguf> [--repo ferrum/<stem>] [--bin P]
@@ -1761,7 +1764,7 @@ those.
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
 | **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, optional fine-tune overlay (no stop strings: the library and `run-gguf` stop on token ids only) |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
-| **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary |
+| **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary. A second block runs a Ferrum `gpt2` model in **Ollama** or **LM Studio** (the code of `export-ollama` / `export-lmstudio`): *Show Modelfile and commands*, *Export to Ollama*, *Import into LM Studio*, *Write Modelfile only*; see *Running in Ollama and LM Studio* below |
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
@@ -1786,6 +1789,27 @@ goes through the path guard (an input may be a file or a folder). The button's e
 TinyStories took 0.62 s plain and 1.18 s with dedup, NFKC and lowercase), RAM roughly flat
 (7 MB measured on that input).
 
+**Running in Ollama and LM Studio.** The block at the end of the Export tab calls
+`slm_cli::runtime_export`, the library code behind `export-ollama` and `export-lmstudio`
+([§9.6](#96-one-command-exports)), through the `preview_runtime_export` and `export_to_runtime`
+commands. The model must be a Ferrum `gpt2` GGUF (a byte-level BPE model trained here); anything
+else is refused before a program starts, with the CLI's text (a character-level model: retrain
+with a BPE vocabulary; a llama GGUF: the hand-written Modelfile route of §9.5). The programs are
+found as the CLI finds them: the field of the form (the `--bin` of the CLI), then `FERRUM_OLLAMA` /
+`FERRUM_LMS`, then `PATH`, then the default install location, and a failure lists the four places.
+**Show Modelfile and commands** shows the exact Modelfile (the absolute model path, the prompt
+template, the stop word and the context length read from the file), the commands for both
+targets and which program was found, and starts nothing. **Export to Ollama** writes the Modelfile
+to a temporary directory, runs `ollama create <name> -f <it>`, removes the file and shows the
+Modelfile, the command and Ollama's output (a refused connection says to start `ollama serve`).
+**Import into LM Studio** runs `lms import -y -l --user-repo <repo> <file>` and then polls
+`lms ls --json` for the `modelKey`, for up to about 15 s while LM Studio indexes the file.
+**Write Modelfile only** writes the text to the chosen file and starts no program (the CLI's
+`--modelfile-only`). Names are checked (letters, digits and `. _ : / -`, no leading dash) and
+every path goes through the path guard. **Stop** works before a program starts and while LM
+Studio's listing is awaited, not inside a running `ollama create`. The tests never start either
+program: the tools are shell scripts in a temp directory, passed as the program field.
+
 **Train pre-flight.** Under the Train form a panel (the `preflight_train` command,
 refreshed 300 ms after any change) shows the parameter count (`TransformerNet::check_size`),
 the estimated peak RAM against what the engine allows (the same
@@ -1799,7 +1823,7 @@ with the numbers and a box *I know, try anyway* appears; ticking it sends `force
 `TransformerConfig::skip_memory_check`, which skips the engine's refusal (the CLI never does;
 the system may kill the process if the run really does not fit).
 
-**Stopping a job.** Prepare, Train, Generate, GGUF, Fine-tune and Export show a Stop button
+**Stopping a job.** Prepare, Train, Generate, GGUF, Fine-tune and Export (and the Ollama / LM Studio block) show a Stop button
 while they run (the `cancel_job` command; one running job per kind, so starting a
 second training run, say, fails at once with "a training job is already running").
 *Train* and *Fine-tune* stop after the current optimizer step through the engine's
@@ -1850,6 +1874,7 @@ build), listed in the comments of `src/estimate.rs`:
   epoch, so a 135M model takes about 6 token-passes per second: the estimate
   often says days, which is the honest answer. Its peak RAM is 12x the f32
   weights. **Export** mirrors the RAM guard of the export command.
+- **Prepare** reads the input sizes from disk and runs at 18 MB/s of input on one thread (22.5 MB of TinyStories: 0.62 s plain, 1.18 s with dedup, NFKC and lowercase), with RAM that does not grow with the corpus. **Ollama / LM Studio export** have no measured rate: `ollama create` is assumed to read the file at 200 MB/s, and an LM Studio import is about a second plus up to 15 s of waiting for its listing; both say so in their notes.
 - **Downloads** depend on your connection; the estimate assumes 5 MB/s and
   says so. Buttons that only switch a tab, refresh or save are "instant".
 - Without a benchmark the reference machine's speed is used, which is
@@ -1918,7 +1943,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), runtime_tab.js (the Ollama / LM Studio block of the Export tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
@@ -1927,6 +1952,7 @@ src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, l
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
+src/runtime_export.rs  the Export tab's Ollama / LM Studio block: `preview_runtime_export`, `export_to_runtime` over `slm_cli::runtime_export`
 src/prepare.rs    the Prepare tab: `prepare_dataset` over `slm_cli::prepare` (the CLI's pipeline), progress events, cancel
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
 src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
@@ -1949,11 +1975,11 @@ few seconds:
 | Layer | What it checks | Where |
 |---|---|---|
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
-| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options | `src/ipc_tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and

@@ -125,6 +125,7 @@ wireStop("ggCancel", "run");
 wireStop("ftCancel", "finetune");
 wireStop("exCancel", "export");
 wireStop("dpCancel", "prepare");
+wireStop("rxCancel", "runtime_export");
 
 // ── Terminal (bottom dock) ───────────────────────────────────────────────────
 const termOut = $("termOut");
@@ -417,6 +418,7 @@ $("trStart").addEventListener("click", async () => {
     if (!$("genModel").value) $("genModel").value = r.modelPath;
     if (!$("evModel").value) $("evModel").value = r.modelPath;
     if (!$("miPath").value) $("miPath").value = r.modelPath;
+    if (!$("rxPath").value && r.tokenizer === "byte-level BPE") $("rxPath").value = r.modelPath;
   } catch (e) {
     $("trStatus").textContent = "error";
     setErr("errTrain", String(e));
@@ -796,6 +798,9 @@ $("exExport").addEventListener("click", async () => {
     }
   } finally { $("exExport").disabled = false; jobRunning("exCancel", "export", false); }
 });
+
+// Run a Ferrum model in Ollama / LM Studio (the fieldset at the end of the Export tab).
+window.FerrumRuntimeTab.create({ $, invoke, toast, setErr, clearErr, jobRunning, stopAsked });
 
 // ── System monitor ──────────────────────────────────────────────────────────
 let sysTimer = null;

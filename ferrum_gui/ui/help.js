@@ -13,7 +13,7 @@
 (function (global) {
   const KINDS = [
     "instant", "download", "load_file", "clean_text", "train", "generate", "evaluate",
-    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare",
+    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare", "runtime_export",
   ];
 
   // A "Browse..." button next to a path field.
@@ -856,6 +856,85 @@
     },
 
     // Tabs
+    // ── Export: run in Ollama / LM Studio ─────────────────────────────────
+    rxPath: {
+      title: "Ferrum model for Ollama or LM Studio",
+      what: "The .gguf file of a model trained with Ferrum using a byte-level BPE vocabulary (vocab 256 or more), which is stored as a gpt2 GGUF that other programs can run.",
+      how: "It is filled in after a training run that used BPE. Character-level models (vocab 0) and imported llama models are refused before any program starts, with a message that says what to do; an imported llama model needs a Modelfile written by hand (Manual section 9.5). The file is only read, never changed.",
+      beginner: "Ollama and LM Studio are free programs for chatting with models on your own computer. They can run a Ferrum model too, as long as it was trained the standard way (BPE tokenizer).",
+    },
+    rxPathBrowse: browse("Ferrum model"),
+    rxName: {
+      title: "Ollama model name",
+      what: "The name the model gets inside Ollama, used for ollama create and later for ollama run. Letters, digits and . _ : / - are allowed; it may not start with a dash.",
+      how: "Names like ferrum-tiny or me/ferrum:v1 work. Creating a model with a name that already exists replaces it in Ollama. The name is not used for LM Studio.",
+      beginner: "It is just a label you choose. Afterwards you start the model in a terminal with: ollama run THE-NAME.",
+    },
+    rxRepo: {
+      title: "LM Studio repo",
+      what: "The publisher/name under which LM Studio lists the model, for example ferrum/my-model. Empty means ferrum followed by the file name without .gguf.",
+      how: "Exactly one slash, with text on both sides. The file is linked into LM Studio, not copied, so do not move or delete it afterwards. Importing the same file twice is not an error.",
+      beginner: "LM Studio organises models like a library: a publisher folder and a model folder. Leave this empty and it is filed under ferrum, which is fine.",
+    },
+    rxOllamaBin: {
+      title: "ollama program",
+      what: "Optional path to the ollama program. Empty means: the FERRUM_OLLAMA environment variable, then your PATH, then ~/.local/bin/ollama.",
+      how: "Fill it in only if Ollama is installed somewhere unusual. The path must exist. If no program is found the message lists all four places that were searched.",
+      beginner: "Your computer finds programs by name in a list of folders. If Ollama is installed in an odd place that is not on the list, point to it here.",
+    },
+    rxOllamaBinBrowse: browse("ollama program"),
+    rxLmsBin: {
+      title: "lms program",
+      what: "Optional path to the lms program that comes with LM Studio. Empty means: the FERRUM_LMS environment variable, then your PATH, then ~/.lmstudio/bin/lms.",
+      how: "Fill it in only if lms is installed somewhere unusual. The path must exist. LM Studio itself does not need to be open, but it must have been run once so lms exists.",
+      beginner: "lms is the command-line helper installed by LM Studio. This button uses it to add the model to LM Studio's library.",
+    },
+    rxLmsBinBrowse: browse("lms program"),
+    rxModelfileOut: {
+      title: "Modelfile to write",
+      what: "Where Write Modelfile only saves the Modelfile text. Needed only for that button.",
+      how: "The file is written exactly as export-ollama would hand it to ollama create, so you can read it, edit it, or run ollama create yourself later. Nothing is started and Ollama is not contacted.",
+      beginner: "A Modelfile is a short recipe that tells Ollama where the model file is and how to run it. You can keep the recipe and use it yourself.",
+    },
+    rxModelfileOutBrowse: browse("Modelfile", "save"),
+    rxModelfile: {
+      title: "Modelfile",
+      what: "The exact Modelfile text for Ollama: the absolute model path, the prompt template, the stop word and the context length read from the model.",
+      how: "Filled in by Show Modelfile and commands and by every Ollama export. Read-only here; use Write Modelfile only to save it and edit the copy.",
+      beginner: "This is the recipe Ollama receives. The FROM line names your model file; the other lines say how to talk to it.",
+    },
+    rxPreview: {
+      title: "Show Modelfile and commands",
+      does: "Checks the model, then shows the exact Modelfile and the commands that Export to Ollama and Import into LM Studio would run, and which program was found. Nothing is started and neither program is contacted.",
+      kind: "model_info",
+      beginner: "A safe dry run. Use it to see what will happen before you press the real buttons.",
+    },
+    rxOllama: {
+      title: "Export to Ollama",
+      does: "Writes a temporary Modelfile and runs ollama create with your name, then shows the Modelfile, the command and Ollama's own output. The Ollama server must be running (ollama serve); if it is not, the message says so.",
+      kind: "runtime_export",
+      how: "Same as the command line: train_transformer export-ollama. A running ollama create cannot be stopped from here.",
+      beginner: "After it succeeds, open a terminal and type: ollama run followed by your model name.",
+    },
+    rxLms: {
+      title: "Import into LM Studio",
+      does: "Runs lms import to link the model into LM Studio, then asks lms ls for its model key and shows both commands and the key. If LM Studio is slow to list it, this waits up to about 15 seconds.",
+      kind: "runtime_export",
+      how: "Same as the command line: train_transformer export-lmstudio. The file is linked, not copied.",
+      beginner: "Afterwards the model shows up in LM Studio's list of models, or you can load it with lms load and the shown key.",
+    },
+    rxWriteModelfile: {
+      title: "Write Modelfile only",
+      does: "Saves the Modelfile to the file you chose and stops: no program is started and Ollama is not contacted. The same text is shown in the Modelfile box.",
+      kind: "runtime_export",
+      how: "Same as export-ollama with the modelfile-only option.",
+      beginner: "Useful when Ollama is on another computer: copy the model and the recipe there and run ollama create yourself.",
+    },
+    rxCancel: {
+      title: "Stop export",
+      does: "Stops the export before the next program starts, or while waiting for LM Studio's listing. A program that is already running (ollama create) cannot be interrupted and finishes.",
+      kind: "instant",
+    },
     // ── Prepare ───────────────────────────────────────────────────────────
     dpInputs: {
       title: "Input files and folders",

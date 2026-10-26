@@ -645,6 +645,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     };
     use crate::evaluate::EvalParams;
     use crate::prepare::PrepareParams;
+    use crate::runtime_export::{RuntimeParams, Target};
     let fixture: Value =
         serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
     macro_rules! parses {
@@ -683,6 +684,16 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (2, 7, 50, 20_000, true, true)
     );
     assert_eq!(p.doc_sep, ferrum_core::DOC_SEP);
+    let r = parses!("export_to_runtime", RuntimeParams);
+    assert_eq!(
+        (r.target, r.name.as_str()),
+        (Target::Ollama, "ferrum-model")
+    );
+    assert!(r.modelfile_out.is_empty() && r.repo.is_empty());
+    assert_eq!(
+        parses!("preview_runtime_export", RuntimeParams).target,
+        Target::Ollama
+    );
     assert!(
         serde_json::from_value::<CleanOpts>(fixture["clean_text"]["opts"].clone())
             .unwrap()
@@ -813,5 +824,124 @@ fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
     )
     .unwrap();
     assert!(est["seconds"].as_f64().unwrap() > 0.0 && est["peakRamMb"].as_f64().is_some());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
+    use crate::jobs::Job;
+    use std::os::unix::fs::PermissionsExt;
+    use tauri::Manager;
+    let (app, w) = app();
+    let dir = tmp("runtime");
+    let mut b = ferrum_core::GgufBuilder::new();
+    b.meta(
+        "general.architecture",
+        ferrum_core::MetaValue::String("gpt2".into()),
+    );
+    b.meta("gpt2.context_length", ferrum_core::MetaValue::U32(32));
+    let model = dir.join("m.gguf");
+    std::fs::write(&model, b.into_bytes()).unwrap();
+    let script = |name: &str, body: &str| {
+        let p = dir.join(name);
+        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p.to_string_lossy().into_owned()
+    };
+    let ran = dir.join("ran");
+    let ollama = script(
+        "ollama",
+        &format!("echo \"$@\" > {}; echo made", ran.display()),
+    );
+    let form = |target: &str, extra: Value| {
+        let mut p = json!({"modelPath": model.to_string_lossy(), "target": target, "name": "ferrum-x",
+            "repo": "", "bin": ollama, "modelfileOut": ""});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        json!({"params": p})
+    };
+
+    // Preview: the exact Modelfile and command, nothing started.
+    let pv = call(&w, "preview_runtime_export", form("ollama", json!({}))).unwrap();
+    assert_eq!(pv["ran"], false);
+    assert!(pv["modelfile"]
+        .as_str()
+        .unwrap()
+        .contains("PARAMETER num_ctx 32"));
+    assert!(pv["commands"][0]
+        .as_str()
+        .unwrap()
+        .contains("create ferrum-x -f"));
+    assert_eq!(pv["tool"], json!(ollama));
+    assert!(!ran.exists());
+
+    // A held slot refuses a second start; cancel_job knows the kind.
+    {
+        let state = app.state::<crate::AppState>();
+        let held = state.jobs.start(Job::RuntimeExport).unwrap();
+        let e = call(&w, "export_to_runtime", form("ollama", json!({}))).unwrap_err();
+        assert_eq!(
+            e.as_str().unwrap(),
+            "an Ollama / LM Studio export is already running"
+        );
+        assert_eq!(
+            call(&w, "cancel_job", json!({"kind": "runtime_export"})).unwrap(),
+            true
+        );
+        assert!(held.cancelled());
+    }
+    assert!(!ran.exists());
+
+    // The run: camelCase result, the fake tool was started with the shown command.
+    let r = call(&w, "export_to_runtime", form("ollama", json!({}))).unwrap();
+    assert_eq!(
+        (r["ran"].clone(), r["target"].clone()),
+        (json!(true), json!("ollama"))
+    );
+    assert_eq!(r["output"].as_str().unwrap().trim(), "made");
+    assert!(std::fs::read_to_string(&ran)
+        .unwrap()
+        .starts_with("create ferrum-x -f "));
+    assert_eq!(r["modelfile"], pv["modelfile"]);
+    // Write the Modelfile only.
+    let out = dir.join("o.Modelfile");
+    std::fs::remove_file(&ran).unwrap();
+    let r = call(
+        &w,
+        "export_to_runtime",
+        form("ollama", json!({"modelfileOut": out.to_string_lossy()})),
+    )
+    .unwrap();
+    assert_eq!(r["ran"], false);
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        r["modelfile"].as_str().unwrap()
+    );
+    assert!(!ran.exists());
+    // LM Studio, and the errors a user would meet.
+    let lms = script("lms", "case \"$1\" in ls) echo '[{\"modelKey\":\"ferrum/m\",\"path\":\"ferrum/m/m.gguf\"}]';; esac");
+    let r = call(
+        &w,
+        "export_to_runtime",
+        form("lmstudio", json!({"bin": lms})),
+    )
+    .unwrap();
+    assert_eq!(r["key"], "ferrum/m");
+    let e = call(
+        &w,
+        "export_to_runtime",
+        form("ollama", json!({"name": "-rf"})),
+    )
+    .unwrap_err();
+    assert!(
+        e.as_str().unwrap().contains("not a usable model name"),
+        "{e}"
+    );
+    let e = call(&w, "preview_runtime_export", form("other", json!({}))).unwrap_err();
+    assert!(
+        e.to_string().contains("other") || e.to_string().contains("variant"),
+        "{e}"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }

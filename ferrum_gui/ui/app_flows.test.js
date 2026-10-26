@@ -494,6 +494,102 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a2.$("dpCancel").classList.contains("hidden") && !a2.$("dpRun").disabled);
   }
 
+  // ── Run in Ollama / LM Studio (G4): preview, the three run buttons, errors, Stop ──
+  {
+    const PV = (target) => ({ target, ran: false, modelfile: target === "ollama" ? "FROM \"/m/m.gguf\"\nPARAMETER num_ctx 64\n" : null,
+      commands: target === "ollama" ? ["/bin/ollama create ferrum-model -f \"<temporary Modelfile>\""] : ["/bin/lms import -y -l --user-repo ferrum/m /m/m.gguf", "/bin/lms ls --json"],
+      tool: target === "ollama" ? "/bin/ollama" : null, toolError: target === "ollama" ? null : "cannot find 'lms'", written: null, output: "", key: null, summary: "nothing was run" });
+    const RAN = { ...PV("ollama"), ran: true, commands: ["/bin/ollama create ferrum-model -f /tmp/x.Modelfile"], output: "success\n", summary: "exported to Ollama as 'ferrum-model'  (try: ollama run ferrum-model)" };
+    const a = await start({
+      preview_runtime_export: async (args) => PV(args.params.target),
+      export_to_runtime: async (args) => (args.params.target === "lmstudio"
+        ? { ...PV("lmstudio"), ran: true, key: "ferrum/m", tool: "/bin/lms", toolError: null, summary: "imported into LM Studio as modelKey 'ferrum/m'  (try: lms load ferrum/m)" }
+        : args.params.modelfileOut ? { ...PV("ollama"), written: args.params.modelfileOut, summary: "wrote " + args.params.modelfileOut + "; nothing was run" } : RAN),
+    });
+    await a.click("tab-export");
+    for (const id of ["rxPreview", "rxOllama", "rxLms", "rxWriteModelfile"]) {
+      await a.click(id);
+      assert.strictEqual(a.$("errRuntime").textContent, "Ferrum model (.gguf) is required", id);
+    }
+    assert.strictEqual(a.of("export_to_runtime").length + a.of("preview_runtime_export").length, 0, "nothing is sent for an invalid form");
+    a.set("rxPath", "/m/m.gguf");
+    await a.click("rxWriteModelfile");
+    assert.strictEqual(a.$("errRuntime").textContent, "Modelfile to write is required");
+    a.set("rxName", "  "); await a.click("rxOllama");
+    assert.strictEqual(a.$("errRuntime").textContent, "Ollama model name is required");
+    a.set("rxName", "ferrum-model");
+
+    // Preview: both targets, nothing run, the Modelfile shown verbatim.
+    await a.click("rxPreview");
+    const pv = a.of("preview_runtime_export");
+    assert.deepStrictEqual(pv.map((c) => c.args.params.target), ["ollama", "lmstudio"]);
+    captured.preview_runtime_export = pv[0].args.params;
+    assert.strictEqual(a.$("rxModelfile").value, "FROM \"/m/m.gguf\"\nPARAMETER num_ctx 64\n");
+    const text = a.$("rxResult").textContent;
+    assert.ok(text.includes("Ollama: tool /bin/ollama") && text.includes("LM Studio: tool not found (cannot find 'lms')") && text.includes("/bin/lms ls --json") && text.endsWith("Nothing was run."), text);
+    assert.strictEqual(a.of("export_to_runtime").length, 0);
+
+    // Export to Ollama: the exact arguments, the result and the tool's output.
+    a.set("rxOllamaBin", " /bin/ollama ");
+    await a.click("rxOllama");
+    const sent = a.of("export_to_runtime")[0].args.params;
+    captured.export_to_runtime = sent;
+    assert.deepStrictEqual(sent, { modelPath: "/m/m.gguf", target: "ollama", name: "ferrum-model", repo: "", bin: "/bin/ollama", modelfileOut: "" });
+    assert.ok(a.$("rxResult").textContent.includes("exported to Ollama as 'ferrum-model'") && a.$("rxResult").textContent.includes("ran: /bin/ollama create") && a.$("rxResult").textContent.includes("output: success"), a.$("rxResult").textContent);
+    assert.strictEqual(a.$("rxStatus").textContent, "done");
+    assert.ok(a.$("rxOllama").disabled === false && a.$("rxCancel").classList.contains("hidden"));
+
+    // LM Studio: its own tool field and repo, none of the Ollama fields.
+    a.set("rxLmsBin", "/bin/lms"); a.set("rxRepo", "me/m");
+    await a.click("rxLms");
+    assert.deepStrictEqual(a.of("export_to_runtime")[1].args.params, { modelPath: "/m/m.gguf", target: "lmstudio", name: "", repo: "me/m", bin: "/bin/lms", modelfileOut: "" });
+    assert.ok(a.$("rxResult").textContent.includes("modelKey 'ferrum/m'"));
+
+    // Write the Modelfile only: no tool involved, and the result says nothing ran.
+    a.set("rxModelfileOut", "/o/x.Modelfile");
+    await a.click("rxWriteModelfile");
+    const wm = a.of("export_to_runtime")[2].args.params;
+    assert.strictEqual(wm.modelfileOut, "/o/x.Modelfile");
+    assert.ok(a.$("rxResult").textContent.startsWith("wrote /o/x.Modelfile; nothing was run") && a.$("rxResult").textContent.includes("would run:"), a.$("rxResult").textContent);
+  }
+  {
+    // The refusal text of the backend is shown as it is (the Manual pointer included).
+    const refusal = "/m/l.gguf: architecture 'llama': Ferrum exports only its own gpt2 models; for a llama GGUF write a Modelfile by hand (Manual 9.5)";
+    const a = await start({ export_to_runtime: async () => { throw refusal; }, preview_runtime_export: async () => { throw refusal; } });
+    a.set("rxPath", "/m/l.gguf");
+    await a.click("rxOllama");
+    assert.strictEqual(a.$("errRuntime").textContent, refusal);
+    assert.strictEqual(a.$("rxStatus").textContent, "error");
+    assert.strictEqual(a.$("rxOllama").disabled, false);
+    await a.click("rxPreview");
+    assert.strictEqual(a.$("errRuntime").textContent, refusal);
+
+    let release;
+    const b = await start({ export_to_runtime: () => new Promise((_, rej) => { release = rej; }), cancel_job: async () => true });
+    b.set("rxPath", "/m/m.gguf");
+    assert.ok(b.$("rxCancel").classList.contains("hidden"));
+    b.$("rxLms").dispatch("click"); await settle(4);
+    assert.ok(!b.$("rxCancel").classList.contains("hidden") && b.$("rxLms").disabled);
+    await b.click("rxCancel");
+    assert.deepStrictEqual(b.of("cancel_job")[0].args, { kind: "runtime_export" });
+    release("export cancelled; nothing was run");
+    await settle(6);
+    assert.strictEqual(b.$("rxStatus").textContent, "stopped");
+    assert.strictEqual(b.$("errRuntime").textContent, "");
+    assert.ok(b.$("rxCancel").classList.contains("hidden") && !b.$("rxLms").disabled);
+  }
+  {
+    // Training a BPE model offers it to this tab; a character-level one is not offered.
+    const bpe = await start({ train_slm: async () => TRAINED });
+    bpe.set("trCorpus", "/c.txt"); bpe.set("trModel", "/m/out.gguf");
+    await bpe.click("trStart");
+    assert.strictEqual(bpe.$("rxPath").value, "/m/out.gguf");
+    const chars = await start({ train_slm: async () => ({ ...TRAINED, tokenizer: "character-level" }) });
+    chars.set("trCorpus", "/c.txt"); chars.set("trModel", "/m/out.gguf");
+    await chars.click("trStart");
+    assert.strictEqual(chars.$("rxPath").value, "");
+  }
+
   // ── Train pre-flight (G8): numbers, the llama.cpp badge, and a blocked Start ──
   {
     const a = await start();
@@ -712,7 +808,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
   {
     const file = require("node:path").join(__dirname, "command_params.fixture.json");
     const sorted = Object.fromEntries(Object.keys(captured).sort().map((k) => [k, captured[k]]));
-    assert.strictEqual(Object.keys(sorted).length, 8, "every flow captured its arguments");
+    assert.strictEqual(Object.keys(sorted).length, 10, "every flow captured its arguments");
     if (process.env.UPDATE_FIXTURE) require("node:fs").writeFileSync(file, JSON.stringify(sorted, null, 2) + "\n");
     assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/app_flows.test.js");
   }

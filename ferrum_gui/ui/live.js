@@ -48,6 +48,10 @@
       batchSize: int(d, "ftBatch"), seqLen: int(d, "ftSeq"), threads: int(d, "ftThreads"), resumePath: str(d, "ftResume"),
     }),
     exInspect: (d) => ({ modelPath: str(d, "exPath") }),
+    rxPreview: (d) => ({ modelPath: str(d, "rxPath") }),
+    rxOllama: (d) => ({ modelPath: str(d, "rxPath"), target: "ollama" }),
+    rxLms: (d) => ({ modelPath: str(d, "rxPath"), target: "lmstudio" }),
+    rxWriteModelfile: (d) => ({ modelPath: str(d, "rxPath"), target: "modelfile" }),
     exExport: (d) => ({ modelPath: str(d, "exPath"), quant: str(d, "exQuant"), resumePath: str(d, "exResume") }),
   };
 

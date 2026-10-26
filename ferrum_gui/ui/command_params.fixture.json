@@ -29,6 +29,14 @@
     "force": false,
     "verbose": false
   },
+  "export_to_runtime": {
+    "modelPath": "/m/m.gguf",
+    "target": "ollama",
+    "name": "ferrum-model",
+    "repo": "",
+    "bin": "/bin/ollama",
+    "modelfileOut": ""
+  },
   "finetune_gguf": {
     "modelPath": "/g.gguf",
     "corpusPath": "/c.txt",
@@ -79,6 +87,14 @@
     "lowercase": false,
     "stripGutenberg": false,
     "lossy": true
+  },
+  "preview_runtime_export": {
+    "modelPath": "/m/m.gguf",
+    "target": "ollama",
+    "name": "ferrum-model",
+    "repo": "",
+    "bin": "",
+    "modelfileOut": ""
   },
   "run_gguf": {
     "modelPath": "/g.gguf",
