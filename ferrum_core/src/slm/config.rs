@@ -68,6 +68,10 @@ pub struct TransformerConfig {
     /// Print a `[train] step S/T  tokens/s R  elapsed Xs` line every this many
     /// optimizer steps; `0` = off.
     pub log_every_steps: u64,
+    /// Write one CSV row per optimizer step (`step,epoch,loss,lr,grad_norm,tokens_per_sec,
+    /// elapsed`) to this file; empty = off. A resumed run appends. Turning it on measures
+    /// the gradient norm each step, which does not change the trained weights.
+    pub metrics_csv: String,
     /// Graceful stop (deadline, stop file, cancel flag), polled after every
     /// optimizer step. On a stop the run checkpoints (if `checkpoint_path` is set)
     /// and returns the model as trained so far; [`StopCondition::stopped`] says
@@ -101,6 +105,7 @@ impl Default for TransformerConfig {
             checkpoint_every: 0,
             resume: false,
             log_every_steps: 0,
+            metrics_csv: String::new(),
             stop: StopCondition::default(),
         }
     }

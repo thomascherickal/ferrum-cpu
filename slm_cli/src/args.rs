@@ -53,6 +53,7 @@ pub(crate) const TRAIN_FLAGS: Spec = &[
     ("sample", Kind::Bool),
     ("max-seconds", Kind::F64),
     ("preset", Kind::Str),
+    ("metrics-csv", Kind::Str),
 ];
 
 pub(crate) const GENERATE_FLAGS: Spec = &[
@@ -296,6 +297,7 @@ impl Args {
                 .unwrap_or_default(),
             checkpoint_every: self.get("checkpoint-every", d.checkpoint_every),
             resume: self.value("resume").is_some(),
+            metrics_csv: self.get("metrics-csv", String::new()),
             // `-v` prints a progress line every 10 optimizer steps.
             log_every_steps: if self.verbose { 10 } else { 0 },
             stop: d.stop,

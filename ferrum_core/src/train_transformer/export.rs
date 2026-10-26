@@ -31,6 +31,7 @@ impl TransformerNet {
             weight_decay: self.weight_decay,
             dropout: self.dropout,
             window_stride: self.window_stride,
+            metrics: Default::default(),
         }
     }
 

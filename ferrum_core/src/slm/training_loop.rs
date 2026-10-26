@@ -4,6 +4,7 @@ use crate::optim::Adam;
 use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
 use crate::slm::memory::{available_memory_bytes, check_train_memory};
+use crate::slm::metrics_log::{format_eta, CsvLog, Row};
 use crate::train_transformer::{train_transformer_steps, TransformerNet};
 
 /// A fresh (or checkpoint-resumed) training net configured from `cfg`.
@@ -64,10 +65,23 @@ pub(super) fn prepare_net(
     Ok(net)
 }
 
-/// The throttled progress line printed every `log_every_steps` steps.
-fn progress_line(step: u64, total_steps: u64, tokens_done: f64, secs: f64) -> String {
+/// The throttled progress line printed every `log_every_steps` steps. The ETA assumes the
+/// steps so far are typical of the remaining ones.
+fn progress_line(
+    step: u64,
+    total_steps: u64,
+    steps_done: u64,
+    tokens_done: f64,
+    secs: f64,
+    grad_norm: Option<f32>,
+) -> String {
     let rate = tokens_done / secs.max(1e-9);
-    format!("[train] step {step}/{total_steps}  tokens/s {rate:.0}  elapsed {secs:.0}s")
+    let eta = secs / steps_done.max(1) as f64 * total_steps.saturating_sub(step) as f64;
+    let norm = grad_norm.map_or(String::new(), |n| format!("  grad_norm {n:.3}"));
+    format!(
+        "[train] step {step}/{total_steps}  tokens/s {rate:.0}{norm}  elapsed {secs:.0}s  eta {}",
+        format_eta(eta)
+    )
 }
 
 /// Write a training checkpoint atomically (temp file + rename), so a crash
@@ -121,7 +135,26 @@ where
     let log_every = cfg.log_every_steps;
     let tokens_per_step = (batch * t) as f64;
     let halted = std::cell::Cell::new(false);
+    let epoch = std::cell::Cell::new(0usize);
+    let mut csv = (!cfg.metrics_csv.is_empty())
+        .then(|| CsvLog::open(&cfg.metrics_csv, cfg.resume))
+        .transpose()?;
+    // The gradient norm costs a pass over the gradients: only measure it when it is shown.
+    net.set_track_grad_norm(log_every > 0 || csv.is_some());
     let mut on_step = |n: &TransformerNet, r: &Rng| -> Result<bool> {
+        let m = n.last_step_metrics();
+        if let (Some(log), Some(m)) = (csv.as_mut(), m) {
+            let step = n.step_count();
+            log.write(&Row {
+                step,
+                epoch: epoch.get(),
+                loss: m.loss,
+                lr: n.lr_schedule().map_or(cfg.lr, |s| s.lr_at(step)),
+                grad_norm: m.grad_norm,
+                tokens: tokens_per_step,
+                elapsed: t0.elapsed().as_secs_f64(),
+            })?;
+        }
         if !ckpt.is_empty() && every > 0 && n.step_count().is_multiple_of(every) {
             write_checkpoint(ckpt, n, r)?;
         }
@@ -132,8 +165,10 @@ where
                 progress_line(
                     n.step_count(),
                     total_steps,
+                    n.step_count() - start_step,
                     done,
-                    t0.elapsed().as_secs_f64()
+                    t0.elapsed().as_secs_f64(),
+                    m.and_then(|m| m.grad_norm),
                 )
             );
         }
@@ -159,6 +194,7 @@ where
             break;
         }
         ep += 1;
+        epoch.set(ep);
         let epoch_left = (steps_per_epoch - partial) as usize;
         partial = 0;
         let max_steps = if budgeted {
@@ -397,11 +433,63 @@ mod tests {
     }
 
     #[test]
+    fn metrics_csv_has_a_finite_row_per_step_and_leaves_the_weights_alone() {
+        let corpus = RESUME_CORPUS.repeat(40);
+        let csv = scratch_ckpt("metrics").replace(".fckp", ".csv");
+        let _ = std::fs::remove_file(&csv);
+        let (ck_plain, ck_csv) = (scratch_ckpt("metrics_a"), scratch_ckpt("metrics_b"));
+        let plain = TransformerConfig {
+            cosine_lr: true,
+            warmup_steps: 2,
+            ..resume_cfg(&ck_plain)
+        };
+        let with_csv = TransformerConfig {
+            metrics_csv: csv.clone(),
+            ..TransformerConfig {
+                checkpoint_path: ck_csv.clone(),
+                ..plain.clone()
+            }
+        };
+        let steps = *epoch_ends(&corpus, &plain).last().unwrap();
+        epoch_ends(&corpus, &with_csv);
+        assert_eq!(
+            std::fs::read(&ck_plain).unwrap(),
+            std::fs::read(&ck_csv).unwrap(),
+            "the CSV must not change training"
+        );
+        let text = std::fs::read_to_string(&csv).unwrap();
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next(),
+            Some("step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed")
+        );
+        let rows: Vec<Vec<f64>> = lines
+            .map(|l| l.split(',').map(|x| x.parse().unwrap()).collect())
+            .collect();
+        assert_eq!(rows.len() as u64, steps);
+        for (i, r) in rows.iter().enumerate() {
+            assert_eq!(r.len(), 7);
+            assert!(r.iter().all(|x| x.is_finite()), "{r:?}");
+            assert_eq!(r[0], (i + 1) as f64);
+            assert!(r[2] > 0.0 && r[4] > 0.0 && r[5] > 0.0, "{r:?}");
+        }
+        assert_eq!(rows.last().unwrap()[1], 3.0, "three epochs");
+        assert!(rows[0][3] < rows[2][3], "warmup raises the lr: {rows:?}");
+    }
+
+    #[test]
     fn progress_line_reports_step_rate_and_elapsed() {
-        let line = progress_line(30, 120, 3000.0, 2.0);
-        assert_eq!(line, "[train] step 30/120  tokens/s 1500  elapsed 2s");
-        // A zero elapsed time never divides by zero.
-        assert!(progress_line(1, 2, 8.0, 0.0).contains("tokens/s"));
+        let line = progress_line(30, 120, 30, 3000.0, 60.0, Some(0.5));
+        assert_eq!(
+            line,
+            "[train] step 30/120  tokens/s 50  grad_norm 0.500  elapsed 60s  eta 3m00s"
+        );
+        // Without a norm the field is absent; a zero elapsed time never divides by zero.
+        let line = progress_line(1, 2, 1, 8.0, 0.0, None);
+        assert!(
+            line.contains("tokens/s") && !line.contains("grad_norm"),
+            "{line}"
+        );
     }
 
     #[test]

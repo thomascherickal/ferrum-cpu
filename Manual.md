@@ -640,7 +640,8 @@ rename), so an interrupted or failed save leaves any previous file intact and no
 | `--seed N` | 1337 | RNG seed |
 | `--force` | off | Retrain even if the model file exists |
 | `--sample` | off | Print a short sample after training |
-| `--verbose`, `-v` | off | Prints a progress line every 10 optimizer steps: `[train] step S/T  tokens/s R  elapsed Xs`. It does not print per-op logs. |
+| `--verbose`, `-v` | off | Prints a progress line every 10 optimizer steps: `[train] step S/T  tokens/s R  grad_norm G  elapsed Xs  eta E`. `eta` extrapolates the average step time so far over the remaining steps; `grad_norm` is the global gradient L2 norm before clipping. It does not print per-op logs. |
+| `--metrics-csv PATH` | none | Writes one row per optimizer step: `step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed` (`lr` is the scheduled rate, `tokens_per_sec` is over the time since the previous row and counts a full batch, `elapsed` is seconds since training started). The path is checked for writability before training starts. A resumed run appends to the file. The gradient norm is measured only when this flag or `-v` is on; the trained weights are bit-identical either way. |
 | `--debug` | off | Streams the engine's internal trace. Very verbose; use it to debug, not to watch progress. |
 
 The sampling flags `run` shares with `generate` are in [§7](#7-generating-text).

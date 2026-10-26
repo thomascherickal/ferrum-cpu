@@ -5,6 +5,7 @@ mod config;
 mod corpus;
 mod generate;
 mod memory;
+mod metrics_log;
 mod persist;
 mod sampling;
 mod scoring;

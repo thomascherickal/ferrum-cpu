@@ -16,6 +16,7 @@ mod limits;
 mod optimizer;
 mod param;
 mod qat;
+mod step_metrics;
 #[cfg(test)]
 mod test_support;
 mod threaded;
@@ -24,6 +25,7 @@ mod tying;
 pub use self::checkpoint::CheckpointInfo;
 pub use self::epoch::{train_transformer_epoch, train_transformer_steps, StepHook};
 pub use self::forward::FwdCache;
+pub use self::step_metrics::StepMetrics;
 pub use self::threaded::train_transformer_epoch_threaded;
 
 use crate::error::{InferError, Result};
@@ -87,6 +89,8 @@ pub struct TransformerNet {
     /// trains on every token about `context_len` times; `context_len` gives
     /// non-overlapping windows, so one epoch sees each token once.
     window_stride: usize,
+    /// Opt-in per-step metrics (see [`StepMetrics`]); no effect on training.
+    metrics: step_metrics::MetricsState,
 }
 
 impl TransformerNet {
@@ -140,6 +144,7 @@ impl TransformerNet {
             weight_decay: 0.0,
             dropout: 0.0,
             window_stride: 1,
+            metrics: Default::default(),
         })
     }
 

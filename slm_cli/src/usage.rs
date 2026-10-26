@@ -76,7 +76,8 @@ pub(crate) fn print_usage() {
          \x20 --max-seconds F       (stop cleanly after the step that crosses F seconds; also: touch <model>.stop)\n\
          \x20 --val F  --patience N (hold out fraction F; keep best epoch; early stop)\n\
          \x20 --threads N  --force    --sample\n\
-         \x20 --verbose|-v   (progress line every 10 steps)   --debug   (engine internals)\n\
+         \x20 --metrics-csv F   (one row per step: step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed)\n\
+         \x20 --verbose|-v   (progress line every 10 steps: tokens/s, grad norm, elapsed, ETA)   --debug   (engine internals)\n\
          \x20 (--vocab 0 = character-level; >=256 = byte-level BPE, default 512)\n\
          \x20 (--threads 0 = auto-detect cores [default]; 1 = serial training)\n\n\
          PREPARE options:\n\

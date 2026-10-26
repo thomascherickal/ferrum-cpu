@@ -45,7 +45,8 @@
 //!   --preset <tiny|small|medium>  starting sizes from Manual §6.7 (explicit flags win)
 //!   --force         retrain even if the model file exists
 //!   --sample        print a short sample after training
-//!   --verbose | -v  print a progress line every 10 steps (tokens/s, elapsed)
+//!   --metrics-csv <file>  one CSV row per optimizer step (loss, lr, grad norm, tokens/s)
+//!   --verbose | -v  print a progress line every 10 steps (tokens/s, grad norm, elapsed, ETA)
 //!   --debug         print all engine internals
 //! ```
 //!

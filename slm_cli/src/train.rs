@@ -46,10 +46,14 @@ pub(crate) fn train_and_save(
         (ck_label, &cfg.checkpoint_path),
         ("--tokenizer", &cfg.tokenizer_path),
         ("the corpus", corpus_path),
+        ("--metrics-csv", &cfg.metrics_csv),
     ])?;
     check_writable(model_path)?;
     if !cfg.checkpoint_path.is_empty() {
         check_writable(&cfg.checkpoint_path)?;
+    }
+    if !cfg.metrics_csv.is_empty() {
+        check_writable(&cfg.metrics_csv)?;
     }
     if cfg.vocab_size > 0
         && !cfg.tokenizer_path.is_empty()
@@ -117,6 +121,9 @@ pub(crate) fn train_and_save(
     }
     if cfg.resume {
         println!("  Resume  : {}", cfg.checkpoint_path);
+    }
+    if !cfg.metrics_csv.is_empty() {
+        println!("  Metrics : {}", cfg.metrics_csv);
     }
     println!("╚══════════════════════════════════════════════════════════╝\n");
 

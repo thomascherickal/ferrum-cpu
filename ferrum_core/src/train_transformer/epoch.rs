@@ -159,9 +159,7 @@ fn epoch_serial(
         }
         // Sum the head gradient back into the shared embedding (T9).
         net.fold_tied_head_grad();
-        if let Some(max_norm) = net.grad_clip {
-            net.clip_grad_norm(max_norm);
-        }
+        net.finish_grads(loss);
         net.step(adam)?;
         total += loss;
         done += 1;

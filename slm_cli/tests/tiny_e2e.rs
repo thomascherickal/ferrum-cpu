@@ -469,3 +469,84 @@ fn training_output_tells_the_truth_about_the_run() {
         "{line}"
     );
 }
+
+#[test]
+fn metrics_csv_and_verbose_progress_leave_the_trained_model_bit_identical() {
+    let e = Env::new("metrics");
+    let plain = e.train("plain.gguf", &["--vocab", "300", "--batch", "4"]);
+    assert!(
+        !plain.contains("Metrics :") && !plain.contains("eta"),
+        "{plain}"
+    );
+    let csv = e.s("m/run.csv");
+    let out = e.train(
+        "csv.gguf",
+        &[
+            "--vocab",
+            "300",
+            "--batch",
+            "4",
+            "--metrics-csv",
+            &csv,
+            "-v",
+        ],
+    );
+    assert_eq!(
+        sha(&e.p("plain.gguf")),
+        sha(&e.p("csv.gguf")),
+        "metrics changed training"
+    );
+    assert!(out.contains(&format!("Metrics : {csv}")), "{out}");
+    // `-v` now shows the gradient norm and an ETA; the total step count is in the first line.
+    let first = out
+        .lines()
+        .find(|l| l.starts_with("[train] step 10/"))
+        .unwrap_or_else(|| panic!("no progress line: {out}"));
+    assert!(
+        first.contains("grad_norm ") && first.contains("eta "),
+        "{first}"
+    );
+    let steps: usize = first["[train] step 10/".len()..]
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+
+    let text = std::fs::read_to_string(&csv).unwrap();
+    let mut lines = text.lines();
+    assert_eq!(
+        lines.next(),
+        Some("step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed")
+    );
+    let rows: Vec<Vec<f64>> = lines
+        .map(|l| l.split(',').map(|x| x.parse().unwrap()).collect())
+        .collect();
+    assert_eq!(rows.len(), steps);
+    for (i, r) in rows.iter().enumerate() {
+        assert_eq!(r.len(), 7);
+        assert!(r.iter().all(|x| x.is_finite()), "{r:?}");
+        assert_eq!(r[0] as usize, i + 1);
+        assert!(
+            r[2] > 0.0 && r[4] > 0.0,
+            "loss and grad norm are positive: {r:?}"
+        );
+    }
+    assert_eq!(rows.last().unwrap()[1], 3.0);
+
+    // An unwritable CSV path fails before any training.
+    let dir = e.s("");
+    let bad = Command::new(BIN)
+        .args([
+            "train",
+            &e.s("prep/train.txt"),
+            &e.s("x.gguf"),
+            "--metrics-csv",
+            &dir,
+        ])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("cannot write"));
+    assert!(!e.p("x.gguf").exists());
+}
