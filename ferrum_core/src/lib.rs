@@ -78,6 +78,7 @@ pub mod rng;
 pub mod slm;
 pub mod stop;
 pub mod tensor;
+pub mod token_file;
 pub mod tokenizer;
 pub mod train_transformer;
 
@@ -118,6 +119,7 @@ pub use slm::{
 };
 pub use stop::{StopCause, StopCondition};
 pub use tensor::Tensor;
+pub use token_file::{write_token_file, TokenFile, TokenFileMeta, TokenFileStats};
 pub use tokenizer::{ByteBpeTokenizer, DOC_SEP, TOK_BOS, TOK_EOS, TOK_PAD, TOK_UNK};
 pub use train_transformer::{
     train_transformer_epoch, train_transformer_epoch_threaded, train_transformer_steps,

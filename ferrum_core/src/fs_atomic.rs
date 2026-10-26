@@ -1,14 +1,25 @@
 //! Crash-safe file replacement shared by every writer of a model file.
 use crate::error::{InferError, Result};
+use std::io::Write;
 
 /// Write `bytes` to `path` via a same-directory temp file + rename, so a crash or full disk
 /// mid-write can never leave a truncated file at `path` and an existing file stays intact until
 /// the new one is complete (`rename` replaces an existing destination on Unix and Windows).
 /// Errors name `path`; a failed write leaves no temp file behind.
 pub(crate) fn atomic_write(path: &str, bytes: &[u8]) -> Result<()> {
+    atomic_write_with(path, |f| f.write_all(bytes))
+}
+
+/// [`atomic_write`] for content produced incrementally: `fill` writes (and may seek in) the temp
+/// file, which is renamed over `path` only if `fill` succeeds. Same guarantees.
+pub(crate) fn atomic_write_with(
+    path: &str,
+    fill: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<()> {
     let tmp = format!("{path}.tmp");
     let io = |e: std::io::Error| InferError::Io(format!("cannot write {path}: {e}"));
-    std::fs::write(&tmp, bytes)
+    std::fs::File::create(&tmp)
+        .and_then(|mut f| fill(&mut f))
         .and_then(|()| std::fs::rename(&tmp, path))
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp); // best-effort cleanup

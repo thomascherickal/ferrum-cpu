@@ -37,10 +37,10 @@ pub use self::dequant::f16_to_f32;
 #[cfg(test)]
 pub(crate) use self::dequant::get_scale_min_k4;
 pub(crate) use self::format::{
-    DEFAULT_ALIGNMENT, GGML_F16, GGML_F32, GGML_Q4_0, GGML_Q4_1, GGML_Q4_K, GGML_Q5_K, GGML_Q6_K,
-    GGML_Q8_0, GGML_Q8_1, GGUF_MAGIC, Q4_K_BLOCK, Q5_K_BLOCK, Q6_K_BLOCK, QK, QK_K, VT_ARRAY,
-    VT_BOOL, VT_F32, VT_F64, VT_I16, VT_I32, VT_I64, VT_I8, VT_STRING, VT_U16, VT_U32, VT_U64,
-    VT_U8,
+    DEFAULT_ALIGNMENT, GGML_F16, GGML_F32, GGML_I16, GGML_I32, GGML_Q4_0, GGML_Q4_1, GGML_Q4_K,
+    GGML_Q5_K, GGML_Q6_K, GGML_Q8_0, GGML_Q8_1, GGUF_MAGIC, Q4_K_BLOCK, Q5_K_BLOCK, Q6_K_BLOCK, QK,
+    QK_K, VT_ARRAY, VT_BOOL, VT_F32, VT_F64, VT_I16, VT_I32, VT_I64, VT_I8, VT_STRING, VT_U16,
+    VT_U32, VT_U64, VT_U8,
 };
 pub(crate) use self::header::bounded;
 #[cfg(test)]
@@ -276,6 +276,12 @@ impl Gguf {
     /// Look up a metadata value by exact key.
     pub fn meta(&self, key: &str) -> Option<&MetaValue> {
         self.metadata.get(key)
+    }
+
+    /// Absolute byte offset of the (aligned) tensor-data section; a tensor's
+    /// `offset` is relative to it. Lets a streaming reader seek into the data.
+    pub(crate) fn data_offset(&self) -> usize {
+        self.data_offset
     }
 
     /// Size of the whole file in bytes: the bound for metadata-sized

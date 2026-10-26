@@ -11,6 +11,11 @@ pub(crate) const GGML_F32: u32 = 0;
 
 pub(crate) const GGML_F16: u32 = 1;
 
+// Plain integer element types (used by `ferrum-tokens` files; not dequantizable).
+pub(crate) const GGML_I16: u32 = 25;
+
+pub(crate) const GGML_I32: u32 = 26;
+
 pub(crate) const GGML_Q4_0: u32 = 2;
 
 pub(crate) const GGML_Q4_1: u32 = 3;
@@ -104,8 +109,8 @@ pub(super) fn type_nbytes(ggml_type: u32, n: usize) -> Result<usize> {
             .ok_or_else(|| fmt("tensor byte size overflows"))
     };
     match ggml_type {
-        GGML_F32 => mul(n, 4),
-        GGML_F16 => mul(n, 2),
+        GGML_F32 | GGML_I32 => mul(n, 4),
+        GGML_F16 | GGML_I16 => mul(n, 2),
         GGML_Q8_0 => mul(blocks()?, 2 + QK),     // f16 d + 32×i8
         GGML_Q8_1 => mul(blocks()?, 2 + 2 + QK), // f16 d + f16 s + 32×i8
         GGML_Q4_0 => mul(blocks()?, 2 + QK / 2), // f16 d + 16 bytes
@@ -133,7 +138,14 @@ pub(super) fn align_up(x: usize, a: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::align_up;
+    use super::{align_up, type_nbytes, GGML_I16, GGML_I32};
+
+    #[test]
+    fn integer_types_are_sized() {
+        assert_eq!(type_nbytes(GGML_I16, 5).unwrap(), 10);
+        assert_eq!(type_nbytes(GGML_I32, 5).unwrap(), 20);
+        assert!(type_nbytes(GGML_I32, usize::MAX).is_err());
+    }
 
     #[test]
     fn align_up_rounds_up_and_treats_zero_alignment_as_identity() {
