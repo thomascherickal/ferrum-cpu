@@ -17,3 +17,7 @@ __pycache__/
 # Scratch output of the Samples.md walk-throughs (models, logs, caches)
 /samples/
 eval/lighteval/.hf-cache/
+
+# Output of scripts/build_wasm.sh
+/slm_wasm/pkg/
+/slm_wasm/demo/pkg/

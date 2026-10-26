@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; --accent: #b4551d; }
+body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+main { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+.note { opacity: 0.75; }
+label { display: block; font-weight: 600; margin-top: 0.75rem; }
+.drop { border: 2px dashed currentColor; border-radius: 0.5rem; padding: 0.75rem 1rem; opacity: 0.9; }
+.drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+textarea, input[type="number"] { font: inherit; width: 100%; box-sizing: border-box; padding: 0.35rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0 1rem; }
+.row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+button { font: inherit; padding: 0.5rem 1.25rem; border-radius: 0.4rem; border: 1px solid currentColor; cursor: pointer; }
+button:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#error { color: #b00020; font-weight: 600; }
+#output { white-space: pre-wrap; word-break: break-word; min-height: 6rem; padding: 0.75rem; border: 1px solid currentColor; border-radius: 0.4rem; }

@@ -59,7 +59,7 @@ tokenizer. Only BPE transformer SLMs run there.
 | `ferrum_core` | library | The engine: tensors, layers, the transformer trainer, tokenizer, quantization, the GGUF model codecs, and the GGUF reader/writer plus Llama/Qwen runner and trainer |
 | `slm_cli` | binary `train_transformer` | Train, generate, evaluate, inspect, `prepare` and `tokenize` data; `export-ollama`, `export-lmstudio`; `run-gguf`, `eval-gguf`, `finetune-gguf`, `export-gguf` for external checkpoints |
 | `slm_server` | binary `ferrum-serve` | HTTP inference server (axum): log-likelihood, rolling log-likelihood, generation |
-| `slm_wasm` | cdylib + rlib | `wasm-bindgen` bindings that run a trained SLM in the browser (`Slm` text API, `TransformerSLMModel`) |
+| `slm_wasm` | cdylib + rlib | `wasm-bindgen` bindings that run a trained SLM in the browser (`Slm` text API, `TransformerSLMModel`), plus a no-framework demo page and Web Worker in `slm_wasm/demo/` |
 | `eval/lighteval/` | Python package | `FerrumModel` and custom tasks for Hugging Face LightEval 0.13.0, plus `run.sh` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock` | DVC pipeline | fetch, prepare, train, eval (and an opt-in `lighteval` stage in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | shell | `fetch.sh` (pinned download with sha256 check), `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
@@ -298,7 +298,8 @@ cargo test  -p slm_cli --release --test determinism   # 1 thread vs N threads, i
 cargo bench --bench gemm                      # matmul/decode microbenchmark
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check                              # licences and advisories for the dependencies
-bash scripts/build_wasm.sh                    # slm_wasm -> slm_wasm/pkg/ (needs wasm-bindgen)
+bash scripts/build_wasm.sh                    # slm_wasm -> slm_wasm/pkg/ and the demo (needs wasm-bindgen)
+python3 -m http.server -d slm_wasm/demo 8000  # the browser demo: http://localhost:8000/ (Manual §11.3)
 (cd ferrum_gui && cargo tauri dev)            # the desktop app
 
 train_transformer prepare --input corpus.txt --out data/prepared   # clean + split + manifest

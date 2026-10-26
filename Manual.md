@@ -2008,6 +2008,26 @@ w.postMessage({ type: "generate", id: 1, prompt: "the cat", max_tokens: 40,
 w.postMessage({ type: "cancel" });
 ```
 
+**Demo page.** `slm_wasm/demo/` is a complete page with no framework and no
+build step beyond `build_wasm.sh`: `index.html`, `demo.js`, `style.css` and the
+worker. `build_wasm.sh` copies the built `pkg/` to `slm_wasm/demo/pkg/`; serve
+the folder over http (a module worker does not load from `file://`):
+
+```bash
+bash scripts/build_wasm.sh
+python3 -m http.server -d slm_wasm/demo 8000      # http://localhost:8000/
+```
+
+Pick or drop a Ferrum `.gguf` (or open `/?model=model.gguf` for a file on the
+same server), write a prompt, set temperature, top-k, top-p, max tokens and
+seed, and press Generate. The text streams in; Stop cancels. The page shows
+the model's size, the token count and tokens per second when the run ends, and
+any error. The page carries a strict Content-Security-Policy
+(`default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; ...`): no inline
+script, style or handler, which `slm_wasm/demo/demo.test.js` guards. If you
+serve it with your own CSP header, the worker needs `'wasm-unsafe-eval'` too.
+`node slm_wasm/demo/demo.test.js` and `worker.test.js` need nothing installed.
+
 `TransformerSLMModel` is the low-level class for token ids, for example to draw
 attention heat-maps. It takes and returns ids only:
 

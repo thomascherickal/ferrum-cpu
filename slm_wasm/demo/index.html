@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self'">
+  <title>Ferrum SLM in the browser</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Ferrum SLM in the browser</h1>
+    <p class="note">The model runs on your machine, in WebAssembly. Nothing is uploaded.</p>
+
+    <section aria-labelledby="model-h">
+      <h2 id="model-h">Model</h2>
+      <div id="drop" class="drop">
+        <label for="model-file">Choose a Ferrum <code>.gguf</code> file, or drop one here</label>
+        <input type="file" id="model-file" accept=".gguf">
+      </div>
+      <p id="model-info" role="status">No model loaded.</p>
+    </section>
+
+    <section aria-labelledby="gen-h">
+      <h2 id="gen-h">Generate</h2>
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" rows="3">Once upon a time</textarea>
+      <div class="grid">
+        <label for="temperature">Temperature <input type="number" id="temperature" value="0.8" min="0" step="0.05"></label>
+        <label for="top-k">Top-k (0 = off) <input type="number" id="top-k" value="0" min="0" step="1"></label>
+        <label for="top-p">Top-p (1 = off) <input type="number" id="top-p" value="1" min="0" max="1" step="0.05"></label>
+        <label for="max-tokens">Max tokens <input type="number" id="max-tokens" value="100" min="1" step="1"></label>
+        <label for="seed">Seed <input type="number" id="seed" value="42" min="0" max="4294967295" step="1"></label>
+      </div>
+      <div class="row">
+        <button type="button" id="generate" disabled>Generate</button>
+        <button type="button" id="stop" disabled>Stop</button>
+      </div>
+      <p id="error" role="alert" hidden></p>
+      <h3 id="out-h">Output</h3>
+      <pre id="output" aria-labelledby="out-h" aria-live="polite"></pre>
+      <p id="stats" role="status"></p>
+    </section>
+  </main>
+  <script type="module" src="demo.js"></script>
+</body>
+</html>
