@@ -20,11 +20,14 @@ skills. When the user states a new rule, add it here.
    clippy `-D warnings`, fmt, and for GUI work the checks in Commands), and its
    docs are updated. Then make one commit with a Conventional-style subject.
    Never commit a half-done feature or a red tree, and never batch several
-   finished features into one commit.
+   finished features into one commit. Keep features modular: one concern per
+   module and per commit, with a small public surface.
 2. **Run only one agent at a time.** No parallel subagents. Finish or stop the
    running agent before launching the next. Before relaunching, check that an
    agent is truly active (file mtimes, running processes); after a crash or
    restart launch a fresh agent with explicit state instead of resuming it.
+   Tasks cut off when an agent stops are not dropped: relaunch them and finish
+   them before starting new work.
 3. **Stay inside the project.** Never touch anything outside the project
    directory (no `~/.cache`, `~/.ollama`). Scratch files go in the session
    scratchpad; samples that need an external tool use a private dir.
@@ -36,9 +39,11 @@ skills. When the user states a new rule, add it here.
    tests. Report the exact pass/fail/ignored counts; fix or disclose any failure.
 6. **No invented output.** Every number and command output in the docs comes
    from a real run on this machine. Say plainly what was not run.
-7. **Finish a branch one way:** fast-forward merge to `master`, push, delete the
-   branch. No PRs, no merge commits. "Finish completely" also means resolving
-   the remaining Minor review findings in one polish commit first.
+7. **Push after every green suite, merge when a feature is done.** After each
+   full-suite run with no failures, push the branch (or `master`); push at
+   least once a day. As soon as a feature is complete, fast-forward merge it to
+   `master` and push. No PRs, no merge commits. "Finish completely" also means
+   resolving the remaining Minor review findings in one polish commit first.
 8. **`ferrum_gui` is outside the workspace.** Build and test it from its crate
    dir; use `node --check` for the UI JavaScript.
 9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
@@ -76,7 +81,9 @@ Do not break these; they are the product's selling points.
   identical at any thread count. The one exception is the data-parallel
   trainer: `train --threads 0` (auto) takes its shard count from
   `FERRUM_NUM_THREADS` or the core count, and a different shard count changes
-  the trained weights. Training is reproducible for a fixed `--threads`.
+  the trained weights. Training is reproducible for a fixed `--threads`, and
+  the DVC pipeline pins it (`train.threads` in `params.yaml`), so `dvc.lock`
+  reproduces on any machine.
   `cargo test -p slm_cli --release --test determinism` enforces the rest.
 - **WASM-portable.** `ferrum_core` and `slm_wasm` must compile and run for
   `wasm32-unknown-unknown` (no threads/fs assumptions on that path). CI builds

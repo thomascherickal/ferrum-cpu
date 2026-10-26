@@ -772,7 +772,9 @@ There are two independent knobs:
   `--threads 0` (auto), the number of shards is `FERRUM_NUM_THREADS` or the
   core count. A different shard count trains different weights (the
   reference model reaches a different perplexity at 1 and at 8 shards), so
-  pass `--threads N` explicitly to reproduce a run on another machine. Only
+  pass `--threads N` explicitly to reproduce a run on another machine. The
+  DVC pipeline does this for you: `train.threads` in `params.yaml` is passed
+  to `train`. Only
   training is affected; `generate` and `eval` give identical output at any
   `FERRUM_NUM_THREADS`.
 

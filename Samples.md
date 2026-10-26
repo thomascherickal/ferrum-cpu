@@ -280,7 +280,7 @@ cat metrics/val.json metrics/test.json
 - All seven files match, including the model and tokenizer that Sample 1 trained. Training is deterministic, so the same inputs, flags, and `--threads` give the same bytes.
 - `dvc.lock` records the hash of every input and output. It is committed; `data/` and `models/` are not, and there is no DVC remote.
 - The `seconds` field in the metrics files is the time of the DVC run, so it differs from the time you measure. Everything else in them matches Sample 5.
-- The data-parallel trainer splits each batch across `--threads` workers (auto = the core count). A machine with a different core count trains different weights, so its `models/slm.gguf` would not match this lock file; pass `--threads N` to pin it ([Manual §6.8](Manual.md#68-multi-threading-and-determinism)). This machine has 8 logical CPUs.
+- The data-parallel trainer splits each batch across `--threads` workers (auto = the core count), and a different worker count trains different weights. The pipeline therefore pins it (`train.threads: 8` in `params.yaml`, passed as `--threads 8`), so this lock file reproduces on any machine ([Manual §6.8](Manual.md#68-multi-threading-and-determinism)). This machine has 8 logical CPUs, which is why the pinned value equals what auto picked here.
 - `eval/lighteval/dvc.yaml` holds the opt-in `lighteval` stage, kept out of the root pipeline so a plain `dvc repro` does not need the LightEval environment (Sample 8).
 
 ---

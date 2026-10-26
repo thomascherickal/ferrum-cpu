@@ -171,7 +171,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
 
 Edit `params.yaml` and run `dvc repro` again to rerun only the stages that
 changed. Training is deterministic, so the same inputs give the same
-`models/slm.gguf` on a machine with the same core count ([Manual §6.8](Manual.md#68-multi-threading-and-determinism)).
+`models/slm.gguf` on any machine: the pipeline pins the data-parallel shard count (`train.threads` in `params.yaml`; [Manual §6.8](Manual.md#68-multi-threading-and-determinism)).
 
 ### Use the library
 

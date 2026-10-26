@@ -59,3 +59,7 @@ path = "tests/test_runtime_compat.rs"
 [[test]]
 name = "test_hostile_inputs"
 path = "tests/test_hostile_inputs.rs"
+
+[[test]]
+name = "test_dvc_pin"
+path = "tests/test_dvc_pin.rs"

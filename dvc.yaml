@@ -33,7 +33,7 @@ stages:
       --blocks ${model.blocks} --hidden ${model.hidden} --vocab ${model.vocab}
       --tokens ${train.tokens} --lr ${train.lr} --cosine --warmup ${train.warmup}
       --clip ${train.clip} --val ${train.val} --patience ${train.patience}
-      --seed ${train.seed} --quant ${train.quant}
+      --seed ${train.seed} --quant ${train.quant} --threads ${train.threads}
       --tokenizer models/tokenizer.gguf --force
     deps:
       - data/prepared/train.txt
