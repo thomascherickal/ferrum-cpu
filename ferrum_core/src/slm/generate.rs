@@ -1,9 +1,7 @@
 //! Public generation entry points: text, streaming, stop strings and token-level generation.
-use crate::error::{InferError, Result};
+use crate::error::Result;
 use crate::rng::Rng;
-use crate::slm::cached::CachedTransformer;
-use crate::slm::corpus::hex_to_char;
-use crate::slm::sampling::{sample_with_params, SamplingParams};
+use crate::slm::sampling::SamplingParams;
 use crate::slm::GenerativeSLM;
 
 /// Why [`GenerativeSLM::generate_tokens`] stopped.
@@ -223,86 +221,17 @@ impl GenerativeSLM {
         rng: &mut Rng,
         on_text: &mut dyn FnMut(&str),
     ) -> Result<Generation> {
-        self.require_token_id_model()?;
-        let bpe = self.bpe()?;
-        let eos = bpe.as_ref().and_then(|t| t.eos_id());
-        let mut cached = CachedTransformer::try_new(&self.model).ok_or_else(|| {
-            InferError::DimMismatch("generate_tokens needs a transformer model".into())
-        })?;
-        let cap = cached.capacity().max(1);
-        let keep = (cap / 2).max(1);
-
-        let mut window = self.encode_text(prompt)?;
-        if window.is_empty() {
-            window.push(self.bos_id());
+        let mut stream = self.token_stream(prompt, max_tokens, stops, params)?;
+        while let Some(fragment) = self.stream_next(&mut stream, rng)? {
+            on_text(&fragment);
         }
-        if window.len() > cap {
-            window.drain(..window.len() - cap);
-        }
-        let mut dist = cached.prime(&window)?;
-
-        let mut text = String::new();
-        let mut pending: Vec<u8> = Vec::new();
-        let max_stop = stops.iter().map(|s| s.len()).max().unwrap_or(0);
-        let mut n_tokens = 0;
-        let mut reason = StopReason::MaxTokens;
-        let mut emitted = 0; // bytes of `text` already passed to `on_text`
-
-        while n_tokens < max_tokens {
-            let logits: Vec<f32> = dist.iter().map(|&p| p.max(1e-12).ln()).collect();
-            let next = sample_with_params(&logits, params, &window, rng);
-            if Some(next) == eos {
-                reason = StopReason::Eos;
-                break;
-            }
-            n_tokens += 1;
-            let before = text.len();
-            match &bpe {
-                Some(tok) => {
-                    pending.extend_from_slice(tok.token_bytes(next).unwrap_or(&[]));
-                    drain_utf8(&mut pending, &mut text);
-                }
-                None => text.push(hex_to_char(&self.meta.class_names[next])),
-            }
-            if let Some(cut) = earliest_stop(&text, before, max_stop, stops) {
-                text.truncate(cut);
-                reason = StopReason::Stop;
-                break;
-            }
-            let safe = text.len() - held_back(&text[emitted..], stops);
-            on_text(&text[emitted..safe]);
-            emitted = safe;
-            window.push(next);
-            if window.len() > cap {
-                window.drain(..window.len() - keep);
-                dist = cached.prime(&window)?;
-            } else {
-                dist = cached.feed(next)?;
-            }
-        }
-        if reason != StopReason::Stop && !pending.is_empty() {
-            // The flushed tail (a dangling lead byte becomes U+FFFD) can also
-            // complete a stop string.
-            let before = text.len();
-            text.push_str(&String::from_utf8_lossy(&pending));
-            if let Some(cut) = earliest_stop(&text, before, max_stop, stops) {
-                text.truncate(cut);
-                reason = StopReason::Stop;
-            }
-        }
-        // Nothing is pending any more: the rest is final (and stop-free).
-        on_text(text.get(emitted..).unwrap_or_default());
-        Ok(Generation {
-            text,
-            n_tokens,
-            stop_reason: reason,
-        })
+        Ok(stream.into_generation())
     }
 }
 
 /// Length in bytes of the longest suffix of `text` that is a proper prefix of
 /// some stop string, i.e. the tail that might still turn into a stop.
-fn held_back(text: &str, stops: &[String]) -> usize {
+pub(super) fn held_back(text: &str, stops: &[String]) -> usize {
     stops
         .iter()
         .flat_map(|s| {
@@ -320,7 +249,12 @@ fn held_back(text: &str, stops: &[String]) -> usize {
 /// Byte offset of the earliest stop string that ends inside `text[before..]`,
 /// scanning only the tail (`max_stop` bytes before `before`) that could hold a
 /// newly completed match. Empty stop strings never match.
-fn earliest_stop(text: &str, before: usize, max_stop: usize, stops: &[String]) -> Option<usize> {
+pub(super) fn earliest_stop(
+    text: &str,
+    before: usize,
+    max_stop: usize,
+    stops: &[String],
+) -> Option<usize> {
     let from = (0..=before.saturating_sub(max_stop))
         .rev()
         .find(|&i| text.is_char_boundary(i))

@@ -12,6 +12,7 @@ mod scoring;
 mod stream;
 #[cfg(test)]
 mod test_support;
+mod token_stream;
 mod train;
 mod train_tokens;
 mod training_loop;
@@ -22,6 +23,7 @@ pub use self::generate::{Generation, StopReason};
 pub(crate) use self::sampling::sample_with_params;
 pub use self::sampling::SamplingParams;
 pub use self::scoring::{Evaluation, Score};
+pub use self::token_stream::GenStream;
 
 use crate::error::{InferError, Result};
 use crate::meta::{ModelMetadata, Normalizer, TaskType};

@@ -114,8 +114,8 @@ pub use parallel::num_threads;
 pub use quant::{fake_quantize_int8, QKind, QWeight, QUANT_MIN_LEN};
 pub use rng::Rng;
 pub use slm::{
-    Evaluation, Generation, GenerativeSLM, SamplingParams, Score, StopReason, TransformerConfig,
-    ValidationConfig, ValidationProgress,
+    Evaluation, GenStream, Generation, GenerativeSLM, SamplingParams, Score, StopReason,
+    TransformerConfig, ValidationConfig, ValidationProgress,
 };
 pub use stop::{StopCause, StopCondition};
 pub use tensor::Tensor;

@@ -1978,6 +1978,36 @@ vocabulary lacks) and a file that is not a Ferrum text model throw an
 `Error`. The seed is 32 bits here; the CLI's `--gen-seed` is 64 bits and gives
 the same text for values below 2^32.
 
+Streaming. `generate` blocks until it is done, which freezes a page for the
+length of the completion. `start` takes the same eight arguments and
+`next_chunk` hands back the text piece by piece (`undefined` at the end), so
+the caller can show it as it arrives or stop:
+
+```js
+slm.start("the cat", 40, 0.8, 0, 1.0, 1.0, 42, []);
+for (let c; (c = slm.next_chunk()) !== undefined; ) out.textContent += c;
+slm.tokens_generated();                           // tokens produced by the latest start
+slm.cancel();                                     // abandon a generation early
+```
+
+The chunks concatenate to exactly what `generate` returns for the same
+arguments, and a stop string is never delivered. A chunk is never empty: a
+half-finished UTF-8 character or a possible stop-string prefix waits for the
+next one. `start` replaces a generation in progress. WASM has no threads, so
+run the model in a Web Worker to keep the page responsive: `slm_wasm/demo/worker.js`
+is a plain module worker (no build step) that loads the model, pulls chunks in
+30 ms slices so that a `cancel` message gets through, and posts them back. The
+messages are documented at the top of the file:
+
+```js
+const w = new Worker("worker.js", { type: "module" });   // next to pkg/
+w.onmessage = ({ data: m }) => { if (m.type === "chunk") out.textContent += m.text; };
+w.postMessage({ type: "load", bytes }, [bytes]);        // bytes: ArrayBuffer of the .gguf
+w.postMessage({ type: "generate", id: 1, prompt: "the cat", max_tokens: 40,
+  temperature: 0.8, top_k: 0, top_p: 1, repetition_penalty: 1, seed: 42, stop: [] });
+w.postMessage({ type: "cancel" });
+```
+
 `TransformerSLMModel` is the low-level class for token ids, for example to draw
 attention heat-maps. It takes and returns ids only:
 

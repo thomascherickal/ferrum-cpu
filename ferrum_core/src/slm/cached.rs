@@ -26,6 +26,14 @@ pub(super) struct CachedTransformer<'a> {
     capacity: usize,
 }
 
+/// The owned half of a [`CachedTransformer`] (KV caches and position), kept between steps by a
+/// resumable generation so it need not borrow the model across calls.
+pub(super) struct CacheParts {
+    caches: Vec<KvCache>,
+    pos: usize,
+    capacity: usize,
+}
+
 #[cfg(test)]
 thread_local! {
     /// Test-only count of `CachedTransformer::feed` calls on this thread.
@@ -52,6 +60,24 @@ impl<'a> CachedTransformer<'a> {
                 pos: 0,
                 capacity,
             })
+        }
+    }
+
+    /// Continue from caches saved by [`CachedTransformer::into_parts`] on the same model.
+    pub(super) fn resume(model: &'a Sequential, parts: CacheParts) -> Self {
+        Self {
+            model,
+            caches: parts.caches,
+            pos: parts.pos,
+            capacity: parts.capacity,
+        }
+    }
+
+    pub(super) fn into_parts(self) -> CacheParts {
+        CacheParts {
+            caches: self.caches,
+            pos: self.pos,
+            capacity: self.capacity,
         }
     }
 

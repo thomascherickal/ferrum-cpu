@@ -30,6 +30,11 @@ use wasm_bindgen::prelude::*;
 /// const text = slm.decode(ids);          // 'the cat'
 /// const out = slm.generate('the cat', 40, 0.8, 0, 1.0, 1.0, 42, ['\n']);
 /// const logp = slm.score('the cat sat'); // rolling log-probability
+///
+/// // Streaming: pull the text piece by piece (run it in a Web Worker, see demo/worker.js).
+/// slm.start('the cat', 40, 0.8, 0, 1.0, 1.0, 42, []);  // same arguments as generate
+/// for (let c; (c = slm.next_chunk()) !== undefined; ) console.log(c);
+/// slm.cancel();                          // abandon a generation early
 /// ```
 ///
 /// `generate` returns only the continuation (the prompt is not repeated) and equals
@@ -93,6 +98,49 @@ impl Slm {
         )
         .map_err(js_err)?;
         self.0.generate(prompt, &p).map_err(js_err)
+    }
+
+    /// Begin a generation to pull with `next_chunk` (same arguments as `generate`). The chunks
+    /// add up to what `generate` returns. Starting again replaces a generation in progress.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start(
+        &mut self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f32,
+        top_k: usize,
+        top_p: f32,
+        repetition_penalty: f32,
+        seed: u32,
+        stop: Vec<String>,
+    ) -> Result<(), JsError> {
+        let p = GenParams::new(
+            max_tokens,
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            u64::from(seed),
+            stop,
+        )
+        .map_err(js_err)?;
+        self.0.start(prompt, &p).map_err(js_err)
+    }
+
+    /// The next piece of text, or `undefined` when the generation is over (or none was started).
+    /// Each call does one or a few tokens of work, so a page can stay responsive between calls.
+    pub fn next_chunk(&mut self) -> Result<Option<String>, JsError> {
+        self.0.next_chunk().map_err(js_err)
+    }
+
+    /// Tokens generated so far by the latest `start` (still readable once it has ended).
+    pub fn tokens_generated(&self) -> usize {
+        self.0.tokens_generated()
+    }
+
+    /// Abandon the generation in progress.
+    pub fn cancel(&mut self) {
+        self.0.cancel();
     }
 
     /// Rolling log-probability of `text` (higher is likelier; every token is scored).

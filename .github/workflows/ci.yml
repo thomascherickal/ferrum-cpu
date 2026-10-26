@@ -129,6 +129,10 @@ jobs:
         run: cargo build -p slm_wasm --target wasm32-unknown-unknown --release --locked
       - name: Clippy (wasm32)
         run: cargo clippy -p slm_wasm --target wasm32-unknown-unknown --locked -- -D warnings
+      - name: Demo JavaScript (syntax and Node tests, no dependencies)
+        run: |
+          for f in slm_wasm/demo/*.js; do node --check "$f"; done
+          for t in slm_wasm/demo/*.test.js; do node "$t" || exit 1; done
 
   gui:
     name: Build & test (ferrum_gui, Tauri)
