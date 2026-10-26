@@ -1726,6 +1726,30 @@ build), listed in the comments of `src/estimate.rs`:
 - **GPUs never enter an estimate.** Ferrum is CPU-only; a GPU is shown as
   "detected, not used by Ferrum".
 
+**Tooltips on every control.** Hover over (or tab to) any field, checkbox,
+dropdown or button and a tooltip appears with a long explanation: what it is,
+how it works (typical values, what happens if it is too big or too small, the
+effect on RAM and time) and a "New to AI?" paragraph that defines the jargon
+(token, epoch, batch size, learning rate, perplexity, vocabulary, context
+window, temperature, top-k/top-p, checkpoint, quantization, GGUF, BPE,
+embedding, heads, blocks, seed...). Press Esc to dismiss it. The text lives in
+`ui/help.js` as plain data, one entry per element id, so it can be edited
+without touching any logic; a Node test fails if a control has no entry or too
+short a one. Screen readers get the same text through `aria-describedby`.
+
+**Live estimates on every button.** A button's tooltip also says what it does
+and an *estimated time* and *RAM need* computed by `estimate_job` from your
+current form values and hardware, for example "about 4 min on your 8 CPU
+threads (likely 2.5 to 6.5 min); 11.2 GB free RAM; GPU detected but not used
+by Ferrum", followed by "needs about 450 MB RAM (you have 11.2 GB free)" or a
+warning when the job would not fit. The estimates for the visible tab refresh
+300 ms after any field changes, when you switch tabs, and when free RAM
+changes (hardware is polled every 5 s). The top bar and the System tab show a
+"Your hardware" line: CPU threads and cores, RAM total and free, and every GPU
+found with its memory and core count ("unknown" when the driver does not say),
+always marked "detected, not used by Ferrum". Run the Capable check in the
+release app to calibrate the estimates to your CPU.
+
 Every form validates input and shows plain-language errors. If the Rust
 backend is unavailable (for example, in a plain web preview), a banner says so.
 
@@ -1761,7 +1785,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips); each pure module has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js
+ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds

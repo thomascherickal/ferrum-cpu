@@ -61,6 +61,12 @@ class Element {
   }
   matches(sel) { return sel.split(",").some((s) => matchOne(this, s.trim())); }
   getBoundingClientRect() { return this.rect; }
+  querySelectorAll(sel) {
+    const out = [];
+    this.walk((n) => { if (n !== this && n.matches && n.matches(sel)) out.push(n); });
+    return out;
+  }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   walk(fn) { fn(this); this.children.forEach((c) => c.walk && c.walk(fn)); }
   showModal() { this.open = true; }
   close() { this.open = false; this.dispatch("close"); }
@@ -111,30 +117,38 @@ class Document {
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
 }
 
-// Build a Document from the elements of the real index.html: every
-// input/textarea/select/button gets an Element with its id, classes and
-// data-* attributes, nested in its <label> when it has one.
+// Build a Document from the real index.html: every element becomes an Element
+// with its attributes (so ids, classes and data-* work), nested as in the
+// markup. Text nodes, comments and <head>/<script> contents are skipped.
+const VOID = new Set(["input", "img", "br", "hr", "meta", "link"]);
 function documentFromHtml(html) {
   const doc = new Document();
-  const re = /<(\/?)(label|input|textarea|select|button|section|nav)\b([^>]*)>/g;
+  const body = html.replace(/<!--[\s\S]*?-->/g, "").replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<script[\s\S]*?<\/script>/gi, "");
   const stack = [doc.body];
-  let m;
-  while ((m = re.exec(html))) {
+  for (const m of body.matchAll(/<(\/?)([a-zA-Z][\w-]*)\b([^>]*?)(\/?)>/g)) {
     const [, close, tag, attrs] = m;
     if (close) {
-      if (tag === "label" || tag === "section" || tag === "nav") stack.pop();
+      for (let i = stack.length - 1; i > 0; i--) {
+        if (stack[i].tagName === tag.toUpperCase()) { stack.length = i; break; }
+      }
       continue;
     }
     const el = doc.createElement(tag);
     for (const a of attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
-      if (a[2] !== undefined) el.setAttribute(a[1], a[2]);
+      el.setAttribute(a[1], a[2] === undefined ? "" : a[2]);
     }
-    if (tag === "input" && el.getAttribute("type") === "number") el.value = el.getAttribute("value") || "";
-    if (tag === "input" && el.getAttribute("type") === "text") el.value = el.getAttribute("value") || "";
-    if (tag === "input" && el.getAttribute("type") === "checkbox") el.checked = el.hasAttribute("checked");
+    if (tag === "input") {
+      el.value = el.getAttribute("value") || "";
+      el.checked = el.hasAttribute("checked");
+    }
     stack[stack.length - 1].appendChild(el);
-    if (tag === "label" || tag === "section" || tag === "nav") stack.push(el);
+    if (!VOID.has(tag) && !m[4]) stack.push(el);
   }
+  // <select> value = first option; textarea/others start empty.
+  doc.querySelectorAll("select").forEach((sel) => {
+    const first = sel.querySelector("option");
+    sel.value = first ? first.getAttribute("value") || "" : "";
+  });
   return doc;
 }
 

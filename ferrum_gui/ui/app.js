@@ -10,6 +10,7 @@ const dialog = hasTauri && T.dialog ? T.dialog : null;
 
 const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo } = window.FerrumEscape;
 const $ = (id) => document.getElementById(id);
+let live = null; // tooltips + live estimates (live.js), created in init()
 const bySel = (s) => Array.from(document.querySelectorAll(s));
 
 // ── Toasts & errors ─────────────────────────────────────────────────────────
@@ -145,6 +146,8 @@ function renderCatalog(list) {
     meta.innerHTML = catalogMeta(d);
     const btn = document.createElement("button");
     btn.textContent = "Download";
+    btn.dataset.help = "dsCatalogDownload";
+    if (live) live.attach(btn);
     btn.addEventListener("click", async () => {
       clearErr("errDsCatalog");
       try {
@@ -805,6 +808,12 @@ async function wireEvents() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
+  // Tooltips work everywhere; the estimates need the backend and report that they do not have it.
+  live = window.FerrumLive.create({
+    doc: document, invoke, help: window.FerrumHelp, tooltip: window.FerrumTooltip, view: window.FerrumEstimateView,
+    tooltipEnv: { document, window },
+  });
+  live.start();
   if (!hasTauri) {
     $("webBanner").classList.remove("hidden");
     $("connDot").classList.remove("ok");

@@ -13,6 +13,7 @@
       <img src="logo.png" alt="Ferrum" width="28" height="28" />
       <span>Ferrum <b>SLM Studio</b></span>
     </div>
+    <div class="hwline muted" id="hwLine">Detecting your hardware...</div>
     <div class="mini-stats" id="miniStats">
       <span class="mini" title="Total CPU load">CPU <b id="miniCpu">–</b></span>
       <span class="mini" title="Memory used">MEM <b id="miniMem">–</b></span>
@@ -165,17 +166,17 @@
         <label>Vocab (0/≥256) <input type="number" id="trVocab" value="512" min="0" /></label>
         <label>Threads (0=auto) <input type="number" id="trThreads" value="0" min="0" /></label>
         <label>Seed <input type="number" id="trSeed" value="1337" min="0" /></label>
-        <label title="Tokens between training windows. 0 = context length (each token once per epoch); 1 = legacy full overlap (≈context× slower epochs)">Stride (0=ctx) <input type="number" id="trStride" value="0" min="0" /></label>
-        <label title="Stop after this many training tokens (e.g. 5e7); overrides Epochs. 0 = use Epochs">Token budget (0=off) <input type="text" id="trTokens" value="0" /></label>
+        <label>Stride (0=ctx) <input type="number" id="trStride" value="0" min="0" /></label>
+        <label>Token budget (0=off) <input type="text" id="trTokens" value="0" /></label>
         <label>Weight decay <input type="number" id="trWd" value="0" step="0.01" min="0" /></label>
         <label>Dropout <input type="number" id="trDropout" value="0" step="0.05" min="0" max="0.95" /></label>
-        <label title="Global gradient-norm clip; 0 = off">Grad clip (0=off) <input type="number" id="trClip" value="0" step="0.1" min="0" /></label>
-        <label title="Linear warmup steps for the cosine schedule">Warmup steps <input type="number" id="trWarmup" value="0" min="0" /></label>
-        <label title="Hold out this fraction of the corpus; keeps the best epoch by validation loss. 0 = off">Val fraction (0=off) <input type="number" id="trVal" value="0" step="0.05" min="0" max="0.5" /></label>
-        <label title="Stop after this many epochs without validation improvement; 0 = never">Patience <input type="number" id="trPatience" value="0" min="0" /></label>
-        <label title="Reuse this BPE tokenizer file; trained and saved there if missing">Tokenizer file <input type="text" id="trTokenizer" placeholder="optional, e.g. tok.gguf" /></label>
-        <label title="GGUF checkpoint (weights + optimizer state)">Checkpoint file <input type="text" id="trCkpt" placeholder="optional, e.g. run.fckp" /></label>
-        <label title="Save the checkpoint every N optimizer steps (and at the end); 0 = only at the end">Checkpoint every <input type="number" id="trCkptEvery" value="0" min="0" /></label>
+        <label>Grad clip (0=off) <input type="number" id="trClip" value="0" step="0.1" min="0" /></label>
+        <label>Warmup steps <input type="number" id="trWarmup" value="0" min="0" /></label>
+        <label>Val fraction (0=off) <input type="number" id="trVal" value="0" step="0.05" min="0" max="0.5" /></label>
+        <label>Patience <input type="number" id="trPatience" value="0" min="0" /></label>
+        <label>Tokenizer file <input type="text" id="trTokenizer" placeholder="optional, e.g. tok.gguf" /></label>
+        <label>Checkpoint file <input type="text" id="trCkpt" placeholder="optional, e.g. run.fckp" /></label>
+        <label>Checkpoint every <input type="number" id="trCkptEvery" value="0" min="0" /></label>
       </div>
       <div class="row">
         <label class="chk"><input type="checkbox" id="trCosine" /> Cosine LR (with warmup)</label>
@@ -409,6 +410,7 @@
     <!-- ── System ────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-system">
       <h2>System monitor</h2>
+      <p class="hint" id="hwSystem">Detecting your hardware...</p>
       <div class="row">
         <label class="chk"><input type="checkbox" id="sysOn" checked /> Monitoring on</label>
         <label class="narrow">Interval (s) <input type="number" id="sysInterval" value="1.5" step="0.5" min="0.5" /></label>
@@ -487,6 +489,10 @@
   <div id="toasts"></div>
   <script src="escape.js"></script>
   <script src="stream.js"></script>
+  <script src="help.js"></script>
+  <script src="tooltip.js"></script>
+  <script src="estimate_view.js"></script>
+  <script src="live.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
