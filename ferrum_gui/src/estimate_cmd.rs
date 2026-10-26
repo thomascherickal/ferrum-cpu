@@ -93,12 +93,31 @@ fn input_bytes(p: &JobParams) -> Option<u64> {
     )
 }
 
+/// The header facts of a token file, when `path` is one: tokens, documents, vocabulary.
+fn token_file_facts(path: &str) -> Option<(u64, u64, usize)> {
+    if path.trim().is_empty() || checked_path("path", path, true).is_err() {
+        return None;
+    }
+    if !ferrum_core::is_gguf_file(path) {
+        return None;
+    }
+    let f = ferrum_core::TokenFile::open(path).ok()?;
+    Some((f.len() as u64, f.documents(), f.vocab_size()))
+}
+
 /// Fill in everything the pure estimate needs from the paths in `p`.
 pub fn resolve(kind: JobKind, p: &mut JobParams) {
     p.corpus_bytes = file_len(&p.corpus_path).or(p.corpus_bytes);
     p.text_bytes = file_len(&p.text_path).or(p.text_bytes);
     p.test_bytes = file_len(&p.test_path).or(p.test_bytes);
     p.resume_bytes = file_len(&p.resume_path).or(p.resume_bytes);
+    if kind == JobKind::Train {
+        if let Some((tokens, docs, vocab)) = token_file_facts(&p.corpus_path) {
+            p.corpus_tokens = Some(tokens);
+            p.corpus_documents = Some(docs);
+            p.corpus_vocab = Some(vocab);
+        }
+    }
     match kind {
         // Evaluate takes either kind of model: a Llama/Qwen file is scored like `eval-gguf`.
         JobKind::Evaluate if is_imported(&p.model_path) => p.gguf = gguf_facts(&p.model_path),
@@ -108,7 +127,7 @@ pub fn resolve(kind: JobKind, p: &mut JobParams) {
         JobKind::GgufRun | JobKind::GgufFinetune | JobKind::GgufExport | JobKind::GgufInfo => {
             p.gguf = gguf_facts(&p.model_path)
         }
-        JobKind::Prepare => p.input_bytes = input_bytes(p).or(p.input_bytes),
+        JobKind::Prepare | JobKind::Tokenize => p.input_bytes = input_bytes(p).or(p.input_bytes),
         _ => {}
     }
 }

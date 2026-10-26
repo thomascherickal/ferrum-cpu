@@ -14,6 +14,7 @@
 //! | `finetune-done` | [`commands::FinetuneResult`]         | GGUF fine-tune done   |
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
 //! | `export-progress` | `String` (one phase line)          | GGUF export phase     |
+//! | `tokenize-progress` | `{ file, files, path, bytesDone, bytesTotal, tokens }` | tokenizing a corpus |
 //! | `prepare-progress` | `{ file, files, path, bytesDone, bytesTotal, documents }` | dataset preparation |
 
 #![forbid(unsafe_code)]
@@ -32,6 +33,7 @@ mod prepare;
 mod runtime_export;
 #[cfg(test)]
 mod test_support;
+mod tokenize;
 
 use std::sync::Mutex;
 use sysinfo::System;
@@ -67,6 +69,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             prepare::prepare_dataset,
             runtime_export::preview_runtime_export,
             runtime_export::export_to_runtime,
+            tokenize::tokenize_corpus,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,

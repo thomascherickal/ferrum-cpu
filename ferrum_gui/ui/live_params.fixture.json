@@ -118,10 +118,18 @@
       "target": "modelfile"
     }
   },
+  "tkRun": {
+    "kind": "tokenize",
+    "params": {
+      "inputPaths": [],
+      "outDir": ""
+    }
+  },
   "trStart": {
     "kind": "train",
     "params": {
       "corpusPath": "",
+      "tokenizerPath": "",
       "contextLen": 16,
       "embedDim": 32,
       "numHeads": 4,

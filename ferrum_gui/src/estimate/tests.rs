@@ -588,6 +588,7 @@ fn every_kind_returns_an_estimate_and_a_gpu_never_changes_it() {
         JobKind::Capability,
         JobKind::Prepare,
         JobKind::RuntimeExport,
+        JobKind::Tokenize,
     ];
     let mut nogpu = hw(8, Some(14_000));
     nogpu.gpus.clear();
@@ -714,4 +715,82 @@ fn runtime_export_estimates_depend_on_the_target_and_never_claim_a_ram_figure() 
     assert!(big > small && (4.0..8.0).contains(&big), "{big} {small}");
     let o = estimate(JobKind::RuntimeExport, &with("ollama", 1 << 20), &h, None);
     assert!(o.notes.iter().any(|n| n.contains("ollama serve")) && o.peak_ram_mb.is_none());
+}
+
+#[test]
+fn a_token_file_corpus_has_no_tokenizing_time_and_uses_its_own_vocabulary() {
+    let h = hw(8, Some(14_000));
+    // The same corpus as text (1 MB, 512 vocab) and as a token file of the tokens it would give.
+    let text = JobParams {
+        corpus_bytes: Some(1_000_000),
+        max_tokens: 0,
+        epochs: 3,
+        ..row(16, 32, 4, 2, 64, 512)
+    };
+    let tokens = (1_000_000.0 / bytes_per_token(512)) as u64;
+    let file = JobParams {
+        corpus_tokens: Some(tokens),
+        corpus_vocab: Some(512),
+        corpus_bytes: Some(2 * tokens), // the file is ids, not text: its size must not be used
+        ..text.clone()
+    };
+    let (t, f) = (
+        estimate(JobKind::Train, &text, &h, None),
+        estimate(JobKind::Train, &file, &h, None),
+    );
+    // Same tokens trained; only the tokenizer time differs.
+    let tokenizer_s = 1_000_000.0 / 1024.0 * TOKENIZE_MS_PER_KB / 1000.0;
+    assert!(
+        (secs(&t) - secs(&f) - tokenizer_s).abs() < 0.01,
+        "{} {}",
+        secs(&t),
+        secs(&f)
+    );
+    assert!(f
+        .notes
+        .iter()
+        .any(|n| n.contains("RAM does not grow with the corpus size")));
+    assert!(!t.notes.iter().any(|n| n.contains("Token file")));
+    assert_eq!(
+        t.peak_ram_mb, f.peak_ram_mb,
+        "RAM is the net and the minibatch either way"
+    );
+    // The token file's vocabulary decides the net, not the Vocab field.
+    let other = JobParams {
+        vocab_size: 0,
+        ..file.clone()
+    };
+    assert_eq!(
+        estimate(JobKind::Train, &other, &h, None).peak_ram_mb,
+        f.peak_ram_mb
+    );
+    // And a file 100 times longer takes 100 times longer to train but needs the same RAM.
+    let big = JobParams {
+        corpus_tokens: Some(tokens * 100),
+        ..file
+    };
+    let b = estimate(JobKind::Train, &big, &h, None);
+    assert!((secs(&b) / secs(&f) - 100.0).abs() < 1.0);
+    assert_eq!(b.peak_ram_mb, f.peak_ram_mb);
+}
+
+#[test]
+fn tokenize_needs_an_input_then_scales_with_its_size_with_flat_ram() {
+    let h = hw(8, Some(14_000));
+    let with = |bytes: u64| JobParams {
+        input_bytes: Some(bytes),
+        ..JobParams::default()
+    };
+    assert!(estimate(JobKind::Tokenize, &JobParams::default(), &h, None)
+        .seconds
+        .is_none());
+    // 20.2 MB measured 1.49 s on the reference machine.
+    let s = secs(&estimate(JobKind::Tokenize, &with(20_190_677), &h, None));
+    assert!((1.4..=2.0).contains(&s), "{s}");
+    let big = estimate(JobKind::Tokenize, &with(20_000_000_000), &h, None);
+    assert_eq!(
+        big.peak_ram_mb,
+        estimate(JobKind::Tokenize, &with(1), &h, None).peak_ram_mb
+    );
+    assert_eq!(big.threads_used, 1);
 }

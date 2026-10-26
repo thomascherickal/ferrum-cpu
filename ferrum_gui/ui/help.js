@@ -13,7 +13,7 @@
 (function (global) {
   const KINDS = [
     "instant", "download", "load_file", "clean_text", "train", "generate", "evaluate",
-    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare", "runtime_export",
+    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare", "runtime_export", "tokenize",
   ];
 
   // A "Browse..." button next to a path field.
@@ -149,8 +149,8 @@
     // ── Train ─────────────────────────────────────────────────────────────
     trCorpus: {
       title: "Corpus",
-      what: "The path of the training text file (the corpus). The model learns to continue text like this.",
-      how: "The file must be non-empty and at least a little longer than the Context length in tokens, or training refuses to start. Use the Datasets tab to download and clean one. Its size also drives the time estimate.",
+      what: "The path of the training text file (the corpus), or of a token file made by Tokenize corpus below. The model learns to continue text like this.",
+      how: "A text file must be non-empty and at least a little longer than the Context length in tokens, or training refuses to start. A token file is recognised by its content, needs the Tokenizer file field to name the tokenizer it was made with, and is read from disk window by window, so memory does not grow with its size. Use the Prepare tab to clean and split a corpus. The size drives the time estimate.",
       beginner: "A corpus is the collection of text the model studies. Everything the model will ever know comes from it, so its quality and size matter more than any setting below.",
     },
     trModel: {
@@ -276,7 +276,7 @@
     trTokenizer: {
       title: "Tokenizer file",
       what: "Optional path of a saved BPE tokenizer (a GGUF file) to reuse. If the file does not exist yet, the tokenizer is trained and saved there.",
-      how: "Reusing one keeps the vocabulary stable between experiments and resumes and skips tokenizer training. Not used for character-level models (Vocab 0). It must not be the same file as the model output.",
+      how: "Reusing one keeps the vocabulary stable between experiments and resumes and skips tokenizer training. Not used for character-level models (Vocab 0). It must not be the same file as the model output. Tokenize corpus below needs an existing one, and a token file only trains with the tokenizer it was made with.",
       beginner: "The tokenizer is the dictionary that converts text to numbers. If you train several models on the same text, sharing one tokenizer keeps them comparable.",
     },
     trCkpt: {
@@ -933,6 +933,40 @@
     rxCancel: {
       title: "Stop export",
       does: "Stops the export before the next program starts, or while waiting for LM Studio's listing. A program that is already running (ollama create) cannot be interrupted and finishes.",
+      kind: "instant",
+    },
+    // ── Train: tokenize a corpus ──────────────────────────────────────────
+    tkInput: {
+      title: "Text file or folder to tokenize",
+      what: "The text to turn into a token file: one file, or a folder (every file inside it, in sorted order, hidden files skipped).",
+      how: "Documents inside a file are separated by the separator below. The text is read in small pieces and the ids are written as they are produced, so the corpus may be larger than your memory. Invalid UTF-8 stops the run with the file and byte position; the Prepare tab can repair it.",
+      beginner: "Tokenizing means converting text into the numbers the model actually reads. Doing it once and saving the result lets you train repeatedly on a huge text without ever loading the text again.",
+    },
+    tkInputBrowse: browse("text file"),
+    tkInputDirBrowse: browse("text folder", "dir"),
+    tkOut: {
+      title: "Token file to write",
+      what: "Where the token file is saved. It is a GGUF file of numbers, about 2 bytes per token, usually well under the size of the text.",
+      how: "It is written to a temporary file and renamed when complete, so a stopped or failed run leaves nothing behind. Afterwards the Corpus field above is set to it. Use only with the tokenizer named in the Tokenizer file field.",
+      beginner: "This is the numbers version of your text. Keep it together with the tokenizer file it was made with; the pair is what training needs.",
+    },
+    tkOutBrowse: browse("token file", "save"),
+    tkSep: {
+      title: "Document separator (tokenize)",
+      what: "The text that separates one document from the next inside a file, so an end-of-text marker can be placed between them. It starts as the standard end-of-text marker (see the default text of the field).",
+      how: "Use the same separator as when you prepared the data. The marker between documents is added by the tokenizer, including between files, exactly as the command line does.",
+      beginner: "The end-of-text marker tells the model where one story ends and the next begins, so it does not learn to blend them.",
+    },
+    tkRun: {
+      title: "Tokenize corpus",
+      does: "Reads the text from disk, converts it to token numbers with the tokenizer named in the Tokenizer file field, and writes the token file with progress. Then the Corpus field is set to it so Train can use it.",
+      kind: "tokenize",
+      how: "The same as the train_transformer tokenize command, so the numbers are the ones the command line gives. Training from the token file gives the same model as training from the text.",
+      beginner: "Run it once per corpus and tokenizer. It needs a tokenizer file that already exists, which a first training run with the Tokenizer file field filled in creates.",
+    },
+    tkCancel: {
+      title: "Stop tokenizing",
+      does: "Stops the tokenizing between documents. No token file is written and the text is untouched.",
       kind: "instant",
     },
     // ── Prepare ───────────────────────────────────────────────────────────

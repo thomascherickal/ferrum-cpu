@@ -197,7 +197,7 @@
     <section class="panel" id="panel-train">
       <h2>Train a transformer SLM</h2>
       <div class="row">
-        <label>Corpus <input type="text" id="trCorpus" placeholder="/path/to/corpus.txt" /></label>
+        <label>Corpus <input type="text" id="trCorpus" placeholder="/path/to/corpus.txt, or a token file made below" /></label>
         <button class="ghost browse" id="trCorpusBrowse" data-target="trCorpus">Browse…</button>
       </div>
       <div class="row">
@@ -236,6 +236,32 @@
         <label class="chk"><input type="checkbox" id="trResume" /> Resume from checkpoint</label>
       </div>
       <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
+      <fieldset>
+        <legend>Tokenize a large corpus first (optional)</legend>
+        <p class="hint">For text too big to hold in memory: turn it into a token file once, then put
+          that file in the <strong>Corpus</strong> field above. Training streams it from disk, so RAM
+          does not grow with the corpus. It uses the <strong>Tokenizer file</strong> field above, which
+          must already exist (a first training run with that field filled in creates it), and gives the
+          same model as training on the text.</p>
+        <div class="row">
+          <label>Text file or folder <input type="text" id="tkInput" placeholder="/path/to/corpus.txt or a folder of texts" /></label>
+          <button class="ghost browse" id="tkInputBrowse" data-target="tkInput">File…</button>
+          <button class="ghost browse-dir" id="tkInputDirBrowse" data-target="tkInput">Folder…</button>
+        </div>
+        <div class="row">
+          <label>Token file to write <input type="text" id="tkOut" placeholder="/path/to/corpus.tok.gguf" /></label>
+          <button class="ghost browse-save" id="tkOutBrowse" data-target="tkOut">Save as…</button>
+          <label class="narrow">Document separator <input type="text" id="tkSep" value="&lt;|endoftext|&gt;" /></label>
+        </div>
+        <span class="err" id="errTokenize"></span>
+        <div class="row">
+          <button id="tkRun">Tokenize corpus</button>
+          <button id="tkCancel" class="ghost hidden">Stop</button>
+          <div class="progress"><div class="bar" id="tkBar"></div></div>
+          <span id="tkStatus" class="muted">idle</span>
+        </div>
+        <div id="tkResult" class="result"></div>
+      </fieldset>
       <fieldset>
         <legend>Pre-flight check</legend>
         <div id="trPreflight" class="infocards"></div>
@@ -638,6 +664,7 @@
   <script src="live.js"></script>
   <script src="prepare_tab.js"></script>
   <script src="runtime_tab.js"></script>
+  <script src="tokenize_tab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

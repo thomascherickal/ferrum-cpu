@@ -646,6 +646,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     use crate::evaluate::EvalParams;
     use crate::prepare::PrepareParams;
     use crate::runtime_export::{RuntimeParams, Target};
+    use crate::tokenize::TokenizeParams;
     let fixture: Value =
         serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
     macro_rules! parses {
@@ -684,6 +685,11 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (2, 7, 50, 20_000, true, true)
     );
     assert_eq!(p.doc_sep, ferrum_core::DOC_SEP);
+    let k = parses!("tokenize_corpus", TokenizeParams);
+    assert_eq!(
+        (k.input.as_str(), k.doc_sep.as_str()),
+        ("/d/corpus", ferrum_core::DOC_SEP)
+    );
     let r = parses!("export_to_runtime", RuntimeParams);
     assert_eq!(
         (r.target, r.name.as_str()),
@@ -943,5 +949,186 @@ fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
         e.to_string().contains("other") || e.to_string().contains("variant"),
         "{e}"
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The same tiny model from text and from a token file made by the GUI's Tokenize action:
+/// byte-identical model files (so the same sha256), the Train tab accepting the token file
+/// as its corpus, and the pre-flight and estimates describing it.
+#[test]
+fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_through_ipc() {
+    use crate::jobs::Job;
+    use tauri::Manager;
+    let (app, w) = app();
+    let progress = collect(&app, "tokenize-progress");
+    let dir = tmp("tokens");
+    let words: Vec<&str> =
+        "the cat dog sat ran on a mat log hill and then it saw big small red old"
+            .split(' ')
+            .collect();
+    let mut state = 12345u64;
+    let mut next = move |n: usize| {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize % n
+    };
+    let docs: Vec<String> = (0..60)
+        .map(|_| {
+            let body: Vec<&str> = (0..8 + next(7)).map(|_| words[next(words.len())]).collect();
+            format!("{}.", body.join(" "))
+        })
+        .collect();
+    let corpus = dir.join("c.txt");
+    std::fs::write(&corpus, docs.join(ferrum_core::DOC_SEP)).unwrap();
+    let s = |n: &str| dir.join(n).to_string_lossy().into_owned();
+    let train = |input: &str, model: &str, extra: Value| {
+        let mut p = json!({"method": "transformer", "corpusPath": input, "modelPath": model,
+            "contextLen": 16, "embedDim": 16, "numHeads": 2, "numBlocks": 2, "hiddenDim": 32,
+            "epochs": 2, "lr": 0.01, "batchSize": 8, "vocabSize": 300, "seed": 1337, "threads": 1,
+            "verbose": false, "tokenizerPath": s("tok.gguf")});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        call(&w, "train_slm", json!({"params": p}))
+    };
+
+    // A first run creates the tokenizer; then text and tokens train with it reused.
+    train(&s("c.txt"), &s("seed.gguf"), json!({"epochs": 1})).unwrap();
+    let from_text = train(&s("c.txt"), &s("text.gguf"), json!({})).unwrap();
+    let tk = call(
+        &w,
+        "tokenize_corpus",
+        json!({"params": {"input": s("c.txt"),
+        "tokenizerPath": s("tok.gguf"), "outPath": s("c.tok.gguf")}}),
+    )
+    .unwrap();
+    assert!(tk["tokens"].as_u64().unwrap() > 100 && tk["documents"] == 60 && tk["files"] == 1);
+    assert_eq!(tk["vocabSize"], from_text["outputDim"]);
+    assert!(tk["summary"].as_str().unwrap().starts_with("tokenized "));
+    wait_for(&progress, 1);
+    let first: Value = serde_json::from_str(&progress.lock().unwrap()[0]).unwrap();
+    for k in ["file", "files", "path", "bytesDone", "bytesTotal", "tokens"] {
+        assert!(first.get(k).is_some(), "progress lacks {k}: {first}");
+    }
+    let from_tokens = train(&s("c.tok.gguf"), &s("tokens.gguf"), json!({})).unwrap();
+    let (a, b) = (
+        std::fs::read(dir.join("text.gguf")).unwrap(),
+        std::fs::read(dir.join("tokens.gguf")).unwrap(),
+    );
+    assert_eq!(
+        slm_cli::hash::sha256_hex(&a),
+        slm_cli::hash::sha256_hex(&b),
+        "a token file trains the same model as the text it came from"
+    );
+    assert_eq!(a, b);
+    assert_eq!(from_tokens["tokenizer"], "byte-level BPE");
+    assert_eq!(from_tokens["finalLoss"], from_text["finalLoss"]);
+    // Validation works from a token file too (the tail of the tokens is held out).
+    let v = train(
+        &s("c.tok.gguf"),
+        &s("val.gguf"),
+        json!({"valFraction": 0.2, "patience": 1}),
+    )
+    .unwrap();
+    assert!(v["bytes"].as_u64().unwrap() > 0);
+
+    // The errors a user meets, in the tab's words.
+    let e = train(&s("c.tok.gguf"), &s("x.gguf"), json!({"tokenizerPath": ""})).unwrap_err();
+    assert!(
+        e.as_str()
+            .unwrap()
+            .contains("needs the Tokenizer file field"),
+        "{e}"
+    );
+    let e = train(&s("c.tok.gguf"), &s("x.gguf"), json!({"vocabSize": 0})).unwrap_err();
+    assert!(
+        e.as_str().unwrap().contains("Vocab 0 (character-level)"),
+        "{e}"
+    );
+    // Another tokenizer than the one the file was made with.
+    let other =
+        ferrum_core::ByteBpeTokenizer::train("something else entirely, with other words", 280)
+            .unwrap();
+    std::fs::write(dir.join("other.gguf"), other.to_gguf_bytes()).unwrap();
+    let e = train(
+        &s("c.tok.gguf"),
+        &s("x.gguf"),
+        json!({"tokenizerPath": s("other.gguf")}),
+    )
+    .unwrap_err();
+    assert!(e.as_str().unwrap().contains("is not the tokenizer"), "{e}");
+    assert!(!dir.join("x.gguf").exists());
+
+    // The pre-flight: the token file's own vocabulary, no tokenizing time, RAM that does not scale.
+    let form = |corpus: &str, tokenizer: &str, vocab: u64| {
+        json!({"params": {
+        "contextLen": 16, "embedDim": 16, "numHeads": 2, "numBlocks": 2, "hiddenDim": 32,
+        "epochs": 2, "batchSize": 8, "vocabSize": vocab, "threads": 1, "corpusPath": corpus,
+        "tokenizerPath": tokenizer}})
+    };
+    let pf = call(
+        &w,
+        "preflight_train",
+        form(&s("c.tok.gguf"), &s("tok.gguf"), 512),
+    )
+    .unwrap();
+    assert_eq!(pf["corpus"]["tokens"], tk["tokens"]);
+    assert_eq!(pf["corpus"]["documents"], 60);
+    assert_eq!(pf["corpus"]["ramScalesWithCorpus"], false);
+    assert_eq!(pf["problems"], json!([]));
+    let net = ferrum_core::TransformerNet::check_size(
+        tk["vocabSize"].as_u64().unwrap() as usize,
+        16,
+        16,
+        32,
+        2,
+    )
+    .unwrap();
+    assert_eq!(
+        pf["params"], net,
+        "the net uses the token file's vocabulary, not the Vocab field"
+    );
+    assert_eq!(pf["llamaCpp"]["runs"], true);
+    let bad = call(&w, "preflight_train", form(&s("c.tok.gguf"), "", 0)).unwrap();
+    assert_eq!(bad["problems"].as_array().unwrap().len(), 2, "{bad}");
+    assert!(call(&w, "preflight_train", form(&s("c.txt"), "", 512)).unwrap()["corpus"].is_null());
+    // Estimates: Train from tokens has no tokenizing time; Tokenize reads the sizes from disk.
+    let est = call(
+        &w,
+        "estimate_job",
+        json!({"kind": "train", "params": form(&s("c.tok.gguf"), &s("tok.gguf"), 512)["params"]}),
+    )
+    .unwrap();
+    assert!(est["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n.as_str().unwrap().contains("RAM does not grow")));
+    let est = call(
+        &w,
+        "estimate_job",
+        json!({"kind": "tokenize", "params": {
+        "inputPaths": [s("c.txt")], "outDir": s("c.tok.gguf")}}),
+    )
+    .unwrap();
+    assert!(est["seconds"].as_f64().unwrap() > 0.0 && est["peakRamMb"].as_f64().is_some());
+
+    // One tokenize job at a time; cancel_job knows the kind.
+    let st = app.state::<crate::AppState>();
+    let held = st.jobs.start(Job::Tokenize).unwrap();
+    let e = call(
+        &w,
+        "tokenize_corpus",
+        json!({"params": {"input": s("c.txt"),
+        "tokenizerPath": s("tok.gguf"), "outPath": s("again.tok.gguf")}}),
+    )
+    .unwrap_err();
+    assert_eq!(e.as_str().unwrap(), "a tokenizing job is already running");
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "tokenize"})).unwrap(),
+        true
+    );
+    assert!(held.cancelled() && !dir.join("again.tok.gguf").exists());
     let _ = std::fs::remove_dir_all(dir);
 }

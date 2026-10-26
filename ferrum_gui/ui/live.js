@@ -25,8 +25,9 @@
     dsLoadFile: (d) => ({ textPath: str(d, "dsFile") }),
     dsClean: (d) => ({ textChars: len(d, "dsRaw") }),
     dpRun: (d) => ({ inputPaths: lines(d, "dpInputs"), outDir: str(d, "dpOut") }),
+    tkRun: (d) => ({ inputPaths: lines(d, "tkInput"), outDir: str(d, "tkOut") }),
     trStart: (d) => ({
-      corpusPath: str(d, "trCorpus"), contextLen: int(d, "trContext"), embedDim: int(d, "trEmbed"),
+      corpusPath: str(d, "trCorpus"), tokenizerPath: str(d, "trTokenizer"), contextLen: int(d, "trContext"), embedDim: int(d, "trEmbed"),
       numHeads: int(d, "trHeads"), numBlocks: int(d, "trBlocks"), hiddenDim: int(d, "trHidden"),
       epochs: int(d, "trEpochs"), batchSize: int(d, "trBatch"), vocabSize: int(d, "trVocab"),
       threads: int(d, "trThreads"), windowStride: int(d, "trStride"), maxTokens: int(d, "trTokens"),

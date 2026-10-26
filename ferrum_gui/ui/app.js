@@ -126,6 +126,7 @@ wireStop("ftCancel", "finetune");
 wireStop("exCancel", "export");
 wireStop("dpCancel", "prepare");
 wireStop("rxCancel", "runtime_export");
+wireStop("tkCancel", "tokenize");
 
 // ── Terminal (bottom dock) ───────────────────────────────────────────────────
 const termOut = $("termOut");
@@ -345,6 +346,12 @@ $("panel-train").querySelectorAll("input,select").forEach((el) => {
   el.addEventListener("change", schedulePreflight);
 });
 $("trForce").addEventListener("change", updateStartGate);
+// "Tokenize corpus" (the block in the Train form; its code is in tokenize_tab.js): a finished token
+// file becomes the Train corpus, and the pre-flight is asked again.
+const tokenizeTab = window.FerrumTokenizeTab.create({
+  $, invoke, toast, setErr, clearErr, jobRunning, stopAsked,
+  useAsCorpus: (path) => { $("trCorpus").value = path; schedulePreflight(); },
+});
 $("tab-train").addEventListener("click", schedulePreflight);
 
 $("trStart").addEventListener("click", async () => {
@@ -942,6 +949,7 @@ async function wireEvents() {
     drawFtChart();
   });
   await listen("prepare-progress", (e) => prepareTab.onProgress(e.payload));
+  await listen("tokenize-progress", (e) => tokenizeTab.onProgress(e.payload));
   await listen("export-progress", (e) => { $("exStatus").textContent = e.payload; });
   await listen("gen-fragment", (e) => { if (generating) $("genOut").textContent += e.payload; });
 }

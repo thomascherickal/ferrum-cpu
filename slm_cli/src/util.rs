@@ -1,15 +1,6 @@
 //! Small helpers shared by several subcommands.
 
-use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// Lowercase hex sha256 of `bytes`.
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 pub(crate) fn time_seed() -> u64 {
     SystemTime::now()

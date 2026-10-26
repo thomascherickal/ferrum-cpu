@@ -71,6 +71,8 @@
       `<div class="card"><div class="k">Peak RAM (estimate)</div><div class="v ${pf.fitsInRam ? "" : "verdict-weak"}">${esc(ram)}</div></div>` +
       `<div class="card"><div class="k">Runs in llama.cpp?</div><div class="v">${verdict}</div></div>` +
       `<div class="card"><div class="k">About</div><div class="v">${esc(lc.reason)}</div></div>` +
+      (pf.corpus ? card("Corpus", `Token file: ${pf.corpus.tokens.toLocaleString("en-US")} tokens, ${pf.corpus.documents.toLocaleString("en-US")} documents, vocabulary ${pf.corpus.vocab}`) +
+        card("Corpus and RAM", pf.corpus.note) : "") +
       (pf.problems || []).map((m) => `<div class="card"><div class="k">Fix first</div><div class="v verdict-weak">${esc(m)}</div></div>`).join("");
   }
   // Why Start is blocked ("" when it is not): the run needs more RAM than the engine allows.

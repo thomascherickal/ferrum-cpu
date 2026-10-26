@@ -24,6 +24,18 @@ pub struct LlamaCpp {
     pub reason: String,
 }
 
+/// What the corpus is, when it is a token file (`tokenize`): its ids stay on disk.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CorpusInfo {
+    pub tokens: u64,
+    pub documents: u64,
+    pub vocab: usize,
+    /// Always `false` for a token file: only the current minibatch's windows are in memory.
+    pub ram_scales_with_corpus: bool,
+    pub note: String,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Preflight {
@@ -37,6 +49,8 @@ pub struct Preflight {
     pub fits_in_ram: bool,
     pub seconds: Option<f64>,
     pub llama_cpp: LlamaCpp,
+    /// Set when the corpus is a token file.
+    pub corpus: Option<CorpusInfo>,
     /// Why the run cannot start for a reason other than RAM.
     pub problems: Vec<String>,
 }
@@ -75,7 +89,18 @@ fn problems(p: &JobParams) -> Vec<String> {
     if p.batch_size == 0 || (p.epochs == 0 && p.max_tokens == 0) {
         out.push("Set epochs (or a token budget) and a batch size of at least 1.".into());
     }
-    if (1..256).contains(&p.vocab_size) {
+    if p.corpus_tokens.is_some() {
+        // A token file is BPE-tokenized and its vocabulary is the tokenizer's.
+        if p.vocab_size == 0 {
+            out.push("A token file is BPE-tokenized: set Vocab to 256 or more (the model uses the token file's own vocabulary).".into());
+        }
+        if p.tokenizer_path.trim().is_empty() {
+            out.push(
+                "A token file needs the Tokenizer file field: the file Tokenize corpus used."
+                    .into(),
+            );
+        }
+    } else if (1..256).contains(&p.vocab_size) {
         out.push("Vocab must be 0 (character level) or at least 256 (byte-level BPE).".into());
     }
     out
@@ -92,7 +117,14 @@ pub fn preflight(p: &JobParams, hw: &HardwareInfo, bench: Option<&Throughput>) -
         ram_limit_mb: None,
         fits_in_ram: true,
         seconds: None,
-        llama_cpp: llama_cpp(p.vocab_size),
+        llama_cpp: llama_cpp(p.corpus_vocab.unwrap_or(p.vocab_size)),
+        corpus: p.corpus_tokens.map(|tokens| CorpusInfo {
+            tokens,
+            documents: p.corpus_documents.unwrap_or(0),
+            vocab: p.corpus_vocab.unwrap_or(0),
+            ram_scales_with_corpus: false,
+            note: "Token file: the ids stay on disk and only the current minibatch's windows are read, so the RAM figure does not depend on how large the corpus is.".into(),
+        }),
         problems,
     };
     if !out.problems.is_empty() {
@@ -100,7 +132,9 @@ pub fn preflight(p: &JobParams, hw: &HardwareInfo, bench: Option<&Throughput>) -
     }
     // Character-level models have one token per distinct character; the estimate assumes
     // plain ASCII (128), as `estimate::train` does.
-    let vocab = if p.vocab_size == 0 { 128 } else { p.vocab_size };
+    let vocab = p
+        .corpus_vocab
+        .unwrap_or(if p.vocab_size == 0 { 128 } else { p.vocab_size });
     match TransformerNet::check_size(
         vocab,
         p.context_len,
@@ -253,6 +287,48 @@ mod tests {
         assert!(!bad.llama_cpp.runs);
         assert!(bad.problems.iter().any(|m| m.contains("Vocab must be 0")));
         assert_eq!(bad.params, None, "an invalid form gets no numbers");
+    }
+
+    #[test]
+    fn a_token_file_corpus_uses_its_vocabulary_and_says_ram_does_not_scale() {
+        let mut p = defaults();
+        p.corpus_tokens = Some(5_000_000_000);
+        p.corpus_documents = Some(1_000_000);
+        p.corpus_vocab = Some(1024);
+        p.tokenizer_path = "tok.gguf".into();
+        let r = preflight(&p, &hw(Some(8_000)), None);
+        let want = TransformerNet::check_size(1024, 16, 32, 64, 2).unwrap() as u64;
+        assert_eq!(
+            r.params,
+            Some(want),
+            "the file's vocabulary, not the Vocab field (512)"
+        );
+        let c = r.corpus.clone().unwrap();
+        assert_eq!(
+            (c.tokens, c.documents, c.vocab, c.ram_scales_with_corpus),
+            (5_000_000_000, 1_000_000, 1024, false)
+        );
+        assert!(c
+            .note
+            .contains("does not depend on how large the corpus is"));
+        assert!(r.problems.is_empty() && r.fits_in_ram, "{r:?}");
+        // 5 billion tokens or 5 thousand: the same RAM.
+        p.corpus_tokens = Some(5_000);
+        let small = preflight(&p, &hw(Some(8_000)), None);
+        assert_eq!(small.peak_ram_mb, r.peak_ram_mb);
+        assert!(r.seconds.unwrap() > small.seconds.unwrap());
+        // A token file is BPE: Vocab 0 and a missing tokenizer file are problems the run would hit.
+        p.vocab_size = 0;
+        p.tokenizer_path = String::new();
+        let bad = preflight(&p, &hw(Some(8_000)), None);
+        assert_eq!(bad.problems.len(), 2, "{bad:?}");
+        assert!(
+            bad.problems[0].contains("BPE-tokenized") && bad.problems[1].contains("Tokenizer file")
+        );
+        // The llama.cpp verdict follows the file's vocabulary: it is BPE, so it runs.
+        assert!(bad.llama_cpp.runs);
+        // Text corpora have no corpus card.
+        assert!(preflight(&defaults(), &hw(None), None).corpus.is_none());
     }
 
     #[test]

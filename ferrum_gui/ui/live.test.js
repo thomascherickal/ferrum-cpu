@@ -141,6 +141,24 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     assert.ok(show(doc, live, "rxCancel").includes("Estimated time: instant"));
   }
 
+  // 1d. The Train tab's Tokenize corpus button asks for a "tokenize" estimate with its input and
+  // output, and the Train button also sends the tokenizer field.
+  {
+    const { doc, live, flushTimers, estimateCalls } = build();
+    await live.start();
+    gotoTab(doc, "train");
+    doc.getElementById("tkInput").value = "/data/corpus";
+    doc.getElementById("tkOut").value = "/data/c.tok.gguf";
+    doc.getElementById("trTokenizer").value = "/data/tok.gguf";
+    doc.getElementById("tkInput").dispatch("input");
+    await flushTimers();
+    const tk = estimateCalls().filter((c) => c.args.kind === "tokenize").pop();
+    assert.deepStrictEqual(tk.args.params, { inputPaths: ["/data/corpus"], outDir: "/data/c.tok.gguf" });
+    assert.strictEqual(estimateCalls().filter((c) => c.args.kind === "train").pop().args.params.tokenizerPath, "/data/tok.gguf");
+    assert.ok(show(doc, live, "tkRun").includes("Estimated time: about"));
+    assert.ok(show(doc, live, "tkCancel").includes("Estimated time: instant"));
+  }
+
   // 2. A button tooltip says what it does AND an estimate; fields only help text.
   {
     const { doc, live, flushTimers, estimateCalls, calls } = build();
@@ -153,7 +171,7 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     const train = estimateCalls().filter((c) => c.args.kind === "train");
     assert.strictEqual(train.length, 1);
     assert.deepStrictEqual(train[0].args.params, {
-      corpusPath: "", contextLen: 16, embedDim: 32, numHeads: 4, numBlocks: 2, hiddenDim: 64, epochs: 100, batchSize: 16,
+      corpusPath: "", tokenizerPath: "", contextLen: 16, embedDim: 32, numHeads: 4, numBlocks: 2, hiddenDim: 64, epochs: 100, batchSize: 16,
       vocabSize: 512, threads: 0, windowStride: 0, maxTokens: 0, valFraction: 0,
     });
     let text = show(doc, live, "trStart");
@@ -190,7 +208,7 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     assert.strictEqual(pending()[0].ms, 300);
     assert.strictEqual(estimateCalls().length, before, "nothing is sent before the debounce fires");
     await flushTimers();
-    assert.strictEqual(estimateCalls().length, before + 1);
+    assert.strictEqual(estimateCalls().length, before + 2, "the Train panel has two estimated buttons: Tokenize corpus and Train");
     assert.strictEqual(estimateCalls().pop().args.params.epochs, 200);
     text = bubbleOf(doc).textContent;
     assert.ok(text.includes("about 5.5 h"), "open tooltip shows the new estimate: " + text); // 20000 s
@@ -245,7 +263,8 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
   {
     const slow = [];
     const { doc, live, state, estimateCalls } = build();
-    state.estimate = (args) => new Promise((res) => slow.push(() => res({ kind: args.kind, seconds: 10 * (args.params.epochs || 1), notes: [], threadsUsed: 1 })));
+    state.estimate = (args) => (args.kind !== "train" ? { kind: args.kind, seconds: 1, notes: [], threadsUsed: 1 }
+      : new Promise((res) => slow.push(() => res({ kind: args.kind, seconds: 10 * (args.params.epochs || 1), notes: [], threadsUsed: 1 }))));
     doc.getElementById("panel-datasets").classList.remove("active");
     doc.getElementById("panel-train").classList.add("active");
     const started = live.start(); // blocks on the first (slow) estimate
@@ -259,7 +278,7 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     await settle();
     slow[0](); // ...then the stale one
     await Promise.all([started, second]);
-    assert.strictEqual(estimateCalls().length, 2);
+    assert.strictEqual(estimateCalls().filter((c) => c.args.kind === "train").length, 2);
     const text = show(doc, live, "trStart");
     assert.ok(text.includes("about 50 seconds"), text); // epochs 5 -> 50 s, not the stale 1000 s
   }

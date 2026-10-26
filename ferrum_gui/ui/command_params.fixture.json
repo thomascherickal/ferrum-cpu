@@ -111,6 +111,12 @@
     "resume": null,
     "raw": true
   },
+  "tokenize_corpus": {
+    "input": "/d/corpus",
+    "tokenizerPath": "/d/tok.gguf",
+    "outPath": "/d/c.tok.gguf",
+    "docSep": "<|endoftext|>"
+  },
   "train_slm": {
     "method": "transformer",
     "corpusPath": "/data/c.txt",

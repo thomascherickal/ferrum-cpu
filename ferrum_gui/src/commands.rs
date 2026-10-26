@@ -269,6 +269,27 @@ pub async fn train_slm<R: Runtime>(
         .map_err(|e| format!("task error: {e}"))?
 }
 
+/// Open the Train tab's corpus as a token file with its tokenizer (the CLI's checks: the tokenizer
+/// is the one the file was made with, and the vocabulary is BPE).
+fn open_token_corpus(
+    p: &TrainParams,
+) -> Result<(ferrum_core::TokenFile, ferrum_core::ByteBpeTokenizer), String> {
+    let tok = p.tokenizer_path.trim();
+    slm_cli::token_corpus::open_token_file(
+        &p.corpus_path,
+        Some(tok).filter(|t| !t.is_empty()),
+        p.vocab_size == 0,
+    )
+    .map_err(|e| {
+        e.replace(
+            "training from a token file needs --tokenizer <tok.gguf>, the file `tokenize` used",
+            "training from a token file needs the Tokenizer file field: the file Tokenize corpus used",
+        )
+        .replace("--vocab 0 (character-level)", "Vocab 0 (character-level)")
+        .replace("re-run `tokenize` with it", "run Tokenize corpus again with it")
+    })
+}
+
 fn train_inner<R: Runtime>(
     app: AppHandle<R>,
     p: TrainParams,
@@ -300,12 +321,24 @@ fn train_inner<R: Runtime>(
     if !(p.lr.is_finite() && p.lr > 0.0) {
         return Err("learning rate must be a positive number".into());
     }
-    let corpus = std::fs::read_to_string(&p.corpus_path)
-        .map_err(|e| format!("cannot read corpus {}: {e}", p.corpus_path))?;
-    if corpus.trim().is_empty() {
-        return Err(format!("corpus {} is empty", p.corpus_path));
-    }
-    validate_for_training(&corpus, p.context_len).map_err(|e| e.to_string())?;
+    // A GGUF corpus is a token file (`tokenize`), detected by content like the CLI does: it is
+    // streamed from disk instead of read here.
+    let mut token_input = if ferrum_core::is_gguf_file(&p.corpus_path) {
+        Some(open_token_corpus(&p)?)
+    } else {
+        None
+    };
+    let corpus = if token_input.is_some() {
+        String::new()
+    } else {
+        let corpus = std::fs::read_to_string(&p.corpus_path)
+            .map_err(|e| format!("cannot read corpus {}: {e}", p.corpus_path))?;
+        if corpus.trim().is_empty() {
+            return Err(format!("corpus {} is empty", p.corpus_path));
+        }
+        validate_for_training(&corpus, p.context_len).map_err(|e| e.to_string())?;
+        corpus
+    };
 
     ferrum_core::set_verbose(p.verbose);
 
@@ -372,23 +405,34 @@ fn train_inner<R: Runtime>(
                 skip_memory_check: p.force,
                 ..TransformerConfig::default()
             };
-            if p.val_fraction > 0.0 {
-                let val = ValidationConfig {
-                    val_fraction: p.val_fraction,
-                    patience: p.patience,
-                };
-                GenerativeSLM::train_transformer_config_validated(
+            let val = ValidationConfig {
+                val_fraction: p.val_fraction,
+                patience: p.patience,
+            };
+            match (token_input.as_mut(), p.val_fraction > 0.0) {
+                (Some((file, tok)), true) => GenerativeSLM::train_transformer_tokens_validated(
+                    file,
+                    tok,
+                    &cfg,
+                    p.threads,
+                    &val,
+                    &mut rng,
+                    |v| progress(v.epoch, v.train_loss),
+                ),
+                (Some((file, tok)), false) => GenerativeSLM::train_transformer_tokens(
+                    file, tok, &cfg, p.threads, &mut rng, progress,
+                ),
+                (None, true) => GenerativeSLM::train_transformer_config_validated(
                     &corpus,
                     &cfg,
                     p.threads,
                     &val,
                     &mut rng,
                     |v| progress(v.epoch, v.train_loss),
-                )
-            } else {
-                GenerativeSLM::train_transformer_config_threaded(
+                ),
+                (None, false) => GenerativeSLM::train_transformer_config_threaded(
                     &corpus, &cfg, p.threads, &mut rng, progress,
-                )
+                ),
             }
         }
         other => {

@@ -98,6 +98,10 @@ const CLEAN_BYTES_PER_S: f64 = 100e6;
 /// of TinyStories took 0.62 s plain, 0.93 s with dedup + NFKC and 1.18 s with lowercase too
 /// (release, 2026-10-27); the slowest is rounded down. Its RAM stays near 7 MB on that input.
 const PREPARE_BYTES_PER_S: f64 = 18e6;
+/// `tokenize` (BPE-encode and write a token file), bytes of input per second on one thread: 20.2 MB
+/// of TinyStories took 1.49 s and 1.13 MB took 0.08 s with a 1,024-token vocabulary (release,
+/// 2026-10-27, 14 MB/s), rounded down. Its RAM stays near 7 MB.
+const TOKENIZE_BYTES_PER_S: f64 = 13e6;
 /// `ollama create` reads and hashes the model file into its store, bytes/s. Assumed, not measured
 /// (nothing in this repository starts Ollama while it measures); LM Studio's `import -l` links the
 /// file instead and then waits for its listing, up to `LMS_LISTING_WAIT_S`.
@@ -137,6 +141,8 @@ pub enum JobKind {
     Prepare,
     /// The Export tab's Ollama / LM Studio buttons (`JobParams::target` says which).
     RuntimeExport,
+    /// The Train tab's "Tokenize corpus": text files to a `ferrum-tokens` file.
+    Tokenize,
 }
 
 /// Facts about a Ferrum SLM file (`generate`, `evaluate`), read from its GGUF header.
@@ -199,7 +205,10 @@ pub struct JobParams {
     pub resume_path: String,
     /// The Prepare tab's input files and folders, and its output folder.
     pub input_paths: Vec<String>,
+    /// The Prepare tab's output folder; for Tokenize, the token file to write.
     pub out_dir: String,
+    /// The Train tab's tokenizer file (a token-file corpus needs it).
+    pub tokenizer_path: String,
     /// `ollama`, `lmstudio` or `modelfile` (the Export tab's run-it-in buttons).
     pub target: String,
     // Resolved by `estimate_cmd` (tests set them directly).
@@ -209,6 +218,11 @@ pub struct JobParams {
     pub resume_bytes: Option<u64>,
     /// Bytes of every file under `input_paths`.
     pub input_bytes: Option<u64>,
+    /// Set when `corpus_path` is a token file: its tokens, documents and vocabulary (read from
+    /// its header; the ids stay on disk).
+    pub corpus_tokens: Option<u64>,
+    pub corpus_documents: Option<u64>,
+    pub corpus_vocab: Option<usize>,
     pub slm: Option<SlmFacts>,
     pub gguf: Option<GgufFacts>,
 }
@@ -456,7 +470,25 @@ pub fn estimate(
         JobKind::GgufExport => export(d, p),
         JobKind::Prepare => prepare(d, p, speed),
         JobKind::RuntimeExport => runtime_export(d, p),
+        JobKind::Tokenize => tokenize(d, p, speed),
     }
+}
+
+fn tokenize(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
+    let Some(bytes) = p.input_bytes else {
+        d.note("Add an input file or folder to get an estimate.");
+        return d.done(None, (1.0, 1.0), None, None);
+    };
+    d.threads = 1;
+    let secs = 0.05 + bytes as f64 / (TOKENIZE_BYTES_PER_S * speed);
+    d.note(format!(
+        "{:.1} MB of text at about {:.0} MB/s on one thread (a 1,024-token vocabulary measured; a larger one is a little slower).",
+        bytes as f64 / 1e6,
+        TOKENIZE_BYTES_PER_S / 1e6 * speed
+    ));
+    d.note("Streams in 1 MiB chunks and writes the ids as it goes, so RAM does not grow with the corpus; the token file is about 2 bytes per token (4 above 32,768 tokens in the vocabulary), roughly 0.6 times the text.");
+    let limit = d.hw.ram_available_mb.map(|a| a as f64 * GGUF_RAM_FRACTION);
+    d.done(Some(secs), (0.5, 2.5), Some(16e6), limit)
 }
 
 fn runtime_export(mut d: Draft, p: &JobParams) -> Estimate {
@@ -522,7 +554,10 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
         return none(d, "Set epochs (or a token budget) and a batch size.");
     }
     // Character-level models (vocab 0) have one token per distinct character; assume plain ASCII.
-    let vocab = if p.vocab_size == 0 { 128 } else { p.vocab_size };
+    // A token file fixes the vocabulary: it is the tokenizer's, whatever the Vocab field says.
+    let vocab = p
+        .corpus_vocab
+        .unwrap_or(if p.vocab_size == 0 { 128 } else { p.vocab_size });
     let n = match TransformerNet::check_size(
         vocab,
         p.context_len,
@@ -533,13 +568,22 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
         Ok(n) => n as u64,
         Err(e) => return none(d, &format!("This model is too large to train: {e}")),
     };
-    let corpus = p.corpus_bytes.unwrap_or_else(|| {
-        d.note("Corpus not found yet: assuming 100 KB of text.");
-        100_000
-    }) as f64;
-    let bpt = bytes_per_token(p.vocab_size);
     let val = f64::from(p.val_fraction).clamp(0.0, 0.5);
-    let tokens = corpus / bpt * (1.0 - val);
+    let (corpus, tokens) = match p.corpus_tokens {
+        Some(t) => {
+            d.note(format!(
+                "Token file: {t} tokens stay on disk and only the current minibatch's windows are read, so RAM does not grow with the corpus size and there is no tokenizing time."
+            ));
+            (0.0, t as f64 * (1.0 - val))
+        }
+        None => {
+            let corpus = p.corpus_bytes.unwrap_or_else(|| {
+                d.note("Corpus not found yet: assuming 100 KB of text.");
+                100_000
+            }) as f64;
+            (corpus, corpus / bytes_per_token(p.vocab_size) * (1.0 - val))
+        }
+    };
     let ctx = p.context_len as f64;
     let stride = if p.window_stride == 0 {
         ctx
@@ -560,7 +604,7 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
     let flops_tok = 6.0 * m + 12.0 * (p.num_blocks * p.context_len * p.embed_dim) as f64;
     let scale = interp(&TRAIN_THREAD_SCALE, d.threads as f64);
     let rate = (train_gflops_8(m) * scale).max(TRAIN_FLOOR_GFLOPS) * 1e9 * speed / flops_tok;
-    let tokenize = if p.vocab_size >= 256 {
+    let tokenize = if p.corpus_tokens.is_none() && p.vocab_size >= 256 {
         corpus / 1024.0 * TOKENIZE_MS_PER_KB / 1000.0 / speed
     } else {
         0.0

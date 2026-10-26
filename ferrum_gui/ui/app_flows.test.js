@@ -590,6 +590,73 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(chars.$("rxPath").value, "");
   }
 
+  // ── Tokenize corpus (Train tab): form, arguments, progress, result, errors, Stop, preflight ──
+  {
+    const DONE = { outPath: "/d/c.tok.gguf", tokens: 6362444, documents: 24823, files: 2, vocabSize: 1024, bytesIn: 20190677, bytesOut: 12725336, seconds: 1.5,
+      summary: "tokenized /d/corpus -> /d/c.tok.gguf: 6362444 tokens, 24823 documents, vocab 1024 (20190677 bytes in, 12725336 bytes out, 1.5s)" };
+    const a = await start({ tokenize_corpus: async () => DONE });
+    await a.click("tab-train");
+    await a.click("tkRun");
+    assert.strictEqual(a.$("errTokenize").textContent, "Text file or folder is required");
+    a.set("tkInput", "/d/corpus"); await a.click("tkRun");
+    assert.ok(a.$("errTokenize").textContent.startsWith("Fill in the Tokenizer file field above"), a.$("errTokenize").textContent);
+    a.set("trTokenizer", "/d/tok.gguf"); await a.click("tkRun");
+    assert.strictEqual(a.$("errTokenize").textContent, "Token file to write is required");
+    assert.strictEqual(a.of("tokenize_corpus").length, 0, "nothing is sent for an invalid form");
+    a.set("tkOut", "/d/c.tok.gguf");
+    const preflights = a.of("preflight_train").length;
+    await a.click("tkRun");
+    await new Promise((r) => setTimeout(r, 40)); await settle(10); // the pre-flight debounce runs for real (5 ms in the stub)
+    const sent = a.of("tokenize_corpus")[0].args.params;
+    captured.tokenize_corpus = sent;
+    assert.deepStrictEqual(sent, { input: "/d/corpus", tokenizerPath: "/d/tok.gguf", outPath: "/d/c.tok.gguf", docSep: "<|endoftext|>" });
+    const text = a.$("tkResult").textContent;
+    assert.ok(text.includes("Wrote 6,362,444 tokens from 24,823 documents (2 file(s), vocabulary 1024)") && text.includes("-> /d/c.tok.gguf") && text.includes("tokenized /d/corpus"), text);
+    assert.strictEqual(a.$("tkStatus").textContent, "done");
+    assert.strictEqual(a.$("trCorpus").value, "/d/c.tok.gguf", "Train now points at the token file");
+    assert.ok(a.of("preflight_train").length > preflights, "the pre-flight is asked again for the new corpus");
+    assert.strictEqual(a.of("preflight_train").slice(-1)[0].args.params.corpusPath, "/d/c.tok.gguf");
+    assert.strictEqual(a.of("preflight_train").slice(-1)[0].args.params.tokenizerPath, "/d/tok.gguf");
+    assert.strictEqual(a.$("tkRun").disabled, false);
+    a.emit("tokenize-progress", { file: 1, files: 2, path: "/d/corpus/a.txt", bytesDone: 10000000, bytesTotal: 40000000, tokens: 2500000 });
+    assert.strictEqual(a.$("tkBar").style.width, "25%");
+    assert.strictEqual(a.$("tkStatus").textContent, "file 1/2 - 10.0 MB of 40.0 MB - 2,500,000 tokens");
+  }
+  {
+    // The pre-flight of a token file: the corpus cards, in plain text, and the same Start rules.
+    const PF = { ...PF_OK, corpus: { tokens: 6362444, documents: 24823, vocab: 1024, ramScalesWithCorpus: false, note: "Token file: the ids stay on disk." } };
+    const a = await start({ preflight_train: async () => PF });
+    await a.click("tab-train");
+    await settle(8);
+    const html = a.$("trPreflight").innerHTML;
+    assert.ok(html.includes("Token file: 6,362,444 tokens, 24,823 documents, vocabulary 1024") && html.includes("the ids stay on disk"), html);
+    assert.strictEqual(a.$("trStart").disabled, false);
+  }
+  {
+    // Errors as the backend wrote them, and Stop.
+    const bad = "/d/a.txt: invalid UTF-8 at byte 9 (the Prepare tab's 'Replace invalid UTF-8 bytes' repairs it)";
+    const a = await start({ tokenize_corpus: async () => { throw bad; } });
+    a.set("tkInput", "/d/a.txt"); a.set("tkOut", "/d/o.tok.gguf"); a.set("trTokenizer", "/d/tok.gguf");
+    await a.click("tkRun");
+    assert.strictEqual(a.$("errTokenize").textContent, bad);
+    assert.strictEqual(a.$("tkStatus").textContent, "error");
+    assert.strictEqual(a.$("trCorpus").value, "", "a failed run does not change the corpus");
+
+    let release;
+    const b = await start({ tokenize_corpus: () => new Promise((_, rej) => { release = rej; }), cancel_job: async () => true });
+    b.set("tkInput", "/d/a.txt"); b.set("tkOut", "/d/o.tok.gguf"); b.set("trTokenizer", "/d/tok.gguf");
+    assert.ok(b.$("tkCancel").classList.contains("hidden"));
+    b.$("tkRun").dispatch("click"); await settle(4);
+    assert.ok(!b.$("tkCancel").classList.contains("hidden") && b.$("tkRun").disabled);
+    await b.click("tkCancel");
+    assert.deepStrictEqual(b.of("cancel_job")[0].args, { kind: "tokenize" });
+    release("tokenize cancelled; no file was written");
+    await settle(6);
+    assert.strictEqual(b.$("tkStatus").textContent, "stopped; no file was written");
+    assert.strictEqual(b.$("errTokenize").textContent, "");
+    assert.ok(b.$("tkCancel").classList.contains("hidden") && !b.$("tkRun").disabled);
+  }
+
   // ── Train pre-flight (G8): numbers, the llama.cpp badge, and a blocked Start ──
   {
     const a = await start();
@@ -808,7 +875,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
   {
     const file = require("node:path").join(__dirname, "command_params.fixture.json");
     const sorted = Object.fromEntries(Object.keys(captured).sort().map((k) => [k, captured[k]]));
-    assert.strictEqual(Object.keys(sorted).length, 10, "every flow captured its arguments");
+    assert.strictEqual(Object.keys(sorted).length, 11, "every flow captured its arguments");
     if (process.env.UPDATE_FIXTURE) require("node:fs").writeFileSync(file, JSON.stringify(sorted, null, 2) + "\n");
     assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/app_flows.test.js");
   }

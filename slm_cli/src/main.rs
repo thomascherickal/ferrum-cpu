@@ -70,6 +70,7 @@
 
 mod args;
 mod cmd_prepare;
+mod cmd_tokenize;
 mod eval;
 mod eval_gguf;
 mod export;
@@ -82,7 +83,6 @@ mod resume;
 mod run_gguf;
 mod stop;
 mod token_train;
-mod tokenize;
 mod train;
 mod usage;
 mod util;
@@ -90,6 +90,7 @@ mod validate;
 
 use crate::args::*;
 use crate::cmd_prepare::cmd_prepare;
+use crate::cmd_tokenize::cmd_tokenize;
 use crate::eval::*;
 use crate::eval_gguf::cmd_eval_gguf;
 use crate::export::*;
@@ -97,7 +98,6 @@ use crate::finetune::*;
 use crate::generate::*;
 use crate::info::*;
 use crate::run_gguf::*;
-use crate::tokenize::cmd_tokenize;
 use crate::train::*;
 use crate::usage::*;
 

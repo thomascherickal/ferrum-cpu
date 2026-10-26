@@ -300,3 +300,43 @@ fn prepare_estimate_matches_the_measured_wall_time() {
     assert_in_band("prepare ~6 MB", secs(&est), measured);
     assert!(est.fits_in_ram);
 }
+
+#[test]
+fn tokenize_estimate_matches_the_measured_wall_time() {
+    use slm_cli::tokenize::{tokenize, TokenizeOptions};
+    let d = dir("tokenize");
+    let doc = |i: usize| format!("Document {i}: {}", TEXT.repeat(8));
+    let docs: Vec<String> = (0..6000).map(doc).collect();
+    let src = d.0.join("in.txt");
+    std::fs::write(&src, docs.join(ferrum_core::DOC_SEP)).unwrap();
+    let tok =
+        ferrum_core::ByteBpeTokenizer::train(&docs[..50].join(ferrum_core::DOC_SEP), 512).unwrap();
+    let tokp = d.0.join("tok.gguf");
+    std::fs::write(&tokp, tok.to_gguf_bytes()).unwrap();
+    let path = src.to_string_lossy().into_owned();
+    let out = d.0.join("c.tok.gguf").to_string_lossy().into_owned();
+    let t = Instant::now();
+    tokenize(
+        &TokenizeOptions {
+            input: path.clone(),
+            tokenizer: tokp.to_string_lossy().into(),
+            out: out.clone(),
+            doc_sep: ferrum_core::DOC_SEP.into(),
+            stop: ferrum_core::StopCondition::none(),
+        },
+        &mut |_| {},
+    )
+    .unwrap();
+    let measured = t.elapsed().as_secs_f64();
+    let est = estimate_now(
+        JobKind::Tokenize,
+        JobParams {
+            input_paths: vec![path],
+            out_dir: out,
+            ..JobParams::default()
+        },
+        None,
+    );
+    assert_in_band("tokenize ~6 MB", secs(&est), measured);
+    assert!(est.fits_in_ram);
+}

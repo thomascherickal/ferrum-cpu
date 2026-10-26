@@ -40,6 +40,12 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
+# The tokenizer's pre-tokenizer looks up a Unicode category per character, and NFKC (prepare) a
+# decomposition: unoptimized, tokenizing 7 MB took 7.7 s instead of 0.5 s.
+[profile.dev.package.unicode-general-category]
+opt-level = 3
+[profile.dev.package.unicode-normalization]
+opt-level = 3
 
 [dev-dependencies]
 # Same crate, plus its mock runtime for IPC tests (no extra packages, no display needed).

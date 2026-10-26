@@ -1086,7 +1086,8 @@ truncated file fails when it is opened.
 
 Library: `ferrum_core::write_token_file`, `TokenFile`,
 `GenerativeSLM::train_transformer_tokens` and `train_transformer_tokens_validated`
-([§12.7](#127-the-ferrum-gguf-format)).
+([§12.7](#127-the-ferrum-gguf-format)), and `slm_cli::tokenize` / `slm_cli::token_corpus`
+(the command's code, which the GUI's Tokenize corpus block calls, [§10.3](#103-the-tabs)).
 
 ## 7. Generating text
 
@@ -1758,7 +1759,7 @@ those.
 |---|---|
 | **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
 | **Prepare** | `train_transformer prepare` in a form: input files and folders (several, added with the pickers), an output folder, validation and test shares, split seed, minimum and maximum characters, document separator, and the switches *drop duplicates*, *NFKC*, *lowercase*, *strip Gutenberg*, *replace invalid UTF-8*. A progress bar, **Stop**, and a summary (documents per split, rejected counts by reason, repaired documents, manifest path, and the line the CLI would print); **Use the splits in Train and Evaluate** fills those tabs. See *Preparing a dataset* below |
-| **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart; a **pre-flight check** under the form (below) |
+| **Train** | Train a transformer SLM (the Corpus may be a text file or a **token file**, see *Tokenizing and token files* below): architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart; a **pre-flight check** under the form (below) |
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
@@ -1788,6 +1789,25 @@ goes through the path guard (an input may be a file or a folder). The button's e
 (`prepare`) reads the input sizes from disk: about 18 MB/s on one thread (22.5 MB of
 TinyStories took 0.62 s plain and 1.18 s with dedup, NFKC and lowercase), RAM roughly flat
 (7 MB measured on that input).
+
+**Tokenizing and token files.** The block *Tokenize a large corpus first* in the Train form is
+`train_transformer tokenize` ([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)) with
+the same code (`slm_cli::tokenize`, command `tokenize_corpus`, events `tokenize-progress`): a text
+file or a folder is streamed from disk into a `ferrum-tokens` GGUF using the tokenizer in the
+**Tokenizer file** field, which must already exist (a first training run with that field filled in
+creates it). The ids are the ones the library and the command line produce (a test compares them with
+`encode_docs`, and the file bytes with the CLI function's); a successful run puts the token file in the
+**Corpus** field and refreshes the pre-flight. **Stop** ends the run between documents and writes no
+file. Train accepts a token file as its corpus, detected by content as the CLI does (any GGUF), and
+needs the Tokenizer file field to name the tokenizer it was made with (a different tokenizer, Vocab 0
+and an empty field are refused before any training time, in the tab's words). Training then streams
+the windows from disk, and a test checks that the model file is **byte-identical, so the same
+sha256, to training from the text** with the same settings, on a tiny corpus. Validation fraction
+works from a token file (the tail of the tokens is held out, as in §6.11). The pre-flight shows the
+token count, documents and the file's own vocabulary (which decides the model, whatever Vocab says)
+and states that the RAM figure does not depend on the corpus size; the time estimate uses the token
+count and no tokenizing time. The `tokenize` estimate is 13 MB/s of text on one thread (20.2 MB of
+TinyStories took 1.49 s) with about 7 MB of RAM.
 
 **Running in Ollama and LM Studio.** The block at the end of the Export tab calls
 `slm_cli::runtime_export`, the library code behind `export-ollama` and `export-lmstudio`
@@ -1823,7 +1843,7 @@ with the numbers and a box *I know, try anyway* appears; ticking it sends `force
 `TransformerConfig::skip_memory_check`, which skips the engine's refusal (the CLI never does;
 the system may kill the process if the run really does not fit).
 
-**Stopping a job.** Prepare, Train, Generate, GGUF, Fine-tune and Export (and the Ollama / LM Studio block) show a Stop button
+**Stopping a job.** Prepare, Tokenize, Train, Generate, GGUF, Fine-tune and Export (and the Ollama / LM Studio block) show a Stop button
 while they run (the `cancel_job` command; one running job per kind, so starting a
 second training run, say, fails at once with "a training job is already running").
 *Train* and *Fine-tune* stop after the current optimizer step through the engine's
@@ -1874,7 +1894,7 @@ build), listed in the comments of `src/estimate.rs`:
   epoch, so a 135M model takes about 6 token-passes per second: the estimate
   often says days, which is the honest answer. Its peak RAM is 12x the f32
   weights. **Export** mirrors the RAM guard of the export command.
-- **Prepare** reads the input sizes from disk and runs at 18 MB/s of input on one thread (22.5 MB of TinyStories: 0.62 s plain, 1.18 s with dedup, NFKC and lowercase), with RAM that does not grow with the corpus. **Ollama / LM Studio export** have no measured rate: `ollama create` is assumed to read the file at 200 MB/s, and an LM Studio import is about a second plus up to 15 s of waiting for its listing; both say so in their notes.
+- **Prepare** and **Tokenize corpus** read the input sizes from disk and run on one thread, at 18 MB/s (Prepare) and 13 MB/s (Tokenize corpus; measured 14) of input on one thread (22.5 MB of TinyStories: 0.62 s plain, 1.18 s with dedup, NFKC and lowercase), with RAM that does not grow with the corpus. **Ollama / LM Studio export** have no measured rate: `ollama create` is assumed to read the file at 200 MB/s, and an LM Studio import is about a second plus up to 15 s of waiting for its listing; both say so in their notes.
 - **Downloads** depend on your connection; the estimate assumes 5 MB/s and
   says so. Buttons that only switch a tab, refresh or save are "instant".
 - Without a benchmark the reference machine's speed is used, which is
@@ -1943,7 +1963,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), runtime_tab.js (the Ollama / LM Studio block of the Export tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), runtime_tab.js (the Ollama / LM Studio block of the Export tab), tokenize_tab.js (the Tokenize corpus block of the Train tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
@@ -1952,6 +1972,7 @@ src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, l
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
+src/tokenize.rs   the Train tab's Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`, progress events, cancel; `train_slm` itself accepts a token file (src/commands.rs)
 src/runtime_export.rs  the Export tab's Ollama / LM Studio block: `preview_runtime_export`, `export_to_runtime` over `slm_cli::runtime_export`
 src/prepare.rs    the Prepare tab: `prepare_dataset` over `slm_cli::prepare` (the CLI's pipeline), progress events, cancel
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
@@ -1962,7 +1983,7 @@ capabilities/     Tauri v2 permissions (event listen/unlisten + dialog open/save
 
 Heavy commands run on blocking tasks and stream events back to the UI
 (`engine-log`, `train-progress`, `train-done`, `gen-fragment`,
-`finetune-progress`, `export-progress`, `prepare-progress`), so the window stays responsive. Under
+`finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`), so the window stays responsive. Under
 a token budget, `train-progress` sends `total: null` because the epoch count is
 not known in advance.
 
@@ -1975,11 +1996,11 @@ few seconds:
 | Layer | What it checks | Where |
 |---|---|---|
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
-| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot) | `src/ipc_tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; tokenizing and training from the token file through IPC (the model file byte-identical to training from the text, the ids equal to `encode_docs`, errors, the pre-flight and estimates of a token file); the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
-| Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+| Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, tokenizing, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and

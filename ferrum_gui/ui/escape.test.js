@@ -37,7 +37,8 @@ for (const e of EVIL) {
               vocabSize: e, tokenizer: e, estInt4Mb: 1, estInt8Mb: 2, estF32Mb: 4, availMb: null, note: e };
   noInjected(ggufInfo(g), "ggufInfo");
   noInjected(exportInfo(g), "exportInfo");
-  const pf = { params: 1000, peakRamMb: 10, ramLimitMb: 20, ramAvailableMb: 30, fitsInRam: true, seconds: 1, llamaCpp: { runs: false, reason: e }, problems: [e] };
+  const pf = { params: 1000, peakRamMb: 10, ramLimitMb: 20, ramAvailableMb: 30, fitsInRam: true, seconds: 1, llamaCpp: { runs: false, reason: e }, problems: [e],
+               corpus: { tokens: 5, documents: 2, vocab: e, ramScalesWithCorpus: false, note: e } };
   noInjected(preflightView(pf), "preflightView");
 }
 
@@ -52,6 +53,11 @@ assert.ok(preflightWhy(tight).startsWith("This run needs about 2.00 GB but the e
 assert.ok(preflightWhy(tight).includes("try anyway"));
 assert.strictEqual(preflightWhy({ ...tight, fitsInRam: true }), "", "fits: nothing to explain");
 assert.strictEqual(preflightWhy({ ...tight, peakRamMb: null }), "", "no peak known: never block");
+
+// A token-file corpus gets two cards (what it is, and that RAM does not scale with it).
+const withCorpus = preflightView({ ...pf0, corpus: { tokens: 1234567, documents: 89, vocab: 1024, ramScalesWithCorpus: false, note: "Ids stay on disk." } });
+assert.ok(withCorpus.includes("Token file: 1,234,567 tokens, 89 documents, vocabulary 1024") && withCorpus.includes("Ids stay on disk."), withCorpus);
+assert.ok(!preflightView(pf0).includes("Token file"), "a text corpus has no corpus card");
 
 // Spot check: the attack string is visible as text, not markup.
 assert.ok(card("Name", EVIL[0]).includes("&lt;img src=x onerror=alert(1)&gt;"));
