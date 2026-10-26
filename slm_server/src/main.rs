@@ -1,5 +1,6 @@
 //! `ferrum-serve --model <path> [--host 127.0.0.1] [--port 8080]
-//!   [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]`
+//!   [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
+//!   [--token <t>] [--allow-unauthenticated]` (token also from `$FERRUM_TOKEN`)
 #![forbid(unsafe_code)]
 
 use slm_server::cli::start;

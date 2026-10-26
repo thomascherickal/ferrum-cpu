@@ -17,9 +17,22 @@ pub fn spawn(
     model: &Path,
     extra: &[&str],
 ) -> (Child, BufReader<std::process::ChildStderr>, String) {
+    spawn_env(model, extra, &[])
+}
+
+/// [`spawn`] with extra environment variables. `FERRUM_TOKEN` from the caller's own
+/// environment is always removed, so a developer's token cannot change test outcomes.
+#[allow(clippy::zombie_processes)]
+pub fn spawn_env(
+    model: &Path,
+    extra: &[&str],
+    env: &[(&str, &str)],
+) -> (Child, BufReader<std::process::ChildStderr>, String) {
     let mut child = Command::new(BIN)
         .args(["--model", model.to_str().unwrap(), "--port", "0"])
         .args(extra)
+        .env_remove("FERRUM_TOKEN")
+        .envs(env.iter().copied())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
@@ -41,17 +54,33 @@ pub fn spawn(
 /// Minimal HTTP/1.1 client: (status, body). A server that answers before it has read the
 /// whole body (413) may reset the connection on our remaining writes; the response is still read.
 pub fn http(addr: &str, method: &str, path: &str, body: &str) -> (u16, String) {
+    let (status, _head, body) = http_with(addr, method, path, body, &[]);
+    (status, body)
+}
+
+/// [`http`] with extra request headers (`name: value`); also returns the response head.
+pub fn http_with(
+    addr: &str,
+    method: &str,
+    path: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> (u16, String, String) {
     let mut s = TcpStream::connect(addr).unwrap();
+    let extra: String = headers
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}\r\n"))
+        .collect();
     let _ = write!(
         s,
-        "{method} {path} HTTP/1.1\r\nhost: x\r\nconnection: close\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\nhost: x\r\nconnection: close\r\ncontent-type: application/json\r\n{extra}content-length: {}\r\n\r\n{body}",
         body.len()
     );
     let mut raw = String::new();
     let _ = s.read_to_string(&mut raw);
     let (head, body) = raw.split_once("\r\n\r\n").expect("no HTTP response");
     let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
-    (status, body.to_string())
+    (status, head.to_string(), body.to_string())
 }
 
 /// SIGINT the server and wait (up to 20 s) for it to exit.

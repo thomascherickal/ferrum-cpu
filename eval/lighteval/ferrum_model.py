@@ -5,6 +5,9 @@
         eval/lighteval/ferrum_model.py "ferrum_heldout|0" \
         --custom-tasks eval/lighteval/ferrum_tasks.py
 
+If the server runs with a bearer token, export the same FERRUM_TOKEN: it is sent as
+`Authorization: Bearer <token>` on every request, and not at all when unset.
+
 LightEval 0.13.0 quirks handled here:
 - LightevalModel has no __init__: calling super().__init__() raises TypeError.
 - The pipeline calls model._cache._init_registry(...) unconditionally, so
@@ -58,9 +61,11 @@ class FerrumModel(LightevalModel):
     # ── HTTP ────────────────────────────────────────────────────────────
     def _call(self, path, body=None):
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request(
-            self.url + path, data=data, headers={"content-type": "application/json"}, method="GET" if body is None else "POST"
-        )
+        headers = {"content-type": "application/json"}
+        token = os.environ.get("FERRUM_TOKEN")  # the server's --token / $FERRUM_TOKEN; sent only when set
+        if token:
+            headers["authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(self.url + path, data=data, headers=headers, method="GET" if body is None else "POST")
         try:
             with urllib.request.urlopen(req, timeout=600) as r:
                 return json.loads(r.read())

@@ -28,7 +28,7 @@ for small models. It is not a runtime for frontier LLMs.
 | **Quantization-aware** | QAT simulates GGUF Q8_0 exactly, so an int8 file reloads bit-identical to the model you trained. int4 (Q4_0) export is a lossy option. |
 | **Byte-level BPE with a GPT-2 pre-tokenizer** | Any UTF-8 text round-trips. llama.cpp tokenizes prompts exactly as Ferrum does. `<|endoftext|>` is always a reserved special token. |
 | **A real data pipeline** | `train_transformer prepare` cleans, dedups, and splits a corpus and writes a hash manifest. DVC reproduces fetch, prepare, train, and eval from `params.yaml`. |
-| **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP. A LightEval module evaluates Ferrum models through it. |
+| **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
 | **Llama/Qwen GGUF in and out** | Import Llama/Qwen checkpoints, run them, fine-tune them with AdamW, and export them back to GGUF. |
 
 One limit to know. Ferrum's tabular models (the Ferrum-ML MLP classifiers) and

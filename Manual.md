@@ -1370,10 +1370,11 @@ Rules for both commands:
 ```text
 ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
              [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
+             [--token <t>] [--allow-unauthenticated]
 ```
 
 The server binds to loopback by default and prints the model and address when
-it is ready. Unknown flags are errors; `ferrum-serve --version` prints the version. It holds one loaded model on **one
+it is ready, then one line saying whether authentication is on. Unknown flags are errors; `ferrum-serve --version` prints the version. It holds one loaded model on **one
 dedicated model thread** and handles **one request at a time**, because
 `GenerativeSLM` is not `Send` or `Sync`. Each matmul still uses every core.
 
@@ -1408,6 +1409,7 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/loglikeliho
 Each of the four limit flags must be at least 1; `0` is refused at startup
 (`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
 | POST requests in flight | 32 | `503`, before the body is read |
+| Missing or wrong bearer token (only when a token is set; `GET /health` is exempt) | | `401` |
 | Malformed JSON, a missing field, an unknown field (the error names it), or an empty stop string | | `400` |
 | Model error (for example an unknown character in a character-level model) | | `422` |
 
@@ -1415,8 +1417,27 @@ Errors have the form `{"error": "..."}`. An empty `requests` array returns `200`
 with `{"results": []}`. A model error, or a panic in the model thread, does not
 stop the server. Ctrl-C shuts it down.
 
-There is no authentication and no TLS. Do not bind it to a public address. The
-routes are Ferrum's own; there are no OpenAI-compatible routes.
+**Authentication.** There is no TLS, so a token protects against other users
+of a shared network, not against someone who can read the traffic. Give the
+server a bearer token with the `FERRUM_TOKEN` environment variable (preferred:
+a `--token <t>` value is visible in `ps`; the flag wins if both are set) and
+every route except `GET /health` requires `Authorization: Bearer <token>`.
+A missing or wrong token gets `401` with `{"error":"missing or invalid bearer
+token"}` and a `WWW-Authenticate: Bearer` header, for unknown routes too. The
+comparison does not depend on how much of the token matched. An empty token is
+refused at startup.
+
+```bash
+export FERRUM_TOKEN=$(head -c 24 /dev/urandom | base64)
+ferrum-serve --model models/slm.gguf --host 0.0.0.0
+curl -s -H "Authorization: Bearer $FERRUM_TOKEN" http://127.0.0.1:8080/v1/info
+```
+
+Binding any `--host` other than `127.0.0.1`, `::1` or `localhost` without a
+token is refused at startup (exit 1) unless you pass `--allow-unauthenticated`;
+the startup line then says `auth OFF (--allow-unauthenticated: ...)`. On
+loopback with no token the server stays open, and says `auth OFF (loopback
+only)`. The routes are Ferrum's own; there are no OpenAI-compatible routes.
 
 ### 9.8 Evaluating with LightEval
 
@@ -1469,7 +1490,10 @@ shows a real run of the reference model.
 
 `FerrumModel` reads the server address from `FERRUM_URL` (default
 `http://127.0.0.1:8080`; `run.sh` sets it) and uses only the Python standard
-library to talk to it.
+library to talk to it. If the server needs a token, export the same
+`FERRUM_TOKEN`: the client then sends `Authorization: Bearer <token>` on every
+request, and no header when it is unset. `run.sh` starts a loopback server that
+inherits the variable, so a token set in your shell protects it too.
 
 **Two LightEval 0.13.0 workarounds.**
 

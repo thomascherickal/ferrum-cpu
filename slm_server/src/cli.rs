@@ -1,12 +1,15 @@
 //! Command-line parsing and the serve loop behind `ferrum-serve`.
 
-use crate::{app, Limits};
+use crate::{app, with_bearer_token, Limits};
 use std::future::Future;
 use std::str::FromStr;
 
 pub const USAGE: &str =
     "usage: ferrum-serve --model <model.gguf> [--host 127.0.0.1] [--port 8080] \
-[--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] [--help] [--version]";
+[--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] \
+[--token <t>] [--allow-unauthenticated] [--help] [--version]
+bearer token: env FERRUM_TOKEN (preferred; a --token value shows in `ps`) or --token; \
+a non-loopback --host needs one unless --allow-unauthenticated is given";
 
 const KNOWN: &[&str] = &[
     "--model",
@@ -16,7 +19,16 @@ const KNOWN: &[&str] = &[
     "--max-chars",
     "--max-body",
     "--max-tokens",
+    "--token",
+    "--allow-unauthenticated",
 ];
+
+/// Hosts that only accept connections from this machine.
+fn is_loopback(host: &str) -> bool {
+    ["127.0.0.1", "::1", "localhost"]
+        .iter()
+        .any(|h| host.eq_ignore_ascii_case(h))
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -24,6 +36,9 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub limits: Limits,
+    /// Bearer token (`--token`, else `$FERRUM_TOKEN`); `None` means no authentication.
+    pub token: Option<String>,
+    pub allow_unauthenticated: bool,
 }
 
 fn parse_value<T: FromStr>(name: &str, v: &str) -> Result<T, String> {
@@ -45,6 +60,8 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
     let mut host = "127.0.0.1".to_string();
     let mut port = 8080u16;
     let mut limits = Limits::default();
+    let mut token = None;
+    let mut allow_unauthenticated = false;
     let mut it = args.iter();
     while let Some(name) = it.next() {
         if name == "--help" || name == "-h" {
@@ -52,6 +69,10 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
         }
         if name == "--version" || name == "-V" {
             return Ok(Parsed::Version);
+        }
+        if name == "--allow-unauthenticated" {
+            allow_unauthenticated = true;
+            continue;
         }
         if !name.starts_with("--") {
             return Err(format!("unexpected argument '{name}'"));
@@ -70,6 +91,7 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
             "--max-batch" => limits.max_batch = parse_value(name, v)?,
             "--max-chars" => limits.max_chars = parse_value(name, v)?,
             "--max-body" => limits.max_body = parse_value(name, v)?,
+            "--token" => token = Some(v.clone()),
             _ => limits.max_tokens = parse_value(name, v)?,
         }
     }
@@ -86,11 +108,16 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
             return Err(format!("{flag} must be at least 1 (got 0)"));
         }
     }
+    if token.as_deref() == Some("") {
+        return Err("--token must not be empty".into());
+    }
     Ok(Parsed::Run(Config {
         model,
         host,
         port,
         limits,
+        token,
+        allow_unauthenticated,
     }))
 }
 
@@ -108,7 +135,13 @@ pub async fn start(
             println!("ferrum-serve {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Parsed::Run(cfg) => run(cfg, shutdown).await,
+        Parsed::Run(mut cfg) => {
+            // The flag wins; the environment keeps the secret out of `ps`.
+            cfg.token = cfg
+                .token
+                .or_else(|| std::env::var("FERRUM_TOKEN").ok().filter(|t| !t.is_empty()));
+            run(cfg, shutdown).await
+        }
     }
 }
 
@@ -117,8 +150,19 @@ pub async fn run(
     cfg: Config,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), String> {
+    if cfg.token.is_none() && !cfg.allow_unauthenticated && !is_loopback(&cfg.host) {
+        return Err(format!(
+            "refusing to listen on non-loopback host {} without a bearer token: set FERRUM_TOKEN \
+(or --token), or pass --allow-unauthenticated",
+            cfg.host
+        ));
+    }
     let bytes = std::fs::read(&cfg.model).map_err(|e| format!("cannot read {}: {e}", cfg.model))?;
     let (router, info) = app(bytes, cfg.limits)?;
+    let router = match &cfg.token {
+        Some(t) => with_bearer_token(router, t),
+        None => router,
+    };
     let listener = tokio::net::TcpListener::bind((cfg.host.as_str(), cfg.port))
         .await
         .map_err(|e| format!("cannot bind {}:{}: {e}", cfg.host, cfg.port))?;
@@ -129,6 +173,15 @@ pub async fn run(
         info.context_len,
         info.vocab,
         listener.local_addr().map_err(|e| e.to_string())?
+    );
+    eprintln!(
+        "ferrum-serve: auth {}",
+        match (&cfg.token, is_loopback(&cfg.host)) {
+            (Some(_), _) => "ON (bearer token required, except GET /health)",
+            (None, true) => "OFF (loopback only)",
+            (None, false) =>
+                "OFF (--allow-unauthenticated: anyone who can reach this port can use it)",
+        }
     );
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown)
@@ -163,7 +216,9 @@ mod tests {
                 model: "m.gguf".into(),
                 host: "127.0.0.1".into(),
                 port: 8080,
-                limits: Limits::default()
+                limits: Limits::default(),
+                token: None,
+                allow_unauthenticated: false,
             }
         );
     }
@@ -205,6 +260,64 @@ mod tests {
             let e = parse_args(&a(&["--model", "m", f, "0"])).unwrap_err();
             assert_eq!(e, format!("{f} must be at least 1 (got 0)"));
         }
+    }
+
+    #[test]
+    fn token_and_allow_unauthenticated_flags() {
+        let c = parse_args(&a(&["--model", "m", "--token", "t0k"])).unwrap();
+        assert_eq!(
+            (c.token.as_deref(), c.allow_unauthenticated),
+            (Some("t0k"), false)
+        );
+        // the bare flag takes no value, wherever it appears
+        let c = parse_args(&a(&["--allow-unauthenticated", "--model", "m"])).unwrap();
+        assert!(c.allow_unauthenticated && c.token.is_none());
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--token"])).unwrap_err(),
+            "--token needs a value"
+        );
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--token", ""])).unwrap_err(),
+            "--token must not be empty"
+        );
+    }
+
+    #[test]
+    fn loopback_hosts() {
+        for h in ["127.0.0.1", "::1", "localhost", "LocalHost"] {
+            assert!(is_loopback(h), "{h}");
+        }
+        for h in [
+            "0.0.0.0",
+            "::",
+            "192.168.1.5",
+            "example.com",
+            "127.0.0.2",
+            "",
+        ] {
+            assert!(!is_loopback(h), "{h}");
+        }
+    }
+
+    #[tokio::test]
+    async fn non_loopback_without_a_token_is_refused_before_loading_the_model() {
+        // The model path does not exist: the guard must fire first.
+        let mut c = cfg("/nonexistent/m.gguf".into(), "0.0.0.0", 0);
+        let e = run(c.clone(), std::future::ready(())).await.unwrap_err();
+        assert!(
+            e.contains("refusing to listen on non-loopback host 0.0.0.0")
+                && e.contains("FERRUM_TOKEN")
+                && e.contains("--allow-unauthenticated"),
+            "{e}"
+        );
+        // With a token, or with the explicit opt-out, it gets past the guard.
+        c.token = Some("t".into());
+        let e = run(c.clone(), std::future::ready(())).await.unwrap_err();
+        assert!(e.starts_with("cannot read"), "{e}");
+        c.token = None;
+        c.allow_unauthenticated = true;
+        let e = run(c, std::future::ready(())).await.unwrap_err();
+        assert!(e.starts_with("cannot read"), "{e}");
     }
 
     #[test]
@@ -336,6 +449,8 @@ mod tests {
             host: host.into(),
             port,
             limits: Limits::default(),
+            token: None,
+            allow_unauthenticated: false,
         }
     }
 
@@ -379,12 +494,9 @@ mod tests {
     #[tokio::test]
     async fn run_bind_failure() {
         let path = model_file("bind");
-        let e = run(
-            cfg(path.clone(), "256.256.256.256", 0),
-            std::future::ready(()),
-        )
-        .await
-        .unwrap_err();
+        let mut c = cfg(path.clone(), "256.256.256.256", 0);
+        c.allow_unauthenticated = true;
+        let e = run(c, std::future::ready(())).await.unwrap_err();
         std::fs::remove_file(path).ok();
         assert!(e.starts_with("cannot bind 256.256.256.256:0"), "{e}");
     }
