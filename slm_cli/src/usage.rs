@@ -61,6 +61,7 @@ pub(crate) fn print_usage() {
          \x20 train_transformer prepare  --input <file|dir> --out <dir> [options]\n\
          \x20 train_transformer info     <model.gguf>\n\n\
          TRAIN / RUN options:\n\
+         \x20 --preset tiny|small|medium  (sizes from Manual §6.7; any explicit flag below overrides it)\n\
          \x20 --context N  --embed N  --heads N  --blocks N  --hidden N\n\
          \x20 --epochs N   --lr F     --batch N  --vocab N  --seed N\n\
          \x20 --weight_decay F  --dropout F   (AdamW decay + FFN dropout; default 0)\n\

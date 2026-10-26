@@ -52,6 +52,7 @@ pub(crate) const TRAIN_FLAGS: Spec = &[
     ("force", Kind::Bool),
     ("sample", Kind::Bool),
     ("max-seconds", Kind::F64),
+    ("preset", Kind::Str),
 ];
 
 pub(crate) const GENERATE_FLAGS: Spec = &[
@@ -262,7 +263,10 @@ impl Args {
     }
 
     pub(crate) fn config(&self) -> TransformerConfig {
-        let d = TransformerConfig::default();
+        let d = match crate::preset::selected(self) {
+            Ok(Some(p)) => p.defaults(TransformerConfig::default()),
+            _ => TransformerConfig::default(), // an unknown name is reported by `train_and_save`
+        };
         TransformerConfig {
             context_len: self.get("context", d.context_len),
             embed_dim: self.get("embed", d.embed_dim),

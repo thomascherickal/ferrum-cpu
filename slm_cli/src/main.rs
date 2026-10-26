@@ -42,6 +42,7 @@
 //!   --checkpoint <path>  --checkpoint-every <N>  --resume <path>
 //!   --max-seconds <F>  stop cleanly after the step that crosses the budget (also: touch <model>.stop)
 //!   --val <F>  --patience <N>   validation split + early stopping
+//!   --preset <tiny|small|medium>  starting sizes from Manual §6.7 (explicit flags win)
 //!   --force         retrain even if the model file exists
 //!   --sample        print a short sample after training
 //!   --verbose | -v  print a progress line every 10 steps (tokens/s, elapsed)
@@ -72,6 +73,7 @@ mod generate;
 mod info;
 mod memory;
 mod prepare;
+mod preset;
 mod resume;
 mod run_gguf;
 mod runtime_export;
@@ -140,6 +142,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("unexpected argument '{extra}' for '{cmd}'").into());
     }
     let raw_args = &argv[2..];
+    preset::selected(&args)?; // an unknown --preset fails before anything else, even if the model exists
     if engine_debug(&cmd, &args) {
         ferrum_core::set_verbose(true);
     }

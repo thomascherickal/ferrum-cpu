@@ -24,6 +24,7 @@ pub(crate) fn train_and_save(
             "note: reusing {tok}; if it was trained without --val it has seen the validation text"
         );
     }
+    let preset = crate::preset::selected(args)?;
     let mut cfg = args.config();
     cfg.stop = crate::stop::condition(args, model_path)?;
     check_lr(cfg.lr)?;
@@ -76,6 +77,9 @@ pub(crate) fn train_and_save(
         (false, q) => format!("fp32, no QAT, saved as {q}"),
     };
     println!("  ferrum transformer SLM trainer ({mode})");
+    if let Some(p) = preset {
+        println!("  Preset  : {} (explicit flags override it)", p.name);
+    }
     println!("  Corpus  : {corpus_path}  ({chars} chars)");
     let tok_desc = if cfg.vocab_size == 0 {
         "character-level".to_string()

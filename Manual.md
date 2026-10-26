@@ -594,6 +594,7 @@ rename), so an interrupted or failed save leaves any previous file intact and no
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--preset tiny\|small\|medium` | none | Starting sizes from [§6.7](#67-sizing-a-run-for-your-machine) for `--context --embed --heads --blocks --hidden --vocab --lr`. An explicit flag overrides the preset's value, in any order; an unknown name is an error that lists the valid ones. Without `--preset` the defaults below are unchanged. |
 | `--context N` | 16 | Context window in tokens |
 | `--embed N` | 32 | Embedding width (must be divisible by `--heads`) |
 | `--heads N` | 4 | Attention heads per block |
@@ -792,6 +793,9 @@ than with the square of the size.
 | ~0.2M (minutes) | 64 | 64 | 4 | 2 | 256 | 512 | 1e-2 |
 | ~1.5M (hours) | 128 | 128 | 4 | 4 | 512 | 2048 | 3e-3 |
 | ~7M (a day or two) | 256 | 256 | 8 | 6 | 1024 | 4096 | 1e-3 |
+
+`--preset tiny`, `small` and `medium` set exactly these three rows (for example
+`--preset small --embed 96 --heads 4` keeps the rest of `small`).
 
 All rows used `--lr 3e-3` and `--seed 1`; the learning rate does not change the speed.
 Throughput is
