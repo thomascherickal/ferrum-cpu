@@ -96,10 +96,16 @@ impl GgufOut {
             "tokenizer.ggml.token_type",
             MetaValue::Array(types.collect()),
         );
-        if let Some(eos) = tok.eos_id() {
-            self.u32("tokenizer.ggml.bos_token_id", eos);
-            self.u32("tokenizer.ggml.eos_token_id", eos);
-        }
+        // Without these ids llama.cpp defaults bos/eos to token 11, so refuse.
+        let eos = tok.eos_id().ok_or_else(|| {
+            bad(format!(
+                "the tokenizer has no {} token; llama.cpp would default eos to token 11. \
+                 Add it with add_special_token before exporting",
+                crate::tokenizer::TOK_EOS
+            ))
+        })?;
+        self.u32("tokenizer.ggml.bos_token_id", eos);
+        self.u32("tokenizer.ggml.eos_token_id", eos);
         self.b
             .meta("tokenizer.ggml.add_bos_token", MetaValue::Bool(false));
         self.b
@@ -528,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn gpt2_without_eos_omits_the_special_ids() {
+    fn gpt2_without_eos_is_refused() {
         // A tokenizer with merges but no special tokens.
         let (layers, mut meta) = bpe_layers(32, 64, true);
         let tok = ByteBpeTokenizer::from_state(&meta.tokenizer_state).unwrap();
@@ -548,14 +554,12 @@ mod tests {
         meta.tokenizer_state = plain;
         meta.output_dim = v;
         let model = seq(l);
-        let bytes = to_gguf(&model, &empty_norm(), &meta, QPrec::F32).unwrap();
-        let g = parse(&bytes);
-        assert_eq!(g.architecture(), Some("gpt2"));
-        assert!(g.meta("tokenizer.ggml.eos_token_id").is_none());
-        assert!(g.meta("tokenizer.ggml.bos_token_id").is_none());
-        let (m2, _, meta2) = from_gguf(&bytes).unwrap();
-        assert_eq!(meta2.tokenizer_state, meta.tokenizer_state);
-        assert_eq!(fwd(&model, &meta), fwd(&m2, &meta2));
+        let err = to_gguf(&model, &empty_norm(), &meta, QPrec::F32).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("<|endoftext|>") && msg.contains("token 11"),
+            "{msg}"
+        );
     }
 
     #[test]
