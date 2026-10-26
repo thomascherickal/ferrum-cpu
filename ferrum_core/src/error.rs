@@ -13,6 +13,8 @@ pub enum InferError {
     Format(String),
     /// Returned by the CSV loader when a value cannot be parsed.
     ParseError(String),
+    /// Training produced a non-finite loss; the weights are no longer usable.
+    Diverged(String),
 }
 
 impl fmt::Display for InferError {
@@ -26,6 +28,7 @@ impl fmt::Display for InferError {
             InferError::Io(m) => write!(f, "i/o error: {m}"),
             InferError::Format(m) => write!(f, "model format error: {m}"),
             InferError::ParseError(m) => write!(f, "parse error: {m}"),
+            InferError::Diverged(m) => write!(f, "training diverged: {m}"),
         }
     }
 }

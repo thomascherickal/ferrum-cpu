@@ -53,6 +53,19 @@ fn train_rejects_nonpositive_or_nonfinite_lr() {
 }
 
 #[test]
+fn train_aborts_with_an_error_when_the_loss_diverges() {
+    let d = tmp("diverge");
+    let out = tiny_train(&d, &["--vocab", "300", "--epochs", "5", "--lr", "1e30"]);
+    assert!(!out.status.success(), "a diverging run must fail");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("training diverged"), "{err}");
+    assert!(
+        !d.join("m.bin").exists(),
+        "a diverged run left a model behind"
+    );
+}
+
+#[test]
 fn char_level_generate_accepts_short_seed_like_bpe() {
     let d = tmp("charseed");
     assert!(tiny_train(&d, &["--vocab", "0"]).status.success());

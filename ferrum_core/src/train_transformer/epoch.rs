@@ -37,6 +37,18 @@ impl TransformerNet {
     }
 }
 
+/// Aborts a run whose loss went NaN or infinite, before the update that would
+/// write garbage into the weights. `step` is 1-based.
+pub(super) fn check_loss_finite(loss: f32, step: u64) -> Result<()> {
+    if loss.is_finite() {
+        Ok(())
+    } else {
+        Err(InferError::Diverged(format!(
+            "the loss became {loss} at step {step}; lower --lr or set --clip"
+        )))
+    }
+}
+
 /// One epoch of minibatch Adam over a token stream. Each example is a window
 /// of `context_len` tokens with next-token targets at every position.
 /// Returns the mean train loss.
@@ -136,6 +148,7 @@ fn epoch_serial(
         let drop_seed = if dropout > 0.0 { rng.next_u64() } else { 0 };
         let (logits, cache) = net.forward_train(&input, dropout, drop_seed)?;
         let (loss, dlogits) = softmax_cross_entropy(&logits, &targets)?;
+        check_loss_finite(loss, net.step_count() + 1)?;
         net.zero_grad();
         net.backward(&dlogits, &cache)?;
         if let Some(snapshot) = &masters {
@@ -167,6 +180,36 @@ mod tests {
     use crate::optim::Adam;
     use crate::rng::Rng;
     use crate::train_transformer::TransformerNet;
+
+    #[test]
+    fn check_loss_finite_rejects_nan_and_infinity() {
+        assert!(super::check_loss_finite(1.5, 1).is_ok());
+        for bad in [f32::NAN, f32::INFINITY] {
+            let e = super::check_loss_finite(bad, 7).unwrap_err();
+            assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
+            assert!(e.to_string().contains("step 7"), "{e}");
+        }
+    }
+
+    /// An absurd learning rate blows the weights up; training must stop with an
+    /// error instead of carrying on with NaN weights.
+    #[test]
+    fn diverging_training_returns_an_error() {
+        let mut rng0 = Rng::new(7);
+        let mut net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng0).unwrap();
+        let tokens: Vec<usize> = (0..200).map(|i| (i * 7) % 6).collect();
+        let adam = Adam::new(1e30);
+        let mut rng = Rng::new(99);
+        let mut result = Ok(0.0);
+        for _ in 0..5 {
+            result = train_transformer_epoch(&mut net, &tokens, 8, &adam, &mut rng);
+            if result.is_err() {
+                break;
+            }
+        }
+        let e = result.expect_err("lr 1e30 must diverge");
+        assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
+    }
 
     #[test]
     fn training_reduces_loss() {

@@ -4,7 +4,7 @@ use crate::optim::Adam;
 use crate::rng::Rng;
 use crate::train_transformer::epoch::train_transformer_steps;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::train_transformer::epoch::StepHook;
+use crate::train_transformer::epoch::{check_loss_finite, StepHook};
 use crate::train_transformer::TransformerNet;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::verbose;
@@ -162,6 +162,7 @@ pub(super) fn epoch_sharded(
                 }
             }
             let summed = summed.expect("at least one shard always runs");
+            check_loss_finite(step_loss, net.step_count() + 1)?;
 
             if let Some(snapshot) = &masters {
                 net.restore_weights(snapshot);
@@ -192,6 +193,25 @@ mod tests {
     use crate::rng::Rng;
     use crate::train_transformer::epoch::train_transformer_epoch;
     use crate::train_transformer::TransformerNet;
+
+    /// The sharded path stops on a diverged loss too.
+    #[test]
+    fn threaded_diverging_training_returns_an_error() {
+        let mut rng0 = Rng::new(7);
+        let mut net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng0).unwrap();
+        let tokens: Vec<usize> = (0..200).map(|i| (i * 7) % 6).collect();
+        let adam = Adam::new(1e30);
+        let mut rng = Rng::new(99);
+        let mut result = Ok(0.0);
+        for _ in 0..5 {
+            result = train_transformer_epoch_threaded(&mut net, &tokens, 8, &adam, &mut rng, 2);
+            if result.is_err() {
+                break;
+            }
+        }
+        let e = result.expect_err("lr 1e30 must diverge");
+        assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
+    }
 
     /// `threads <= 1` must be the serial path, bit-for-bit.
     #[test]
