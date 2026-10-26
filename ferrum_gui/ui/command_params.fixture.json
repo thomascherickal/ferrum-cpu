@@ -107,6 +107,7 @@
     "checkpointEvery": 0,
     "resume": false,
     "valFraction": 0.1,
-    "patience": 0
+    "patience": 0,
+    "force": false
   }
 }

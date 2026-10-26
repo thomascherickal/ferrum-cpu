@@ -225,6 +225,9 @@ pub struct TrainParams {
     pub val_fraction: f32,
     #[serde(default)]
     pub patience: usize,
+    /// "I know, try anyway": skip the engine's up-front refusal of a run that would not fit in RAM.
+    #[serde(default)]
+    pub force: bool,
 }
 
 fn default_true() -> bool {
@@ -366,6 +369,7 @@ fn train_inner<R: Runtime>(
                 resume: p.resume,
                 log_every_steps: 0,
                 stop: job.stop().clone(),
+                skip_memory_check: p.force,
                 ..TransformerConfig::default()
             };
             if p.val_fraction > 0.0 {

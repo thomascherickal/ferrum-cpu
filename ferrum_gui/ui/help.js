@@ -313,6 +313,12 @@
       how: "Needs an existing checkpoint file (the Train button says so otherwise). The run keeps the epoch and step counts, the optimizer's memory and the random state, and keeps writing to that checkpoint. Keep the other settings the same.",
       beginner: "Loads your save game and carries on where you stopped, for example after an interruption or to train for more epochs.",
     },
+    trForce: {
+      title: "I know, try anyway",
+      what: "Appears only when the pre-flight check says the run needs more memory than the engine allows. Ticking it lets Start run anyway and skips the engine's own refusal.",
+      how: "The engine normally refuses a run that needs more than three quarters of your free RAM (and never more than 16 GB), because a run that does not fit makes the computer swap to disk and crawl, or the system kills the program. Ticking this removes that safety net. Lowering batch, context, embed dim or blocks is the better fix.",
+      beginner: "RAM is the computer's working memory. If a job needs more than there is, everything slows to a crawl. The pre-flight check warns you before you start; this box says you accept the risk.",
+    },
     trVerbose: {
       title: "Verbose",
       what: "Streams the engine's internal diagnostic lines into the Engine log panel at the bottom of the window.",
@@ -735,7 +741,7 @@
     },
     trStart: {
       title: "Train",
-      does: "Trains a new transformer language model on the corpus with the settings above and saves it as a .gguf file. The loss chart and progress bar update live.",
+      does: "Trains a new transformer language model on the corpus with the settings above and saves it as a .gguf file. The loss chart and progress bar update live. The pre-flight check above shows the parameter count, the memory needed and whether llama.cpp can run the result; Start is disabled when the run would not fit in RAM.",
       kind: "train",
       beginner: "Training is the slow part: the model reads the text many times, adjusting its numbers to predict the next token better. The time estimate comes from your CPU cores, the model size and the corpus size; it can be off by a factor of two either way.",
     },

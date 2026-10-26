@@ -185,6 +185,12 @@
         <label class="chk"><input type="checkbox" id="trResume" /> Resume from checkpoint</label>
       </div>
       <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
+      <fieldset>
+        <legend>Pre-flight check</legend>
+        <div id="trPreflight" class="infocards"></div>
+        <p class="hint" id="trPreflightWhy"></p>
+        <label class="chk hidden" id="trForceLabel"><input type="checkbox" id="trForce" /> I know, try anyway (skip the RAM check)</label>
+      </fieldset>
       <span class="err" id="errTrain"></span>
 
       <div class="row">

@@ -1752,7 +1752,7 @@ prepare` (§5.1) for those.
 | Tab | What you do there |
 |---|---|
 | **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
-| **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart |
+| **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart; a **pre-flight check** under the form (below) |
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
@@ -1762,6 +1762,19 @@ prepare` (§5.1) for those.
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
+
+**Train pre-flight.** Under the Train form a panel (the `preflight_train` command,
+refreshed 300 ms after any change) shows the parameter count (`TransformerNet::check_size`),
+the estimated peak RAM against what the engine allows (the same
+`estimate_train_peak_bytes` and the same limit as the Train button's tooltip and the engine's
+refusal: three quarters of the free RAM, at most 16 GB), the estimated time, and a
+**Runs in llama.cpp?** verdict from the vocab setting: vocab 0 is a character-level model in
+Ferrum's own layout (No), 256 or more is byte-level BPE saved as a `gpt2` GGUF (Yes), 1 to 255
+is invalid. Forms that cannot train (heads not dividing the embedding, zero sizes, absurd sizes)
+list what to fix instead of numbers. When the run would not fit in RAM, **Start is disabled**
+with the numbers and a box *I know, try anyway* appears; ticking it sends `force` and sets
+`TransformerConfig::skip_memory_check`, which skips the engine's refusal (the CLI never does;
+the system may kill the process if the run really does not fit).
 
 **Stopping a job.** Train, Generate, GGUF, Fine-tune and Export show a Stop button
 while they run (the `cancel_job` command; one running job per kind, so starting a
@@ -1887,6 +1900,7 @@ src/lib.rs        Tauri builder, shared state, verbose → event sink, command r
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
 src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
+src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, llama.cpp verdict)
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job

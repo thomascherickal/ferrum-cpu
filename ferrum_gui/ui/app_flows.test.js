@@ -7,6 +7,7 @@
 const assert = require("node:assert");
 const { loadApp, settle } = require("./testapp.js");
 
+const PF_OK = { params: 64000, peakRamMb: 300, ramAvailableMb: 4000, ramLimitMb: 3000, fitsInRam: true, seconds: 5, llamaCpp: { runs: true, reason: "Byte-level BPE models are saved as gpt2." }, problems: [] };
 const HW = { cpuModel: "T", ferrumThreads: 4, logicalCores: 4, physicalCores: 4, ramTotalMb: 8000, ramAvailableMb: 4000, gpus: [] };
 const EVIL = "<img src=x onerror=alert(1)>";
 
@@ -19,6 +20,7 @@ function makeBackend(overrides = {}) {
     switch (cmd) {
       case "list_datasets": return [];
       case "hardware_info": return HW;
+      case "preflight_train": return PF_OK;
       case "estimate_job": return { kind: args.kind, seconds: 5, lowSeconds: 3, highSeconds: 8, threadsUsed: 4, notes: [] };
       case "system_stats": return { cpuTotal: 12.5, memPercent: 40, ferrumThreads: 4, memUsed: 3e9, memTotal: 8e9, perCore: [10, 20] };
       default: throw new Error("no fake for " + cmd);
@@ -80,7 +82,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
       numBlocks: 2, hiddenDim: 64, epochs: 100, lr: 0.01, batchSize: 16, vocabSize: 512, seed: 1337, threads: 0, verbose: false,
       windowStride: 0, maxTokens: 50000000, weightDecay: 0, dropout: 0, gradClip: 0, warmupSteps: 0, cosineLr: true,
       weightTying: false, qat: true, tokenizerPath: "", checkpointPath: "", checkpointEvery: 0, resume: false,
-      valFraction: 0.1, patience: 0,
+      valFraction: 0.1, patience: 0, force: false,
     });
     assert.strictEqual(a.$("trStatus").textContent, "done");
     assert.ok(a.$("trResult").textContent.includes("Saved 999 bytes → /m/out.gguf"), a.$("trResult").textContent);
@@ -398,6 +400,65 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a.$("exResult").textContent.includes("tensors: 3× Q8_0, 2× F32"));
     a.emit("export-progress", "encoding + writing (q8_0)…");
     assert.strictEqual(a.$("exStatus").textContent, "encoding + writing (q8_0)…");
+  }
+
+  // ── Train pre-flight (G8): numbers, the llama.cpp badge, and a blocked Start ──
+  {
+    const a = await start();
+    await a.click("tab-train");
+    await settle(8);
+    assert.ok(a.of("preflight_train").length >= 1, "pre-flight runs when the app starts");
+    // The same arguments as the Train button's estimate.
+    assert.strictEqual(a.of("preflight_train")[0].args.params.contextLen, 16);
+    assert.strictEqual(a.of("preflight_train")[0].args.params.vocabSize, 512);
+    const html = a.$("trPreflight").innerHTML;
+    assert.ok(html.includes("64,000") && html.includes("Yes") && html.includes("300 MB of 2.93 GB usable"), html);
+    assert.ok(a.$("trForceLabel").classList.contains("hidden"));
+    assert.strictEqual(a.$("trStart").disabled, false);
+  }
+  {
+    // The form drives the pre-flight: changing a field re-asks (debounced); vocab 0 says "No".
+    let answer = PF_OK;
+    const a = await start({ preflight_train: async () => answer });
+    const n = a.of("preflight_train").length;
+    answer = { ...PF_OK, llamaCpp: { runs: false, reason: EVIL }, problems: [EVIL] };
+    a.set("trVocab", "0");
+    a.$("trVocab").dispatch("input");
+    await new Promise((r) => setTimeout(r, 40)); // the debounce timer runs for real (5 ms in the stub)
+    await settle(10);
+    assert.ok(a.of("preflight_train").length > n);
+    assert.strictEqual(a.of("preflight_train").slice(-1)[0].args.params.vocabSize, 0);
+    const html = a.$("trPreflight").innerHTML;
+    assert.ok(html.includes("No") && html.includes("&lt;img") && !html.includes("<img"), html);
+    assert.ok(html.includes("Fix first"));
+  }
+  {
+    // Over the RAM limit: Start is disabled with the reason, a click sends nothing, the box lifts it.
+    const tight = { ...PF_OK, peakRamMb: 5000, ramLimitMb: 3000, ramAvailableMb: 4000, fitsInRam: false };
+    const a = await start({ preflight_train: async () => tight, train_slm: async () => TRAINED });
+    a.set("trCorpus", "/c.txt"); a.set("trModel", "/m.gguf");
+    assert.strictEqual(a.$("trStart").disabled, true, "Start is disabled when the run does not fit");
+    assert.ok(!a.$("trForceLabel").classList.contains("hidden"), "the override box appears");
+    assert.ok(a.$("trPreflightWhy").textContent.includes("needs about 4.88 GB"), a.$("trPreflightWhy").textContent);
+    assert.ok(a.$("trPreflightWhy").textContent.includes("try anyway"));
+    await a.click("trStart"); // even a stray click is refused
+    assert.strictEqual(a.of("train_slm").length, 0);
+    assert.ok(a.$("errTrain").textContent.includes("needs about"));
+    a.$("trForce").checked = true;
+    a.$("trForce").dispatch("change");
+    assert.strictEqual(a.$("trStart").disabled, false, "ticking the box re-enables Start");
+    assert.ok(a.$("trPreflightWhy").textContent.startsWith("RAM check skipped"));
+    await a.click("trStart");
+    assert.strictEqual(a.of("train_slm").length, 1);
+    assert.strictEqual(a.of("train_slm")[0].args.params.force, true, "the override reaches the engine");
+    assert.strictEqual(a.$("trStart").disabled, false);
+    // Unticking blocks it again; a failing pre-flight never blocks (the engine still checks).
+    a.$("trForce").checked = false;
+    a.$("trForce").dispatch("change");
+    assert.strictEqual(a.$("trStart").disabled, true);
+    const b = await start({ preflight_train: async () => { throw "boom"; } });
+    assert.ok(b.$("trPreflight").textContent.includes("Pre-flight unavailable: boom"));
+    assert.strictEqual(b.$("trStart").disabled, false);
   }
 
   // ── Stop buttons (G9): shown while a job runs, send cancel_job, report the stop ──

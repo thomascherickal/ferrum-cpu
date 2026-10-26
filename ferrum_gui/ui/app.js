@@ -8,7 +8,7 @@ const invoke = hasTauri ? T.core.invoke : async () => { throw new Error("Not run
 const listen = hasTauri ? T.event.listen : async () => () => {};
 const dialog = hasTauri && T.dialog ? T.dialog : null;
 
-const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo } = window.FerrumEscape;
+const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo, preflightView, preflightWhy } = window.FerrumEscape;
 const $ = (id) => document.getElementById(id);
 let live = null; // tooltips + live estimates (live.js), created in init()
 const bySel = (s) => Array.from(document.querySelectorAll(s));
@@ -289,8 +289,52 @@ function drawChart() {
   ctx.fillText(min.toFixed(4), pad, h - 4);
 }
 
+// Pre-flight (preflight_train): parameter count, estimated peak RAM, llama.cpp verdict. It
+// follows the form (300 ms after the last change); Start is blocked while the run would exceed
+// what the engine allows, unless "I know, try anyway" is ticked.
+let preflight = null;
+let preflightSeq = 0;
+let preflightTimer = null;
+let trRunning = false;
+function updateStartGate() {
+  const why = preflightWhy(preflight);
+  const blocked = !!why && !$("trForce").checked;
+  $("trForceLabel").classList.toggle("hidden", !why);
+  $("trPreflightWhy").textContent = !why ? "" : blocked ? why : "RAM check skipped: the run may be slow, swap, or be killed by the system.";
+  $("trStart").disabled = trRunning || blocked;
+}
+async function runPreflight() {
+  if (!hasTauri) return;
+  const n = ++preflightSeq;
+  try {
+    const pf = await invoke("preflight_train", { params: window.FerrumLive.PARAMS.trStart(document) });
+    if (n !== preflightSeq) return; // a newer request superseded this one
+    preflight = pf;
+    $("trPreflight").innerHTML = preflightView(pf);
+  } catch (e) {
+    if (n !== preflightSeq) return;
+    preflight = null;
+    $("trPreflight").textContent = "Pre-flight unavailable: " + String(e);
+  }
+  updateStartGate();
+}
+function schedulePreflight() {
+  clearTimeout(preflightTimer);
+  preflightTimer = setTimeout(runPreflight, 300);
+}
+$("panel-train").querySelectorAll("input,select").forEach((el) => {
+  el.addEventListener("input", schedulePreflight);
+  el.addEventListener("change", schedulePreflight);
+});
+$("trForce").addEventListener("change", updateStartGate);
+$("tab-train").addEventListener("click", schedulePreflight);
+
 $("trStart").addEventListener("click", async () => {
   clearErr("errTrain");
+  if (preflight && preflightWhy(preflight) && !$("trForce").checked) {
+    setErr("errTrain", preflightWhy(preflight));
+    return;
+  }
   let params;
   try {
     params = {
@@ -324,6 +368,7 @@ $("trStart").addEventListener("click", async () => {
       resume: $("trResume").checked,
       valFraction: Math.max(0, num("trVal") || 0),
       patience: Math.max(0, int("trPatience") || 0),
+      force: $("trForce").checked,
     };
     if (params.resume && !params.checkpointPath)
       throw new Error("Resume needs a checkpoint file");
@@ -338,7 +383,8 @@ $("trStart").addEventListener("click", async () => {
   $("trBar").style.width = "0%";
   $("trResult").textContent = "";
   $("trStatus").textContent = "training…";
-  $("trStart").disabled = true;
+  trRunning = true;
+  updateStartGate();
   jobRunning("trCancel", "train", true);
   try {
     const r = await invoke("train_slm", { params });
@@ -358,7 +404,7 @@ $("trStart").addEventListener("click", async () => {
     $("trStatus").textContent = "error";
     setErr("errTrain", String(e));
     toast("Training failed: " + e, "error");
-  } finally { $("trStart").disabled = false; jobRunning("trCancel", "train", false); }
+  } finally { trRunning = false; updateStartGate(); jobRunning("trCancel", "train", false); }
 });
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -896,5 +942,6 @@ async function wireEvents() {
   $("connDot").title = "Backend connected";
   await wireEvents();
   restartMonitor();
+  runPreflight();
   termLine("Ferrum SLM Studio ready. Verbose engine logs and shell output appear here.", "sys");
 })();

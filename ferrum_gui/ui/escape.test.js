@@ -2,7 +2,7 @@
 //   node ui/escape.test.js
 "use strict";
 const assert = require("node:assert");
-const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo } = require("./escape.js");
+const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo, preflightView, preflightWhy } = require("./escape.js");
 
 const EVIL = [
   "<img src=x onerror=alert(1)>",
@@ -37,7 +37,21 @@ for (const e of EVIL) {
               vocabSize: e, tokenizer: e, estInt4Mb: 1, estInt8Mb: 2, estF32Mb: 4, availMb: null, note: e };
   noInjected(ggufInfo(g), "ggufInfo");
   noInjected(exportInfo(g), "exportInfo");
+  const pf = { params: 1000, peakRamMb: 10, ramLimitMb: 20, ramAvailableMb: 30, fitsInRam: true, seconds: 1, llamaCpp: { runs: false, reason: e }, problems: [e] };
+  noInjected(preflightView(pf), "preflightView");
 }
+
+// Pre-flight: RAM units, the blocked-Start reason, and the "fits" / "unknown" cases.
+const pf0 = { params: null, peakRamMb: null, ramLimitMb: null, ramAvailableMb: null, fitsInRam: true, llamaCpp: { runs: true, reason: "r" }, problems: [] };
+assert.ok(preflightView(pf0).includes("unknown"));
+assert.strictEqual(preflightWhy(pf0), "");
+assert.strictEqual(preflightWhy(null), "");
+const tight = { ...pf0, peakRamMb: 2048, ramLimitMb: 512, ramAvailableMb: 700, fitsInRam: false };
+assert.ok(preflightView(tight).includes("2.00 GB of 512 MB usable (700 MB free)"), preflightView(tight));
+assert.ok(preflightWhy(tight).startsWith("This run needs about 2.00 GB but the engine allows 512 MB"), preflightWhy(tight));
+assert.ok(preflightWhy(tight).includes("try anyway"));
+assert.strictEqual(preflightWhy({ ...tight, fitsInRam: true }), "", "fits: nothing to explain");
+assert.strictEqual(preflightWhy({ ...tight, peakRamMb: null }), "", "no peak known: never block");
 
 // Spot check: the attack string is visible as text, not markup.
 assert.ok(card("Name", EVIL[0]).includes("&lt;img src=x onerror=alert(1)&gt;"));

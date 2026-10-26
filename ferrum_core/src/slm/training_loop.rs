@@ -3,7 +3,7 @@ use crate::error::{InferError, Result};
 use crate::optim::Adam;
 use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
-use crate::slm::memory::{available_memory_bytes, check_train_memory};
+use crate::slm::memory::{available_memory_bytes, memory_gate};
 use crate::slm::metrics_log::{format_eta, CsvLog, Row};
 use crate::train_transformer::{steps_over, TokenSource, TransformerNet};
 
@@ -109,7 +109,8 @@ where
     let t = net.context_len();
     let batch = cfg.batch_size.max(1);
     let windows = tokens.len().saturating_sub(t + 1) / net.window_stride() + 1;
-    check_train_memory(
+    memory_gate(
+        cfg.skip_memory_check,
         net.train_peak_bytes(windows, batch, threads.max(1).min(batch)),
         available_memory_bytes(),
     )?;

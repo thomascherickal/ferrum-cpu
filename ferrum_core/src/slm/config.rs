@@ -77,6 +77,11 @@ pub struct TransformerConfig {
     /// and returns the model as trained so far; [`StopCondition::stopped`] says
     /// where. The default never stops.
     pub stop: StopCondition,
+    /// Skip the up-front memory refusal (training peaks above 16 GB or above three quarters
+    /// of the free RAM). For a caller that has shown the user the estimate and been told to go
+    /// on anyway (the GUI's "I know, try anyway"); the operating system may kill the process
+    /// if the run really does not fit. The CLI never sets it. Default `false`.
+    pub skip_memory_check: bool,
 }
 
 impl Default for TransformerConfig {
@@ -107,6 +112,7 @@ impl Default for TransformerConfig {
             log_every_steps: 0,
             metrics_csv: String::new(),
             stop: StopCondition::default(),
+            skip_memory_check: false,
         }
     }
 }

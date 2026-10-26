@@ -95,6 +95,43 @@ fn estimate_job_takes_the_ui_argument_shape_and_returns_camel_case() {
 }
 
 #[test]
+fn preflight_train_takes_the_ui_argument_shape_and_answers_in_camel_case() {
+    let (_app, w) = app();
+    let dir = tmp("preflight");
+    let corpus = dir.join("c.txt");
+    std::fs::write(&corpus, "the quick brown fox. ".repeat(500)).unwrap();
+    let form = |vocab: u64, heads: u64| {
+        json!({"params": {
+            "contextLen": 16, "embedDim": 32, "numHeads": heads, "numBlocks": 2, "hiddenDim": 64,
+            "epochs": 3, "batchSize": 16, "vocabSize": vocab, "threads": 0, "windowStride": 0,
+            "maxTokens": 0, "valFraction": 0.0, "corpusPath": corpus.to_string_lossy()
+        }})
+    };
+    let pf = call(&w, "preflight_train", form(512, 4)).unwrap();
+    // 512x32 embeddings, 16x32 positions, two blocks, final norm and head: the engine's count.
+    let want = ferrum_core::TransformerNet::check_size(512, 16, 32, 64, 2).unwrap();
+    assert_eq!(pf["params"], want);
+    assert!(pf["peakRamMb"].as_f64().unwrap() > 0.0);
+    assert_eq!(pf["llamaCpp"]["runs"], true);
+    assert_eq!(pf["problems"], json!([]));
+    assert!(pf["ramAvailableMb"].as_f64().unwrap() > 0.0, "{pf}");
+    // Character level: valid, but not portable.
+    let chars = call(&w, "preflight_train", form(0, 4)).unwrap();
+    assert_eq!(chars["llamaCpp"]["runs"], false);
+    assert!(chars["params"].as_u64().is_some());
+    // An invalid form lists the problem and gives no numbers.
+    let bad = call(&w, "preflight_train", form(512, 3)).unwrap();
+    assert!(
+        bad["problems"][0].as_str().unwrap().contains("divisible"),
+        "{bad}"
+    );
+    assert!(bad["params"].is_null());
+    // The UI also sends it before the form is filled in.
+    assert!(call(&w, "preflight_train", json!({"params": {}})).is_ok());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn clean_text_and_file_commands_round_trip_through_ipc() {
     let (_app, w) = app();
     let r = call(
@@ -620,6 +657,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (t.context_len, t.embed_dim, t.max_tokens, t.cosine_lr),
         (16, 32, 50_000_000, true)
     );
+    assert!(!t.force, "the RAM override is off unless ticked");
     assert_eq!(parses!("generate_slm", GenParams).gen_seed, Some(7));
     let e = parses!("evaluate_slm", EvalParams);
     assert_eq!(e.text.as_deref(), Some("held out"));

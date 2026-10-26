@@ -26,6 +26,7 @@ mod evaluate;
 pub mod hardware;
 mod jobs;
 mod paths;
+mod preflight;
 #[cfg(test)]
 mod test_support;
 
@@ -69,6 +70,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::system_stats,
             hardware::hardware_info,
             estimate_cmd::estimate_job,
+            preflight::preflight_train,
             capable::capability_report,
             datasets::list_datasets,
             datasets::download_dataset,

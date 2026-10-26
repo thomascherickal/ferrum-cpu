@@ -22,6 +22,15 @@ fn max_train_bytes() -> usize {
     usize::try_from(16u64 << 30).unwrap_or(usize::MAX)
 }
 
+/// [`check_train_memory`] unless the caller asked to skip it (`TransformerConfig::skip_memory_check`).
+pub(super) fn memory_gate(skip: bool, need: usize, avail: Option<usize>) -> Result<()> {
+    if skip {
+        Ok(())
+    } else {
+        check_train_memory(need, avail)
+    }
+}
+
 pub(super) fn check_train_memory(need: usize, avail: Option<usize>) -> Result<()> {
     let max = max_train_bytes();
     let cap = avail.map_or(max, |a| (a / 4 * 3).min(max));
@@ -38,7 +47,16 @@ pub(super) fn check_train_memory(need: usize, avail: Option<usize>) -> Result<()
 
 #[cfg(test)]
 mod tests {
-    use super::{available_memory_bytes, check_train_memory, max_train_bytes};
+    use super::{available_memory_bytes, check_train_memory, max_train_bytes, memory_gate};
+
+    #[test]
+    fn the_gate_refuses_unless_skipped() {
+        let too_much = max_train_bytes() + 1;
+        assert!(memory_gate(false, too_much, None).is_err());
+        assert!(memory_gate(true, too_much, None).is_ok());
+        assert!(memory_gate(true, usize::MAX, Some(1 << 20)).is_ok());
+        assert!(memory_gate(false, 1 << 20, Some(1 << 30)).is_ok());
+    }
 
     #[test]
     fn check_train_memory_caps_at_16_gb_and_three_quarters_of_available() {

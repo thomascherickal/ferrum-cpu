@@ -59,7 +59,29 @@
       card("Available RAM", availRam(i));
   }
 
-  const api = { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo };
+  // Train tab pre-flight: preflight_train -> cards (numbers and the llama.cpp verdict) + problems.
+  const mbText = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(2) + " GB" : Math.round(mb) + " MB");
+  function preflightView(pf) {
+    const ram = pf.peakRamMb == null ? "unknown"
+      : `${mbText(pf.peakRamMb)} of ${pf.ramLimitMb == null ? "?" : mbText(pf.ramLimitMb)} usable` +
+        (pf.ramAvailableMb == null ? "" : ` (${mbText(pf.ramAvailableMb)} free)`);
+    const lc = pf.llamaCpp || { runs: false, reason: "" };
+    const verdict = `<span class="${lc.runs ? "verdict-good" : "verdict-weak"}">${lc.runs ? "Yes" : "No"}</span>`;
+    return card("Parameters", pf.params == null ? "unknown" : pf.params.toLocaleString()) +
+      `<div class="card"><div class="k">Peak RAM (estimate)</div><div class="v ${pf.fitsInRam ? "" : "verdict-weak"}">${esc(ram)}</div></div>` +
+      `<div class="card"><div class="k">Runs in llama.cpp?</div><div class="v">${verdict}</div></div>` +
+      `<div class="card"><div class="k">About</div><div class="v">${esc(lc.reason)}</div></div>` +
+      (pf.problems || []).map((m) => `<div class="card"><div class="k">Fix first</div><div class="v verdict-weak">${esc(m)}</div></div>`).join("");
+  }
+  // Why Start is blocked ("" when it is not): the run needs more RAM than the engine allows.
+  function preflightWhy(pf) {
+    if (!pf || pf.fitsInRam || pf.peakRamMb == null) return "";
+    return `This run needs about ${mbText(pf.peakRamMb)} but the engine allows ${pf.ramLimitMb == null ? "less" : mbText(pf.ramLimitMb)} ` +
+      `(three quarters of your ${pf.ramAvailableMb == null ? "free" : mbText(pf.ramAvailableMb)} RAM, at most 16 GB). ` +
+      `Lower batch, context, embed dim or blocks, or tick "I know, try anyway".`;
+  }
+
+  const api = { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo, preflightView, preflightWhy };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {
