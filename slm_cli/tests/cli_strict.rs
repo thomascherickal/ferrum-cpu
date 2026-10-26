@@ -429,3 +429,35 @@ fn nonsense_training_hyperparameters_fail_before_training_starts() {
         assert!(text.contains(want), "{extra:?}: {text}");
     }
 }
+
+#[test]
+fn closed_stdout_exits_quietly_instead_of_panicking() {
+    use std::process::Stdio;
+    let c = corpus();
+    let model = c.with_file_name("pipe.gguf");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+        .args(["train", c.to_str().unwrap(), model.to_str().unwrap()])
+        .args([
+            "--epochs",
+            "2",
+            "--context",
+            "8",
+            "--embed",
+            "16",
+            "--heads",
+            "2",
+        ])
+        .args(["--blocks", "1", "--hidden", "32"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take()); // like `| head -1` after the first line
+    let out = child.wait_with_output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !err.contains("panicked") && !err.contains("Broken pipe"),
+        "{err}"
+    );
+    assert_eq!(out.status.code(), Some(0), "{err}");
+}

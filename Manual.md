@@ -582,6 +582,8 @@ parser with its own allow-list of flags:
 A flag given twice takes its last value, except the repeatable `--stop` and
 `--input`. A negative number is read as a value (`--temp -1`, which is then
 rejected by the range check). `--verbose` and `-v` are accepted everywhere.
+When stdout is closed early (`train_transformer info m.gguf | head -1`) the command
+exits 0 quietly instead of printing a panic.
 
 **Model file name.** Model files are GGUF. Use `.gguf`: `model.gguf`. `train` writes the
 model and a new tokenizer file atomically (a temporary `<name>.tmp` in the same directory, then a

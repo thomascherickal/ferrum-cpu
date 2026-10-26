@@ -90,6 +90,19 @@ use crate::train::*;
 use crate::usage::*;
 
 pub(crate) fn main() {
+    // `train_transformer info m.gguf | head -1`: `println!` panics on a closed pipe. The
+    // lazy fix for every print site at once: a panic whose message is that failure exits 0.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<String>()
+            .map_or("", |s| s.as_str());
+        if msg.starts_with("failed printing to stdout") && msg.contains("Broken pipe") {
+            std::process::exit(0);
+        }
+        default_hook(info);
+    }));
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);
