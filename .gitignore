@@ -48,3 +48,6 @@ eval/lighteval/out/
 __pycache__/
 # DataOps virtualenv (DVC)
 .venv/
+
+# Scratch output of the Samples.md walk-throughs (models, logs, caches)
+/samples/
