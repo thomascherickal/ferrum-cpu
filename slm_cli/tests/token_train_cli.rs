@@ -196,6 +196,24 @@ fn resuming_a_token_file_run_matches_the_text_run() {
 }
 
 #[test]
+fn info_describes_a_token_file() {
+    let e = Env::new("info");
+    let (ok, out) = tt(&["info", &e.s("c.tok.gguf")]);
+    assert!(ok, "{out}");
+    for want in [
+        "(ferrum-tokens)",
+        "pre-tokenized corpus",
+        "Tokens    : ",
+        "Documents : 60",
+        "Vocab     : 300",
+        "EOS id    : ",
+        "sha256 ",
+    ] {
+        assert!(out.contains(want), "{want}: {out}");
+    }
+}
+
+#[test]
 fn validation_from_a_token_file_trains_and_reports_perplexity() {
     let e = Env::new("val");
     let (ok, out) = e.train(

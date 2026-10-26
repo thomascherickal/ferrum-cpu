@@ -1,4 +1,4 @@
-//! `info`: describe a GGUF file (a Ferrum model, an imported llama/qwen model, or a checkpoint).
+//! `info`: describe a GGUF file (a Ferrum model, an imported llama/qwen model, a checkpoint, or a token file).
 
 use crate::args::*;
 use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, MetaValue, TransformerNet};
@@ -94,6 +94,23 @@ pub(crate) fn cmd_info(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                 println!("Hidden    : {}", c.hidden);
                 println!("Blocks    : {}", c.blocks);
                 println!("Step      : {}", c.step);
+                return Ok(());
+            }
+            Some("ferrum-tokens") => {
+                let f = ferrum_core::TokenFile::open(model_path)?;
+                println!("Model     : {model_path}  ({size} bytes)");
+                println!("Format    : GGUF v{} (ferrum-tokens)", g.version);
+                println!(
+                    "Kind      : pre-tokenized corpus; train on it with train {model_path} ..."
+                );
+                println!("Tokens    : {}", f.len());
+                println!("Documents : {}", f.documents());
+                println!("Vocab     : {}", f.vocab_size());
+                match f.eos_id() {
+                    Some(e) => println!("EOS id    : {e}"),
+                    None => println!("EOS id    : none"),
+                }
+                println!("Tokenizer : sha256 {}", f.tokenizer_sha256());
                 return Ok(());
             }
             Some("ferrum-llama-checkpoint") => {
