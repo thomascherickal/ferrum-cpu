@@ -1,5 +1,49 @@
 //! The `--help` text.
 
+use crate::args::{Kind, Spec};
+
+/// The synopsis after `train_transformer ` for each command (aliases map to their command).
+fn synopsis(cmd: &str) -> &'static str {
+    match cmd {
+        "train" => "train <corpus.txt> <model.gguf> [options]",
+        "run" => "run <corpus.txt> <model.gguf> <seed text> [options]",
+        "generate" | "gen" => "generate <model.gguf> <seed text> [options]",
+        "run-gguf" | "gguf" => "run-gguf <model.gguf> [prompt] [options]",
+        "finetune-gguf" | "finetune" => {
+            "finetune-gguf <model.gguf> <corpus.txt> <out.flck> [options]"
+        }
+        "export-gguf" | "export" => "export-gguf <in.gguf> <out.gguf> [options]",
+        "export-ollama" => "export-ollama <model.gguf> <name> [options]",
+        "export-lmstudio" => "export-lmstudio <model.gguf> [options]",
+        "eval" => "eval <model.gguf> <heldout.txt> [options]",
+        "prepare" => "prepare --input <file|dir> --out <dir> [options]",
+        _ => "info <model.gguf>",
+    }
+}
+
+/// `<command> --help`: the synopsis plus every flag the parser accepts (from its flag table).
+pub(crate) fn command_usage(cmd: &str, spec: Spec) -> String {
+    let mut out = format!("usage: train_transformer {}\n", synopsis(cmd));
+    if cmd != "info" {
+        out.push_str("options:\n");
+    }
+    for (name, kind) in spec {
+        let value = match kind {
+            Kind::Bool => "",
+            Kind::Usize | Kind::U64 => " <N>",
+            Kind::F32 | Kind::F64 => " <F>",
+            Kind::Str => " <S>",
+            Kind::StrList => " <S>  (repeatable)",
+        };
+        out.push_str(&format!("  --{name}{value}\n"));
+    }
+    if cmd != "info" {
+        out.push_str("  --verbose, -v\n");
+    }
+    out.push_str("see 'train_transformer --help' for all commands\n");
+    out
+}
+
 pub(crate) fn print_usage() {
     eprintln!(
         "train_transformer — ferrum causal transformer SLM trainer & generator\n\

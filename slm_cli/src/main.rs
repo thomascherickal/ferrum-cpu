@@ -108,11 +108,21 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
             print_usage();
             return Ok(());
         }
-        eprintln!("unknown command: {cmd}\n");
-        print_usage();
+        if matches!(cmd.as_str(), "-V" | "--version") {
+            println!("train_transformer {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        eprintln!("unknown command: {cmd} (run 'train_transformer --help' for usage)");
         std::process::exit(1);
     };
+    if argv[2..].iter().any(|a| a == "--help" || a == "-h") {
+        print!("{}", command_usage(&cmd, spec));
+        return Ok(());
+    }
     let args = Args::parse_for(&cmd, &argv[2..], spec)?;
+    if let Some(extra) = max_positional(&cmd).and_then(|n| args.positional.get(n)) {
+        return Err(format!("unexpected argument '{extra}' for '{cmd}'").into());
+    }
     let raw_args = &argv[2..];
     if engine_debug(&cmd, &args) {
         ferrum_core::set_verbose(true);

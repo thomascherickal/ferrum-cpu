@@ -114,7 +114,97 @@ fn unknown_command_is_an_error_with_usage() {
     let (code, text) = run(&["frobnicate"]);
     assert_eq!(code, 1, "{text}");
     assert!(text.contains("unknown command: frobnicate"), "{text}");
-    assert!(text.contains("USAGE"), "{text}");
+    assert!(
+        text.contains("--help"),
+        "names the way to the usage: {text}"
+    );
+    assert!(!text.contains("USAGE"), "no usage dump: {text}");
+    assert_eq!(text.trim().lines().count(), 1, "{text}");
+}
+
+#[test]
+fn extra_positional_arguments_are_errors_naming_the_token() {
+    for args in [
+        &["info", "m.gguf", "extra"][..],
+        &["eval", "m.gguf", "t.txt", "extra"][..],
+        &["prepare", "--input", "x", "--out", "y", "extra"][..],
+        &["prepare", "extra"][..],
+        &["train", "c.txt", "m.gguf", "extra"][..],
+        &["finetune-gguf", "m.gguf", "c.txt", "o.flck", "extra"][..],
+        &["export-gguf", "a.gguf", "b.gguf", "extra"][..],
+        &["export-ollama", "m.gguf", "name", "extra"][..],
+        &["export-lmstudio", "m.gguf", "extra"][..],
+    ] {
+        let (code, text) = run(args);
+        assert_eq!(code, 1, "{args:?}: {text}");
+        assert!(
+            text.contains("unexpected argument 'extra'"),
+            "{args:?}: {text}"
+        );
+    }
+}
+
+#[test]
+fn prompt_commands_still_join_their_extra_words() {
+    // generate/run/run-gguf take free text: this must get past the argument check.
+    let (_, text) = run(&["generate", "/nonexistent/m.gguf", "two", "words"]);
+    assert!(!text.contains("unexpected argument"), "{text}");
+}
+
+#[test]
+fn version_flag_prints_name_and_version() {
+    for f in ["--version", "-V"] {
+        let o = Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+            .arg(f)
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{f}");
+        assert_eq!(
+            String::from_utf8_lossy(&o.stdout).trim(),
+            format!("train_transformer {}", env!("CARGO_PKG_VERSION"))
+        );
+    }
+}
+
+#[test]
+fn command_help_prints_that_commands_usage_on_stdout() {
+    for cmd in [
+        "train",
+        "run",
+        "generate",
+        "run-gguf",
+        "finetune-gguf",
+        "export-gguf",
+        "export-ollama",
+        "export-lmstudio",
+        "eval",
+        "prepare",
+        "info",
+    ] {
+        for h in ["--help", "-h"] {
+            let o = Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+                .args([cmd, h])
+                .output()
+                .unwrap();
+            let out = String::from_utf8_lossy(&o.stdout);
+            assert_eq!(o.status.code(), Some(0), "{cmd} {h}");
+            assert!(
+                out.contains(&format!("usage: train_transformer {cmd}")),
+                "{cmd}: {out}"
+            );
+        }
+    }
+    // the options come from the same flag table the parser uses
+    let o = Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+        .args(["train", "--help"])
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        out.contains("--context") && out.contains("--no-qat"),
+        "{out}"
+    );
+    assert!(!out.contains("--stop"), "train has no --stop: {out}");
 }
 
 #[test]

@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 pub const USAGE: &str =
     "usage: ferrum-serve --model <model.gguf> [--host 127.0.0.1] [--port 8080] \
-[--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] [--help]";
+[--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] [--help] [--version]";
 
 const KNOWN: &[&str] = &[
     "--model",
@@ -34,6 +34,7 @@ fn parse_value<T: FromStr>(name: &str, v: &str) -> Result<T, String> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Parsed {
     Help,
+    Version,
     Run(Config),
 }
 
@@ -48,6 +49,9 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
     while let Some(name) = it.next() {
         if name == "--help" || name == "-h" {
             return Ok(Parsed::Help);
+        }
+        if name == "--version" || name == "-V" {
+            return Ok(Parsed::Version);
         }
         if !name.starts_with("--") {
             return Err(format!("unexpected argument '{name}'"));
@@ -100,6 +104,10 @@ pub async fn start(
             println!("{USAGE}");
             Ok(())
         }
+        Parsed::Version => {
+            println!("ferrum-serve {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         Parsed::Run(cfg) => run(cfg, shutdown).await,
     }
 }
@@ -138,6 +146,7 @@ mod tests {
         match super::parse_args(args)? {
             Parsed::Run(c) => Ok(c),
             Parsed::Help => Err("help".into()),
+            Parsed::Version => Err("version".into()),
         }
     }
 

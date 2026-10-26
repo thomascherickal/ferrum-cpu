@@ -43,6 +43,19 @@ fn help_prints_usage_and_exits_zero() {
 }
 
 #[test]
+fn version_prints_name_and_version_and_exits_zero() {
+    for f in ["--version", "-V"] {
+        let o = run(&[f]);
+        assert!(o.status.success(), "{f}");
+        let out = String::from_utf8_lossy(&o.stdout);
+        assert_eq!(
+            out.trim(),
+            format!("ferrum-serve {}", env!("CARGO_PKG_VERSION"))
+        );
+    }
+}
+
+#[test]
 fn bad_arguments_exit_one_with_error_on_stderr() {
     for args in [
         &["--bogus", "1"][..],

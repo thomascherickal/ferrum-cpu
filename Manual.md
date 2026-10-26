@@ -563,12 +563,15 @@ train_transformer train <corpus.txt> <model.gguf> [options]
 train_transformer run   <corpus.txt> <model.gguf> <seed text> [options]   # train if needed, then generate
 ```
 
-`train_transformer --help` prints the same flags. Every subcommand uses a strict
+`train_transformer --help` prints the same flags, `train_transformer <command> --help`
+prints one command's usage and its exact flag list, and `train_transformer --version`
+(or `-V`) prints `train_transformer <version>`. Every subcommand uses a strict
 parser with its own allow-list of flags:
 
 | Mistake | What happens |
 |---|---|
 | Unknown flag | Error naming the subcommand and listing the valid flags, for example `unknown flag --contxt for 'train' (valid: --context --embed ...)` |
+| Extra positional argument (`info m.gguf extra`) | Error naming the extra token. Only `run`, `generate` and `run-gguf` take free text, which they join into the prompt |
 | Value that does not parse (`--context 12x`) | Error naming the flag and the value; never a silent default |
 | Flag with no value (`--temp` at the end) | `--temp needs a value` |
 | `--checkpoint`, `--tokenizer` or `--resume` naming the same file as the model output (also spelled differently, through `..` or a symlink); `finetune-gguf` output equal to the base model or corpus | Error `X and Y are the same file`, before any work |
@@ -1360,7 +1363,7 @@ ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
 ```
 
 The server binds to loopback by default and prints the model and address when
-it is ready. Unknown flags are errors. It holds one loaded model on **one
+it is ready. Unknown flags are errors; `ferrum-serve --version` prints the version. It holds one loaded model on **one
 dedicated model thread** and handles **one request at a time**, because
 `GenerativeSLM` is not `Send` or `Sync`. Each matmul still uses every core.
 

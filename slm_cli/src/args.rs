@@ -151,6 +151,18 @@ pub(crate) fn spec_for(cmd: &str) -> Option<Spec> {
     })
 }
 
+/// The most positional arguments a command takes; `None` for the free-text commands
+/// (`run`, `generate`, `run-gguf` join the extra words into the prompt).
+pub(crate) fn max_positional(cmd: &str) -> Option<usize> {
+    match cmd {
+        "train" | "export-gguf" | "export" | "export-ollama" | "eval" => Some(2),
+        "finetune-gguf" | "finetune" => Some(3),
+        "export-lmstudio" | "info" => Some(1),
+        "prepare" => Some(0),
+        _ => None,
+    }
+}
+
 /// Parsed `positional --flag value` arguments for one subcommand.
 pub(crate) struct Args {
     pub(crate) positional: Vec<String>,

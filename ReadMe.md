@@ -159,7 +159,10 @@ command, then repeat the same command with `--resume run.fckp`.
 [Manual §6](Manual.md#6-training-an-slm) explains every flag.
 
 The CLI is strict. An unknown flag, a value that does not parse, or a missing
-`--resume` file stops the command with an error that names the problem.
+`--resume` file stops the command with an error that names the problem, and so
+does an extra positional argument (`info m.gguf extra`). `train_transformer
+--version` prints the version, and `train_transformer <command> --help` prints
+that command's flags.
 
 ### Reproduce it with DVC
 
