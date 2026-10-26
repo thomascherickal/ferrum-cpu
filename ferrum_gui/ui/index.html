@@ -247,16 +247,48 @@
       <label>…or paste held-out text
         <textarea id="evText" rows="3" placeholder="Paste held-out text to score against"></textarea>
       </label>
+      <div class="row">
+        <label>Test text file (optional) <input type="text" id="evTestFile" placeholder="/path/to/test.txt — scored as a second row" /></label>
+        <button class="ghost browse" id="evTestFileBrowse" data-target="evTestFile">Browse…</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="evLossy" /> Decode invalid UTF-8 lossily (replace bad bytes instead of refusing the file)</label>
+      <fieldset>
+        <legend>Imported Llama/Qwen GGUF only</legend>
+        <p class="hint">A Ferrum model needs none of these. For a Llama or Qwen
+          <code>.gguf</code> the model is scored like <code>eval-gguf</code>.</p>
+        <div class="grid">
+          <label>Precision
+            <select id="evQuant">
+              <option value="f32">f32 (exact)</option>
+              <option value="int8">int8</option>
+              <option value="int4">int4</option>
+            </select>
+          </label>
+          <label>Window tokens (0 = auto) <input type="number" id="evCtx" value="0" min="0" step="1" /></label>
+        </div>
+        <div class="row">
+          <label>Fine-tune checkpoint (optional) <input type="text" id="evResume" placeholder="/path/to/finetune.flck — scores the tuned weights (forces f32)" /></label>
+          <button class="ghost browse" id="evResumeBrowse" data-target="evResume">Browse…</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="evForce" /> Load even if it may exceed available RAM</label>
+      </fieldset>
       <span class="err" id="errEval"></span>
       <div class="row">
         <button id="evRun" class="primary">Evaluate &amp; add row</button>
         <button id="evClear" class="ghost">Clear table</button>
         <span id="evStatus" class="muted"></span>
       </div>
+      <div class="row">
+        <label>Save JSON to <input type="text" id="evJsonPath" placeholder="/path/to/eval.json" /></label>
+        <button class="ghost browse-save" id="evJsonBrowse" data-target="evJsonPath">Browse…</button>
+        <button id="evSaveJson" class="ghost">Save JSON</button>
+      </div>
+      <span class="err" id="errEvalJson"></span>
       <table id="evTable" class="data">
         <thead><tr>
-          <th>Model</th><th>Predictions</th><th>Cross-entropy (nats)</th>
-          <th>Bits/token</th><th>Perplexity</th><th>Uniform baseline</th><th>Verdict</th>
+          <th>Model</th><th>Set</th><th>Predictions</th><th>Cross-entropy (nats)</th>
+          <th>Bits/token</th><th>Bits/byte</th><th>Perplexity</th><th>Uniform baseline</th>
+          <th>Seconds</th><th>Verdict</th>
         </tr></thead>
         <tbody></tbody>
       </table>

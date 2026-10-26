@@ -292,7 +292,40 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
     assert!(bad.as_str().unwrap().contains("temperature"), "{bad}");
 
     let ev = call(&w, "evaluate_slm", json!({"params": {"modelPath": model, "text": "the lazy dog. the quick brown fox.", "textPath": null}})).unwrap();
+    let ev = &ev.as_array().unwrap()[0];
     assert!(ev["perplexity"].as_f64().unwrap() > 0.0 && ev["numPredictions"].as_u64().unwrap() > 0);
+    // G6: the row carries the CLI's numbers (bits per byte, bytes, seconds) and `eval --json`'s keys,
+    // and a test file adds a second row.
+    assert!(ev["bitsPerByte"].as_f64().unwrap() > 0.0 && ev["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(ev["label"], "held-out");
+    let report = ev["report"].as_object().unwrap();
+    for k in [
+        "perplexity",
+        "cross_entropy_nats",
+        "bits_per_token",
+        "bits_per_byte",
+        "tokens",
+        "bytes",
+        "seconds",
+    ] {
+        assert!(report.contains_key(k), "{k}");
+    }
+    let test_file = dir.join("test.txt");
+    std::fs::write(&test_file, "the quick brown fox. the lazy dog.").unwrap();
+    let pair = call(
+        &w,
+        "evaluate_slm",
+        json!({"params": {"modelPath": model, "text": "the lazy dog.", "textPath": null,
+        "testPath": test_file.to_string_lossy(), "lossy": true}}),
+    )
+    .unwrap();
+    let labels: Vec<_> = pair
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["label"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(labels, ["held-out", "test"]);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -539,6 +572,27 @@ fn imported_gguf_inspect_run_finetune_export_through_ipc() {
     assert!(
         ex["bytes"].as_u64().unwrap() > 0 && ex["tensorSummary"].as_str().unwrap().contains("F32")
     );
+    // G6: the Evaluate tab scores the imported model, with and without the fine-tune checkpoint.
+    let held = dir.join("held.txt");
+    std::fs::write(&held, "hi abc hi abc hi abc hi abc hi abc hi abc").unwrap();
+    let eval_gguf = |resume: Value| {
+        call(
+            &w,
+            "evaluate_slm",
+            json!({"params": {"modelPath": src, "text": null, "textPath": held.to_string_lossy(),
+                "quant": "f32", "ctx": 0, "resume": resume, "force": false}}),
+        )
+        .unwrap()[0]
+            .clone()
+    };
+    let base = eval_gguf(json!(null));
+    let tuned = eval_gguf(json!(ckpt));
+    assert_eq!(base["uniformBaseline"], 32.0);
+    assert!(base["perplexity"].as_f64().unwrap().is_finite());
+    assert_ne!(
+        base["crossEntropy"], tuned["crossEntropy"],
+        "the checkpoint changes the weights"
+    );
     let phases = export_progress.lock().unwrap().join("|");
     assert!(phases.contains("applying"), "{phases}");
     let _ = std::fs::remove_dir_all(dir);
@@ -550,8 +604,9 @@ fn imported_gguf_inspect_run_finetune_export_through_ipc() {
 #[test]
 fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     use crate::commands::{
-        CleanOpts, EvalParams, ExportParams, FinetuneParams, GenParams, GgufRunParams, TrainParams,
+        CleanOpts, ExportParams, FinetuneParams, GenParams, GgufRunParams, TrainParams,
     };
+    use crate::evaluate::EvalParams;
     let fixture: Value =
         serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
     macro_rules! parses {
@@ -566,9 +621,11 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (16, 32, 50_000_000, true)
     );
     assert_eq!(parses!("generate_slm", GenParams).gen_seed, Some(7));
+    let e = parses!("evaluate_slm", EvalParams);
+    assert_eq!(e.text.as_deref(), Some("held out"));
     assert_eq!(
-        parses!("evaluate_slm", EvalParams).text.as_deref(),
-        Some("held out")
+        (e.quant.as_str(), e.ctx, e.lossy, e.force),
+        ("f32", 0, false, false)
     );
     let g = parses!("run_gguf", GgufRunParams);
     assert_eq!((g.quant.as_str(), g.top_k, g.raw), ("int4", 40, true));

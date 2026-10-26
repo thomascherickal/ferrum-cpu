@@ -32,7 +32,7 @@ fn time_seed() -> u64 {
         | 1
 }
 
-fn file_name(path: &str) -> String {
+pub(crate) fn file_name(path: &str) -> String {
     Path::new(path)
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -615,69 +615,6 @@ fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Resu
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Evaluation (requirement #5) — perplexity table rows
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EvalParams {
-    pub model_path: String,
-    pub text: Option<String>,
-    pub text_path: Option<String>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EvalRow {
-    pub model: String,
-    pub num_predictions: usize,
-    pub cross_entropy: f32,
-    pub bits_per_token: f32,
-    pub perplexity: f32,
-    pub uniform_baseline: f32,
-}
-
-/// Score a model against held-out text; returns one table row.
-#[tauri::command]
-pub async fn evaluate_slm(
-    state: State<'_, AppState>,
-    params: EvalParams,
-) -> Result<EvalRow, String> {
-    // One pass of the engine's scorer, which has no stop hook: it can be refused while another
-    // evaluation runs, but not cancelled.
-    let job = state.jobs.start(Job::Evaluate)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let _job = job;
-        checked_path("model path", &params.model_path, true)?;
-        if let Some(tp) = params.text_path.as_deref().filter(|s| !s.trim().is_empty()) {
-            checked_path("held-out text path", tp, true)?;
-        }
-        let text = match (&params.text, &params.text_path) {
-            (Some(t), _) if !t.trim().is_empty() => t.clone(),
-            (_, Some(path)) if !path.trim().is_empty() => {
-                std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?
-            }
-            _ => return Err("provide held-out text or a text file to evaluate against".into()),
-        };
-        let slm = GenerativeSLM::load(&params.model_path)
-            .map_err(|e| format!("cannot load model {}: {e}", params.model_path))?;
-        let ev = slm
-            .evaluate(&text)
-            .map_err(|e| format!("evaluation failed: {e}"))?;
-        Ok(EvalRow {
-            model: file_name(&params.model_path),
-            num_predictions: ev.num_predictions,
-            cross_entropy: ev.cross_entropy,
-            bits_per_token: ev.bits_per_token,
-            perplexity: ev.perplexity,
-            uniform_baseline: slm.meta.output_dim as f32,
-        })
-    })
-    .await
-    .map_err(|e| format!("task error: {e}"))?
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 5. Model info / load / reload (requirement #6)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -736,7 +673,7 @@ pub fn model_info(path: String) -> Result<ModelInfo, String> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Map a UI quant string to an import precision (`None` = keep f32).
-fn parse_quant(q: &str) -> Result<Option<QKind>, String> {
+pub(crate) fn parse_quant(q: &str) -> Result<Option<QKind>, String> {
     match q {
         "int4" | "q4" => Ok(Some(QKind::Int4)),
         "int8" | "q8" => Ok(Some(QKind::Int8)),
@@ -747,7 +684,7 @@ fn parse_quant(q: &str) -> Result<Option<QKind>, String> {
 
 /// Estimate resident bytes for a loaded model from the GGUF directory: the token
 /// embedding stays f32, everything else packs to the chosen precision.
-fn gguf_resident_bytes(g: &Gguf, prec: Option<QKind>) -> usize {
+pub(crate) fn gguf_resident_bytes(g: &Gguf, prec: Option<QKind>) -> usize {
     let mut total = 0usize;
     for t in &g.tensors {
         let n = t.num_elements();
@@ -774,7 +711,7 @@ fn param_count(g: &Gguf) -> u64 {
 }
 
 /// Best-effort available RAM (Linux `/proc/meminfo`); `None` elsewhere.
-fn available_memory_bytes() -> Option<usize> {
+pub(crate) fn available_memory_bytes() -> Option<usize> {
     // Cross-platform via sysinfo (0.33 reports bytes). The previous /proc/meminfo
     // reader returned None on macOS/Windows, silently disabling the RAM guard on
     // the very desktops the Tauri app also ships to.

@@ -251,7 +251,10 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
 
   // ── Evaluate ────────────────────────────────────────────────────────────
   {
-    const a = await start({ evaluate_slm: async () => ({ model: EVIL, numPredictions: 1234, crossEntropy: 2.5, bitsPerToken: 3.6, perplexity: 12.25, uniformBaseline: 300 }) });
+    const report = (extra = {}) => ({ perplexity: 12.25, cross_entropy_nats: 2.5, bits_per_token: 3.6, bits_per_byte: 1.9, tokens: 1234, bytes: 2000, seconds: 0.5, ...extra });
+    const row = (label, extra = {}) => ({ model: EVIL, label, numPredictions: 1234, crossEntropy: 2.5, bitsPerToken: 3.6, bitsPerByte: 1.9, perplexity: 12.25, uniformBaseline: 300, bytes: 2000, seconds: 0.5, report: report(extra), ...extra });
+    let answer = [row("held-out")];
+    const a = await start({ evaluate_slm: async () => answer, save_corpus: async (args) => args.text.length });
     await a.click("tab-evaluate");
     await a.click("evRun");
     assert.ok(a.$("errEval").textContent.includes("Model is required"));
@@ -260,16 +263,59 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a.$("errEval").textContent.includes("Provide held-out text or a file"));
     a.set("evText", "  held out  ");
     await a.click("evRun");
-    assert.deepStrictEqual(a.of("evaluate_slm")[0].args, { params: { modelPath: "/m.gguf", text: "held out", textPath: null } });
+    assert.deepStrictEqual(a.of("evaluate_slm")[0].args, { params: {
+      modelPath: "/m.gguf", text: "held out", textPath: null, testPath: null, lossy: false, quant: "f32", ctx: 0, resume: null, force: false,
+    } });
     captured.evaluate_slm = a.of("evaluate_slm")[0].args.params;
     const rows = a.$("evTable").querySelector("tbody").children;
     assert.strictEqual(rows.length, 1);
     assert.ok(rows[0].innerHTML.includes("&lt;img") && !rows[0].innerHTML.includes("<img"), rows[0].innerHTML);
     assert.ok(rows[0].innerHTML.includes("learned"), "12.25 is far below half of 300");
+    assert.ok(rows[0].innerHTML.includes("<td>1.9000</td>") && rows[0].innerHTML.includes("<td>0.50</td>"), rows[0].innerHTML);
+    assert.strictEqual(a.$("evStatus").textContent, "added");
+
+    // Save JSON: refuses before a path is given; one row is written as the CLI's `eval --json`.
+    await a.click("evSaveJson");
+    assert.ok(a.$("errEvalJson").textContent.includes("JSON output path is required"));
+    a.set("evJsonPath", "/out/eval.json");
+    await a.click("evSaveJson");
+    assert.strictEqual(a.$("errEvalJson").textContent, "");
+    const saved = a.of("save_corpus")[0].args;
+    assert.strictEqual(saved.path, "/out/eval.json");
+    assert.deepStrictEqual(JSON.parse(saved.text), report());
+    assert.ok(saved.text.endsWith("}\n"));
+    assert.deepStrictEqual(Object.keys(JSON.parse(saved.text)).sort(),
+      ["bits_per_byte", "bits_per_token", "bytes", "cross_entropy_nats", "perplexity", "seconds", "tokens"]);
+
+    // Every option reaches the backend; a held-out + test pair adds two rows and saves both.
+    a.set("evFile", "/h.txt"); a.set("evText", ""); a.set("evTestFile", "/t.txt"); a.$("evLossy").checked = true;
+    a.set("evQuant", "int8"); a.set("evCtx", "64"); a.set("evResume", "/ck.flck"); a.$("evForce").checked = true;
+    answer = [row("held-out"), row("test", { perplexity: 200 })];
     await a.click("evRun");
-    assert.strictEqual(a.$("evTable").querySelector("tbody").children.length, 2);
+    assert.deepStrictEqual(a.of("evaluate_slm")[1].args.params, {
+      modelPath: "/m.gguf", text: null, textPath: "/h.txt", testPath: "/t.txt", lossy: true, quant: "int8", ctx: 64, resume: "/ck.flck", force: true,
+    });
+    assert.strictEqual(a.$("evTable").querySelector("tbody").children.length, 3);
+    assert.strictEqual(a.$("evStatus").textContent, "added 2 rows");
+    assert.ok(a.$("evTable").querySelector("tbody").children[2].innerHTML.includes("weak"));
+    await a.click("evSaveJson");
+    const pair = JSON.parse(a.of("save_corpus")[1].args.text);
+    assert.deepStrictEqual(Object.keys(pair), ["held_out", "test"]);
+    assert.strictEqual(pair.test.perplexity, 200);
+    // A bad window is refused before any call.
+    const n = a.of("evaluate_slm").length;
+    a.set("evCtx", "-1");
+    await a.click("evRun");
+    assert.ok(a.$("errEval").textContent.includes("Window tokens"));
+    assert.strictEqual(a.of("evaluate_slm").length, n);
     await a.click("evClear");
     assert.strictEqual(a.$("evTable").querySelector("tbody").children.length, 0);
+
+    // Nothing to save before a run succeeds.
+    const b = await start({});
+    b.set("evJsonPath", "/x.json");
+    await b.click("evSaveJson");
+    assert.ok(b.$("errEvalJson").textContent.includes("Run an evaluation first"));
   }
 
   // ── Models ──────────────────────────────────────────────────────────────

@@ -181,10 +181,13 @@ pub struct JobParams {
     pub corpus_path: String,
     pub model_path: String,
     pub text_path: String,
+    /// The Evaluate tab's optional second (test) file.
+    pub test_path: String,
     pub resume_path: String,
     // Resolved by `estimate_cmd` (tests set them directly).
     pub corpus_bytes: Option<u64>,
     pub text_bytes: Option<u64>,
+    pub test_bytes: Option<u64>,
     pub resume_bytes: Option<u64>,
     pub slm: Option<SlmFacts>,
     pub gguf: Option<GgufFacts>,
@@ -562,7 +565,7 @@ fn generate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
 }
 
 fn evaluate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
-    let s = slm_or_default(&mut d, p);
+    // The text to score: pasted or a file, plus the optional test file.
     let bytes = match (p.text_bytes, p.text_chars) {
         (Some(b), _) if b > 0 => b as f64,
         (_, c) if c > 0 => c as f64,
@@ -570,7 +573,11 @@ fn evaluate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
             d.note("No held-out text yet: assuming 100 KB.");
             100_000.0
         }
-    };
+    } + p.test_bytes.unwrap_or(0) as f64;
+    if p.slm.is_none() && p.gguf.is_some() {
+        return evaluate_gguf(d, p, bytes, speed);
+    }
+    let s = slm_or_default(&mut d, p);
     let tokens = bytes / bytes_per_token(s.vocab);
     d.threads = effective_threads(0, d.hw);
     let gflops = (train_gflops_8(s.matmul_params as f64)
@@ -589,6 +596,44 @@ fn evaluate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
         Some(s.params as f64 * 4.0),
         limit,
     )
+}
+
+/// `eval-gguf`: load the model, then one forward pass over every token (2 FLOPs per weight, at
+/// the prefill rate); a fine-tune checkpoint forces f32 and adds its read.
+fn evaluate_gguf(mut d: Draft, p: &JobParams, bytes: f64, speed: f64) -> Estimate {
+    let g = p.gguf.clone().unwrap_or_default();
+    let resume = !p.resume_path.trim().is_empty();
+    let bpp = if resume {
+        4.0
+    } else {
+        quant_bytes_per_param(&p.quant)
+    };
+    let non_embd = g.params.saturating_sub(g.embed_params) as f64;
+    let resident = non_embd * bpp + g.embed_params as f64 * 4.0;
+    // Applying a checkpoint holds the model, the checkpoint bytes and half a model of scratch.
+    let peak = if resume {
+        resident * 1.5 + p.resume_bytes.unwrap_or(0) as f64
+    } else {
+        resident
+    };
+    let tokens = bytes / LLAMA_BYTES_PER_TOKEN;
+    d.threads = effective_threads(p.threads, d.hw);
+    let mut gflops = interp_log(&PREFILL_POINTS, g.params as f64)
+        * interp(&GEMM_THREAD_SCALE, d.threads as f64)
+        * speed;
+    if bpp >= 4.0 {
+        gflops *= PREFILL_F32_FACTOR;
+    }
+    let load = g.params as f64 / (LOAD_MPARAMS_PER_S * 1e6)
+        + p.resume_bytes.unwrap_or(0) as f64 / DISK_BYTES_PER_S;
+    let score = 2.0 * non_embd * tokens / (gflops * 1e9);
+    d.note(format!(
+        "Imported GGUF: load {load:.1} s + scoring about {} tokens ({:.1} s); ~4 characters per token is assumed.",
+        tokens.round(),
+        score
+    ));
+    let limit = d.hw.ram_available_mb.map(|a| a as f64 * GGUF_RAM_FRACTION);
+    d.done(Some(load + score), (0.4, 2.5), Some(peak), limit)
 }
 
 fn gguf_run(mut d: Draft, p: &JobParams, speed: f64, bw_speed: f64) -> Estimate {

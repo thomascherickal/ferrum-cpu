@@ -30,7 +30,7 @@ function noInjected(html, what) {
 for (const e of EVIL) {
   noInjected(card(e, e), "card");
   noInjected(catalogMeta({ name: e, source: e, approxMb: e, format: e, description: e }), "catalogMeta");
-  const r = { model: e, numPredictions: 1234, crossEntropy: 1, bitsPerToken: 1, perplexity: 2, uniformBaseline: 50 };
+  const r = { model: e, label: e, numPredictions: 1234, crossEntropy: 1, bitsPerToken: 1, bitsPerByte: 1.5, perplexity: 2, uniformBaseline: 50, seconds: 0.25 };
   noInjected(evalRow(r, true), "evalRow");
   noInjected(modelInfo({ path: e, bytes: 10, format: e, name: e, task: e, inputDim: e, outputDim: e, tokenizer: e, merges: e, layers: e }), "modelInfo");
   const g = { architecture: e, runnable: false, version: e, numTensors: e, modelDim: e, nLayers: e, nHeads: e, nKvHeads: e,

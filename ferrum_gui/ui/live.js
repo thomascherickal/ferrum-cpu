@@ -31,7 +31,10 @@
       valFraction: num(d, "trVal"),
     }),
     genStart: (d) => ({ modelPath: str(d, "genModel"), numChars: int(d, "genChars"), maxNew: int(d, "genMaxTokens") }),
-    evRun: (d) => ({ modelPath: str(d, "evModel"), textPath: str(d, "evFile"), textChars: len(d, "evText") }),
+    evRun: (d) => ({
+      modelPath: str(d, "evModel"), textPath: str(d, "evFile"), textChars: len(d, "evText"),
+      testPath: str(d, "evTestFile"), quant: str(d, "evQuant"), resumePath: str(d, "evResume"),
+    }),
     miInspect: (d) => ({ modelPath: str(d, "miPath") }),
     ggInspect: (d) => ({ modelPath: str(d, "ggPath") }),
     ggRun: (d) => ({

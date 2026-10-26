@@ -13,7 +13,13 @@
   "evaluate_slm": {
     "modelPath": "/m.gguf",
     "text": "held out",
-    "textPath": null
+    "textPath": null,
+    "testPath": null,
+    "lossy": false,
+    "quant": "f32",
+    "ctx": 0,
+    "resume": null,
+    "force": false
   },
   "export_gguf": {
     "modelPath": "/g.gguf",

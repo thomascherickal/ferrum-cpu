@@ -21,9 +21,11 @@
 
   // Evaluate-tab table row (the <td>s of one <tr>).
   function evalRow(r, good) {
-    return `<td>${esc(r.model)}</td><td>${esc(r.numPredictions.toLocaleString())}</td>` +
+    return `<td>${esc(r.model)}</td><td>${esc(r.label)}</td><td>${esc(r.numPredictions.toLocaleString())}</td>` +
       `<td>${esc(r.crossEntropy.toFixed(4))}</td><td>${esc(r.bitsPerToken.toFixed(4))}</td>` +
+      `<td>${esc(r.bitsPerByte.toFixed(4))}</td>` +
       `<td><b>${esc(r.perplexity.toFixed(4))}</b></td><td>${esc(r.uniformBaseline.toFixed(0))}</td>` +
+      `<td>${esc(r.seconds.toFixed(2))}</td>` +
       `<td class="${good ? "verdict-good" : "verdict-weak"}">${good ? "learned" : "weak"}</td>`;
   }
 

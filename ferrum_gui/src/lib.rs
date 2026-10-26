@@ -22,6 +22,7 @@ mod commands;
 mod datasets;
 pub mod estimate;
 pub mod estimate_cmd;
+mod evaluate;
 pub mod hardware;
 mod jobs;
 mod paths;
@@ -58,7 +59,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::read_text_file,
             commands::train_slm,
             commands::generate_slm,
-            commands::evaluate_slm,
+            evaluate::evaluate_slm,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,

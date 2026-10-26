@@ -492,6 +492,46 @@ fn generate_and_evaluate_use_the_model_facts() {
 }
 
 #[test]
+fn evaluating_an_imported_gguf_counts_load_scoring_precision_and_the_test_file() {
+    let h = hw(8, Some(14_000));
+    let eval = |quant: &str, resume: &str, test: u64| {
+        estimate(
+            JobKind::Evaluate,
+            &JobParams {
+                gguf: Some(gguf(135_000_000, 28_000_000)),
+                text_bytes: Some(1_000_000),
+                test_bytes: Some(test),
+                quant: quant.into(),
+                resume_path: resume.into(),
+                resume_bytes: (!resume.is_empty()).then_some(500_000_000),
+                ..JobParams::default()
+            },
+            &h,
+            None,
+        )
+    };
+    let f32e = eval("f32", "", 0);
+    assert!(f32e.seconds.is_some_and(|s| s > 0.0), "{f32e:?}");
+    assert!(
+        f32e.notes.iter().any(|n| n.contains("Imported GGUF")),
+        "{:?}",
+        f32e.notes
+    );
+    // int8 needs less RAM and is faster than f32; a test file and a checkpoint cost more.
+    let i8e = eval("int8", "", 0);
+    assert!(i8e.peak_ram_mb < f32e.peak_ram_mb && i8e.seconds < f32e.seconds);
+    assert!(eval("f32", "", 1_000_000).seconds > f32e.seconds);
+    let ck = eval("int8", "/c.flck", 0);
+    assert!(
+        ck.peak_ram_mb > f32e.peak_ram_mb,
+        "a checkpoint forces f32 and adds its bytes"
+    );
+    // Without a model it still falls back to the Ferrum-model default instead of failing.
+    let none = estimate(JobKind::Evaluate, &JobParams::default(), &h, None);
+    assert!(none.seconds.is_some());
+}
+
+#[test]
 fn small_jobs_download_and_instant_kinds() {
     let h = hw(8, Some(14_000));
     let p = JobParams {

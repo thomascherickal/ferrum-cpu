@@ -1754,7 +1754,7 @@ prepare` (§5.1) for those.
 | **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
 | **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart |
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
-| **Evaluate** | Score a model on held-out text; each run adds a table row (perplexity, CE, bits/token, uniform baseline) |
+| **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
 | **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, optional fine-tune overlay (no stop strings: the library and `run-gguf` stop on token ids only) |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
@@ -1886,6 +1886,7 @@ ui/               index.html, styles.css, app.js (vanilla), escape.js, stream.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
+src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job

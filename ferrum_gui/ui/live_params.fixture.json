@@ -22,7 +22,10 @@
     "params": {
       "modelPath": "",
       "textPath": "",
-      "textChars": 0
+      "textChars": 0,
+      "testPath": "",
+      "quant": "f32",
+      "resumePath": ""
     }
   },
   "exExport": {

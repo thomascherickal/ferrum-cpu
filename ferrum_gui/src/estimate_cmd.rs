@@ -47,6 +47,11 @@ pub fn slm_facts(path: &str) -> Option<SlmFacts> {
     })
 }
 
+/// Is `path` a Llama/Qwen GGUF (rather than a Ferrum model)?
+fn is_imported(path: &str) -> bool {
+    open(path).is_some_and(|(g, _)| matches!(g.architecture(), Some("llama" | "qwen2")))
+}
+
 /// Facts of an imported Llama/Qwen GGUF from its header.
 pub fn gguf_facts(path: &str) -> Option<GgufFacts> {
     let (g, file_bytes) = open(path)?;
@@ -70,8 +75,11 @@ pub fn gguf_facts(path: &str) -> Option<GgufFacts> {
 pub fn resolve(kind: JobKind, p: &mut JobParams) {
     p.corpus_bytes = file_len(&p.corpus_path).or(p.corpus_bytes);
     p.text_bytes = file_len(&p.text_path).or(p.text_bytes);
+    p.test_bytes = file_len(&p.test_path).or(p.test_bytes);
     p.resume_bytes = file_len(&p.resume_path).or(p.resume_bytes);
     match kind {
+        // Evaluate takes either kind of model: a Llama/Qwen file is scored like `eval-gguf`.
+        JobKind::Evaluate if is_imported(&p.model_path) => p.gguf = gguf_facts(&p.model_path),
         JobKind::Generate | JobKind::Evaluate | JobKind::ModelInfo => {
             p.slm = slm_facts(&p.model_path)
         }

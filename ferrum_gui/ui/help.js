@@ -398,7 +398,7 @@
     evModel: {
       title: "Model",
       what: "The .gguf model to score. Each Evaluate press adds one row, so you can compare several models in one table.",
-      how: "Works with models trained on the Train tab. The Train tab fills in the path after a run.",
+      how: "Works with models trained on the Train tab (the Train tab fills in the path after a run) and with imported Llama or Qwen .gguf files, which are scored like the eval-gguf command: the options in the box below apply to those only.",
       beginner: "Evaluating asks 'how surprised is the model by text it has never seen?'. Less surprise means a better model.",
     },
     evFile: {
@@ -406,6 +406,48 @@
       what: "A text file the model was not trained on, used to measure how well it generalises.",
       how: "If you also paste text in the box below, the pasted text is used and this file is ignored. The score is computed over every token with a sliding window; time is proportional to the text length.",
       beginner: "It is the exam paper. If the model saw these exact pages during training the score would be fake, so use text you set aside beforehand.",
+    },
+    evTestFile: {
+      title: "Test text file (optional)",
+      what: "A second text file, scored the same way and added to the table as its own 'test' row next to the held-out row.",
+      how: "Use it when you split your data into three parts: training text, held-out text for choosing settings (the file above) and a final test file you only look at once. Leave it empty to score just one text.",
+      beginner: "Think of the held-out file as practice exams and the test file as the final exam. Keeping them separate stops you from fooling yourself by tuning against the final one.",
+    },
+    evLossy: {
+      title: "Decode invalid UTF-8 lossily",
+      what: "When ticked, bytes in a text file that are not valid UTF-8 are replaced by a placeholder character instead of the file being refused.",
+      how: "Off by default: a file with broken bytes is rejected with a clear message. The pasted-text box is always valid text. Replaced bytes change the text slightly, so the bits per byte differs a little from the original.",
+      beginner: "Computers store text as bytes. If a file is damaged or in another encoding some bytes make no sense; lossy mode swaps those for a question-mark-like symbol so you can still get a score.",
+    },
+    evQuant: {
+      title: "Precision (imported GGUF)",
+      what: "How the weights of an imported Llama or Qwen model are held in memory while scoring: f32, int8 or int4. Ignored for Ferrum models. Default f32.",
+      how: "f32 is exact and needs the most RAM. int8 and int4 use much less memory but round the weights, so the perplexity is slightly worse than the true value. Applying a fine-tune checkpoint always uses f32.",
+      beginner: "Quantization stores each number with fewer bits, like saving a photo at lower quality: smaller and faster, slightly less exact. For a trustworthy score use f32 if it fits in your RAM.",
+    },
+    evCtx: {
+      title: "Window tokens (0 = auto)",
+      what: "How many tokens the imported model reads at once while scoring. 0 means the smaller of 512 and the model's own limit. Ignored for Ferrum models.",
+      how: "Long texts are scored in overlapping windows so every token still gets history. A bigger window gives each token more context but takes more memory and time; it can never exceed the model's context length.",
+      beginner: "The window is how much of the text the model can look at in one go, like the size of its short-term memory.",
+    },
+    evResume: {
+      title: "Fine-tune checkpoint (imported GGUF)",
+      what: "An optional .flck file from the Fine-tune tab. Its trained weights are applied to the imported model before scoring, so you can measure what fine-tuning changed. Ignored for Ferrum models.",
+      how: "Score the same text once without and once with the checkpoint and compare the two rows. The model is loaded in f32 when a checkpoint is applied, which needs more RAM.",
+      beginner: "A checkpoint is a save game of the fine-tuning. Loading it shows how well the tuned model does on text it has not seen.",
+    },
+    evForce: {
+      title: "Load even if it may exceed available RAM",
+      what: "Skips the safety check that refuses to load an imported model estimated to need more than 90 percent of your free RAM.",
+      how: "Leave it off unless you know better: a model that does not fit makes the computer swap to disk and become very slow, or the load fails. A smaller precision is usually the better fix.",
+      beginner: "The check protects you from freezing your computer. Ticking this box says 'I understand, try anyway'.",
+    },
+    evJsonPath: {
+      title: "Save JSON to",
+      what: "Where the Save JSON button writes the result of the latest evaluation.",
+      how: "The file has the same keys as the command line's eval --json: perplexity, cross_entropy_nats, bits_per_token, bits_per_byte, tokens, bytes and seconds. If a test file was scored too, the file holds held_out and test objects with those keys.",
+      beginner: "JSON is a plain-text format that other programs and spreadsheets can read, handy for keeping a record of your results.",
     },
     evText: {
       title: "Paste held-out text",
@@ -704,7 +746,7 @@
     },
     evRun: {
       title: "Evaluate and add row",
-      does: "Scores the model on the held-out text and adds a row with perplexity, cross-entropy, bits per token and a verdict to the table.",
+      does: "Scores the model on the held-out text (and the test file, if given) and adds a row for each with perplexity, cross-entropy, bits per token, bits per byte, the time taken and a verdict to the table.",
       kind: "evaluate",
       beginner: "Perplexity is the key number. Lower is better, and the uniform baseline column is what a model that learned nothing would score.",
     },
@@ -734,6 +776,12 @@
       title: "Cancel export",
       does: "Cancels the export between its phases (opening, loading, applying the checkpoint). Nothing is written when it is cancelled. Once the final encode-and-write phase has started it cannot be interrupted and the file is finished.",
       kind: "instant",
+    },
+    evSaveJson: {
+      title: "Save JSON",
+      does: "Writes the latest evaluation (every number of the last run, including the test row if there was one) to the Save JSON path as a JSON file with the same keys as the command line's eval --json.",
+      kind: "instant",
+      beginner: "Run an evaluation first; this only saves what is already computed, nothing is scored again.",
     },
     evClear: {
       title: "Clear table",
@@ -820,6 +868,9 @@
     genModelBrowse: browse("model"),
     evModelBrowse: browse("model"),
     evFileBrowse: browse("held-out text file"),
+    evTestFileBrowse: browse("test text file"),
+    evResumeBrowse: browse("fine-tune checkpoint"),
+    evJsonBrowse: browse("JSON output file", "save"),
     miPathBrowse: browse("model file"),
     ggPathBrowse: browse("GGUF file"),
     ggResumeBrowse: browse("fine-tune checkpoint"),
