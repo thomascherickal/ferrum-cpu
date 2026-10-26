@@ -69,6 +69,7 @@ class FerrumModelTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        cls.srv.server_close()
 
     def setUp(self):
         CALLS.clear()
@@ -154,6 +155,7 @@ class PrivateCacheRegression(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        cls.srv.server_close()
 
     def setUp(self):
         self._env = dict(os.environ)

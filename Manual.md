@@ -2066,7 +2066,7 @@ cargo build --release -p slm_cli
 cargo bench --bench gemm                          # auto threads
 FERRUM_NUM_THREADS=1 cargo bench --bench gemm     # serial
 cargo bench --bench gemm -- 512 1024 4096         # custom GEMM sizes
-scripts/bench_slm.sh data/prepared/train.txt      # train / eval / generate speed
+scripts/bench_slm.sh data/prepared/train.txt      # train / eval / generate speed (corpus path relative to where you run it)
 for t in 1 2 4 8; do FERRUM_NUM_THREADS=$t target/release/train_transformer \
   generate model.gguf "a long enough seed text here" --chars 2000 --gen-seed 42 > out_$t.txt; done
 md5sum out_*.txt                                  # identical

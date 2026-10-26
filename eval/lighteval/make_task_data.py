@@ -49,4 +49,6 @@ def main(test_path, out_dir):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit("usage: python make_task_data.py <test.txt> <out_dir>")
     main(*sys.argv[1:3])

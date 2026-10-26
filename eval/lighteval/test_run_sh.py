@@ -216,6 +216,9 @@ class RunShTest(unittest.TestCase):
         finally:
             if p.poll() is None:
                 p.kill()
+                p.wait()
+            p.stdout.close()
+            p.stderr.close()
         self.assertFalse(alive(fx.root / "server.pid"))
         self.assertFalse(alive(fx.root / "lighteval.pid"))
 
@@ -239,6 +242,7 @@ class RunShTest(unittest.TestCase):
             r = fx.run("--port", str(srv.server_port))
         finally:
             srv.shutdown()
+            srv.server_close()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("cannot bind", r.stderr)
         self.assertFalse(fx.out.exists())

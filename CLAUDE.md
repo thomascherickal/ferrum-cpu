@@ -109,7 +109,7 @@ Do not break these; they are the product's selling points.
 | `eval/lighteval/` | Python: `FerrumModel`, `ferrum_tasks.py`, `run.sh`; pinned `lighteval==0.13.0` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
-| `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) |
+| `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) and `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace** |
 
 Sibling folders `../Ferrum-ML` (tabular MLP demos, depends on `ferrum_core` by

@@ -91,6 +91,13 @@ class MainTest(unittest.TestCase):
         self.assertIn("2 heldout docs", r.stdout)
         self.assertTrue((tmp / "o/cloze/test.jsonl").exists())
 
+    def test_wrong_argument_count_prints_a_usage_line_not_a_traceback(self):
+        for args in ([], ["only_one.txt"]):
+            r = subprocess.run([sys.executable, os.path.join(HERE, "make_task_data.py"), *args], capture_output=True, text=True, timeout=20)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("usage: python make_task_data.py <test.txt> <out_dir>", r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+
     def test_main_guard_in_process(self):
         # same as the subprocess test, but in-process so line coverage sees the `__main__` branch
         import runpy

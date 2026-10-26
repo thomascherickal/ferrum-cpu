@@ -2,8 +2,11 @@
 # Benchmark the 507,552-parameter reference SLM: training throughput, eval
 # time, and generation speed. Usage: scripts/bench_slm.sh <corpus.txt> [tokens]
 set -euo pipefail
-cd "$(dirname "$0")/.."
 corpus=${1:?usage: scripts/bench_slm.sh <corpus.txt> [tokens]}
+# Resolve before the cd below, so a path relative to the caller's directory works.
+[[ $corpus = /* ]] || corpus=$PWD/$corpus
+[[ -r $corpus ]] || { echo "bench_slm.sh: cannot read corpus $corpus" >&2; exit 1; }
+cd "$(dirname "$0")/.."
 tokens=${2:-2e5}
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
