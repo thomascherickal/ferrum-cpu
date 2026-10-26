@@ -4,7 +4,7 @@ use crate::llm::LlamaModel;
 use crate::llm_train::blocks::{
     attn_forward, attn_output, block_backward, ffn_forward, ffn_output, BlockCache, FwdCache,
 };
-use crate::llm_train::buffers::Buffers;
+use crate::llm_train::buffers::{Buffers, LinBuf};
 use crate::llm_train::kernels::{
     cross_entropy, lin_backward, lin_forward, rmsnorm_backward_row, rmsnorm_forward_row,
 };
@@ -108,7 +108,20 @@ pub(super) fn backward_into(
     let cfg = &model.cfg;
     let (seq, dim) = (tokens.len(), cfg.model_dim);
 
-    let d_xn = lin_backward(&model.lm_head, &cache.xn, d_logits, seq, &mut g.lm_head);
+    let d_xn = if model.tied_head {
+        // ponytail: a vocab*dim scratch per call; fold in place if profiling asks.
+        let mut head = LinBuf::zeros(&model.lm_head);
+        let d_xn = lin_backward(&model.lm_head, &cache.xn, d_logits, seq, &mut head);
+        // Head gradient [dim, vocab] accumulates into the shared embedding [vocab, dim].
+        for d in 0..dim {
+            for v in 0..cfg.vocab_size {
+                g.tok_emb[v * dim + d] += head.w[d * cfg.vocab_size + v];
+            }
+        }
+        d_xn
+    } else {
+        lin_backward(&model.lm_head, &cache.xn, d_logits, seq, &mut g.lm_head)
+    };
 
     let mut d_x = vec![0.0f32; seq * dim];
     for t in 0..seq {

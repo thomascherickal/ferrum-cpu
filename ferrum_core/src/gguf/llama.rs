@@ -230,7 +230,8 @@ impl Gguf {
             ));
         }
         // LM head: explicit `output.weight`, or tied to the token embedding.
-        let lm_head = if self.tensor("output.weight").is_some() {
+        let tied_head = self.tensor("output.weight").is_none();
+        let lm_head = if !tied_head {
             self.linear_from("output.weight", None, prec, dim, vocab)?
         } else {
             let w = transpose_2d(&tok_emb, vocab, dim); // [vocab,dim] → [dim,vocab]
@@ -266,6 +267,7 @@ impl Gguf {
             blocks,
             final_norm,
             lm_head,
+            tied_head,
         })
     }
 }

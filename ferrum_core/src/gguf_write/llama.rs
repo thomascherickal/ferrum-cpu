@@ -332,11 +332,15 @@ mod tests {
     /// write, reload) must be the exact model `run-gguf --resume` runs, with and
     /// without real q/k/v biases in the source (the trainer must not train a bias
     /// the source file cannot carry).
-    fn finetune_export_equals_resume(with_bias: bool) {
+    fn finetune_export_equals_resume(with_bias: bool, tied: bool) {
         use crate::llm_train::{apply_checkpoint_weights, LlamaTrainer};
         use crate::rng::Rng;
 
-        let g0 = Gguf::parse(tiny_llama_gguf_bytes_ex(with_bias)).unwrap();
+        let mut g0 = Gguf::parse(tiny_llama_gguf_bytes_ex(with_bias)).unwrap();
+        if tied {
+            // A tied-embedding source (like SmolLM2): no `output.weight`.
+            g0.tensors.retain(|t| t.name != "output.weight");
+        }
         let mut tr = LlamaTrainer::new(g0.load_llama_prec(None).unwrap()).unwrap();
         tr.set_lr(0.02);
         let tokens: Vec<usize> = (0..100).map(|i| (i * 7) % 32).collect();
@@ -359,16 +363,27 @@ mod tests {
             "exported logits differ from base + --resume"
         );
         assert!(want != base.forward_tokens(&toks).unwrap().data, "trained");
+        // A tied export stays tied: no `output.weight` is invented.
+        let re = Gguf::parse(llama_gguf_bytes(&resumed, &g0, GgufQuant::F32).unwrap()).unwrap();
+        assert_eq!(re.tensor("output.weight").is_none(), tied);
     }
 
     #[test]
     fn export_of_a_bias_free_finetune_equals_the_resumed_model() {
-        finetune_export_equals_resume(false);
+        finetune_export_equals_resume(false, false);
     }
 
     #[test]
     fn export_of_a_finetune_with_real_qkv_biases_equals_the_resumed_model() {
-        finetune_export_equals_resume(true);
+        finetune_export_equals_resume(true, false);
+    }
+
+    /// A tied-embedding source (no `output.weight`) keeps its head tied while
+    /// training, so the export (which cannot write a separate head) is lossless.
+    #[test]
+    fn export_of_a_tied_embedding_finetune_equals_the_resumed_model() {
+        finetune_export_equals_resume(false, true);
+        finetune_export_equals_resume(true, true);
     }
 
     // Regression guard (Task 11 final review, Fix 1): a source GGUF that

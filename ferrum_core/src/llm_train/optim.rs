@@ -14,6 +14,7 @@ impl LlamaTrainer {
         for (s, src) in param_data_mut(&mut self.model).into_iter().zip(snap) {
             s.copy_from_slice(src);
         }
+        self.model.sync_tied_head();
     }
 
     /// Snap every weight **matrix** onto the int8 grid in place, per output-row.
@@ -26,6 +27,7 @@ impl LlamaTrainer {
                 crate::quant::fake_quantize_int8_per_channel(s, rows.max(1));
             }
         }
+        self.model.sync_tied_head();
     }
 
     /// Rescale `self.grads` so their global L2 norm is at most `max_norm`,
@@ -90,6 +92,7 @@ impl LlamaTrainer {
                 p[i] -= update;
             }
         }
+        self.model.sync_tied_head();
     }
 
     /// Run one AdamW step from the gradients currently in `self.grads`

@@ -1184,8 +1184,9 @@ training state) and 1.5B and above do not fit. Speed is about 6 tokens/s on
 applied with `run-gguf --resume` or exported with `export-gguf --resume`.
 Only parameters the source file has are trained: a bias the GGUF lacks (every
 bias on a Llama model; all but q/k/v on Qwen2) stays absent, so the exported file
-is exactly the fine-tuned model. A `.flck` from before this rule is refused;
-re-run the fine-tune.
+is exactly the fine-tuned model. A model with tied embeddings (no `output.weight`,
+like SmolLM2) keeps its LM head tied to the embedding while training and stays
+tied on export. A `.flck` from before these rules is refused; re-run the fine-tune.
 
 ### 9.3 Exporting (`export-gguf`)
 

@@ -78,6 +78,7 @@ pub(super) fn tiny(
         blocks,
         final_norm: RmsNorm::new(vec![1.0; dim], 1e-5),
         lm_head: lin(dim, vocab, 999),
+        tied_head: false,
     }
 }
 
@@ -88,6 +89,7 @@ pub(super) fn base_clone(m: &LlamaModel) -> LlamaModel {
         blocks: m.blocks.clone(),
         final_norm: m.final_norm.clone(),
         lm_head: m.lm_head.clone(),
+        tied_head: m.tied_head,
     }
 }
 

@@ -459,9 +459,22 @@ pub struct LlamaModel {
     pub final_norm: RmsNorm,
     /// LM head `[model_dim, vocab]` (may be tied to the embedding).
     pub lm_head: Linear,
+    /// The head is the transpose of `tok_emb` (the GGUF had no `output.weight`).
+    /// Training then keeps ONE shared parameter (`tok_emb`) and re-derives the
+    /// head from it via [`LlamaModel::sync_tied_head`], so the trained model is
+    /// exactly what a tied GGUF can hold.
+    pub tied_head: bool,
 }
 
 impl LlamaModel {
+    /// Re-derive a tied head from `tok_emb` (no-op for an untied model).
+    pub fn sync_tied_head(&mut self) {
+        if self.tied_head {
+            let (v, d) = (self.cfg.vocab_size, self.cfg.model_dim);
+            self.lm_head.weight.data = crate::gguf::transpose_2d(&self.tok_emb, v, d);
+        }
+    }
+
     /// The `[model_dim]` embedding of `token`.
     fn embed(&self, token: usize) -> Result<Vec<f32>> {
         let d = self.cfg.model_dim;
@@ -823,6 +836,7 @@ mod tests {
             blocks: vec![block(dim, 4, 2, hd, ffn, 81), block(dim, 4, 2, hd, ffn, 91)],
             final_norm: RmsNorm::new(vec![1.0; dim], 1e-6),
             lm_head: lin(dim, vocab, 101),
+            tied_head: false,
         }
     }
 

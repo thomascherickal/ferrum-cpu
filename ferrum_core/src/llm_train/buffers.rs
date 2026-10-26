@@ -73,7 +73,13 @@ impl Buffers {
             tok_emb: vec![0.0; model.tok_emb.len()],
             blocks,
             final_norm: vec![0.0; model.final_norm.weight.len()],
-            lm_head: LinBuf::zeros(&model.lm_head),
+            lm_head: {
+                let mut h = LinBuf::zeros(&model.lm_head);
+                if model.tied_head {
+                    h.w = Vec::new(); // its gradient folds into tok_emb
+                }
+                h
+            },
         }
     }
     pub(super) fn clear(&mut self) {

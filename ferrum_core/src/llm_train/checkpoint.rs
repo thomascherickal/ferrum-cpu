@@ -20,13 +20,27 @@ fn shape_keys_of(c: &LlamaConfig) -> [(&'static str, usize); 7] {
 }
 
 /// A parameter slot with nothing to train (a placeholder bias, see
-/// `params::bias_ref`) is stored as an empty tensor. Data in such a slot means
-/// an older Ferrum trained the placeholder, which the source architecture
-/// cannot represent: name the cause instead of a bare shape error.
-fn check_no_placeholder_biases(g: &crate::gguf::Gguf, lens: &[usize]) -> Result<()> {
+/// `params::bias_ref`, or the LM head of a tied-embedding model) is stored as an
+/// empty tensor. Data in such a slot means an older Ferrum trained it, which the
+/// source architecture cannot represent: name the cause instead of a bare shape
+/// error.
+fn check_no_placeholder_biases(
+    g: &crate::gguf::Gguf,
+    lens: &[usize],
+    tied_head: bool,
+) -> Result<()> {
     for (i, _) in lens.iter().enumerate().filter(|(_, &n)| n == 0) {
         let name = format!("p{i}.data");
         if g.tensor(&name).is_some_and(|t| t.dims != [0u64]) {
+            if tied_head && i + 2 == lens.len() {
+                return Err(InferError::Format(format!(
+                    "checkpoint tensor '{name}' holds a separately trained LM head, but this \
+                     model has tied embeddings (its GGUF has no output.weight): the checkpoint \
+                     was written by an older Ferrum that trained the head independently of the \
+                     embedding, which cannot be exported. Re-run finetune-gguf to make a new \
+                     checkpoint"
+                )));
+            }
             return Err(InferError::Format(format!(
                 "checkpoint tensor '{name}' holds a bias this model does not have (its GGUF \
                  has no such bias tensor): the checkpoint was written by an older Ferrum \
@@ -61,8 +75,13 @@ pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Resul
     ckpt::get_bool(&g, "qat")?;
     ckpt::get_u64(&g, "step")?;
     ckpt::get_u64(&g, "rng")?;
+    let tied = model.tied_head;
     let mut targets = param_data_mut(model);
-    check_no_placeholder_biases(&g, &targets.iter().map(|s| s.len()).collect::<Vec<_>>())?;
+    check_no_placeholder_biases(
+        &g,
+        &targets.iter().map(|s| s.len()).collect::<Vec<_>>(),
+        tied,
+    )?;
     for (i, s) in targets.iter().enumerate() {
         ckpt::f32_tensor(&g, &format!("p{i}.data"), s.len())?;
     }
@@ -70,6 +89,8 @@ pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Resul
         let t = ckpt::f32_tensor(&g, &format!("p{i}.data"), s.len())?;
         s.copy_from_slice(&g.dequantize(t)?);
     }
+    drop(targets);
+    model.sync_tied_head();
     Ok(())
 }
 
@@ -142,7 +163,7 @@ impl LlamaTrainer {
             .iter()
             .map(|s| s.len())
             .collect();
-        check_no_placeholder_biases(&g, &lens)?;
+        check_no_placeholder_biases(&g, &lens, self.model.tied_head)?;
         let read = |suffix: &str| -> Result<Vec<f32>> {
             let mut flat = Vec::with_capacity(self.num_params());
             for (i, &n) in lens.iter().enumerate() {
@@ -162,6 +183,7 @@ impl LlamaTrainer {
         }
         self.m.load_flat(&mflat);
         self.v.load_flat(&vflat);
+        self.model.sync_tied_head();
         Ok(Rng::from_state(rng_state))
     }
 }

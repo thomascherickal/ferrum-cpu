@@ -32,7 +32,7 @@ executed walk-throughs, see [Samples.md](Samples.md). For the overview, see
 | **Scope** | A pure-Rust engine for training, running, serving, and evaluating small transformer SLMs on the CPU. Models are GPT-2-architecture GGUF files that run in llama.cpp, Ollama, and LM Studio. Also GGUF import, fine-tuning, and export for Llama/Qwen |
 | **Date and branch** | 2026-10-26 · version 0.3.0 · `feat/finish-remaining` (not yet merged to `master`) |
 | **Build** | `cargo build --workspace` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `ferrum_gui` builds separately (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` pass from inside `ferrum_gui/`; `node --check` passes on every `ui/*.js`) |
-| **Tests** | **920 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (619 `ferrum_core` unit, 78 cross-crate integration in `tests/`, 159 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **31** pass and **18** skip of 49 (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25; the suite now has 49 tests). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
+| **Tests** | **923 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (622 `ferrum_core` unit, 78 cross-crate integration in `tests/`, 159 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **31** pass and **18** skip of 49 (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25; the suite now has 49 tests). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
 | **Safety** | `#![forbid(unsafe_code)]` in every crate root, plus a repo-wide scan test |
 | **Dependencies** | `ferrum_core`: two pure-Rust Unicode tables, nothing else. `slm_cli`: `sha2`, `serde_json`. `slm_server`: `axum`, `tokio`, `serde`, `serde_json`, `sha2`. `slm_wasm`: `wasm-bindgen`. `ferrum_gui`: Tauri and a few helper crates (`tauri-plugin-dialog`, `sysinfo`, `ureq`, `serde`, `serde_json`). `rayon`, `ndarray`, and `faer` were measured and not adopted ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)) |
 | **Commits** | 74 commits on `feat/finish-remaining` ahead of `master` (`git log --oneline master..HEAD`) at `3ba1bc8`, before the documentation commits |
@@ -359,9 +359,21 @@ must do.
   by an earlier build is refused with a message naming the cause ("written by an
   older Ferrum that trained placeholder biases"); re-run `finetune-gguf`. Fine-tune
   numerics change (the removed biases no longer move or enter the gradient-clip
-  norm); no golden hash or `dvc.lock` output depends on them. Not yet fixed: a
-  model with tied embeddings (no `output.weight`) trains a separate LM head that the
-  export cannot write; not verified.
+  norm); no golden hash or `dvc.lock` output depends on them.
+- **Tied-embedding fine-tunes keep the head tied (2026-10-26).** Verified bug, found
+  by a synthetic llama GGUF without `output.weight` (like SmolLM2): the loader built a
+  separate LM head, `finetune-gguf` trained it independently of `token_embd`, and
+  `export-gguf --resume` (which writes `output.weight` only if the source had it)
+  dropped it, so the exported logits differed from base + `run-gguf --resume`. Now
+  `LlamaModel::tied_head` marks such a model: the head is not a parameter (its slot in
+  the `.flck` is an empty tensor, so indices and checkpoint version are unchanged),
+  its gradient is added into `token_embd`, and the head is re-derived from the
+  embedding after every update, restore, QAT snap and checkpoint load. The export is
+  lossless and still has no `output.weight`. Untied models are unchanged. **Action:**
+  a `.flck` written by an earlier build for a tied model is refused ("separately
+  trained LM head"); re-run `finetune-gguf`. Tied fine-tune numerics change (one shared
+  parameter, one fewer `vocab x dim` of optimizer state). Covered by library tests
+  only (no CLI test, no real SmolLM2 run).
 - **Module splits.** `slm`, `train_transformer`, `gguf`, `gguf_write`, `llm_train`,
   `loader`, `layer`, and `tokenizer` in `ferrum_core` are directories now (and
   `slm_cli` and `slm_server` are split into modules). Public paths are unchanged

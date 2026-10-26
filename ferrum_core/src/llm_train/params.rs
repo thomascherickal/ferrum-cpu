@@ -17,11 +17,13 @@ fn bias_ref(l: &Linear) -> &[f32] {
 }
 
 /// The weight and (if real) bias slots of `l`, as disjoint mutable borrows.
-fn wb_mut(l: &mut Linear) -> [&mut [f32]; 2] {
+/// `tied` empties the weight slot too (the tied LM head, see
+/// [`LlamaModel::tied_head`]): it is derived from `tok_emb`, not trained.
+fn wb_mut(l: &mut Linear, tied: bool) -> [&mut [f32]; 2] {
     let real = l.has_bias();
     let Linear { weight, bias, .. } = l;
     [
-        &mut weight.data,
+        if tied { &mut [] } else { &mut weight.data },
         if real { &mut bias.data } else { &mut [] },
     ]
 }
@@ -106,7 +108,11 @@ pub(super) fn param_data_ref(model: &LlamaModel) -> Vec<&[f32]> {
         v.push(bias_ref(&b.ffn.down));
     }
     v.push(&model.final_norm.weight);
-    v.push(&model.lm_head.weight.data);
+    v.push(if model.tied_head {
+        &[]
+    } else {
+        &model.lm_head.weight.data
+    });
     v.push(bias_ref(&model.lm_head));
     v
 }
@@ -115,17 +121,17 @@ pub(super) fn param_data_mut(model: &mut LlamaModel) -> Vec<&mut [f32]> {
     let mut v: Vec<&mut [f32]> = vec![&mut model.tok_emb];
     for b in &mut model.blocks {
         v.push(&mut b.attn_norm.weight);
-        v.extend(wb_mut(&mut b.attn.wq));
-        v.extend(wb_mut(&mut b.attn.wk));
-        v.extend(wb_mut(&mut b.attn.wv));
-        v.extend(wb_mut(&mut b.attn.wo));
+        v.extend(wb_mut(&mut b.attn.wq, false));
+        v.extend(wb_mut(&mut b.attn.wk, false));
+        v.extend(wb_mut(&mut b.attn.wv, false));
+        v.extend(wb_mut(&mut b.attn.wo, false));
         v.push(&mut b.ffn_norm.weight);
-        v.extend(wb_mut(&mut b.ffn.gate));
-        v.extend(wb_mut(&mut b.ffn.up));
-        v.extend(wb_mut(&mut b.ffn.down));
+        v.extend(wb_mut(&mut b.ffn.gate, false));
+        v.extend(wb_mut(&mut b.ffn.up, false));
+        v.extend(wb_mut(&mut b.ffn.down, false));
     }
     v.push(&mut model.final_norm.weight);
-    v.extend(wb_mut(&mut model.lm_head));
+    v.extend(wb_mut(&mut model.lm_head, model.tied_head));
     v
 }
 
@@ -212,6 +218,75 @@ mod tests {
             let e = e.to_string();
             assert!(
                 e.contains("older Ferrum") && e.contains("placeholder biases"),
+                "{e}"
+            );
+        }
+    }
+
+    /// `tiny` with the head tied to the embedding, as imported from a GGUF
+    /// without `output.weight`.
+    fn tied_tiny() -> LlamaModel {
+        let mut m = tiny(6, 8, 2, 2, 16, 2);
+        m.tied_head = true;
+        m.sync_tied_head();
+        m
+    }
+
+    /// A tied head is one shared parameter: its slot is empty, the embedding
+    /// gradient includes the head's (finite difference), training keeps the head
+    /// equal to the embedding's transpose, and the checkpoint round-trips.
+    #[test]
+    fn tied_head_is_one_shared_parameter() {
+        let untied = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 2)).unwrap();
+        let mut t = LlamaTrainer::new(tied_tiny()).unwrap();
+        assert_eq!(untied.num_params() - t.num_params(), 6 * 8);
+
+        let tokens = [1usize, 3, 0, 5, 2];
+        t.loss_and_backward(&tokens).unwrap();
+        let (i, eps) = (3 * 8 + 2, 1e-3f32);
+        let g = t.grads.tok_emb[i];
+        let mut loss_at = |d: f32| {
+            t.model.tok_emb[i] += d;
+            t.model.sync_tied_head();
+            t.loss(&tokens).unwrap()
+        };
+        let (lp, lm) = (loss_at(eps), loss_at(-2.0 * eps));
+        loss_at(eps);
+        assert!(((lp - lm) / (2.0 * eps) - g).abs() < 3e-2, "fd vs {g}");
+
+        t.set_lr(0.02);
+        let toks: Vec<usize> = (0..100).map(|i| (i * 7) % 6).collect();
+        let mut rng = Rng::new(3);
+        t.finetune_epoch(&toks, 6, 16, &mut rng).unwrap();
+        let want = crate::gguf::transpose_2d(&t.model.tok_emb, 6, 8);
+        assert_eq!(t.model.lm_head.weight.data, want, "head stays tied");
+
+        let bytes = t.save_checkpoint(&rng);
+        let mut u = LlamaTrainer::new(tied_tiny()).unwrap();
+        u.load_checkpoint_into(&bytes).unwrap();
+        assert_eq!(t.model_flat(), u.model_flat());
+        assert_eq!(t.model.lm_head.weight.data, u.model.lm_head.weight.data);
+        let mut m = tied_tiny();
+        apply_checkpoint_weights(&mut m, bytes).unwrap();
+        assert_eq!(m.lm_head.weight.data, want);
+    }
+
+    /// A checkpoint with an independently trained head (older Ferrum) is refused
+    /// for a tied model, naming the cause.
+    #[test]
+    fn old_checkpoints_with_a_separate_head_are_refused_for_tied_models() {
+        let (old, _) = trained_trainer(false);
+        let old_bytes = old.save_checkpoint(&Rng::new(1));
+        let mut fresh = LlamaTrainer::new(tied_tiny()).unwrap();
+        for e in [
+            fresh.load_checkpoint_into(&old_bytes).err().unwrap(),
+            apply_checkpoint_weights(&mut tied_tiny(), old_bytes)
+                .err()
+                .unwrap(),
+        ] {
+            let e = e.to_string();
+            assert!(
+                e.contains("older Ferrum") && e.contains("separately trained LM head"),
                 "{e}"
             );
         }
