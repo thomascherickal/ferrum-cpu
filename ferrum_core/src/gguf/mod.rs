@@ -19,7 +19,7 @@
 //! **SwiGLU** gated FFNs, and often **grouped-query attention** — none of which
 //! this block implements. So this reader will faithfully import the *tensors* of
 //! such a model, but running it end-to-end additionally requires a matching
-//! block (RoPE + RMSNorm + SwiGLU + GQA). [`Gguf::into_ferrum_slm`] therefore
+//! block (RoPE + RMSNorm + SwiGLU + GQA). `Gguf::into_ferrum_slm` therefore
 //! converts only models whose GGUF `*.architecture` Ferrum can actually execute,
 //! and returns a clear error otherwise rather than producing wrong output.
 
@@ -138,7 +138,7 @@ enum Source {
 }
 
 /// A parsed GGUF file: metadata, tensor directory, and a handle to the tensor
-/// data (in memory or streamed from disk — see [`Source`]).
+/// data (in memory or streamed from disk — see `Source`).
 pub struct Gguf {
     pub version: u32,
     pub metadata: BTreeMap<String, MetaValue>,

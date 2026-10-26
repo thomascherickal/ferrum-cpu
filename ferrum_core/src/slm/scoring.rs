@@ -118,7 +118,7 @@ impl GenerativeSLM {
 
     /// Loglikelihood of all of `text`: every token is scored, the first one
     /// conditioned on [`GenerativeSLM::bos_id`]. Long texts are scored in
-    /// sliding windows (see [`GenerativeSLM::token_logprobs`]).
+    /// sliding windows (see `GenerativeSLM::token_logprobs`).
     pub fn score_rolling(&self, text: &str) -> Result<Score> {
         let mut ids = vec![self.bos_id()];
         ids.extend(self.encode_text(text)?);

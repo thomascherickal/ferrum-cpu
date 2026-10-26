@@ -9,7 +9,7 @@ use crate::train_transformer::TransformerNet;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::verbose;
 
-/// Data-parallel version of [`train_transformer_epoch`]: each minibatch is split
+/// Data-parallel version of [`train_transformer_epoch`](super::train_transformer_epoch): each minibatch is split
 /// into up to `threads` shards processed concurrently on separate OS threads,
 /// then their gradients are summed and a single Adam update is applied.
 ///
@@ -20,7 +20,7 @@ use crate::verbose;
 /// gradients over its sequences against the shared weights, and the partial
 /// gradients are reduced in a **fixed shard order**, so a run is reproducible for
 /// a given `threads` value. With `threads <= 1` (or a single sequence) this is
-/// bit-for-bit identical to [`train_transformer_epoch`]; with more threads the
+/// bit-for-bit identical to [`train_transformer_epoch`](super::train_transformer_epoch); with more threads the
 /// only differences are the floating-point regrouping of the gradient sum.
 ///
 /// The RNG is drawn exactly as in the serial path (the whole minibatch is

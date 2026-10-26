@@ -515,7 +515,7 @@ impl LlamaModel {
     /// Primes the cache with `prompt`, then samples up to `max_new` tokens
     /// (stopping once a token in `stops` is produced) using the full
     /// [`SamplingParams`] sampler — repetition penalty, temperature, top-k, and
-    /// top-p (see [`sample_with_params`]). Returns the newly generated token
+    /// top-p (see `sample_with_params`). Returns the newly generated token
     /// IDs (excluding the prompt). Generation also stops when the model's
     /// context window is full; a prompt that already fills it is an error.
     pub fn generate(

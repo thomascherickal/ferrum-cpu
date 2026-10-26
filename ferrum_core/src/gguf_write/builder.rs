@@ -111,7 +111,7 @@ impl GgufBuilder {
         o
     }
 
-    /// Emit to a file (atomically — see [`atomic_write`]).
+    /// Emit to a file (atomically — see `atomic_write`).
     pub fn write(self, path: &str) -> crate::error::Result<()> {
         let bytes = self.into_bytes();
         atomic_write(path, &bytes)

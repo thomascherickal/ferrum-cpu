@@ -11,7 +11,7 @@ use crate::train_transformer::TransformerNet;
 impl GenerativeSLM {
     /// Train a true decoder-only causal Transformer SLM on a raw text corpus.
     ///
-    /// Unlike [`GenerativeSLM::train`] (a flat one-hot MLP), this trains
+    /// Unlike the flat one-hot MLP, this trains
     /// token + positional embeddings, `num_blocks` causal multi-head attention
     /// blocks, and an LM head end-to-end with Adam, using next-token loss at
     /// every position. The exported model serializes to Ferrum GGUF and runs in

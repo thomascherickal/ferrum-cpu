@@ -80,7 +80,7 @@ pub fn train_transformer_epoch(
 /// with the updated net and the RNG (e.g. to write a checkpoint).
 pub type StepHook<'a> = dyn FnMut(&TransformerNet, &Rng) -> Result<()> + 'a;
 
-/// One epoch (see [`train_transformer_epoch_threaded`]) that stops after at
+/// One epoch (see [`train_transformer_epoch_threaded`](super::train_transformer_epoch_threaded)) that stops after at
 /// most `max_steps` optimizer steps and calls `on_step` after each one, so a
 /// driver can enforce a token/step budget mid-epoch and checkpoint as it goes.
 /// Returns the mean loss over the steps actually run.

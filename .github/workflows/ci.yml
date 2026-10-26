@@ -23,9 +23,10 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build workspace
-        run: cargo build --workspace
+        run: cargo build --workspace --locked
+      # Debug profile here; the local battery (CLAUDE.md) uses --release.
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   lint:
     name: Lint (clippy, rustfmt, JS)
@@ -45,12 +46,33 @@ jobs:
       - name: rustfmt (workspace)
         run: cargo fmt --all -- --check
       - name: Clippy (workspace)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Rustdoc (warnings are errors)
+        run: cargo doc --workspace --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
       - name: JavaScript syntax check
         run: |
           node --check ferrum_gui/ui/app.js
           node --check ferrum_gui/ui/stream.js
           node --check ferrum_gui/ui/stream.test.js
+
+  msrv:
+    name: MSRV (Rust 1.87)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Keep in sync with `rust-version` in [workspace.package] (Cargo.toml).
+      - uses: dtolnay/rust-toolchain@1.87
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo check (workspace, MSRV)
+        run: cargo check --workspace --locked
 
   deny:
     name: cargo-deny (advisories, licenses, sources)
@@ -82,12 +104,12 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-      # X2: the WASM target uses the KV cache and is excluded from the workspace
-      # build, so verify it compiles for wasm32 on every change.
+      # X2: slm_wasm is a workspace member, so `cargo build --workspace` already
+      # compiles it natively; this job also verifies it compiles for wasm32.
       - name: Build WASM bindings
-        run: cargo build -p slm_wasm --target wasm32-unknown-unknown --release
+        run: cargo build -p slm_wasm --target wasm32-unknown-unknown --release --locked
       - name: Clippy (wasm32)
-        run: cargo clippy -p slm_wasm --target wasm32-unknown-unknown -- -D warnings
+        run: cargo clippy -p slm_wasm --target wasm32-unknown-unknown --locked -- -D warnings
 
   gui:
     name: Build & test (ferrum_gui, Tauri)
@@ -184,4 +206,4 @@ jobs:
           for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/ >/dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/ollama.log"; exit 1
       - name: Runtime compatibility tests (llama.cpp, Ollama; LM Studio exempt)
-        run: cargo test --release -p integration_tests --test test_runtime_compat -- --nocapture --test-threads 1
+        run: cargo test --release --locked -p integration_tests --test test_runtime_compat -- --nocapture --test-threads 1

@@ -95,7 +95,7 @@ impl GgufIn<'_> {
     }
 }
 
-/// Load a model written by [`to_gguf`], or a foreign GPT-2 GGUF (e.g. one
+/// Load a model written by `to_gguf`, or a foreign GPT-2 GGUF (e.g. one
 /// converted by llama.cpp). Weights are dequantized to f32 in memory.
 // ponytail: Q8_0/Q4_0 matrices are expanded to f32 (4×/8× the file's size in
 // RAM); keep them packed once a Q8_0 kernel lands, if large models need it.

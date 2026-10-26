@@ -38,7 +38,7 @@ pub fn is_verbose() -> bool {
     VERBOSE.load(Ordering::Relaxed)
 }
 
-/// Install a sink that receives every diagnostic line (see [`Sink`]). Replaces
+/// Install a sink that receives every diagnostic line (see `Sink`). Replaces
 /// any previously installed sink. Pass the result of [`clear_log_sink`] usage,
 /// or call [`clear_log_sink`] to remove it.
 pub fn set_log_sink<F>(f: F)
@@ -54,7 +54,7 @@ pub fn clear_log_sink() {
 }
 
 /// Print one diagnostic line to stdout and forward it to the installed sink (if
-/// any). This is the single choke-point behind [`vprintln!`]; callers that want
+/// any). This is the single choke-point behind `vprintln!`; callers that want
 /// a line captured by an embedding GUI should route it through here (or the
 /// macro) rather than calling [`println!`] directly.
 pub fn log_line(line: &str) {

@@ -122,7 +122,8 @@ They share only the low-level kernels (`ops`, `parallel`, `quant`).
 
 ## Commands
 
-Run from the repo root unless noted. This mirrors CI (`.github/workflows/ci.yml`).
+Run from the repo root unless noted. This mirrors CI (`.github/workflows/ci.yml`), which also passes `--locked` to
+cargo and checks the workspace on the MSRV (`rust-version = "1.87"`).
 
 ```bash
 cargo build --workspace
@@ -130,6 +131,7 @@ cargo test --workspace --release          # CI runs it without --release
 cargo test -p slm_cli --release --test determinism
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 cargo build -p slm_wasm --target wasm32-unknown-unknown --release
 cargo clippy -p slm_wasm --target wasm32-unknown-unknown -- -D warnings
 cargo deny check

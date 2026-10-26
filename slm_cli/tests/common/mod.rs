@@ -70,6 +70,9 @@ fn open_lock_file() -> std::fs::File {
 }
 
 /// Block until this process owns the runtime lock.
+// `File::lock` is std 1.89; the shipped crates build on the 1.87 MSRV, only these
+// test helpers need the newer toolchain.
+#[allow(clippy::incompatible_msrv)]
 pub fn runtime_lock() -> RuntimeLock {
     let thread = THREAD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let file = open_lock_file();
@@ -81,6 +84,7 @@ pub fn runtime_lock() -> RuntimeLock {
 }
 
 /// `true` if some other holder (this or another process) currently owns the lock.
+#[allow(clippy::incompatible_msrv)]
 pub fn runtime_lock_is_held_elsewhere() -> bool {
     matches!(
         open_lock_file().try_lock(),

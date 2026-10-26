@@ -3,8 +3,8 @@ use crate::slm::scoring::Evaluation;
 
 /// Hyperparameters for training a causal transformer SLM.
 ///
-/// Used by [`GenerativeSLM::train_transformer_config`] and
-/// [`GenerativeSLM::load_or_train`]. `Default` matches the CLI defaults.
+/// Used by `GenerativeSLM::train_transformer_config` and
+/// `GenerativeSLM::load_or_train`. `Default` matches the CLI defaults.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransformerConfig {
     /// Context window in characters.

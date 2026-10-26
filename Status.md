@@ -161,7 +161,7 @@ about 4 days for 3M by interpolation.
 | Runtime compatibility | `tests/`, `scripts/verify_runtimes.sh` | ✅ llama.cpp b11521 and Ollama v0.40.2 required in CI; LM Studio 0.4.18 checked locally |
 | Browser | `slm_wasm` | ✅ KV-cached SLM inference, sampling helpers, attention maps; builds for wasm32 |
 | GUI | `ferrum_gui` | ✅ Backend tests and builds. Tabs: Datasets, Train, Generate, Evaluate, Models, GGUF, Fine-tune, Export, System, Capable, plus engine log. |
-| CI | `.github/workflows/ci.yml` | ✅ Build/test, rustfmt, clippy, JS syntax, cargo-deny, wasm32, GUI fmt/clippy/test, runtimes job |
+| CI | `.github/workflows/ci.yml` | ✅ Build/test (`--locked`), rustfmt, clippy, rustdoc (`-D warnings`), JS syntax, MSRV 1.87 `cargo check`, cargo-deny, wasm32, GUI fmt/clippy/test (`ferrum_gui/Cargo.lock` is committed), runtimes job. The `rustdoc` step ran locally; the MSRV job and the `runtimes` job have not run on GitHub, and no 1.87 toolchain was installed here, so 1.87 rests on code analysis (`is_multiple_of` needs 1.87, `sha2` 1.85; clippy's `incompatible_msrv` finds no other newer std API). The MSRV covers the shipped crates: two `slm_cli` test helpers use `File::lock` (std 1.89), so `cargo test` needs 1.89. |
 
 ---
 

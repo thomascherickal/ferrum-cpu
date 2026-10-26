@@ -125,7 +125,7 @@ fn edge_rows(
     }
 }
 
-/// Matrix multiply: [m,k] × [k,n] → [m,n]. Uses i-k-j loop order for cache
+/// Matrix multiply: `[m,k] × [k,n] → [m,n]`. Uses i-k-j loop order for cache
 /// friendliness: the innermost loop walks contiguous memory in b and the output.
 pub fn matmul(a: &Tensor, b: &Tensor) -> Result<Tensor> {
     let (m, ka) = a.matrix_dims()?;
@@ -379,7 +379,7 @@ pub fn add(a: &Tensor, b: &Tensor) -> Result<Tensor> {
     Tensor::new(a.shape.clone(), data)
 }
 
-/// Transpose a rank-2 tensor: [r,c] → [c,r].
+/// Transpose a rank-2 tensor: `[r,c] → [c,r]`.
 pub fn transpose(m: &Tensor) -> Result<Tensor> {
     let (r, c) = m.matrix_dims()?;
     vprintln!("[ops::transpose] [{},{}] → [{},{}]", r, c, c, r);

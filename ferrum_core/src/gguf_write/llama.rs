@@ -107,7 +107,7 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
     Ok(b.into_bytes())
 }
 
-/// Write `llama_gguf_bytes` to a file (atomically — see [`atomic_write`]).
+/// Write `llama_gguf_bytes` to a file (atomically — see `atomic_write`).
 pub fn write_llama_gguf(
     model: &LlamaModel,
     source: &Gguf,
