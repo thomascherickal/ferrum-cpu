@@ -2,36 +2,50 @@
 //!
 //! ```text
 //! CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
-//!   cargo test -p slm_wasm --target wasm32-unknown-unknown
+//!   cargo test -p slm_wasm --target wasm32-unknown-unknown --release --test node
 //! ```
 //!
 //! On a native target this file is empty, so `cargo test --workspace` is unaffected. The tiny
-//! model is trained inside the test from a fixed seed (nothing to download or commit). The
+//! model is built inside the test from fixed seeds (nothing to download or commit); it is not
+//! trained, because training reads the clock, which this target lacks. The
 //! tokenizer ids are integer-only and pinned to the values a native run gives; the generated
 //! texts and the score were also taken from a native run, so a mismatch means wasm and native
 //! numerics (libm) differ.
 
 #![cfg(target_arch = "wasm32")]
 
-use ferrum_core::{GenerativeSLM, Rng, SamplingParams, TransformerConfig};
+use ferrum_core::{
+    ByteBpeTokenizer, GenerativeSLM, ModelMetadata, Normalizer, Rng, SamplingParams, TaskType,
+    TransformerNet,
+};
 use slm_wasm::Slm;
 use wasm_bindgen_test::*;
 
 /// A tiny int8 BPE model (as the browser would fetch it) and the library view of the same bytes.
+/// Not trained: training reads the clock, which wasm32-unknown-unknown does not have. The BPE
+/// merges are learned from a fixed corpus and the transformer keeps its seeded random weights,
+/// which is all these tests need (the API, not the quality).
 fn model() -> (Vec<u8>, GenerativeSLM) {
-    let cfg = TransformerConfig {
-        context_len: 16,
-        embed_dim: 16,
-        num_heads: 2,
-        num_blocks: 2,
-        hidden_dim: 32,
-        epochs: 3,
-        vocab_size: 280,
-        ..TransformerConfig::default()
-    };
     let corpus = "the cat sat on the mat. the dog sat on the log. ".repeat(20);
-    let m = GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(3), |_, _| {})
-        .unwrap();
+    let tok = ByteBpeTokenizer::train(&corpus, 280).unwrap();
+    let net = TransformerNet::new(tok.vocab_size(), 16, 16, 2, 32, 2, &mut Rng::new(3)).unwrap();
+    let meta = ModelMetadata {
+        dataset_name: "slm_wasm node test".into(),
+        task: TaskType::TransformerSLM,
+        feature_names: (0..16).map(|i| format!("c_{i}")).collect(),
+        feature_ranges: vec![[0.0, tok.vocab_size() as f32]; 16],
+        class_names: Vec::new(),
+        target_name: "next_char".into(),
+        target_range: [0.0, tok.vocab_size() as f32],
+        input_dim: 16,
+        output_dim: tok.vocab_size(),
+        tokenizer_state: tok.encode_state(),
+    };
+    let norm = Normalizer {
+        means: vec![],
+        stds: vec![],
+    };
+    let m = GenerativeSLM::new(net.to_inference().unwrap(), norm, meta);
     let bytes = m.to_bytes_quantized().unwrap();
     let lib = GenerativeSLM::from_bytes(&bytes).unwrap();
     (bytes, lib)
@@ -74,14 +88,8 @@ fn generate_matches_the_native_text_and_the_library() {
     let (bytes, lib) = model();
     let slm = Slm::new(&bytes).unwrap();
     let cases = [
-        (0.0, 0, 1.0, 1, "...... the...... the. the...... the."),
-        (
-            0.8,
-            5,
-            0.9,
-            7,
-            ". the the mat the mat log log. sat on on. on mat mat. mat mat mat the.. the",
-        ),
+        (0.0, 0, 1.0, 1, "���ƐM���\u{18}�"),
+        (0.8, 5, 0.9, 7, "\u{12}�f c{ c��\u{5}���A����"),
     ];
     for (t, k, p, seed, native) in cases {
         let got = slm
@@ -133,7 +141,7 @@ fn score_matches_the_library() {
     let slm = Slm::new(&bytes).unwrap();
     let got = slm.score("the cat sat").unwrap();
     assert!((got - lib.score_rolling("the cat sat").unwrap().logprob).abs() < 1e-9);
-    assert!((got - -14.723644989356476).abs() < 1e-3, "{got}");
+    assert!((got - -16.791895464384503).abs() < 1e-3, "{got}");
 }
 
 #[wasm_bindgen_test]

@@ -2010,7 +2010,7 @@ w.postMessage({ type: "cancel" });
 
 **Testing the wasm module.** The unit tests run the same Rust natively against
 the library. `slm_wasm/tests/node.rs` runs the compiled `.wasm` itself under
-Node with `wasm-bindgen-test`: it loads a tiny model trained inside the test,
+Node with `wasm-bindgen-test`: it loads a tiny model built inside the test (random weights: training needs a clock, which the target lacks),
 and checks `encode`, `decode`, `generate`, the streaming calls, `score` and the
 `JsError` paths, against the library and against values a native run gave. It
 needs `wasm-bindgen-cli` 0.2.122 (the runner must match the crate version) and
