@@ -128,6 +128,12 @@ pub(crate) const PREPARE_FLAGS: Spec = &[
     ("seed", Kind::U64),
 ];
 
+pub(crate) const TOKENIZE_FLAGS: Spec = &[
+    ("tokenizer", Kind::Str),
+    ("out", Kind::Str),
+    ("doc-sep", Kind::Str),
+];
+
 pub(crate) const EVAL_FLAGS: Spec = &[("json", Kind::Str)];
 
 pub(crate) const EVAL_GGUF_FLAGS: Spec = &[
@@ -157,6 +163,7 @@ pub(crate) fn spec_for(cmd: &str) -> Option<Spec> {
         "export-ollama" => EXPORT_OLLAMA_FLAGS,
         "export-lmstudio" => EXPORT_LMSTUDIO_FLAGS,
         "prepare" => PREPARE_FLAGS,
+        "tokenize" => TOKENIZE_FLAGS,
         "eval" => EVAL_FLAGS,
         "eval-gguf" => EVAL_GGUF_FLAGS,
         "info" => NO_FLAGS,
@@ -172,6 +179,7 @@ pub(crate) fn max_positional(cmd: &str) -> Option<usize> {
         "finetune-gguf" | "finetune" => Some(3),
         "export-lmstudio" | "info" => Some(1),
         "prepare" => Some(0),
+        "tokenize" => Some(1),
         _ => None,
     }
 }

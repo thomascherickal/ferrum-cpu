@@ -33,7 +33,10 @@ fn ids(n: usize, vocab: usize) -> Vec<u32> {
 }
 
 fn write(path: &str, v: &[u32], m: &TokenFileMeta) -> Result<TokenFileStats> {
-    write_token_file(path, v.iter().map(|&i| Ok(i)), m)
+    write_token_file(path, m, |sink| {
+        // Pushed in uneven chunks, as a document stream would.
+        v.chunks(7).try_for_each(|c| sink.push(c))
+    })
 }
 
 #[test]
@@ -208,8 +211,11 @@ fn ids_outside_the_vocabulary_are_rejected_on_write_and_on_read() {
     assert!(!std::path::Path::new(&path).exists());
     assert!(!std::path::Path::new(&format!("{path}.tmp")).exists());
     // An error from the id source aborts the write too and is passed through.
-    let src = [Ok(1), Err(InferError::Io("disk gone".into()))];
-    let e = write_token_file(&path, src, &meta(300, None)).unwrap_err();
+    let e = write_token_file(&path, &meta(300, None), |sink| {
+        sink.push(&[1])?;
+        Err(InferError::Io("disk gone".into()))
+    })
+    .unwrap_err();
     assert_eq!(e, InferError::Io("disk gone".into()));
     assert!(!std::path::Path::new(&path).exists());
     // Bad meta.

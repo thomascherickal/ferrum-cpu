@@ -8,14 +8,14 @@
 //! hash). Documents are separated by the EOS id exactly as `ByteBpeTokenizer::encode_docs`
 //! writes them, so `document_count` is one more than the number of EOS ids (0 when empty).
 //!
-//! [`TokenFileWriter`]-style output is [`write_token_file`] (one pass, atomic); the reader is
-//! [`TokenFile`] (`Read` + `Seek` on the tensor data, no whole-file read, no mmap).
+//! Output is [`write_token_file`] (one pass, atomic, ids pushed into a [`TokenSink`]); the reader
+//! is [`TokenFile`] (`Read` + `Seek` on the tensor data, no whole-file read, no mmap).
 
 mod reader;
 mod writer;
 
 pub use reader::TokenFile;
-pub use writer::write_token_file;
+pub use writer::{write_token_file, TokenSink};
 
 use crate::gguf::{GGML_I16, GGML_I32};
 

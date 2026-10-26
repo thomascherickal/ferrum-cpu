@@ -35,17 +35,58 @@ pub(super) fn header_bytes(meta: &TokenFileMeta, n: u64, docs: u64) -> Vec<u8> {
     b.into_bytes()
 }
 
-/// Write `ids` to `path` as a `ferrum-tokens` GGUF, in one pass and with O(1) memory: a
-/// placeholder header, the ids streamed through a 1 MiB buffer, then the header rewritten with
-/// the real counts. The file appears at `path` only when complete (temp file + rename).
-/// The first id error from `ids`, or an id `>= meta.vocab_size`, aborts the write and is returned.
+/// Receives the ids of a token file being written (see [`write_token_file`]).
+pub struct TokenSink<'a> {
+    w: BufWriter<&'a mut std::fs::File>,
+    meta: &'a TokenFileMeta,
+    wide: bool,
+    tokens: u64,
+    eos_seen: u64,
+}
+
+impl TokenSink<'_> {
+    /// Ids pushed so far.
+    pub fn len(&self) -> u64 {
+        self.tokens
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tokens == 0
+    }
+
+    /// Append `ids`; one outside the vocabulary is an error (nothing is kept).
+    pub fn push(&mut self, ids: &[u32]) -> Result<()> {
+        for &id in ids {
+            if id as usize >= self.meta.vocab_size {
+                return Err(InferError::Format(format!(
+                    "token {} is id {id}, outside the vocabulary of {}",
+                    self.tokens, self.meta.vocab_size
+                )));
+            }
+            self.eos_seen += u64::from(self.meta.eos_id == Some(id));
+            if self.wide {
+                self.w.write_all(&id.to_le_bytes())?;
+            } else {
+                self.w.write_all(&(id as i16).to_le_bytes())?;
+            }
+            self.tokens += 1;
+        }
+        Ok(())
+    }
+}
+
+/// Write a `ferrum-tokens` GGUF to `path` in one pass with O(1) memory: `produce` pushes ids into
+/// the [`TokenSink`] (a placeholder header, then the ids through a 1 MiB buffer, then the header
+/// rewritten with the real counts). The file appears at `path` only when complete (temp file +
+/// rename); an error from `produce`, or an id `>= meta.vocab_size`, aborts the write and is
+/// returned, leaving any existing file untouched.
 ///
 /// Ceiling: a `u32` vocabulary and `u64` token count; 2 bytes per token while the vocabulary is
 /// at most 32768, else 4.
 pub fn write_token_file(
     path: &str,
-    ids: impl IntoIterator<Item = Result<u32>>,
     meta: &TokenFileMeta,
+    produce: impl FnOnce(&mut TokenSink) -> Result<()>,
 ) -> Result<TokenFileStats> {
     let bad = |m: String| InferError::Format(m);
     if meta.vocab_size == 0 || meta.vocab_size > i32::MAX as usize {
@@ -55,47 +96,32 @@ pub fn write_token_file(
         return Err(bad("eos_id is outside the vocabulary".into()));
     }
     let (ty, width) = element_type(meta.vocab_size);
-    let vocab = meta.vocab_size as u64;
     let mut failure: Option<InferError> = None;
     let mut stats = TokenFileStats::default();
-    let mut eos_seen = 0u64;
     atomic_write_with(path, |f| {
         let placeholder = header_bytes(meta, 0, 0);
         f.write_all(&placeholder)?;
-        let mut w = BufWriter::with_capacity(1 << 20, &mut *f);
-        for id in ids {
-            let id = match id {
-                Ok(id) if u64::from(id) < vocab => id,
-                Ok(id) => {
-                    failure = Some(bad(format!(
-                        "token {} is id {id}, outside the vocabulary of {vocab}",
-                        stats.tokens
-                    )));
-                    return Err(std::io::Error::other("aborted"));
-                }
-                Err(e) => {
-                    failure = Some(e);
-                    return Err(std::io::Error::other("aborted"));
-                }
-            };
-            if meta.eos_id == Some(id) {
-                eos_seen += 1;
-            }
-            if ty == GGML_I32 {
-                w.write_all(&id.to_le_bytes())?;
-            } else {
-                w.write_all(&(id as i16).to_le_bytes())?;
-            }
-            stats.tokens += 1;
+        let mut sink = TokenSink {
+            w: BufWriter::with_capacity(1 << 20, &mut *f),
+            meta,
+            wide: ty == GGML_I32,
+            tokens: 0,
+            eos_seen: 0,
+        };
+        if let Err(e) = produce(&mut sink) {
+            failure = Some(e);
+            return Err(std::io::Error::other("aborted"));
         }
-        w.flush()?;
-        drop(w);
-        stats.documents = if stats.tokens == 0 { 0 } else { eos_seen + 1 };
+        sink.w.flush()?;
+        let (tokens, eos_seen) = (sink.tokens, sink.eos_seen);
+        drop(sink);
+        stats.tokens = tokens;
+        stats.documents = if tokens == 0 { 0 } else { eos_seen + 1 };
         let header = header_bytes(meta, stats.tokens, stats.documents);
         debug_assert_eq!(header.len(), placeholder.len());
         f.seek(SeekFrom::Start(0))?;
         f.write_all(&header)?;
-        stats.bytes = header.len() as u64 + stats.tokens * width as u64;
+        stats.bytes = header.len() as u64 + tokens * width as u64;
         Ok(())
     })
     .map_err(|e| failure.take().unwrap_or(e))?;

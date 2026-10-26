@@ -18,6 +18,9 @@ fn synopsis(cmd: &str) -> &'static str {
         "eval" => "eval <model.gguf> <heldout.txt> [options]",
         "eval-gguf" => "eval-gguf <model.gguf> <text.txt> [options]",
         "prepare" => "prepare --input <file|dir> --out <dir> [options]",
+        "tokenize" => {
+            "tokenize <corpus.txt|dir> --tokenizer <tok.gguf> --out <train.tok.gguf> [options]"
+        }
         _ => "info <model.gguf>",
     }
 }
@@ -61,6 +64,7 @@ pub(crate) fn print_usage() {
          \x20 train_transformer eval     <model.gguf>  <heldout.txt> [--json out.json]\n\
          \x20 train_transformer eval-gguf <model.gguf> <text.txt> [--ctx N] [--quant f32|int8|int4] [--resume ckpt.flck] [--json out.json]\n\
          \x20 train_transformer prepare  --input <file|dir> --out <dir> [options]\n\
+         \x20 train_transformer tokenize <corpus.txt|dir> --tokenizer <tok.gguf> --out <train.tok.gguf> [--doc-sep S]\n\
          \x20 train_transformer info     <model.gguf>\n\n\
          TRAIN / RUN options:\n\
          \x20 --preset tiny|small|medium  (sizes from Manual §6.7; any explicit flag below overrides it)\n\
@@ -87,6 +91,10 @@ pub(crate) fn print_usage() {
          \x20 --lossy  --nfkc  --lowercase  --strip-gutenberg  --dedup\n\
          \x20 --min-chars N (1)  --max-chars N (0 = off)\n\
          \x20 --val-frac F (0.05)  --test-frac F (0.05)  --seed N (42)\n\n\
+         TOKENIZE options (pre-tokenize a corpus of any size into a ferrum-tokens GGUF for `train`):\n\
+         \x20 --tokenizer tok.gguf  (required, must exist: `train corpus.txt m.gguf --tokenizer tok.gguf` creates one)\n\
+         \x20 --out train.tok.gguf  (required)   --doc-sep S (default <|endoftext|>; documents get the EOS id between them)\n\
+         \x20 a directory is read file by file in path order, with an EOS between files\n\n\
          GENERATE / RUN options:\n\
          \x20 --chars N    --temp F   --gen-seed N   --stream\n\
          \x20 --top-k N    --top-p F  --repetition-penalty F   (sampling knobs; 0/1.0/1.0 = off)\n\

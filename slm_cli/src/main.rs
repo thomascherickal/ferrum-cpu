@@ -20,6 +20,7 @@
 //! train_transformer eval-gguf <model.gguf> <text.txt> [--ctx N] [--quant f32|int8|int4] [--resume ckpt.flck] [--json out.json]
 //! train_transformer info     <model.gguf>
 //! train_transformer prepare  --input <file|dir> --out <dir> [options]
+//! train_transformer tokenize <corpus.txt|dir> --tokenizer <tok.gguf> --out <train.tok.gguf> [--doc-sep S]
 //! ```
 //!
 //! ### `train` / `run` options
@@ -81,6 +82,7 @@ mod resume;
 mod run_gguf;
 mod runtime_export;
 mod stop;
+mod tokenize;
 mod train;
 mod usage;
 mod util;
@@ -95,6 +97,7 @@ use crate::generate::*;
 use crate::info::*;
 use crate::prepare::cmd_prepare;
 use crate::run_gguf::*;
+use crate::tokenize::cmd_tokenize;
 use crate::train::*;
 use crate::usage::*;
 
@@ -172,6 +175,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         "eval" => cmd_eval(&args),
         "eval-gguf" => cmd_eval_gguf(&args),
         "prepare" => cmd_prepare(&args, raw_args),
+        "tokenize" => cmd_tokenize(&args),
         "info" => cmd_info(&args),
         _ => unreachable!("spec_for covers every command"),
     }

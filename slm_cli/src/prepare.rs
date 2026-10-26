@@ -110,7 +110,7 @@ impl Split {
 /// Anything under `outdir` (this run's own outputs and manifest, e.g. `--out`
 /// inside `--input`) is skipped when found by walking a directory and an error
 /// when named directly: re-ingesting the outputs would feed them back in.
-fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBuf>> {
+pub(crate) fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBuf>> {
     let outdir = std::fs::canonicalize(outdir).unwrap_or_else(|_| outdir.to_path_buf());
     let inside_out = |p: &Path| std::fs::canonicalize(p).is_ok_and(|c| c.starts_with(&outdir));
     fn walk(
@@ -178,7 +178,7 @@ const CHUNK: usize = 1 << 20;
 /// Reads fixed-size chunks (not lines), so a file with no newlines costs one
 /// chunk of buffer rather than doubling the document, and walks each chunk's
 /// separators once (no per-document memmove of the rest of the chunk).
-fn for_each_raw_doc(
+pub(crate) fn for_each_raw_doc(
     path: &Path,
     sep: &str,
     hasher: &mut Sha256,
