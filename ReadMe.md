@@ -56,7 +56,7 @@ tokenizer. Only BPE transformer SLMs run there.
 | Path | Kind | What it is |
 |---|---|---|
 | `ferrum_core` | library | The engine: tensors, layers, the transformer trainer, tokenizer, quantization, the GGUF model codecs, and the GGUF reader/writer plus Llama/Qwen runner and trainer |
-| `slm_cli` | binary `train_transformer` | Train, generate, evaluate, inspect, and `prepare` data; `export-ollama`, `export-lmstudio`; `run-gguf`, `finetune-gguf`, `export-gguf` for external checkpoints |
+| `slm_cli` | binary `train_transformer` | Train, generate, evaluate, inspect, and `prepare` data; `export-ollama`, `export-lmstudio`; `run-gguf`, `eval-gguf`, `finetune-gguf`, `export-gguf` for external checkpoints |
 | `slm_server` | binary `ferrum-serve` | HTTP inference server (axum): log-likelihood, rolling log-likelihood, generation |
 | `slm_wasm` | cdylib + rlib | `wasm-bindgen` bindings that run a trained SLM in the browser (`TransformerSLMModel`) |
 | `eval/lighteval/` | Python package | `FerrumModel` and custom tasks for Hugging Face LightEval 0.13.0, plus `run.sh` |

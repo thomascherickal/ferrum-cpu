@@ -64,6 +64,7 @@ pub mod gguf_tokenizer;
 pub mod gguf_write;
 pub mod layer;
 pub mod llm;
+mod llm_score;
 pub mod llm_train;
 pub mod loader;
 pub mod loss;
@@ -97,6 +98,7 @@ pub use llm::{
     apply_rope, Attention, FeedForward, LlamaBlock, LlamaCache, LlamaConfig, LlamaModel, RmsNorm,
     RopeType,
 };
+pub use llm_score::LlamaScore;
 pub use llm_train::{apply_checkpoint_weights, LlamaTrainer};
 pub use loader::{
     from_bytes, from_gguf, gguf_format, gguf_quant, load, save, save_quantized,

@@ -17,6 +17,7 @@
 //! train_transformer run-gguf  <model.gguf> [prompt] [--resume ckpt.flck] [options]
 //! train_transformer finetune-gguf <model.gguf> <corpus.txt> <out.flck> [options]
 //! train_transformer export-gguf <in.gguf> <out.gguf> [--quant q8_0|q4_0|q4_k|…] [--resume ckpt.flck]
+//! train_transformer eval-gguf <model.gguf> <text.txt> [--ctx N] [--quant f32|int8|int4] [--resume ckpt.flck] [--json out.json]
 //! train_transformer info     <model.gguf>
 //! train_transformer prepare  --input <file|dir> --out <dir> [options]
 //! ```
@@ -68,6 +69,7 @@
 
 mod args;
 mod eval;
+mod eval_gguf;
 mod export;
 mod finetune;
 mod generate;
@@ -86,6 +88,7 @@ mod validate;
 
 use crate::args::*;
 use crate::eval::*;
+use crate::eval_gguf::cmd_eval_gguf;
 use crate::export::*;
 use crate::finetune::*;
 use crate::generate::*;
@@ -167,6 +170,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .map_err(Into::into),
         "eval" => cmd_eval(&args),
+        "eval-gguf" => cmd_eval_gguf(&args),
         "prepare" => cmd_prepare(&args, raw_args),
         "info" => cmd_info(&args),
         _ => unreachable!("spec_for covers every command"),

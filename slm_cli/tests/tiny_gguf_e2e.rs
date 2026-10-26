@@ -113,6 +113,47 @@ fn round_trip(tag: &str, base_bytes: Vec<u8>) {
     assert_ne!(resumed, run(&base, &[]), "fine-tune had no effect");
     assert_eq!(exported, run(&tuned, &[]));
 
+    // eval-gguf: the fine-tune lowers the loss on its own training text, and scoring base plus
+    // checkpoint equals scoring the exported file.
+    let eval = |model: &str, extra: &[&str]| -> serde_json::Value {
+        let json = t.s("eval.json");
+        let mut a = vec!["eval-gguf", model, &corpus, "--json", &json];
+        a.extend(extra);
+        let out = ok(&a);
+        for key in [
+            "Predictions",
+            "Cross-entropy",
+            "Bits/token",
+            "Perplexity",
+            "Bits/byte",
+        ] {
+            assert!(out.contains(key), "missing {key}: {out}");
+        }
+        serde_json::from_slice(&std::fs::read(json).unwrap()).unwrap()
+    };
+    let (before, after, via_export) = (
+        eval(&base, &[]),
+        eval(&base, &["--resume", &ck]),
+        eval(&tuned, &[]),
+    );
+    let nats = |j: &serde_json::Value| j["cross_entropy_nats"].as_f64().unwrap();
+    assert!(nats(&before).is_finite() && nats(&before) > 0.0);
+    assert!(
+        nats(&after) < nats(&before),
+        "{} !< {}",
+        nats(&after),
+        nats(&before)
+    );
+    assert_eq!(after["tokens"], before["tokens"]);
+    assert!((nats(&after) - nats(&via_export)).abs() < 1e-4);
+    let (w, bad) = (
+        eval(&base, &["--ctx", "8"]),
+        tt(&["eval-gguf", &base, &corpus, "--ctx", "99"]),
+    );
+    assert!(w["tokens"].as_u64().unwrap() > 0);
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("--ctx must be between 2 and 16"));
+
     // The exported file is a loadable llama GGUF with the same shape as the base.
     let (b, e) = (Gguf::open(&base).unwrap(), Gguf::open(&tuned).unwrap());
     assert_eq!(e.architecture(), Some("llama"));

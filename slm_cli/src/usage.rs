@@ -16,6 +16,7 @@ fn synopsis(cmd: &str) -> &'static str {
         "export-ollama" => "export-ollama <model.gguf> <name> [options]",
         "export-lmstudio" => "export-lmstudio <model.gguf> [options]",
         "eval" => "eval <model.gguf> <heldout.txt> [options]",
+        "eval-gguf" => "eval-gguf <model.gguf> <text.txt> [options]",
         "prepare" => "prepare --input <file|dir> --out <dir> [options]",
         _ => "info <model.gguf>",
     }
@@ -58,6 +59,7 @@ pub(crate) fn print_usage() {
          \x20 train_transformer export-ollama <model.gguf> <name> [--bin P] [--modelfile-only out.Modelfile]\n\
          \x20 train_transformer export-lmstudio <model.gguf> [--repo ferrum/<stem>] [--bin P]\n\
          \x20 train_transformer eval     <model.gguf>  <heldout.txt> [--json out.json]\n\
+         \x20 train_transformer eval-gguf <model.gguf> <text.txt> [--ctx N] [--quant f32|int8|int4] [--resume ckpt.flck] [--json out.json]\n\
          \x20 train_transformer prepare  --input <file|dir> --out <dir> [options]\n\
          \x20 train_transformer info     <model.gguf>\n\n\
          TRAIN / RUN options:\n\
@@ -101,6 +103,10 @@ pub(crate) fn print_usage() {
          \x20 --resume ckpt.flck  (overlay fine-tuned weights; forces f32 load)\n\
          \x20 NOTE: only F32/F16/Q8_0/Q8_1/Q4_0/Q4_1/Q5_0/Q5_1/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K GGUFs; on CPU\n\
          \x20 a 1B model decodes at only a few tokens/sec (see Manual.md §13).\n\n\
+         EVAL-GGUF options (perplexity of an imported llama/qwen2 GGUF on a text file):\n\
+         \x20 --ctx N        (scoring window in tokens; default min(512, model context))\n\
+         \x20 --quant f32|int8|int4  (in-memory precision; default f32, the faithful number)\n\
+         \x20 --resume ckpt.flck  (score the fine-tuned weights; forces f32)   --force   --json out.json\n\n\
          FINETUNE-GGUF options (AdamW fine-tune an imported GGUF; f32 masters):\n\
          \x20 --epochs N  --lr F  --batch N  --seq N   (window length; capped at ctx)\n\
          \x20 --warmup N  --clip F  --weight_decay F  --dropout F   (schedule/regularization)\n\

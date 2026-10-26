@@ -130,6 +130,14 @@ pub(crate) const PREPARE_FLAGS: Spec = &[
 
 pub(crate) const EVAL_FLAGS: Spec = &[("json", Kind::Str)];
 
+pub(crate) const EVAL_GGUF_FLAGS: Spec = &[
+    ("ctx", Kind::Usize),
+    ("quant", Kind::Str),
+    ("json", Kind::Str),
+    ("resume", Kind::Str),
+    ("force", Kind::Bool),
+];
+
 pub(crate) const NO_FLAGS: Spec = &[];
 
 /// `run` takes the union of train and generate flags.
@@ -150,6 +158,7 @@ pub(crate) fn spec_for(cmd: &str) -> Option<Spec> {
         "export-lmstudio" => EXPORT_LMSTUDIO_FLAGS,
         "prepare" => PREPARE_FLAGS,
         "eval" => EVAL_FLAGS,
+        "eval-gguf" => EVAL_GGUF_FLAGS,
         "info" => NO_FLAGS,
         _ => return None,
     })
@@ -159,7 +168,7 @@ pub(crate) fn spec_for(cmd: &str) -> Option<Spec> {
 /// (`run`, `generate`, `run-gguf` join the extra words into the prompt).
 pub(crate) fn max_positional(cmd: &str) -> Option<usize> {
     match cmd {
-        "train" | "export-gguf" | "export" | "export-ollama" | "eval" => Some(2),
+        "train" | "export-gguf" | "export" | "export-ollama" | "eval" | "eval-gguf" => Some(2),
         "finetune-gguf" | "finetune" => Some(3),
         "export-lmstudio" | "info" => Some(1),
         "prepare" => Some(0),

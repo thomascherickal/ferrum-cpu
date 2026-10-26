@@ -337,7 +337,7 @@ is sufficient on its own to ruin a model. Spend your effort accordingly.
 | Part | What it is |
 |---|---|
 | `ferrum_core` | The engine library. Everything else calls into it. |
-| `slm_cli` | The `train_transformer` command-line tool: train, run, generate, eval, info, prepare, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio |
+| `slm_cli` | The `train_transformer` command-line tool: train, run, generate, eval, eval-gguf, info, prepare, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio |
 | `slm_server` | The `ferrum-serve` HTTP server: log-likelihood, rolling log-likelihood, and generation routes ([§9.7](#97-serving-ferrum-serve)) |
 | `slm_wasm` | Browser bindings for trained SLMs |
 | `eval/lighteval/` | Python: a LightEval 0.13.0 model class and custom tasks that evaluate a Ferrum model through the server ([§9.8](#98-evaluating-with-lighteval)) |
@@ -1263,6 +1263,31 @@ train_transformer export-gguf base.gguf tuned.gguf --resume tuned.flck --quant q
   f16. The per-type summary printed after export shows what was emitted.
 - Writes are atomic. Re-quantizing an already-quantized source is lossy. The
   lossless paths are `f16`/`f32`, or exporting fine-tuned f32 masters.
+
+**Scoring an imported model (`eval-gguf`).** Perplexity of a Llama/Qwen GGUF on a text file,
+printed like `eval` (§8) with the same fields and `--json`:
+
+```bash
+train_transformer eval-gguf model.gguf heldout.txt [--ctx N] [--quant f32|int8|int4] [--resume tuned.flck] [--json out.json]
+```
+
+- The text is tokenized with the file's tokenizer, with BOS in front when the tokenizer adds
+  one, and scored in windows of `--ctx` tokens (default `min(512, model context)`; it may not
+  exceed the model's context length). The first window starts at token 0. Each later window
+  starts half a window before its first unscored token, so every token is scored once with at
+  least half a window of history, the same rule as `eval` on a Ferrum model. A text that fits
+  one window is one forward pass. Without a BOS token the first token has nothing to condition
+  on and is not scored, so `Predictions` is one less.
+- `--quant` defaults to `f32`, the faithful number; `int8` and `int4` quantize in memory and
+  score the lossy copy. `--resume tuned.flck` scores the fine-tuned weights (always f32), so
+  `eval-gguf` on the base file and on the base plus checkpoint shows what a
+  `finetune-gguf` run changed. `--force` skips the memory guard.
+- `Bits/byte` divides by the UTF-8 byte length of the file, so it is comparable across
+  tokenizers. The scoring needs the full weights in memory and runs one unbatched forward per
+  window, so a large model is slow. It is the library call `LlamaModel::score_rolling`.
+- Tested on the synthetic tiny llama only (the score equals a manual log-softmax sum over the
+  model's logits, and a fine-tune lowers the loss on its own text). It was not run on a
+  real-size checkpoint.
 
 ### 9.4 Library API
 
