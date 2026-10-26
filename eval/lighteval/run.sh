@@ -66,7 +66,11 @@ tasks="ferrum_heldout|0,tinystories_cloze|0,blimp:anaphor_gender_agreement|0,bli
 
 # ${max:+...} is unquoted on purpose: max is a validated integer, and (unlike an empty
 # "${extra[@]}") it is safe under `set -u` on bash < 4.4.
+# Hugging Face downloads (datasets, hub) stay inside the project, never in ~/.cache. The
+# directory survives between runs (unlike $work) so the datasets are fetched once.
+hf="${FERRUM_HF_CACHE:-$here/.hf-cache}"; mkdir -p "$hf"
 FERRUM_URL="$url" FERRUM_TASK_DATA="$work/data" FERRUM_CACHE_DIR="$work/cache" \
+  HF_HOME="$hf" HF_DATASETS_CACHE="$hf/datasets" HF_HUB_CACHE="$hf/hub" \
   "$le" custom ferrum "$here/ferrum_model.py" "$tasks" \
   --custom-tasks "$here/ferrum_tasks.py" --output-dir "$work/results" ${max:+--max-samples $max} &
 lpid=$!

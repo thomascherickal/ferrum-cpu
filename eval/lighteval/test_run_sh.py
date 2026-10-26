@@ -50,6 +50,7 @@ class Fixture:
             venv / "bin/lighteval",
             "#!/bin/bash\nprintf '%s\\n' \"$@\" > " + str(self.argv) + "\n"
             "printf '%s' \"$FERRUM_CACHE_DIR\" > " + str(self.cache_env) + "\n"
+            "printf '%s\\n%s\\n%s' \"$HF_HOME\" \"$HF_DATASETS_CACHE\" \"$HF_HUB_CACHE\" > " + str(self.root / "lighteval.hf_env") + "\n"
             "echo $$ > " + str(self.root / "lighteval.pid") + "\n"
             '[ "${LE_MODE:-}" = fail ] && exit 3\n'
             '[ "${LE_MODE:-}" = hang ] && exec sleep 300\n'
@@ -129,6 +130,16 @@ class RunShTest(unittest.TestCase):
         argv = fx.argv.read_text().split("\n")
         self.assertEqual(argv[argv.index("--max-samples") + 1], "7")
         self.assertTrue((fx.root / "eval/lighteval/out/data/cloze/test.jsonl").exists())
+
+    def test_huggingface_caches_stay_inside_the_project(self):
+        # regression: `datasets` wrote parquet builders and locks into ~/.cache/huggingface
+        fx = Fixture(GOOD_SERVER)
+        self.assertEqual(fx.run().returncode, 0)
+        hf = str(fx.root / "eval/lighteval/.hf-cache")
+        self.assertEqual((fx.root / "lighteval.hf_env").read_text().split("\n"), [hf, hf + "/datasets", hf + "/hub"])
+        fx2 = Fixture(GOOD_SERVER)
+        self.assertEqual(fx2.run(env_extra={"FERRUM_HF_CACHE": str(fx2.root / "elsewhere")}).returncode, 0)
+        self.assertEqual((fx2.root / "lighteval.hf_env").read_text().split("\n")[0], str(fx2.root / "elsewhere"))
 
     def test_lighteval_sample_cache_is_private_to_the_run(self):
         # regression: lighteval's default cache (~/.cache/huggingface/lighteval) is keyed by config, not weights

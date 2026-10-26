@@ -1409,7 +1409,9 @@ including Ctrl-C and `kill`. Each run uses its own LightEval sample cache under
 `eval/lighteval/out/cache`, because LightEval's default cache is keyed by the
 model *config*, not the weights, and would answer a second model from the first
 one's results. The `blimp` and `arc` tasks download their datasets from Hugging
-Face on first use; set `HF_HOME` to choose where they are cached.
+Face on first use. `run.sh` caches them in `eval/lighteval/.hf-cache` (git-ignored,
+kept between runs), never in `~/.cache/huggingface`; set `FERRUM_HF_CACHE` to
+choose another directory.
 
 **Tasks.**
 

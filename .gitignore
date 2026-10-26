@@ -51,3 +51,4 @@ __pycache__/
 
 # Scratch output of the Samples.md walk-throughs (models, logs, caches)
 /samples/
+eval/lighteval/.hf-cache/
