@@ -1753,10 +1753,10 @@ prepare` (§5.1) for those.
 |---|---|
 | **Datasets** | Download from a URL, Hugging Face, or Kaggle (or pick a catalog corpus), clean with the `clean_text` command, preview statistics, save |
 | **Train** | Train a transformer SLM: architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart |
-| **Generate** | Prompt, characters, temperature, optional streaming |
+| **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text; each run adds a table row (perplexity, CE, bits/token, uniform baseline) |
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
-| **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, top-k/top-p/repetition penalty, chat format, optional fine-tune overlay |
+| **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, optional fine-tune overlay (no stop strings: the library and `run-gguf` stop on token ids only) |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary |
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |

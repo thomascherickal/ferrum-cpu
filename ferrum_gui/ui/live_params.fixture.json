@@ -55,7 +55,8 @@
     "kind": "generate",
     "params": {
       "modelPath": "",
-      "numChars": 200
+      "numChars": 200,
+      "maxNew": 0
     }
   },
   "ggInspect": {

@@ -420,10 +420,111 @@ pub struct GenParams {
     pub model_path: String,
     pub seed_text: String,
     pub num_chars: usize,
+    /// Softmax temperature; `0` is exact argmax (greedy), like `--temp 0`.
     pub temp: f32,
     pub gen_seed: Option<u64>,
     pub stream: bool,
     pub verbose: bool,
+    /// Keep only the `k` highest-probability tokens (`0` disables).
+    #[serde(default)]
+    pub top_k: usize,
+    /// Nucleus sampling threshold (`1.0` disables).
+    #[serde(default = "one_f32")]
+    pub top_p: f32,
+    /// Down-weight already-seen tokens (`1.0` disables).
+    #[serde(default = "one_f32")]
+    pub rep_penalty: f32,
+    /// Token budget (`0` = none: `num_chars` counts characters, as before).
+    #[serde(default)]
+    pub max_tokens: usize,
+    /// Stop strings, one per entry; generation ends before the first one that
+    /// appears. `\n`, `\t` and `\\` are unescaped (a line cannot hold a real newline).
+    #[serde(default)]
+    pub stop: Vec<String>,
+}
+
+/// The sampler settings shared by the Generate and GGUF tabs, validated like
+/// the CLI's `sampling_params` (`--temp >= 0`, `--top-p` in [0, 1], a positive
+/// repetition penalty).
+fn sampling_from(
+    temp: f32,
+    top_k: usize,
+    top_p: f32,
+    rep_penalty: f32,
+) -> Result<SamplingParams, String> {
+    if !(temp.is_finite() && temp >= 0.0) {
+        return Err(format!(
+            "temperature must be a number >= 0 (0 = greedy), got {temp}"
+        ));
+    }
+    if !(top_p.is_finite() && (0.0..=1.0).contains(&top_p)) {
+        return Err(format!("top-p must be a number in [0, 1], got {top_p}"));
+    }
+    if !(rep_penalty.is_finite() && rep_penalty > 0.0) {
+        return Err(format!(
+            "repetition penalty must be a positive number, got {rep_penalty}"
+        ));
+    }
+    Ok(SamplingParams {
+        temperature: temp,
+        top_k,
+        top_p,
+        repetition_penalty: rep_penalty,
+    })
+}
+
+/// Stop strings as typed (one per line): empty lines dropped, `\n` `\t` `\\` unescaped.
+fn parse_stops(raw: &[String]) -> Vec<String> {
+    raw.iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let mut out = String::new();
+            let mut it = s.chars();
+            while let Some(c) = it.next() {
+                if c != '\\' {
+                    out.push(c);
+                    continue;
+                }
+                match it.next() {
+                    Some('n') => out.push('\n'),
+                    Some('t') => out.push('\t'),
+                    Some('\\') => out.push('\\'),
+                    Some(o) => {
+                        out.push('\\');
+                        out.push(o);
+                    }
+                    None => out.push('\\'),
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// Generate exactly as `train_transformer generate` does for the same flags:
+/// a token budget or stop strings select the token path (`generate_tokens_with`,
+/// stop text excluded), otherwise `num_chars` characters. Returns seed +
+/// continuation; `on_text` receives only the continuation, as it is produced.
+pub(crate) fn run_generation(
+    slm: &GenerativeSLM,
+    p: &GenParams,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<String, String> {
+    let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
+    let stops = parse_stops(&p.stop);
+    let mut rng = Rng::new(p.gen_seed.unwrap_or_else(time_seed));
+    let out = if p.max_tokens > 0 || !stops.is_empty() {
+        let max_tokens = if p.max_tokens > 0 {
+            p.max_tokens
+        } else {
+            p.num_chars
+        };
+        slm.generate_tokens_with(&p.seed_text, max_tokens, &stops, &params, &mut rng, on_text)
+            .map(|g| format!("{}{}", p.seed_text, g.text))
+    } else {
+        slm.generate_stream_with(&p.seed_text, p.num_chars, &params, &mut rng, |f| on_text(f))
+    };
+    out.map_err(|e| format!("generation failed: {e}"))
 }
 
 /// Load a model and generate text. With `stream = true`, each fragment is
@@ -440,25 +541,21 @@ pub async fn generate_slm<R: Runtime>(
 }
 
 fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams) -> Result<String, String> {
-    if !(p.temp.is_finite() && p.temp > 0.0) {
-        return Err("temperature must be a positive number".into());
-    }
+    sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?; // fail before the model loads
     checked_path("model path", &p.model_path, true)?;
     let slm = GenerativeSLM::load(&p.model_path)
         .map_err(|e| format!("cannot load model {}: {e}", p.model_path))?;
 
     ferrum_core::set_verbose(p.verbose);
-    let mut rng = Rng::new(p.gen_seed.unwrap_or_else(time_seed));
     let result = if p.stream {
-        let app_cb = app.clone();
-        slm.generate_stream(&p.seed_text, p.num_chars, p.temp, &mut rng, move |frag| {
-            let _ = app_cb.emit("gen-fragment", frag.to_string());
+        run_generation(&slm, &p, &mut |frag| {
+            let _ = app.emit("gen-fragment", frag.to_string());
         })
     } else {
-        slm.generate(&p.seed_text, p.num_chars, p.temp, &mut rng)
+        run_generation(&slm, &p, &mut |_| {})
     };
     ferrum_core::set_verbose(false);
-    result.map_err(|e| format!("generation failed: {e}"))
+    result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -760,15 +857,7 @@ pub async fn run_gguf(params: GgufRunParams) -> Result<GgufRunResult, String> {
 }
 
 fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
-    if !(p.temp.is_finite() && p.temp > 0.0) {
-        return Err("temperature must be a positive number".into());
-    }
-    if !(p.top_p.is_finite() && p.top_p > 0.0 && p.top_p <= 1.0) {
-        return Err("top-p must be a number in (0.0, 1.0]".into());
-    }
-    if !(p.rep_penalty.is_finite() && p.rep_penalty > 0.0) {
-        return Err("repetition penalty must be a positive number".into());
-    }
+    let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
     checked_path("model path", &p.model_path, true)?;
     if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
         checked_path("checkpoint path", r, true)?;
@@ -846,12 +935,6 @@ fn gguf_run_inner(p: GgufRunParams) -> Result<GgufRunResult, String> {
     }
 
     let mut rng = Rng::new(p.gen_seed.unwrap_or_else(time_seed));
-    let params = SamplingParams {
-        temperature: p.temp,
-        top_k: p.top_k,
-        top_p: p.top_p,
-        repetition_penalty: p.rep_penalty,
-    };
     let mut stops: Vec<usize> = tok
         .as_ref()
         .and_then(GgufTokenizer::eos)
@@ -1465,6 +1548,171 @@ mod tests {
     #[test]
     fn time_seed_is_nonzero() {
         assert_ne!(time_seed(), 0);
+    }
+
+    // ── G7: greedy decoding and the full sampling controls ───────────────────
+
+    fn tiny_bpe() -> GenerativeSLM {
+        let corpus = "the quick brown fox jumps over the lazy dog. ".repeat(40);
+        let cfg = TransformerConfig {
+            context_len: 8,
+            embed_dim: 16,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 32,
+            epochs: 2,
+            lr: 0.01,
+            batch_size: 8,
+            vocab_size: 300,
+            ..TransformerConfig::default()
+        };
+        GenerativeSLM::train_transformer_config_threaded(
+            &corpus,
+            &cfg,
+            1,
+            &mut Rng::new(3),
+            |_, _| {},
+        )
+        .unwrap()
+    }
+
+    fn gen_params(seed_text: &str) -> GenParams {
+        serde_json::from_value(serde_json::json!({
+            "modelPath": "m", "seedText": seed_text, "numChars": 60, "temp": 0.8,
+            "genSeed": 5, "stream": false, "verbose": false
+        }))
+        .unwrap()
+    }
+
+    fn generate_with_gui(slm: &GenerativeSLM, p: &GenParams) -> (String, String) {
+        let mut streamed = String::new();
+        let out = run_generation(slm, p, &mut |f| streamed.push_str(f)).unwrap();
+        (out, streamed)
+    }
+
+    #[test]
+    fn gen_params_new_fields_default_to_the_old_behaviour() {
+        let p = gen_params("x");
+        assert_eq!((p.top_k, p.top_p, p.rep_penalty), (0, 1.0, 1.0));
+        assert_eq!((p.max_tokens, p.stop.len()), (0, 0));
+    }
+
+    #[test]
+    fn character_path_equals_the_library_and_streams_the_continuation() {
+        let slm = tiny_bpe();
+        let p = gen_params("the quick");
+        let (out, streamed) = generate_with_gui(&slm, &p);
+        let want = slm
+            .generate_with(
+                "the quick",
+                60,
+                &SamplingParams::with_temperature(0.8),
+                &mut Rng::new(5),
+            )
+            .unwrap();
+        assert_eq!(out, want);
+        assert_eq!(format!("the quick{streamed}"), out);
+    }
+
+    #[test]
+    fn token_path_equals_generate_tokens_for_every_sampling_control() {
+        let slm = tiny_bpe();
+        let mut p = gen_params("the ");
+        p.temp = 0.9;
+        p.top_k = 5;
+        p.top_p = 0.9;
+        p.rep_penalty = 1.2;
+        p.max_tokens = 25;
+        let (out, streamed) = generate_with_gui(&slm, &p);
+        let params = SamplingParams {
+            temperature: 0.9,
+            top_k: 5,
+            top_p: 0.9,
+            repetition_penalty: 1.2,
+        };
+        let g = slm
+            .generate_tokens("the ", 25, &[], &params, &mut Rng::new(5))
+            .unwrap();
+        assert_eq!(out, format!("the {}", g.text));
+        assert_eq!(streamed, g.text);
+        assert!(g.n_tokens <= 25);
+        // Without max_tokens the character budget doubles as the token budget (as in the CLI).
+        let mut q = gen_params("the ");
+        q.stop = vec!["zzzz-never".into()];
+        let g = slm
+            .generate_tokens(
+                "the ",
+                60,
+                &["zzzz-never".to_string()],
+                &SamplingParams::with_temperature(0.8),
+                &mut Rng::new(5),
+            )
+            .unwrap();
+        assert_eq!(generate_with_gui(&slm, &q).0, format!("the {}", g.text));
+    }
+
+    #[test]
+    fn temperature_zero_is_exact_argmax_whatever_the_seed() {
+        let slm = tiny_bpe();
+        let mut p = gen_params("the ");
+        p.temp = 0.0;
+        p.gen_seed = Some(1);
+        let a = generate_with_gui(&slm, &p).0;
+        p.gen_seed = Some(999);
+        let b = generate_with_gui(&slm, &p).0;
+        p.gen_seed = None; // time-seeded: still identical
+        let c = generate_with_gui(&slm, &p).0;
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        let want = slm
+            .generate_with(
+                "the ",
+                60,
+                &SamplingParams::with_temperature(0.0),
+                &mut Rng::new(0),
+            )
+            .unwrap();
+        assert_eq!(a, want);
+    }
+
+    #[test]
+    fn stop_strings_end_generation_and_are_not_in_the_text() {
+        let slm = tiny_bpe();
+        let mut p = gen_params("the ");
+        p.temp = 0.0;
+        let full = generate_with_gui(&slm, &p).0;
+        let cont: Vec<char> = full.chars().skip(4).collect();
+        assert!(cont.len() > 12, "{full:?}");
+        let stop: String = cont[8..10].iter().collect();
+        p.stop = vec!["".into(), stop.clone()]; // the empty line is ignored
+        let (out, streamed) = generate_with_gui(&slm, &p);
+        let at = full[4..].find(&stop).unwrap();
+        assert_eq!(out, format!("the {}", &full[4..][..at]));
+        assert!(!streamed.contains(&stop));
+        assert_eq!(format!("the {streamed}"), out);
+    }
+
+    #[test]
+    fn stop_escapes_and_validation() {
+        let raw = |s: &str| vec![s.to_string()];
+        assert_eq!(parse_stops(&raw("a\\nb")), vec!["a\nb"]);
+        assert_eq!(parse_stops(&raw("\\t.")), vec!["\t."]);
+        assert_eq!(parse_stops(&raw("c:\\\\x")), vec!["c:\\x"]);
+        assert_eq!(parse_stops(&raw("\\q")), vec!["\\q"]);
+        assert_eq!(parse_stops(&raw("end\\")), vec!["end\\"]);
+        assert!(parse_stops(&raw("")).is_empty());
+
+        assert!(sampling_from(0.0, 0, 1.0, 1.0).is_ok());
+        for (t, p, r, word) in [
+            (-0.1, 1.0, 1.0, "temperature"),
+            (f32::NAN, 1.0, 1.0, "temperature"),
+            (0.5, 1.5, 1.0, "top-p"),
+            (0.5, -0.1, 1.0, "top-p"),
+            (0.5, 1.0, 0.0, "repetition"),
+        ] {
+            let e = sampling_from(t, 0, p, r).unwrap_err();
+            assert!(e.contains(word), "{e}");
+        }
     }
 
     // ── GGUF export (do_export) ──────────────────────────────────────────────

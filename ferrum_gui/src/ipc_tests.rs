@@ -270,6 +270,27 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
     .unwrap();
     assert_eq!(again.as_str().unwrap(), out);
 
+    // G7: greedy (temp 0) with every sampling control, through the IPC path; the seed is irrelevant.
+    let greedy = |seed: u64, stop: Value| {
+        call(
+            &w,
+            "generate_slm",
+            json!({"params": {"modelPath": model, "seedText": "the ", "numChars": 40, "temp": 0, "genSeed": seed,
+                "stream": false, "verbose": false, "topK": 5, "topP": 0.9, "repPenalty": 1.1, "maxTokens": 12, "stop": stop}}),
+        )
+        .unwrap()
+    };
+    let g1 = greedy(1, json!([]));
+    assert_eq!(g1, greedy(2, json!([])), "temp 0 ignores the seed");
+    assert!(g1.as_str().unwrap().starts_with("the "));
+    let bad = call(
+        &w,
+        "generate_slm",
+        json!({"params": {"modelPath": model, "seedText": "x", "numChars": 4, "temp": -1, "genSeed": 1, "stream": false, "verbose": false}}),
+    )
+    .unwrap_err();
+    assert!(bad.as_str().unwrap().contains("temperature"), "{bad}");
+
     let ev = call(&w, "evaluate_slm", json!({"params": {"modelPath": model, "text": "the lazy dog. the quick brown fox.", "textPath": null}})).unwrap();
     assert!(ev["perplexity"].as_f64().unwrap() > 0.0 && ev["numPredictions"].as_u64().unwrap() > 0);
     let _ = std::fs::remove_dir_all(dir);
@@ -324,6 +345,18 @@ fn imported_gguf_inspect_run_finetune_export_through_ipc() {
     .unwrap();
     assert!(run["text"].as_str().unwrap().starts_with("hi"));
     assert!(run["generated"].as_u64().unwrap() <= 4);
+    // Greedy (temp 0) is accepted and ignores the seed.
+    let greedy = |seed: u64| {
+        call(
+            &w,
+            "run_gguf",
+            json!({"params": {"modelPath": src, "prompt": "hi", "quant": "int8", "maxNew": 6, "temp": 0,
+                "genSeed": seed, "ids": null, "force": false, "resume": null, "topK": 0, "topP": 1.0, "repPenalty": 1.0, "raw": true}}),
+        )
+        .unwrap()["text"]
+            .clone()
+    };
+    assert_eq!(greedy(1), greedy(99));
 
     let ckpt = dir.join("tuned.flck").to_string_lossy().into_owned();
     let corpus = dir.join("c.txt");

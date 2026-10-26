@@ -542,7 +542,12 @@ fn slm_or_default(d: &mut Draft, p: &JobParams) -> SlmFacts {
 
 fn generate(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
     let s = slm_or_default(&mut d, p);
-    let tokens = p.num_chars as f64 / bytes_per_token(s.vocab);
+    // A token budget (`max_new`) replaces the character budget, as in `generate_tokens`.
+    let tokens = if p.max_new > 0 {
+        p.max_new as f64
+    } else {
+        p.num_chars as f64 / bytes_per_token(s.vocab)
+    };
     let per_token = 2.0 * s.matmul_params as f64 / (GEN_GFLOPS * 1e9 * speed);
     d.note(format!(
         "About {} tokens at {:.2} ms each; generation is serial, so extra cores do not help.",

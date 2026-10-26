@@ -30,7 +30,7 @@
       threads: int(d, "trThreads"), windowStride: int(d, "trStride"), maxTokens: int(d, "trTokens"),
       valFraction: num(d, "trVal"),
     }),
-    genStart: (d) => ({ modelPath: str(d, "genModel"), numChars: int(d, "genChars") }),
+    genStart: (d) => ({ modelPath: str(d, "genModel"), numChars: int(d, "genChars"), maxNew: int(d, "genMaxTokens") }),
     evRun: (d) => ({ modelPath: str(d, "evModel"), textPath: str(d, "evFile"), textChars: len(d, "evText") }),
     miInspect: (d) => ({ modelPath: str(d, "miPath") }),
     ggInspect: (d) => ({ modelPath: str(d, "ggPath") }),

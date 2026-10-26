@@ -198,7 +198,10 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("genOut").textContent, "uick brown");
     const sent = a.of("generate_slm")[0].args.params;
     captured.generate_slm = sent;
-    assert.deepStrictEqual(sent, { modelPath: "/m.gguf", seedText: "the q", numChars: 200, temp: 0.8, genSeed: 7, stream: true, verbose: false });
+    assert.deepStrictEqual(sent, {
+      modelPath: "/m.gguf", seedText: "the q", numChars: 200, temp: 0.8, topK: 0, topP: 1, repPenalty: 1, maxTokens: 0, stop: [],
+      genSeed: 7, stream: true, verbose: false,
+    });
     release("the quick brown fox"); // the authoritative result has a longer tail than was streamed
     await settle(6);
     assert.strictEqual(a.$("genOut").textContent, "uick brown fox");
@@ -212,6 +215,38 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     const sent2 = a.of("generate_slm")[1].args.params;
     assert.strictEqual(sent2.genSeed, null);
     assert.strictEqual(sent2.stream, false);
+
+    // G7: greedy decoding and every sampling control reach the backend.
+    a.set("genTemp", "0"); a.set("genMaxTokens", "30"); a.set("genTopK", "40"); a.set("genTopP", "0.9"); a.set("genRep", "1.2");
+    a.set("genStop", "\\n\r\n\nEND\n");
+    await a.click("genStart");
+    assert.strictEqual(a.$("errGen").textContent, "");
+    assert.deepStrictEqual(a.of("generate_slm")[2].args.params, {
+      modelPath: "/m.gguf", seedText: "the q", numChars: 200, temp: 0, topK: 40, topP: 0.9, repPenalty: 1.2, maxTokens: 30,
+      stop: ["\\n", "END"], genSeed: null, stream: false, verbose: false,
+    });
+    // Out-of-range values are refused before any call.
+    const n = a.of("generate_slm").length;
+    for (const [id, v, msg] of [["genTemp", "-1", /Temperature/], ["genTopP", "1.5", /Top-p/], ["genRep", "0", /Repetition/], ["genTopK", "-2", /Top-k/], ["genMaxTokens", "-1", /Max tokens/]]) {
+      const keep = a.$(id).value;
+      a.set(id, v);
+      await a.click("genStart");
+      assert.ok(msg.test(a.$("errGen").textContent), id + ": " + a.$("errGen").textContent);
+      a.set(id, keep);
+    }
+    assert.strictEqual(a.of("generate_slm").length, n);
+  }
+
+  // GGUF tab: temperature 0 (greedy) is accepted.
+  {
+    const a = await start({ run_gguf: async () => ({ text: "x", promptTokens: 1, generated: 1, seconds: 1, tokensPerSec: 1 }) });
+    a.set("ggPath", "/g.gguf"); a.set("ggPrompt", "hi"); a.set("ggTemp", "0");
+    await a.click("ggRun");
+    assert.strictEqual(a.of("run_gguf")[0].args.params.temp, 0);
+    a.set("ggTopP", "2");
+    await a.click("ggRun");
+    assert.ok(/Top-p/.test(a.$("errGguf").textContent));
+    assert.strictEqual(a.of("run_gguf").length, 1);
   }
 
   // ── Evaluate ────────────────────────────────────────────────────────────

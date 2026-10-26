@@ -443,6 +443,25 @@ fn generate_and_evaluate_use_the_model_facts() {
         secs(&estimate(JobKind::Generate, &p, &hw(2, Some(14_000)), None)),
         secs(&estimate(JobKind::Generate, &p, &h, None))
     );
+    // A token budget replaces the character budget (the Generate tab's "Max tokens").
+    let tokens = |max_new: usize| {
+        secs(&estimate(
+            JobKind::Generate,
+            &JobParams {
+                slm: Some(slm(400_000)),
+                num_chars: 200,
+                max_new,
+                ..JobParams::default()
+            },
+            &h,
+            None,
+        ))
+    };
+    assert!(
+        tokens(2000) > tokens(0),
+        "2000 tokens cost more than 200 chars"
+    );
+    assert!(tokens(10) < tokens(0), "10 tokens cost less than 200 chars");
     // ~ Manual §13.2: 0.26-0.29 ms/token for the 0.5M model (+ load): 600 chars is ~257 tokens.
     assert!(
         (0.03..0.4).contains(&(gen(396_960, 600) - 0.05 - 2e6 / 200e6)),

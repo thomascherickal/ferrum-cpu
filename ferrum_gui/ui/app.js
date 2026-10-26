@@ -39,6 +39,17 @@ function reqNum(id, name, min = 0, allowEq = false) {
   }
   return v;
 }
+// The sampler fields shared by the Generate and GGUF tabs (ids differ by prefix).
+function samplerParams(prefix) {
+  const topP = reqNum(prefix + "TopP", "Top-p", 0, true);
+  if (topP > 1) throw new Error("Top-p must be a number between 0 and 1");
+  return {
+    temp: reqNum(prefix + "Temp", "Temperature", 0, true),
+    topK: reqInt(prefix + "TopK", "Top-k", 0),
+    topP,
+    repPenalty: reqNum(prefix + "Rep", "Repetition penalty", 0),
+  };
+}
 function reqStr(id, name) {
   const v = $(id).value.trim();
   if (!v) throw new Error(`${name} is required`);
@@ -337,7 +348,9 @@ $("genStart").addEventListener("click", async () => {
       modelPath: reqStr("genModel", "Model"),
       seedText: $("genSeed").value,
       numChars: reqInt("genChars", "Chars"),
-      temp: reqNum("genTemp", "Temperature", 0),
+      ...samplerParams("gen"),
+      maxTokens: reqInt("genMaxTokens", "Max tokens", 0),
+      stop: $("genStop").value.split("\n").map((l) => l.replace(/\r$/, "")).filter((l) => l !== ""),
       genSeed: seedNum === "" ? null : parseInt(seedNum, 10),
       stream: $("genStream").checked,
       verbose: $("genVerbose").checked,
@@ -491,10 +504,7 @@ $("ggRun").addEventListener("click", async () => {
       prompt: $("ggPrompt").value,
       quant: $("ggQuant").value,
       maxNew: reqInt("ggMax", "Max new tokens"),
-      temp: reqNum("ggTemp", "Temperature", 0),
-      topK: reqInt("ggTopK", "Top-k", 0),
-      topP: reqNum("ggTopP", "Top-p", 0),
-      repPenalty: reqNum("ggRep", "Repetition penalty", 0),
+      ...samplerParams("gg"),
       genSeed: seed === "" ? null : parseInt(seed, 10),
       ids: ids === "" ? null : ids,
       force: $("ggForce").checked,

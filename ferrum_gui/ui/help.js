@@ -341,8 +341,8 @@
     },
     genTemp: {
       title: "Temperature",
-      what: "How adventurous the word choice is. Must be above 0 in the GUI; default 0.8.",
-      how: "Low values (0.1 to 0.3) make the model pick the most likely token almost every time: safe and repetitive. Values around 0.7 to 1.0 give variety. High values (1.5 and up) give increasingly random text.",
+      what: "How adventurous the word choice is. 0 means greedy: always the single most likely token, exactly as the command line does with --temp 0. Default 0.8.",
+      how: "With 0 the text is fully repeatable and the gen seed has no effect. Low values (0.1 to 0.3) make the model pick the most likely token almost every time: safe and repetitive. Values around 0.7 to 1.0 give variety. High values (1.5 and up) give increasingly random text.",
       beginner: "Think of a dial between 'always say the obvious thing' and 'say something surprising'. For small models a middle setting is usually the best balance.",
     },
     genSeedNum: {
@@ -350,6 +350,36 @@
       what: "A number that fixes the random choices during generation. Leave it empty for a different result each time.",
       how: "With the same model, seed text, temperature and gen seed, the output is exactly the same on every run and at any thread count. Use it to compare two settings fairly.",
       beginner: "Generation involves dice rolls. Fixing the seed fixes the dice, so you can repeat an experiment and get identical text.",
+    },
+    genMaxTokens: {
+      title: "Max tokens (0 = use chars)",
+      what: "A limit on the number of tokens to generate instead of characters. 0 keeps the Chars limit. Default 0.",
+      how: "When set (or when a stop string is given) generation counts tokens, like --max-tokens on the command line; the seed text may be any length and the output never includes a stop string. Character-level models cannot use this mode.",
+      beginner: "A token is a small piece of a word. 100 tokens is roughly 70 words of English.",
+    },
+    genTopK: {
+      title: "Top-k (0 = off)",
+      what: "Only the K most likely next tokens are considered. 0 disables the limit. Default 0.",
+      how: "A value like 40 stops very unlikely tokens from ever being picked, even at a high temperature. 1 behaves like greedy decoding.",
+      beginner: "The model ranks every possible next word. Top-k says 'only choose among the best K'.",
+    },
+    genTopP: {
+      title: "Top-p (1.0 = off)",
+      what: "Nucleus sampling: keep the smallest group of likely tokens whose probabilities add up to P and ignore the rest. From 0 up to 1; 1.0 is off. Default 1.0.",
+      how: "0.9 is a common value. The group shrinks when the model is confident and grows when it is unsure.",
+      beginner: "Instead of a fixed number of candidates, keep just enough candidates to cover 90 percent of the model's belief.",
+    },
+    genRep: {
+      title: "Repetition penalty (1.0 = off)",
+      what: "Makes tokens that were already used less likely. Must be above 0; 1.0 does nothing. Default 1.0.",
+      how: "Values around 1.1 to 1.2 reduce loops such as 'the the the'. Large values make the text avoid ordinary repetition and become strange.",
+      beginner: "A nudge against repeating yourself, a common habit of small language models.",
+    },
+    genStop: {
+      title: "Stop strings (one per line)",
+      what: "Text that ends generation as soon as the model writes it. The stop text itself is not part of the output. Empty lines are ignored.",
+      how: "Type one stop string per line. Write \\n for a new line, \\t for a tab and \\\\ for a backslash, because a real new line would start the next stop string. Needs a BPE model (a vocabulary of 256 or more).",
+      beginner: "Handy to cut the text at the end of a sentence or a paragraph instead of letting the model ramble on.",
     },
     genStream: {
       title: "Stream output live",
@@ -419,8 +449,8 @@
     },
     ggTemp: {
       title: "Temperature",
-      what: "How adventurous the word choice is; must be above 0. Default 0.8.",
-      how: "Lower is more predictable, higher is more varied. Combine with Top-k and Top-p to cut off unlikely tokens.",
+      what: "How adventurous the word choice is. 0 means greedy: always the single most likely token. Default 0.8.",
+      how: "With 0 the answer is the same every run. Lower is more predictable, higher is more varied. Combine with Top-k and Top-p to cut off unlikely tokens.",
       beginner: "A creativity dial: low for factual answers, higher for stories.",
     },
     ggTopK: {

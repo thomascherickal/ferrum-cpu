@@ -47,6 +47,11 @@
     "seedText": "the q",
     "numChars": 200,
     "temp": 0.8,
+    "topK": 0,
+    "topP": 1,
+    "repPenalty": 1,
+    "maxTokens": 0,
+    "stop": [],
     "genSeed": 7,
     "stream": true,
     "verbose": false
