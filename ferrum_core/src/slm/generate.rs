@@ -207,6 +207,22 @@ impl GenerativeSLM {
         params: &SamplingParams,
         rng: &mut Rng,
     ) -> Result<Generation> {
+        self.generate_tokens_with(prompt, max_tokens, stops, params, rng, &mut |_| {})
+    }
+
+    /// [`GenerativeSLM::generate_tokens`] that also hands the text to `on_text`
+    /// as it is produced. The fragments concatenate to exactly the returned
+    /// `text`: only the tail that could still grow into a stop string is held
+    /// back until it is known not to, and stop text is never passed on.
+    pub fn generate_tokens_with(
+        &self,
+        prompt: &str,
+        max_tokens: usize,
+        stops: &[String],
+        params: &SamplingParams,
+        rng: &mut Rng,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Generation> {
         self.require_token_id_model()?;
         let bpe = self.bpe()?;
         let eos = bpe.as_ref().and_then(|t| t.eos_id());
@@ -230,6 +246,7 @@ impl GenerativeSLM {
         let max_stop = stops.iter().map(|s| s.len()).max().unwrap_or(0);
         let mut n_tokens = 0;
         let mut reason = StopReason::MaxTokens;
+        let mut emitted = 0; // bytes of `text` already passed to `on_text`
 
         while n_tokens < max_tokens {
             let logits: Vec<f32> = dist.iter().map(|&p| p.max(1e-12).ln()).collect();
@@ -252,6 +269,9 @@ impl GenerativeSLM {
                 reason = StopReason::Stop;
                 break;
             }
+            let safe = text.len() - held_back(&text[emitted..], stops);
+            on_text(&text[emitted..safe]);
+            emitted = safe;
             window.push(next);
             if window.len() > cap {
                 window.drain(..window.len() - keep);
@@ -270,12 +290,31 @@ impl GenerativeSLM {
                 reason = StopReason::Stop;
             }
         }
+        // Nothing is pending any more: the rest is final (and stop-free).
+        on_text(text.get(emitted..).unwrap_or_default());
         Ok(Generation {
             text,
             n_tokens,
             stop_reason: reason,
         })
     }
+}
+
+/// Length in bytes of the longest suffix of `text` that is a proper prefix of
+/// some stop string, i.e. the tail that might still turn into a stop.
+fn held_back(text: &str, stops: &[String]) -> usize {
+    stops
+        .iter()
+        .flat_map(|s| {
+            (1..s.len())
+                .rev()
+                .filter(|&k| s.is_char_boundary(k))
+                .map(move |k| &s[..k])
+        })
+        .filter(|p| text.ends_with(p))
+        .map(str::len)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Byte offset of the earliest stop string that ends inside `text[before..]`,
@@ -324,7 +363,7 @@ pub(super) fn drain_utf8(pending: &mut Vec<u8>, out: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{drain_utf8, Generation, StopReason};
+    use super::{drain_utf8, held_back, Generation, StopReason};
     use crate::meta::TaskType;
     use crate::rng::Rng;
     use crate::slm::sampling::SamplingParams;
@@ -502,6 +541,96 @@ mod tests {
             .generate_tokens("the cat", 12, &[], &sp, &mut Rng::new(4))
             .unwrap();
         assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn held_back_is_the_longest_proper_stop_prefix_at_the_tail() {
+        let st = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(held_back("abc", &[]), 0);
+        assert_eq!(held_back("abc", &st(&["xyz", ""])), 0);
+        assert_eq!(held_back("ab#", &st(&["##end"])), 1);
+        assert_eq!(held_back("a##e", &st(&["##end"])), 3);
+        assert_eq!(
+            held_back("ab##end", &st(&["##end"])),
+            0,
+            "a full match is cut, not held"
+        );
+        assert_eq!(held_back("a\u{e9}", &st(&["\u{e9}\u{e9}", "\u{e9}x"])), 2);
+        assert_eq!(held_back("ab", &st(&["b!", "ab!"])), 2, "longest wins");
+    }
+
+    #[test]
+    fn streamed_text_equals_the_returned_text_and_never_leaks_a_stop() {
+        for (slm, prompt) in [(tiny_bpe_slm(), "the cat"), (tiny_char_slm(), "ab")] {
+            let seeded = SamplingParams::default();
+            for (params, seed) in [(greedy(), 1), (seeded, 4)] {
+                let free = slm
+                    .generate_tokens(prompt, 40, &[], &params, &mut Rng::new(seed))
+                    .unwrap();
+                // No stops, a stop that fires mid-way, one that straddles tokens,
+                // one that never completes but whose first byte often appears.
+                let mid: String = free.text.chars().skip(5).take(3).collect();
+                let first: String = free.text.chars().take(1).chain("#nope".chars()).collect();
+                for stops in [
+                    vec![],
+                    vec![mid.clone()],
+                    vec![mid.clone(), "zzzz".to_string()],
+                    vec![first],
+                ] {
+                    let want = slm
+                        .generate_tokens(prompt, 40, &stops, &params, &mut Rng::new(seed))
+                        .unwrap();
+                    let mut frags: Vec<String> = Vec::new();
+                    let got = slm
+                        .generate_tokens_with(
+                            prompt,
+                            40,
+                            &stops,
+                            &params,
+                            &mut Rng::new(seed),
+                            &mut |t| frags.push(t.to_string()),
+                        )
+                        .unwrap();
+                    assert_eq!(got, want, "{stops:?}");
+                    assert_eq!(frags.concat(), want.text, "{stops:?}");
+                    for f in &frags {
+                        assert!(stops.iter().all(|s| !f.contains(s.as_str())), "{f:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn streaming_holds_back_only_a_possible_stop_prefix() {
+        let slm = tiny_char_slm(); // one char per token
+        let p = greedy();
+        let free = slm
+            .generate_tokens("ab", 12, &[], &p, &mut Rng::new(1))
+            .unwrap();
+        let stop: String = free.text.chars().skip(4).take(2).collect();
+        let mut seen = String::new();
+        let mut lag = Vec::new(); // chars produced so far minus chars shown, per call
+        let mut n = 0;
+        let g = slm
+            .generate_tokens_with(
+                "ab",
+                12,
+                std::slice::from_ref(&stop),
+                &p,
+                &mut Rng::new(1),
+                &mut |t| {
+                    n += 1;
+                    seen.push_str(t);
+                    lag.push(n - seen.chars().count() as i64);
+                },
+            )
+            .unwrap();
+        assert_eq!(seen, g.text);
+        // Per token, at most the first char of the 2-char stop is withheld (the
+        // last call is the final flush, which is not a token).
+        lag.pop();
+        assert!(lag.iter().all(|&l| l <= 1), "{lag:?}");
     }
 
     #[test]

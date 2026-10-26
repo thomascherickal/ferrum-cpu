@@ -53,7 +53,8 @@
 //!   --chars <N>  characters to generate            (default 200)
 //!   --temp  <F>  sampling temperature              (default 0.8)
 //!   --gen-seed <N>  generation RNG seed            (default time-based)
-//!   --stream     print the completion live as it is generated
+//!   --stream     print the completion live as it is generated (also with --stop/--max-tokens;
+//!                only a possible stop-string prefix is held back)
 //!   --top-k <N>  --top-p <F>  --repetition-penalty <F>   sampling knobs (off by default)
 //!   --max-tokens <N>  token budget (default --chars); --stop <S> ends the
 //!                     output before S (repeatable). Either flag selects the

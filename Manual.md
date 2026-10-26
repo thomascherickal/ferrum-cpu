@@ -1020,7 +1020,7 @@ runs each of them.
 | `--top-p F` | 1.0 (off) | Nucleus sampling, in `[0, 1]` |
 | `--repetition-penalty F` | 1.0 (off) | Penalize tokens already generated; must be positive |
 | `--stop S` | none | Stop when `S` appears. Repeatable. The output ends before the first match. |
-| `--stream` | off | Print the completion live (with `--max-tokens` or `--stop` the completion is printed whole at the end) |
+| `--stream` | off | Print the completion live, also with `--max-tokens` or `--stop`. With stop strings only the tail that could still become a stop string is held back, so stop text is never printed, and the output equals the non-streamed run. |
 
 - The output is the **seed followed by** the continuation.
 - Temperature `0` is exact argmax and picks the first maximum on an exact tie
@@ -1056,7 +1056,7 @@ let g = slm.generate_tokens("Once upon a time", 100, &["\n\n".to_string()], &p, 
 println!("{} ({} tokens, {:?})", g.text, g.n_tokens, g.stop_reason);
 ```
 
-`stop_reason` is `MaxTokens`, `Stop`, or `Eos`. The older `generate`,
+`stop_reason` is `MaxTokens`, `Stop`, or `Eos`. `generate_tokens_with(…, &mut |frag| print!("{frag}"))` is the same call with a callback: the fragments concatenate to exactly `g.text`, and only a possible stop-string prefix is held back. The older `generate`,
 `generate_with`, `generate_until`, and `generate_stream` are unchanged:
 
 ```rust

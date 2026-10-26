@@ -103,6 +103,39 @@ fn cli_generate_token_path_prints_once_with_stream() {
 }
 
 #[test]
+fn cli_generate_stream_with_stop_prints_live_and_equals_the_plain_output() {
+    for sampling in [
+        &["--temp", "0"][..],
+        &["--temp", "1", "--gen-seed", "5"][..],
+    ] {
+        let with = |extra: &[&str]| {
+            let mut a = vec!["--max-tokens", "40"];
+            a.extend(sampling);
+            a.extend(extra);
+            generate(&a)
+        };
+        let free = with(&[]);
+        // A stop string taken from the middle of the free output, so it really fires.
+        let cont: Vec<char> = free
+            .trim_end()
+            .strip_prefix("the cat")
+            .unwrap()
+            .chars()
+            .collect();
+        assert!(cont.len() > 12, "{free:?}");
+        let stop: String = cont[8..10].iter().collect();
+        let plain = with(&["--stop", &stop]);
+        let streamed = with(&["--stop", &stop, "--stream"]);
+        assert_eq!(plain, streamed);
+        assert!(plain.trim_end().len() < free.trim_end().len(), "{plain:?}");
+        assert!(!plain["the cat".len()..].contains(&stop), "{plain:?}");
+        assert_eq!(streamed.matches("the cat").count(), 1, "{streamed:?}");
+        // No stop in play: streaming still equals the plain run.
+        assert_eq!(with(&["--stream"]), free);
+    }
+}
+
+#[test]
 fn cli_generate_accepts_sampling_knobs() {
     let knobs = [
         "--top-k",

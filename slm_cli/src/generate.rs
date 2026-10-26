@@ -65,15 +65,29 @@ pub(crate) fn generate_text(
     let stops = args.get_all("stop");
     if args.value("max-tokens").is_some() || !stops.is_empty() {
         // Token-budgeted path: any prompt length, stop strings excluded.
-        // ponytail: not streamed live (`generate_tokens` returns the whole
-        // continuation); add a callback variant if --stop needs live output.
         let max_tokens: usize = args.get("max-tokens", num_chars);
-        let g = slm.generate_tokens(seed_text, max_tokens, &stops, &params, &mut Rng::new(seed))?;
-        let out = format!("{seed_text}{}", g.text);
+        let mut rng = Rng::new(seed);
         if args.has("stream") {
-            println!("{out}"); // callers skip their own print when streaming
+            // Live: only a possible stop-string prefix is held back, never stop text.
+            use std::io::Write;
+            print!("{seed_text}");
+            let _ = std::io::stdout().flush();
+            let g = slm.generate_tokens_with(
+                seed_text,
+                max_tokens,
+                &stops,
+                &params,
+                &mut rng,
+                &mut |t| {
+                    print!("{t}");
+                    let _ = std::io::stdout().flush();
+                },
+            )?;
+            println!(); // callers skip their own print when streaming
+            return Ok(format!("{seed_text}{}", g.text));
         }
-        return Ok(out);
+        let g = slm.generate_tokens(seed_text, max_tokens, &stops, &params, &mut rng)?;
+        return Ok(format!("{seed_text}{}", g.text));
     }
 
     let mut rng = Rng::new(seed);
