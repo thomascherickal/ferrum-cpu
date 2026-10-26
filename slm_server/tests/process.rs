@@ -1,14 +1,12 @@
 //! The real `ferrum-serve` binary: usage and exit codes, serving over TCP, and
 //! graceful shutdown on SIGINT (what `main.rs` wires up).
 
-use ferrum_core::{GenerativeSLM, Rng, TransformerConfig};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
-use std::time::{Duration, Instant};
+mod common;
 
-const BIN: &str = env!("CARGO_BIN_EXE_ferrum-serve");
+use common::{http, sigint_and_wait, spawn, BIN};
+use ferrum_core::{GenerativeSLM, Rng, TransformerConfig};
+use std::path::PathBuf;
+use std::process::{Command, Output};
 
 fn model_file(name: &str) -> PathBuf {
     let cfg = TransformerConfig {
@@ -35,46 +33,6 @@ fn model_file(name: &str) -> PathBuf {
 
 fn run(args: &[&str]) -> Output {
     Command::new(BIN).args(args).output().unwrap()
-}
-
-// The caller owns (and waits on) the child; clippy cannot see that through the returned tuple.
-#[allow(clippy::zombie_processes)]
-/// Start the server on an ephemeral port; returns the child, its stderr reader and its address.
-fn spawn(model: &Path) -> (Child, BufReader<std::process::ChildStderr>, String) {
-    let mut child = Command::new(BIN)
-        .args(["--model", model.to_str().unwrap(), "--port", "0"])
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut err = BufReader::new(child.stderr.take().unwrap());
-    let mut line = String::new();
-    loop {
-        line.clear();
-        if err.read_line(&mut line).unwrap() == 0 {
-            child.wait().ok();
-            panic!("server exited before listening");
-        }
-        if let Some(i) = line.find(" on http://") {
-            let addr = line[i + " on http://".len()..].trim().to_string();
-            return (child, err, addr);
-        }
-    }
-}
-
-/// Minimal HTTP/1.1 client: (status, body).
-fn http(addr: &str, method: &str, path: &str, body: &str) -> (u16, String) {
-    let mut s = TcpStream::connect(addr).unwrap();
-    write!(
-        s,
-        "{method} {path} HTTP/1.1\r\nhost: x\r\nconnection: close\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
-        body.len()
-    )
-    .unwrap();
-    let mut raw = String::new();
-    s.read_to_string(&mut raw).unwrap();
-    let (head, body) = raw.split_once("\r\n\r\n").unwrap();
-    let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
-    (status, body.to_string())
 }
 
 #[test]
@@ -111,7 +69,7 @@ fn model_dash_h_is_a_usage_error() {
 #[test]
 fn serves_over_tcp_and_stops_gracefully_on_sigint() {
     let model = model_file("sigint");
-    let (mut child, _err, addr) = spawn(&model);
+    let (mut child, _err, addr) = spawn(&model, &[]);
     assert_eq!(http(&addr, "GET", "/health", "").0, 200);
     let (status, body) = http(
         &addr,
@@ -123,22 +81,7 @@ fn serves_over_tcp_and_stops_gracefully_on_sigint() {
     assert!(body.contains("logprob"), "{body}");
     assert_eq!(http(&addr, "GET", "/nope", "").0, 404);
 
-    let kill = Command::new("kill")
-        .args(["-INT", &child.id().to_string()])
-        .status()
-        .unwrap();
-    assert!(kill.success());
-    let deadline = Instant::now() + Duration::from_secs(20);
-    let status = loop {
-        if let Some(s) = child.try_wait().unwrap() {
-            break s;
-        }
-        if Instant::now() > deadline {
-            child.kill().ok();
-            panic!("server did not exit after SIGINT");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
+    let status = sigint_and_wait(&mut child);
     std::fs::remove_file(model).ok();
     assert!(status.success(), "{status:?}");
 }
