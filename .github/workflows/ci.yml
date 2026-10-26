@@ -128,7 +128,22 @@ jobs:
       - name: Build WASM bindings
         run: cargo build -p slm_wasm --target wasm32-unknown-unknown --release --locked
       - name: Clippy (wasm32)
-        run: cargo clippy -p slm_wasm --target wasm32-unknown-unknown --locked -- -D warnings
+        run: cargo clippy -p slm_wasm --target wasm32-unknown-unknown --tests --locked -- -D warnings
+      # W3: run the wasm module itself under Node. The runner must match the wasm-bindgen
+      # crate in Cargo.lock (0.2.122). It is installed into a private root so it can be cached.
+      - name: Cache wasm-bindgen-cli
+        id: wbg
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/wbg
+          key: ${{ runner.os }}-wasm-bindgen-cli-0.2.122
+      - name: Install wasm-bindgen-cli 0.2.122
+        if: steps.wbg.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version 0.2.122 --locked --root ~/.cargo/wbg
+      - name: Test the wasm module under Node (wasm-bindgen-test)
+        run: |
+          export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER="$HOME/.cargo/wbg/bin/wasm-bindgen-test-runner"
+          cargo test -p slm_wasm --target wasm32-unknown-unknown --release --locked --test node
       - name: Demo JavaScript (syntax and Node tests, no dependencies)
         run: |
           for f in slm_wasm/demo/*.js; do node --check "$f"; done

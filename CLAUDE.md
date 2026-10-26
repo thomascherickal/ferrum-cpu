@@ -108,7 +108,7 @@ Do not break these; they are the product's selling points.
 | `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs`. `token_file/` (the `ferrum-tokens` writer and streaming reader) is a small directory too. `dataset` (cleaning), `ckpt`, `meta`, `ops`, `parallel`, `quant` and `llm` are single files. `examples/library_tour.rs` is the program behind `Samples.md` §10. |
 | `slm_cli/` | Binary `train_transformer`: train, run, generate, eval, info, prepare, tokenize, run-gguf, eval-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio. `tests/tokenize_cli.rs` and `tests/token_train_cli.rs` cover token files; `tests/tiny_e2e.rs` and `tests/tiny_gguf_e2e.rs` drive the BPE pipeline and the imported-GGUF fine-tune/export path end to end through the real binary with tiny models |
 | `slm_server/` | Binary `ferrum-serve` (axum): `/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`. `tests/tiny_http_e2e.rs` serves a tiny model from the real binary |
-| `slm_wasm/` | wasm-bindgen browser bindings (`Slm` text API, `TransformerSLMModel` token-id model); native-callable logic in `text.rs`, unit tests compare it with the library; `demo/` is the browser demo page + Web Worker with dependency-free Node tests (`node slm_wasm/demo/*.test.js`) |
+| `slm_wasm/` | wasm-bindgen browser bindings (`Slm` text API, `TransformerSLMModel` token-id model); native-callable logic in `text.rs`, unit tests compare it with the library; `demo/` is the browser demo page + Web Worker with dependency-free Node tests (`node slm_wasm/demo/*.test.js`); `tests/node.rs` is the `wasm-bindgen-test` suite (wasm32 only, runs on CI) |
 | `eval/lighteval/` | Python: `FerrumModel`, `ferrum_tasks.py`, `run.sh`; pinned `lighteval==0.13.0` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
@@ -148,7 +148,9 @@ cargo clippy -p slm_wasm --target wasm32-unknown-unknown -- -D warnings
 cargo deny check
 cargo bench --bench gemm                  # matmul/decode microbenchmark
 scripts/bench_slm.sh data/prepared/train.txt   # train/eval/generate speed of the 507,552-param reference
-bash scripts/build_wasm.sh                # slm_wasm → slm_wasm/pkg/ (needs wasm-bindgen 0.2.122)
+bash scripts/build_wasm.sh                # slm_wasm → slm_wasm/pkg/ + demo/pkg/ (needs wasm-bindgen 0.2.122)
+# optional, CI only unless you install wasm-bindgen-cli 0.2.122: the wasm module under Node
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test -p slm_wasm --target wasm32-unknown-unknown --release --test node
 ```
 
 On a 15 GB machine build with fewer jobs and no LTO:

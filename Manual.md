@@ -2008,6 +2008,20 @@ w.postMessage({ type: "generate", id: 1, prompt: "the cat", max_tokens: 40,
 w.postMessage({ type: "cancel" });
 ```
 
+**Testing the wasm module.** The unit tests run the same Rust natively against
+the library. `slm_wasm/tests/node.rs` runs the compiled `.wasm` itself under
+Node with `wasm-bindgen-test`: it loads a tiny model trained inside the test,
+and checks `encode`, `decode`, `generate`, the streaming calls, `score` and the
+`JsError` paths, against the library and against values a native run gave. It
+needs `wasm-bindgen-cli` 0.2.122 (the runner must match the crate version) and
+is skipped by `cargo test --workspace`, which builds it as an empty file:
+
+```bash
+cargo install wasm-bindgen-cli --version 0.2.122            # once; optional
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+  cargo test -p slm_wasm --target wasm32-unknown-unknown --release --test node
+```
+
 **Demo page.** `slm_wasm/demo/` is a complete page with no framework and no
 build step beyond `build_wasm.sh`: `index.html`, `demo.js`, `style.css` and the
 worker. `build_wasm.sh` copies the built `pkg/` to `slm_wasm/demo/pkg/`; serve
