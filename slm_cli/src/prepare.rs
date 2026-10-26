@@ -292,6 +292,7 @@ fn build(
     ]
     .map(|k| (k, 0))
     .into();
+    let mut lossy_repaired = 0u64; // kept documents that had bytes replaced (--lossy)
     let mut seen: HashSet<[u8; 16]> = HashSet::new();
     let mut uniq: HashSet<char> = HashSet::new();
     let (mut lines, mut words) = (0u64, 0u64);
@@ -304,7 +305,7 @@ fn build(
             let text = match std::str::from_utf8(raw) {
                 Ok(s) => std::borrow::Cow::Borrowed(s),
                 Err(_) if o.lossy => {
-                    *rejected.entry("invalid_utf8").or_default() += 1;
+                    lossy_repaired += 1;
                     String::from_utf8_lossy(raw)
                 }
                 Err(e) => {
@@ -399,7 +400,7 @@ fn build(
     outputs.insert("test".into(), test.finish()?);
     outputs.insert("train".into(), train);
     outputs.insert("val".into(), val.finish()?);
-    let manifest = json!({
+    let mut manifest = json!({
         "args": o.args,
         "ferrum_version": env!("CARGO_PKG_VERSION"),
         "inputs": inputs,
@@ -407,6 +408,10 @@ fn build(
         "rejected": rejected,
         "train_stats": train_stats,
     });
+    // Only when non-zero, so manifests of clean runs keep their exact bytes.
+    if lossy_repaired > 0 {
+        manifest["lossy_repaired"] = json!(lossy_repaired);
+    }
     let mpart = part(out, "manifest.json");
     std::fs::write(&mpart, serde_json::to_string_pretty(&manifest)? + "\n")
         .map_err(|e| format!("cannot write {}: {e}", mpart.display()))?;
@@ -421,8 +426,13 @@ fn build(
         .iter()
         .map(|s| format!("{s}={}", manifest["outputs"][s]["documents"]))
         .collect();
+    let repaired = if lossy_repaired > 0 {
+        format!("  lossy_repaired={lossy_repaired}")
+    } else {
+        String::new()
+    };
     println!(
-        "prepared {} → {}  ({})  rejected {}",
+        "prepared {} → {}  ({})  rejected {}{repaired}",
         o.inputs.join(" "),
         o.out,
         docs.join(" "),
@@ -696,7 +706,8 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(d.join("out/manifest.json")).unwrap())
                 .unwrap();
         let r = &m["rejected"];
-        assert_eq!(r["invalid_utf8"], 1);
+        assert_eq!(r["invalid_utf8"], 0);
+        assert_eq!(m["lossy_repaired"], 1);
         assert_eq!(r["empty"], 1);
         assert_eq!(r["too_short"], 1);
         assert_eq!(r["too_long"], 1);

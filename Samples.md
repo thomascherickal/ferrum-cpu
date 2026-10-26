@@ -342,7 +342,7 @@ cat samples/prepared/manifest.json
 ```
 
 ```text
-prepared samples/raw → samples/prepared  (train=6 val=0 test=1)  rejected duplicate=1 invalid_utf8=1 too_long=1 too_short=1
+prepared samples/raw → samples/prepared  (train=6 val=0 test=1)  rejected duplicate=1 too_long=1 too_short=1  lossy_repaired=1
 ```
 ```json
 {
@@ -412,6 +412,7 @@ prepared samples/raw → samples/prepared  (train=6 val=0 test=1)  rejected dupl
       "sha256": "0980ce36a79d4fc963ca523addb4dcae921dd4cc4cd29a6f83b9f2b6cc11a7d6"
     }
   ],
+  "lossy_repaired": 1,
   "outputs": {
     "test": {
       "bytes": 63,
@@ -438,7 +439,7 @@ prepared samples/raw → samples/prepared  (train=6 val=0 test=1)  rejected dupl
   "rejected": {
     "duplicate": 1,
     "empty": 0,
-    "invalid_utf8": 1,
+    "invalid_utf8": 0,
     "too_long": 1,
     "too_short": 1
   },
@@ -477,7 +478,7 @@ The mountain stood tall and silent in the cold morning air.--- val
 
 **What to look at.**
 
-- `rejected` has one counter per reason: `empty`, `too_short` (under `--min-chars`), `too_long`, `duplicate`, and `invalid_utf8`. Here `tiny.txt` is too short, `long.txt` too long, and `dup2.txt` a duplicate. With `--lossy`, `invalid_utf8` counts the document that held the bad byte, which is kept, not dropped (its line is in `train.txt` above).
+- `rejected` has one counter per reason: `empty`, `too_short` (under `--min-chars`), `too_long`, `duplicate`, and `invalid_utf8`. Here `tiny.txt` is too short, `long.txt` too long, and `dup2.txt` a duplicate. With `--lossy`, the document that held the bad byte is kept, not dropped (its line is in `train.txt` above), and it is counted under the top-level `lossy_repaired` (also shown in the summary line), not under `rejected`. `lossy_repaired` appears only when it is non-zero.
 - The BOM, the zero-width characters, and the CRLF endings are gone from the kept documents, and the Gutenberg file became two documents without its preface or licence text.
 - `inputs` and `outputs` list the sha256 of every file. If two manifests carry the same hashes, the runs are byte-identical.
 - `train_stats` is `corpus_stats` of the train split.

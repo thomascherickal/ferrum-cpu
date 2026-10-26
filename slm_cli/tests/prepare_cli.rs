@@ -384,9 +384,16 @@ fn lossy_counts_documents_needing_replacement() {
     let (ok, log, d, m) = prep_sep("lossy_cnt", raw, "<|endoftext|>", &["--lossy"]);
     assert!(ok, "{log}");
     assert_eq!(d.len(), 4);
-    assert_eq!(m["rejected"]["invalid_utf8"], 2);
-    let (_, _, _, m) = prep_sep("lossy_none", b"all good", "<|endoftext|>", &["--lossy"]);
+    // Kept documents are repaired, not rejected: their own counter, in the manifest and summary.
     assert_eq!(m["rejected"]["invalid_utf8"], 0);
+    assert_eq!(m["lossy_repaired"], 2);
+    assert!(log.contains("lossy_repaired=2"), "{log}");
+    assert!(log.contains("rejected none"), "{log}");
+    // Nothing repaired: the key is absent, so such a manifest is unchanged from before.
+    let (_, log, _, m) = prep_sep("lossy_none", b"all good", "<|endoftext|>", &["--lossy"]);
+    assert_eq!(m["rejected"]["invalid_utf8"], 0);
+    assert!(m.get("lossy_repaired").is_none(), "{m}");
+    assert!(!log.contains("lossy_repaired"), "{log}");
 }
 
 const NAMES: [&str; 4] = ["train.txt", "val.txt", "test.txt", "manifest.json"];

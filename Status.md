@@ -187,7 +187,6 @@ about 4 days for 3M by interpolation.
 | 🟢 | GGUF loads expand Q8_0/Q4_0 weights to f32 in RAM (about 4x/8x the file size; marked `ponytail:` in `loader/decode.rs`) until a packed Q8_0 kernel exists. Loading a Ferrum model parses the file bytes in place (`GenerativeSLM::load` does not copy them). |
 | 🟢 | A hand-built tokenizer without an EOS token exports a GGUF with no `bos`/`eos` ids, and llama.cpp then defaults them to token 11 (byte `0x0B`). Every tokenizer Ferrum trains reserves EOS, so only hand-built ones are affected. |
 | 🟢 | GGUF import of Llama/Qwen models is lossy (dequantize and re-quantize to Ferrum's per-row grid) and not bit-exact to llama.cpp. RoPE type is hard-wired to `Norm` on import (`Neox` for qwen2); no RoPE scaling. |
-| 🟢 | `prepare --lossy` counts a document with replaced bytes under `rejected.invalid_utf8` although it keeps the document. |
 | 🟢 | No DVC remote is configured. `data/` and `models/` live only on the machine that ran `dvc repro`. |
 | 🟢 | `--tie` and LM-head sharing apply to Ferrum's own models only. |
 

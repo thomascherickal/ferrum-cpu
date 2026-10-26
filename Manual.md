@@ -462,7 +462,8 @@ one document, so split it with `--doc-sep` or give `prepare` more files.
 | `args` | The full argument list |
 | `inputs` | For each input: `path`, `bytes`, `sha256` |
 | `outputs` | For `train`, `val`, `test`: `path`, `bytes`, `sha256`, `documents`, `chars` |
-| `rejected` | Counts by reason: `empty`, `too_short`, `too_long`, `duplicate`, `invalid_utf8`. With `--lossy`, `invalid_utf8` counts the documents that contained invalid bytes; they are kept, with U+FFFD in place of the bad bytes. |
+| `rejected` | Counts by reason: `empty`, `too_short`, `too_long`, `duplicate`, `invalid_utf8`. `invalid_utf8` is always 0 (kept so the manifest layout does not change): invalid bytes are an error, or with `--lossy` the document is kept and counted under `lossy_repaired`. |
+| `lossy_repaired` | Only present when non-zero: with `--lossy`, the number of kept documents that had invalid bytes replaced by U+FFFD. Also printed in the summary line. |
 | `train_stats` | `corpus_stats` of the train split (`bytes`, `chars`, `lines`, `unique_chars`, `words`) |
 
 If the hashes in two manifests match, the inputs and outputs are byte-identical.
