@@ -32,7 +32,7 @@ executed walk-throughs, see [Samples.md](Samples.md). For the overview, see
 | **Scope** | A pure-Rust engine for training, running, serving, and evaluating small transformer SLMs on the CPU. Models are GPT-2-architecture GGUF files that run in llama.cpp, Ollama, and LM Studio. Also GGUF import, fine-tuning, and export for Llama/Qwen |
 | **Date and branch** | 2026-10-26 · version 0.3.0 · `feat/finish-remaining` (not yet merged to `master`) |
 | **Build** | `cargo build --workspace` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `ferrum_gui` builds separately (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` pass from inside `ferrum_gui/`; `node --check` passes on every `ui/*.js`) |
-| **Tests** | **911 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (613 `ferrum_core` unit, 77 cross-crate integration in `tests/`, 157 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **30** pass and **18** skip (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
+| **Tests** | **914 passed, 0 failed, 2 ignored** under `cargo test --workspace --release` (615 `ferrum_core` unit, 77 cross-crate integration in `tests/`, 158 `slm_cli`, 59 `slm_server`, 3 `slm_wasm`, 2 doc-tests; the two ignored are exploration helpers in `tests/tests/probe_gguf.rs`). **56** `ferrum_gui` backend tests pass, and so do `ui/stream.test.js` and `ui/escape.test.js`. Python: **30** pass and **18** skip (the LightEval-dependent ones, because LightEval is not installed on this machine; 48 passed with it on 2026-10-25). The sibling **Ferrum-ML** project is outside this repository and was not re-run in this pass. |
 | **Safety** | `#![forbid(unsafe_code)]` in every crate root, plus a repo-wide scan test |
 | **Dependencies** | `ferrum_core`: two pure-Rust Unicode tables, nothing else. `slm_cli`: `sha2`, `serde_json`. `slm_server`: `axum`, `tokio`, `serde`, `serde_json`, `sha2`. `slm_wasm`: `wasm-bindgen`. `ferrum_gui`: Tauri and a few helper crates (`tauri-plugin-dialog`, `sysinfo`, `ureq`, `serde`, `serde_json`). `rayon`, `ndarray`, and `faer` were measured and not adopted ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)) |
 | **Commits** | 74 commits on `feat/finish-remaining` ahead of `master` (`git log --oneline master..HEAD`) at `3ba1bc8`, before the documentation commits |
@@ -140,7 +140,7 @@ about 4 days for 3M by interpolation.
 | Subsystem | Module(s) | State |
 |---|---|---|
 | Tensors and kernels | `tensor`, `ops` | ✅ Fused cache-tiled `linear_forward` with a 4×8 register tile; packed `qlinear` int8/int4 with column-split decode GEMV |
-| Parallelism | `parallel` | ✅ Persistent `std` worker pool; row and column splits; deterministic; a panicking kernel is reported and does not kill the pool; serial on wasm32 |
+| Parallelism | `parallel` | ✅ Persistent `std` worker pool; row and column splits; deterministic; a failed worker spawn (e.g. RLIMIT_NPROC) degrades to fewer workers or serial; a panicking kernel is reported and does not kill the pool; serial on wasm32 |
 | Layers | `layer/`, `model` | ✅ Linear (+ packed `QWeight`), LayerNorm, Embedding, causal MHA, GELU FFN, `KvCache` |
 | Quantization | `quant` | ✅ GGUF Q8_0-exact QAT (32-blocks, f16 scale); int8 per-tensor and per-channel for the imported stack; in-memory int8/int4 (split-half) |
 | Transformer training | `train_transformer/` | ✅ Full backprop, Adam/AdamW, data-parallel epochs, dropout, weight tying, clipping, LR schedules, window stride, step-capped epochs with hooks, GGUF checkpoints |
@@ -407,7 +407,7 @@ _As of commit `3ba1bc8` (2026-10-25), plus the documentation commits that follow
 | Other Rust source (files / lines) | `slm_cli` 25 / 7,152; `slm_server` 10 / 1,911; `slm_wasm` 1 / 402; `tests` 17 / 3,600; `ferrum_gui` 6 / 3,252 |
 | External dependencies (`ferrum_core`) | 2 (`unicode-general-category`, `unicode-normalization`) |
 | `unsafe` blocks | 0 (forbidden) |
-| Tests | 911 pass, 0 fail, 2 ignored (workspace) + 56 `ferrum_gui` + 30 Python (18 skipped) |
+| Tests | 914 pass, 0 fail, 2 ignored (workspace) + 56 `ferrum_gui` + 30 Python (18 skipped) |
 | Parameters, reference model | 507,552 |
 | Train tokens/s, reference model, 8 threads (start of review / before the tile / now) | 5,895 / 6,141 / 6,725 |
 | Train tokens/s, 1 / 2 / 4 / 8 threads (a separate set of runs from the row above) | 2,900 / 6,058 / 6,764 / 7,090 |

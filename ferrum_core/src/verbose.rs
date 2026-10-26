@@ -17,6 +17,13 @@ static VERBOSE: AtomicBool = AtomicBool::new(false);
 type Sink = Arc<dyn Fn(&str) + Send + Sync>;
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
 
+/// Lock the sink slot, recovering from poison: the slot is a plain
+/// `Option<Arc<..>>` that a panic cannot leave half-updated, so one panicking
+/// writer must not make every later log line panic.
+fn sink_slot() -> std::sync::MutexGuard<'static, Option<Sink>> {
+    SINK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Enable or disable verbose diagnostic output for all ferrum_core operations.
 pub fn set_verbose(on: bool) {
     VERBOSE.store(on, Ordering::Relaxed);
@@ -38,12 +45,12 @@ pub fn set_log_sink<F>(f: F)
 where
     F: Fn(&str) + Send + Sync + 'static,
 {
-    *SINK.lock().unwrap() = Some(Arc::new(f));
+    *sink_slot() = Some(Arc::new(f));
 }
 
 /// Remove any installed diagnostic sink.
 pub fn clear_log_sink() {
-    *SINK.lock().unwrap() = None;
+    *sink_slot() = None;
 }
 
 /// Print one diagnostic line to stdout and forward it to the installed sink (if
@@ -54,7 +61,7 @@ pub fn log_line(line: &str) {
     println!("{line}");
     // Clone the Arc out under the lock, then release it before invoking the
     // sink so the callback can never deadlock against this mutex.
-    let sink = SINK.lock().unwrap().clone();
+    let sink = sink_slot().clone();
     if let Some(sink) = sink {
         sink(line);
     }
@@ -160,6 +167,27 @@ mod tests {
         let got = captured.lock().unwrap();
         assert!(got.iter().any(|l| l == "hello-sink"));
         assert!(!got.iter().any(|l| l == "after-clear"));
+    }
+
+    #[test]
+    fn poisoned_sink_mutex_still_logs() {
+        let _g = GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        // Poison SINK: a thread panics while holding its lock.
+        let _ = std::thread::spawn(|| {
+            let _held = SINK.lock().unwrap();
+            panic!("poison the sink");
+        })
+        .join();
+        assert!(SINK.is_poisoned());
+        let captured = Arc::new(Mutex::new(Vec::<String>::new()));
+        let c2 = Arc::clone(&captured);
+        set_log_sink(move |line| c2.lock().unwrap().push(line.to_string()));
+        log_line("after-poison");
+        clear_log_sink();
+        log_line("cleared");
+        let got = captured.lock().unwrap();
+        assert!(got.iter().any(|l| l == "after-poison"));
+        assert!(!got.iter().any(|l| l == "cleared"));
     }
 
     #[test]

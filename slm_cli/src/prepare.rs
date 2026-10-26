@@ -274,7 +274,7 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
             let text = match std::str::from_utf8(raw) {
                 Ok(s) => std::borrow::Cow::Borrowed(s),
                 Err(_) if o.lossy => {
-                    *rejected.get_mut("invalid_utf8").unwrap() += 1;
+                    *rejected.entry("invalid_utf8").or_default() += 1;
                     String::from_utf8_lossy(raw)
                 }
                 Err(e) => {
@@ -315,20 +315,22 @@ pub fn run(o: &PrepareOptions) -> Result<(), Box<dyn std::error::Error>> {
                     None
                 };
                 if let Some(r) = reason {
-                    *rejected.get_mut(r).unwrap() += 1;
+                    *rejected.entry(r).or_default() += 1;
                     continue;
                 }
                 if o.dedup {
-                    let key: [u8; 16] = Sha256::digest(doc.as_bytes())[..16].try_into().unwrap();
+                    let d = Sha256::digest(doc.as_bytes());
+                    let key: [u8; 16] = std::array::from_fn(|i| d[i]);
                     if !seen.insert(key) {
-                        *rejected.get_mut("duplicate").unwrap() += 1;
+                        *rejected.entry("duplicate").or_default() += 1;
                         continue;
                     }
                 }
                 let mut h = Sha256::new();
                 h.update(o.seed.to_le_bytes());
                 h.update(doc.as_bytes());
-                let bucket = u64::from_be_bytes(h.finalize()[..8].try_into().unwrap()) % 10_000;
+                let d = h.finalize();
+                let bucket = u64::from_be_bytes(std::array::from_fn(|i| d[i])) % 10_000;
                 let which = if bucket < val_cut {
                     1
                 } else if bucket < test_cut {
@@ -607,5 +609,55 @@ mod tests {
         let some = json!({"duplicate": 3, "empty": 0, "too_short": 1});
         assert_eq!(rejected_summary(&some), "duplicate=3 too_short=1");
         assert_eq!(rejected_summary(&Value::Null), "none");
+    }
+
+    #[test]
+    fn every_rejection_reason_is_counted_in_the_manifest() {
+        let d = tmpdir("reasons");
+        let sep = "<|endoftext|>";
+        let mut data = b"bad \xff bytes here".to_vec();
+        for doc in [
+            "   ",           // empty
+            "tiny",          // too_short
+            &"x".repeat(60), // too_long
+            "a perfectly fine doc",
+            "a perfectly fine doc", // duplicate
+        ] {
+            data.extend_from_slice(sep.as_bytes());
+            data.extend_from_slice(doc.as_bytes());
+        }
+        std::fs::write(d.join("in.txt"), &data).unwrap();
+        let mk = |lossy| PrepareOptions {
+            inputs: vec![d.join("in.txt").to_string_lossy().into()],
+            out: d.join("out").to_string_lossy().into(),
+            doc_sep: sep.into(),
+            lossy,
+            nfkc: false,
+            lowercase: false,
+            strip_gutenberg: false,
+            min_chars: 5,
+            max_chars: 40,
+            dedup: true,
+            val_frac: 0.0,
+            test_frac: 0.0,
+            seed: 1,
+            args: vec![],
+        };
+        // Invalid UTF-8 without --lossy is a clean error naming the flag.
+        let e = run(&mk(false)).unwrap_err().to_string();
+        assert!(e.contains("--lossy"), "{e}");
+        run(&mk(true)).unwrap();
+        let m: Value =
+            serde_json::from_str(&std::fs::read_to_string(d.join("out/manifest.json")).unwrap())
+                .unwrap();
+        let r = &m["rejected"];
+        assert_eq!(r["invalid_utf8"], 1);
+        assert_eq!(r["empty"], 1);
+        assert_eq!(r["too_short"], 1);
+        assert_eq!(r["too_long"], 1);
+        assert_eq!(r["duplicate"], 1);
+        // The lossy doc (replacement char) and one "fine" doc are kept: 2 train docs.
+        assert_eq!(m["outputs"]["train"]["documents"], 2);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

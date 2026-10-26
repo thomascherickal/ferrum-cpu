@@ -103,10 +103,7 @@ static POOL: OnceLock<Pool> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
 fn pool() -> &'static Pool {
     POOL.get_or_init(|| {
-        let n = num_threads().max(1);
-        let mut senders = Vec::with_capacity(n);
-        for id in 0..n {
-            let (tx, rx) = channel::<Job>();
+        build_pool(num_threads().max(1), |id, rx| {
             std::thread::Builder::new()
                 .name(format!("ferrum-worker-{id}"))
                 .spawn(move || {
@@ -120,11 +117,29 @@ fn pool() -> &'static Pool {
                         let _ = catch_unwind(AssertUnwindSafe(job));
                     }
                 })
-                .expect("ferrum: failed to spawn worker thread");
-            senders.push(tx);
-        }
-        Pool { senders }
+                .map(drop)
+        })
     })
+}
+
+/// Start up to `n` workers with `spawn`. A failed spawn (e.g. `RLIMIT_NPROC`)
+/// stops the build and keeps the workers started so far, so the pool degrades
+/// to fewer workers - or none, in which case callers run serially - instead of
+/// panicking. Results never depend on the worker count.
+#[cfg(not(target_arch = "wasm32"))]
+fn build_pool(
+    n: usize,
+    mut spawn: impl FnMut(usize, std::sync::mpsc::Receiver<Job>) -> std::io::Result<()>,
+) -> Pool {
+    let mut senders = Vec::with_capacity(n);
+    for id in 0..n {
+        let (tx, rx) = channel::<Job>();
+        if spawn(id, rx).is_err() {
+            break;
+        }
+        senders.push(tx);
+    }
+    Pool { senders }
 }
 
 /// Fill a row-major `[m, n]` output by running `kernel(r0, r1, block)` over
@@ -153,15 +168,16 @@ where
     #[cfg(not(target_arch = "wasm32"))]
     {
         let threads = num_threads().max(1).min(m.max(1));
-        if threads <= 1 {
+        // No workers (single thread, or every spawn failed): run serially.
+        let pool = (threads > 1).then(pool).filter(|p| !p.senders.is_empty());
+        let Some(pool) = pool else {
             let mut out = vec![0.0f32; m * n];
             kernel(0, m, &mut out);
             return out;
-        }
+        };
 
         let rows_per = m.div_ceil(threads);
         let kernel = Arc::new(kernel);
-        let pool = pool();
         let (tx, rx) = channel::<(usize, Vec<f32>)>();
 
         let mut blocks = 0usize;
@@ -175,7 +191,7 @@ where
                 kernel(r0, r1, &mut block);
                 let _ = tx.send((r0, block));
             });
-            // One block per worker: `blocks` never exceeds `threads`.
+            // `blocks` never exceeds `threads`; if fewer workers started, they queue.
             let _ = pool.senders[blocks % pool.senders.len()].send(job);
             blocks += 1;
             r0 = r1;
@@ -223,15 +239,16 @@ where
         let threads = num_threads()
             .max(1)
             .min(total.div_ceil(min_chunk.max(1)).max(1));
-        if threads <= 1 {
+        // No workers (single thread, or every spawn failed): run serially.
+        let pool = (threads > 1).then(pool).filter(|p| !p.senders.is_empty());
+        let Some(pool) = pool else {
             let mut out = vec![0.0f32; total];
             kernel(0, total, &mut out);
             return out;
-        }
+        };
 
         let cols_per = total.div_ceil(threads);
         let kernel = Arc::new(kernel);
-        let pool = pool();
         let (tx, rx) = channel::<(usize, Vec<f32>)>();
 
         let mut blocks = 0usize;
@@ -342,6 +359,23 @@ mod tests {
         if num_threads() > 1 {
             assert!(should_parallelize_1d(PARALLEL_THRESHOLD, 1));
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn build_pool_degrades_when_spawn_fails() {
+        let ok = |_: usize, _: std::sync::mpsc::Receiver<Job>| Ok(());
+        assert_eq!(build_pool(4, ok).senders.len(), 4);
+        let flaky = |id: usize, _: std::sync::mpsc::Receiver<Job>| {
+            if id < 2 {
+                Ok(())
+            } else {
+                Err(std::io::Error::other("EAGAIN"))
+            }
+        };
+        assert_eq!(build_pool(4, flaky).senders.len(), 2);
+        let none = |_: usize, _: std::sync::mpsc::Receiver<Job>| Err(std::io::Error::other("x"));
+        assert!(build_pool(4, none).senders.is_empty());
     }
 
     /// Regression: a panicking kernel used to kill its pool worker for good, so

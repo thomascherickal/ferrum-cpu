@@ -24,11 +24,12 @@ impl Param {
     pub(super) fn randn(shape: Vec<usize>, scale: f32, rng: &mut Rng) -> Self {
         let n: usize = shape.iter().product();
         let init: Vec<f32> = (0..n).map(|_| rng.next_normal() * scale).collect();
-        Self::new(shape, init).unwrap()
+        Self::new(shape, init).expect("init has exactly shape.product() elements")
     }
     pub(super) fn constant(shape: Vec<usize>, value: f32) -> Self {
         let n: usize = shape.iter().product();
-        Self::new(shape, vec![value; n]).unwrap()
+        Self::new(shape, vec![value; n])
+            .expect("vec![value; n] has exactly shape.product() elements")
     }
     /// A copy of the weights alone: gradient and Adam moments are empty, so it
     /// costs 4 B/param instead of 16.

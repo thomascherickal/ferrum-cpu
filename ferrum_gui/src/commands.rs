@@ -1276,7 +1276,8 @@ pub struct SysStats {
 /// Sample current CPU and memory load. Polled by the frontend on an interval.
 #[tauri::command]
 pub fn system_stats(state: State<'_, AppState>) -> Result<SysStats, String> {
-    let mut sys = state.sys.lock().unwrap();
+    // A poisoned lock only means an earlier poll panicked; sysinfo state is still valid.
+    let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
     sys.refresh_cpu_usage();
     sys.refresh_memory();
     let per_core: Vec<f32> = sys.cpus().iter().map(|c| c.cpu_usage()).collect();

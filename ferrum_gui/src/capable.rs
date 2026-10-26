@@ -226,10 +226,7 @@ fn assemble_report(
 pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport, String> {
     // Snapshot machine facts under the shared sysinfo lock, then release it.
     let (cpu, cores, mem_total, mem_avail) = {
-        let mut sys = state
-            .sys
-            .lock()
-            .map_err(|e| format!("state lock poisoned: {e}"))?;
+        let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
         // Ensure the CPU list is populated before reading it; otherwise `cpus()`
         // can be empty (→ cores = 0 → all GFLOP-derived bounds collapse to 0).
         sys.refresh_cpu_all();
