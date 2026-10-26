@@ -1842,7 +1842,7 @@ how it works (typical values, what happens if it is too big or too small, the
 effect on RAM and time) and a "New to AI?" paragraph that defines the jargon
 (token, epoch, batch size, learning rate, perplexity, vocabulary, context
 window, temperature, top-k/top-p, checkpoint, quantization, GGUF, BPE,
-embedding, heads, blocks, seed...). Press Esc to dismiss it. The text lives in
+embedding, heads, blocks, seed...). Press Esc to dismiss it. Inside a modal dialog the bubble is moved into the dialog, because a modal dialog sits above everything else on the page. The text lives in
 `ui/help.js` as plain data, one entry per element id, so it can be edited
 without touching any logic; a Node test fails if a control has no entry or too
 short a one. Screen readers get the same text through `aria-describedby`.

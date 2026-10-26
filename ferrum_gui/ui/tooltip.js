@@ -108,12 +108,23 @@
       bubble.setAttribute("data-placement", pos.placement);
     }
 
+    // A modal <dialog> lives in the browser's top layer, above everything outside it whatever the
+    // z-index, so a bubble kept in <body> would render behind it. Inside an open dialog the
+    // bubble is moved into that dialog (position: fixed still places it by viewport
+    // coordinates); everywhere else it lives in <body>.
+    function placeInTopLayer(el) {
+      const dlg = el.closest ? el.closest("dialog") : null;
+      const host = dlg && dlg.open ? dlg : doc.body;
+      if (bubble.parentNode !== host) host.appendChild(bubble);
+    }
+
     function show(el) {
       const t = targets.get(el);
       if (!t || dismissed === el) return;
       const content = t.getContent();
       if (!content) return;
       render(content);
+      placeInTopLayer(el);
       bubble.classList.remove("hidden");
       current = el;
       position(el);

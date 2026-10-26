@@ -175,4 +175,48 @@ function setup() {
   assert.strictEqual(tips.bubble.textContent, "B");
 }
 
+// Inside a modal <dialog> the bubble must live in the dialog (the top layer sits above any z-index
+// outside it); back in the page it returns to <body>; a closed dialog does not capture it.
+{
+  const { doc, tips, input } = setup();
+  const dlg = doc.createElement("dialog");
+  const btn = doc.createElement("button");
+  dlg.appendChild(btn);
+  doc.body.appendChild(dlg);
+  btn.rect = rect(300, 200, 80, 24);
+  tips.attach(btn, () => ({ title: "Proceed", sections: [{ label: "What it does", text: "Goes on." }] }));
+  tips.attach(input, () => ({ title: "Epochs", sections: [] }));
+
+  input.dispatch("focus");
+  assert.strictEqual(tips.bubble.parentNode, doc.body, "page controls keep the bubble in <body>");
+  input.dispatch("blur");
+
+  dlg.showModal();
+  btn.dispatch("focus");
+  assert.ok(tips.isVisible());
+  assert.strictEqual(tips.bubble.parentNode, dlg, "the bubble is inside the open dialog, in the top layer");
+  assert.ok(dlg.querySelector("#ferrum-tooltip"), "found through the dialog");
+  assert.strictEqual(tips.bubble.style.left, "300px", "still positioned by viewport coordinates");
+  btn.dispatch("blur");
+  dlg.close();
+
+  input.dispatch("focus");
+  assert.strictEqual(tips.bubble.parentNode, doc.body, "back in <body> once the dialog is closed");
+  input.dispatch("blur");
+
+  // A control in a dialog that is not open never pulls the bubble into it.
+  btn.dispatch("focus");
+  assert.strictEqual(tips.bubble.parentNode, doc.body);
+  tips.hide();
+}
+
+// The stylesheet keeps the bubble out of the layout (fixed) and above the page, which is what
+// lets it sit inside a dialog and still be placed by viewport coordinates.
+{
+  const css = require("node:fs").readFileSync(require("node:path").join(__dirname, "styles.css"), "utf8");
+  const rule = css.match(/\n\.tip \{([^}]*)\}/)[1];
+  assert.ok(/position:\s*fixed/.test(rule) && /z-index:\s*1000/.test(rule), rule);
+  assert.ok(!/(^|[;\s])(transform|filter|perspective)\s*:/.test(rule), "a transform would make it relative to its parent");
+}
+
 console.log("tooltip.test.js: all assertions passed");
