@@ -72,6 +72,16 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
     if model.is_empty() {
         return Err(USAGE.into());
     }
+    for (flag, v) in [
+        ("--max-batch", limits.max_batch),
+        ("--max-chars", limits.max_chars),
+        ("--max-body", limits.max_body),
+        ("--max-tokens", limits.max_tokens),
+    ] {
+        if v == 0 {
+            return Err(format!("{flag} must be at least 1 (got 0)"));
+        }
+    }
     Ok(Parsed::Run(Config {
         model,
         host,
@@ -178,6 +188,14 @@ mod tests {
                 max_tokens: 5
             }
         );
+    }
+
+    #[test]
+    fn zero_limits_are_rejected_naming_the_flag() {
+        for f in ["--max-batch", "--max-chars", "--max-body", "--max-tokens"] {
+            let e = parse_args(&a(&["--model", "m", f, "0"])).unwrap_err();
+            assert_eq!(e, format!("{f} must be at least 1 (got 0)"));
+        }
     }
 
     #[test]

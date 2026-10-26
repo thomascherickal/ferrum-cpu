@@ -27,7 +27,12 @@ pub(crate) fn train_and_save(
     let cfg = args.config();
     check_lr(cfg.lr)?;
     check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;
-    check_token_budget(args.get("tokens", 0.0f64))?;
+    let budget = args.get("tokens", 0.0f64);
+    check_token_budget(budget)?;
+    if budget == 0.0 {
+        check_epochs(cfg.epochs, true)?; // with a budget the epoch count is ignored
+    }
+    check_batch_threads(cfg.batch_size, args.get("threads", 0))?;
     // Every output must be writable before hours of training, not after.
     check_writable(model_path)?;
     if !cfg.checkpoint_path.is_empty() {

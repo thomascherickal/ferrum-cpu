@@ -57,15 +57,22 @@ fn detect() -> usize {
 #[cfg(not(target_arch = "wasm32"))]
 fn detect() -> usize {
     if let Ok(v) = std::env::var("FERRUM_NUM_THREADS") {
-        if let Ok(n) = v.parse::<usize>() {
-            if n >= 1 {
-                return n;
-            }
+        match parse_thread_env(&v) {
+            Some(n) => return n,
+            None => eprintln!(
+                "warning: FERRUM_NUM_THREADS={v:?} is not a positive integer; using the detected core count"
+            ),
         }
     }
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
+}
+
+/// A `FERRUM_NUM_THREADS` value: `Some(n)` for a positive integer, `None` otherwise.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_thread_env(v: &str) -> Option<usize> {
+    v.parse::<usize>().ok().filter(|&n| n >= 1)
 }
 
 /// Total scalar multiply–add count below which threading is not worth its
@@ -285,6 +292,16 @@ pub fn should_parallelize_1d(total: usize, per_element: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn thread_env_accepts_only_positive_integers() {
+        use super::parse_thread_env as p;
+        assert_eq!((p("4"), p("8")), (Some(4), Some(8)));
+        for bad in ["abc", "0", "-2", "", "1.5", "4x", " 8 "] {
+            assert_eq!(p(bad), None, "{bad:?}");
+        }
+    }
+
     use super::*;
 
     #[test]

@@ -571,6 +571,7 @@ parser with its own allow-list of flags:
 | Unknown flag | Error naming the subcommand and listing the valid flags, for example `unknown flag --contxt for 'train' (valid: --context --embed ...)` |
 | Value that does not parse (`--context 12x`) | Error naming the flag and the value; never a silent default |
 | Flag with no value (`--temp` at the end) | `--temp needs a value` |
+| `--epochs 0` (without `--tokens`), `--batch 0`, `--threads` above 1024 (`finetune-gguf` too) | Error naming the flag, before anything trains; `--threads 0` still means auto |
 | `--resume` path that does not exist | Error before anything trains; use `--checkpoint` to start a new run |
 | Output path that cannot be written (model, `--checkpoint`, `--tokenizer`, `finetune-gguf` `.flck`, `export-gguf` output, `eval --json`) | Error `cannot write <path>: <reason>` in well under a second, before any training or evaluation. Missing parent directories are created first, the same for all of these commands. |
 
@@ -772,7 +773,9 @@ There are two independent knobs:
   reproducible, and `--threads 1` is bit-identical to the serial trainer.
   Changing the shard count can change the low bits of the weights, because
   floating-point addition is not associative.
-- **`FERRUM_NUM_THREADS=N`** sizes the matmul worker pool used by training,
+- **`FERRUM_NUM_THREADS=N`** (a positive integer; anything else prints one
+  `warning: FERRUM_NUM_THREADS=... is not a positive integer` line on stderr and
+  falls back to the core count) sizes the matmul worker pool used by training,
   generation, and evaluation. The pool splits work by rows or columns without
   changing any per-element arithmetic, so it never changes a result. It does
   set the default shard count of the data-parallel trainer, though: with
@@ -1380,6 +1383,9 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/loglikeliho
 | Characters per text (`--max-chars`) | 65,536 | `400` |
 | `max_tokens` per generate request (`--max-tokens`) | 4,096 | `400` |
 | Stop strings per generate request | 16 of at most 1,024 bytes | `400` |
+
+Each of the four limit flags must be at least 1; `0` is refused at startup
+(`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
 | POST requests in flight | 32 | `503`, before the body is read |
 | Malformed JSON or a missing field | | `400` |
 | Model error (for example an unknown character in a character-level model) | | `422` |

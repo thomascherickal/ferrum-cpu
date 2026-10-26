@@ -26,6 +26,8 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
         check_temp(args.get("temp", 0.8))?; // before hours of training, not after
     }
     check_lr(args.get("lr", 1e-4))?;
+    check_epochs(args.get("epochs", 3), false)?;
+    check_batch_threads(args.get("batch", 8), args.get("threads", 0))?;
     check_regularizers(
         args.get("dropout", 0.0),
         args.get("weight_decay", 0.0),

@@ -106,6 +106,32 @@ pub(crate) fn check_writable(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Most data-parallel shards / worker threads a run may ask for; more is never useful.
+pub(crate) const MAX_THREADS: usize = 1024;
+
+/// `--epochs 0` trains nothing yet saves a model; with a `--tokens` budget the epoch count is
+/// ignored, so `train` only checks it when there is no budget (`hint_tokens`).
+pub(crate) fn check_epochs(epochs: usize, hint_tokens: bool) -> Result<(), String> {
+    if epochs >= 1 {
+        return Ok(());
+    }
+    let hint = if hint_tokens { ", or set --tokens" } else { "" };
+    Err(format!("--epochs must be at least 1{hint} (got {epochs})"))
+}
+
+/// `--batch` must be at least 1 and `--threads` (0 = auto) at most [`MAX_THREADS`].
+pub(crate) fn check_batch_threads(batch: usize, threads: usize) -> Result<(), String> {
+    if batch == 0 {
+        return Err("--batch must be at least 1 (got 0)".into());
+    }
+    if threads > MAX_THREADS {
+        return Err(format!(
+            "--threads must be at most {MAX_THREADS} (got {threads}); 0 = auto"
+        ));
+    }
+    Ok(())
+}
+
 /// `--resume` must name an existing file; checked before any multi-GB model
 /// load. Blank means "none" (as in `export-gguf`).
 pub(crate) fn require_resume_file(resume: Option<&str>) -> Result<(), String> {
@@ -228,6 +254,19 @@ mod tests {
             "{e}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn epoch_batch_and_thread_counts_reject_nonsense() {
+        assert!(check_epochs(1, true).is_ok() && check_epochs(100, false).is_ok());
+        let e = check_epochs(0, true).unwrap_err();
+        assert!(e.contains("--epochs") && e.contains("--tokens"), "{e}");
+        let e = check_epochs(0, false).unwrap_err();
+        assert!(e.contains("--epochs") && !e.contains("--tokens"), "{e}");
+        assert!(check_batch_threads(1, 0).is_ok() && check_batch_threads(16, 1024).is_ok());
+        assert!(check_batch_threads(0, 0).unwrap_err().contains("--batch"));
+        let e = check_batch_threads(16, 1025).unwrap_err();
+        assert!(e.contains("--threads") && e.contains("1025"), "{e}");
     }
 
     #[test]
