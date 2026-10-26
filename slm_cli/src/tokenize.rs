@@ -1,11 +1,11 @@
 //! `tokenize`: a corpus of any size -> a `ferrum-tokens` GGUF that `train` streams from disk.
 
 use crate::args::Args;
-use crate::prepare::{expand_inputs, for_each_raw_doc};
 use crate::util::sha256_hex;
 use crate::validate::{check_distinct_paths, check_writable};
 use ferrum_core::{write_token_file, ByteBpeTokenizer, InferError, TokenFileMeta};
 use sha2::Sha256;
+use slm_cli::prepare::{expand_inputs, for_each_raw_doc};
 use std::path::{Path, PathBuf};
 
 /// Encode `files` (in order) with `tok` and write the ids to `out`. Each file is streamed

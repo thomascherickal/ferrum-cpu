@@ -69,6 +69,7 @@
 #![forbid(unsafe_code)]
 
 mod args;
+mod cmd_prepare;
 mod eval;
 mod eval_gguf;
 mod export;
@@ -76,7 +77,6 @@ mod finetune;
 mod generate;
 mod info;
 mod memory;
-mod prepare;
 mod preset;
 mod resume;
 mod run_gguf;
@@ -90,13 +90,13 @@ mod util;
 mod validate;
 
 use crate::args::*;
+use crate::cmd_prepare::cmd_prepare;
 use crate::eval::*;
 use crate::eval_gguf::cmd_eval_gguf;
 use crate::export::*;
 use crate::finetune::*;
 use crate::generate::*;
 use crate::info::*;
-use crate::prepare::cmd_prepare;
 use crate::run_gguf::*;
 use crate::tokenize::cmd_tokenize;
 use crate::train::*;
