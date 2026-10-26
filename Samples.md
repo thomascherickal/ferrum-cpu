@@ -488,7 +488,7 @@ The mountain stood tall and silent in the cold morning air.--- val
 
 ## 4. Training controls
 
-**Goal.** Use a token budget, cosine learning rate, validation with early stopping, and checkpoints; interrupt a run and resume it; see the strict CLI reject mistakes.
+**Goal.** Use a token budget, cosine learning rate, validation with early stopping, and checkpoints; interrupt a run and resume it; see the strict CLI reject mistakes; train from a pre-tokenized token file.
 
 **You need.** Sample 1's data.
 
@@ -581,12 +581,111 @@ error: checkpoint samples/does-not-exist.fckp does not exist (--resume needs an 
 exit=1
 ```
 
+4. Train from a pre-tokenized file, for corpora larger than RAM ([Manual §6.11](Manual.md#611-corpora-larger-than-ram-tokenize-and-token-files)). A three-document corpus shows the equivalence first. The first `train` creates the tokenizer; `tokenize` streams the text into a `ferrum-tokens` GGUF holding the ids `train` would see; `train` on that file streams windows from disk. The two models must be the same bytes.
+
+```bash
+mkdir -p samples/tokens
+cat > samples/tokens/corpus.txt <<'EOF'
+the quick brown fox jumps over the lazy dog. the town wakes slowly each morning, and the baker opens his shop while the streets are still quiet.
+<|endoftext|>
+children walk to school past the old stone bridge, and the river runs down to the sea carrying leaves and small boats. by noon the market is full of voices, and the fox watches from the hill.
+<|endoftext|>
+in the evening the lamps are lit one by one, the shops close, and the streets grow quiet again. the quick brown fox goes home to sleep, and the town sleeps too.
+EOF
+FLAGS="--epochs 20 --context 12 --embed 32 --heads 4 --blocks 2 --hidden 64 --vocab 300 --seed 7 --stride 1 --threads 2 --tokenizer samples/tokens/tok.gguf"
+train_transformer train samples/tokens/corpus.txt samples/tokens/text.gguf $FLAGS
+train_transformer tokenize samples/tokens/corpus.txt --tokenizer samples/tokens/tok.gguf --out samples/tokens/corpus.tok.gguf
+train_transformer info samples/tokens/corpus.tok.gguf
+train_transformer train samples/tokens/corpus.tok.gguf samples/tokens/tokens.gguf $FLAGS
+sha256sum samples/tokens/text.gguf samples/tokens/tokens.gguf
+```
+
+```text
+$ train_transformer train samples/tokens/corpus.txt samples/tokens/text.gguf $FLAGS
+╔══════════════════════════════════════════════════════════╗
+  ferrum transformer SLM trainer (int8 QAT)
+  Corpus  : samples/tokens/corpus.txt  (526 chars)
+  Context : 12   Embed: 32   Hidden: 64
+  Heads   : 4   Blocks: 2
+  Tokenizer: byte-level BPE (vocab 300)
+  Epochs  : 20   LR: 0.01   Batch: 16   Seed: 7
+  Threads : 2 (data-parallel minibatch training)
+╚══════════════════════════════════════════════════════════╝
+
+  epoch     1/20   loss = 4.438987
+  epoch     2/20   loss = 3.073753
+...
+
+Trained in 1.27s.
+  vocab = 300 BPE tokens   context = 12   output_dim = 300
+Saved 50264 bytes → samples/tokens/text.gguf (int8 GGUF)
+Reload check: OK (6 layers).
+
+$ train_transformer tokenize samples/tokens/corpus.txt --tokenizer samples/tokens/tok.gguf --out samples/tokens/corpus.tok.gguf
+tokenized samples/tokens/corpus.txt → samples/tokens/corpus.tok.gguf: 279 tokens, 3 documents, vocab 300 (526 bytes in, 1006 bytes out, 0.0s)
+
+$ train_transformer info samples/tokens/corpus.tok.gguf
+Model     : samples/tokens/corpus.tok.gguf  (1006 bytes)
+Format    : GGUF v3 (ferrum-tokens)
+Kind      : pre-tokenized corpus; train on it with train samples/tokens/corpus.tok.gguf ...
+Tokens    : 279
+Documents : 3
+Vocab     : 300
+EOS id    : 299
+Tokenizer : sha256 75c0facf5f33572558831c074f6271e307ed808f0cf9249f6dc7d69e28fc574c
+
+$ train_transformer train samples/tokens/corpus.tok.gguf samples/tokens/tokens.gguf $FLAGS
+╔══════════════════════════════════════════════════════════╗
+  ferrum transformer SLM trainer (int8 QAT)
+  Corpus  : samples/tokens/corpus.tok.gguf  (279 tokens, 3 documents, streamed from disk)
+  Context : 12   Embed: 32   Hidden: 64
+  Heads   : 4   Blocks: 2
+  Tokenizer: byte-level BPE (vocab 300)
+  Epochs  : 20   LR: 0.01   Batch: 16   Seed: 7
+  Threads : 2 (data-parallel minibatch training)
+╚══════════════════════════════════════════════════════════╝
+
+  epoch     1/20   loss = 4.438987
+  epoch     2/20   loss = 3.073753
+...
+
+Trained in 1.24s.
+  vocab = 300 BPE tokens   context = 12   output_dim = 300
+Saved 50264 bytes → samples/tokens/tokens.gguf (int8 GGUF)
+Reload check: OK (6 layers).
+
+$ sha256sum samples/tokens/text.gguf samples/tokens/tokens.gguf
+4c58479b2c5cbfa9c5e4ae220622035b5abfad97b2a2dcf2b60dc247106c6818  samples/tokens/text.gguf
+4c58479b2c5cbfa9c5e4ae220622035b5abfad97b2a2dcf2b60dc247106c6818  samples/tokens/tokens.gguf
+```
+
+Then the same on real data: the 20 MB TinyStories train split from Sample 1 and the DVC pipeline's tokenizer (`models/tokenizer.gguf`, md5 `c2ebc991dc85594541ad9852e92db99b`, only read), with the DVC model shape and a 3e5-token budget. `/usr/bin/time` reports wall time and peak resident memory (the `grep` keeps only those lines; `--force` retrains over the existing file).
+
+```bash
+ARCH="--context 128 --embed 96 --heads 4 --blocks 3 --hidden 320 --vocab 1024 --lr 0.005 --warmup 50 --clip 1 --seed 1337 --threads 8 --tokens 3e5 --tokenizer models/tokenizer.gguf"
+mkdir -p samples/big
+/usr/bin/time -f "tokenize: %es wall, peak RSS %M KB" train_transformer tokenize data/prepared/train.txt --tokenizer models/tokenizer.gguf --out samples/big/train.tok.gguf 2>&1 | grep -E "^(tokenized|tokenize:|train from)"
+/usr/bin/time -f "train from text: %es wall, peak RSS %M KB" train_transformer train data/prepared/train.txt samples/big/text.gguf $ARCH --force 2>&1 | grep -E "^(tokenized|tokenize:|train from)"
+/usr/bin/time -f "train from token file: %es wall, peak RSS %M KB" train_transformer train samples/big/train.tok.gguf samples/big/tok.gguf $ARCH --force 2>&1 | grep -E "^(tokenized|tokenize:|train from)"
+sha256sum samples/big/text.gguf samples/big/tok.gguf
+```
+
+```text
+tokenized data/prepared/train.txt → samples/big/train.tok.gguf: 6306484 tokens, 24823 documents, vocab 1024 (20190677 bytes in, 12613416 bytes out, 1.5s)
+tokenize: 1.46s wall, peak RSS 7232 KB
+train from text: 33.46s wall, peak RSS 178760 KB
+train from token file: 36.60s wall, peak RSS 134040 KB
+04a43505dbde369f125fd67bf81f1c9b56744a406c553117576fba7df93fee64  samples/big/text.gguf
+04a43505dbde369f125fd67bf81f1c9b56744a406c553117576fba7df93fee64  samples/big/tok.gguf
+```
+
 **What to look at.**
 
 - The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). A resume restarts a partial epoch with a fresh shuffle, so a resumed run is close to, but not bit-identical with, an uninterrupted one, unless the last checkpoint falls on an epoch boundary, where it is bit-identical (a tiny-model check with `--checkpoint-every` equal to the steps per epoch was bit-identical; one that did not divide the epoch was not). The uninterrupted run in Sample 1 ended at validation perplexity 18.690; the resumed run above ended at 18.910.
 - With `--val`, the best validation score is restored on resume.
 - `-v` prints one line per 10 steps. `--debug` is the old per-op trace.
 - The CLI never falls back to a default silently. The second error names `.fckp` because `train` checkpoints are `.fckp` (`run-gguf`, `export-gguf` and `finetune-gguf` say `.flck`).
+- Step 4: the token file is 1006 bytes for 279 tokens (a 300-token vocabulary uses 2 bytes per id, plus the header), and the model trained from it has the same sha256 as the model trained from the text. On the 20 MB split the two models are again identical. The token-file run needs about 45 MB less resident memory (the 20 MB of text and the 25 MB of ids the in-memory path holds), and `tokenize` needs 7 MB for the whole 20 MB. The 133 MB left is the model's activations, which do not depend on the corpus. Wall time showed no cost from streaming: run in the order text then token file it read 33.46 s and 36.60 s, and run twice in the reverse order (token file first) the token file took 34.36 s and 36.36 s and the text 38.02 s and 37.93 s, so the spread is run order and machine noise, not the source. The 20 MB corpus fits in RAM here; the point of the token file is the corpus that does not, which this machine cannot demonstrate without a multi-gigabyte download, so that case is untested at scale (the memory use is O(batch), asserted in the tests).
 - The first line of the resume output is a reminder that a reused tokenizer file may have seen the validation text. The run used `--tokenizer samples/tok.gguf`, created by the first command with `--val`, so it did not.
 
 ---

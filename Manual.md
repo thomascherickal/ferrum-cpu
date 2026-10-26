@@ -527,6 +527,13 @@ model never trains on. `prepare` makes `test.txt` for this. Alternatively,
 
 ---
 
+### 5.5 Pre-tokenizing a large corpus
+
+`prepare` streams, but `train` on a text file reads the whole file and holds every
+token id in memory (4 bytes each). For a corpus that does not fit, tokenize it
+once into a token file and train from that:
+[§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files).
+
 ## 6. Training an SLM
 
 ### 6.1 How training works
@@ -560,9 +567,14 @@ exists, `train` loads it instead of retraining; pass `--force` to retrain.
 ### 6.2 Command-line reference
 
 ```text
-train_transformer train <corpus.txt> <model.gguf> [options]
+train_transformer train <corpus.txt | tokens.gguf> <model.gguf> [options]
 train_transformer run   <corpus.txt> <model.gguf> <seed text> [options]   # train if needed, then generate
+train_transformer tokenize <corpus.txt | dir> --tokenizer <tok.gguf> --out <tokens.gguf> [--doc-sep S]
 ```
+
+`train` takes a token file (the output of `tokenize`) wherever it takes a text
+corpus; it tells them apart by content, not by extension
+([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)).
 
 `train_transformer --help` prints the same flags, `train_transformer <command> --help`
 prints one command's usage and its exact flag list, and `train_transformer --version`
@@ -645,7 +657,8 @@ rename), so an interrupted or failed save leaves any previous file intact and no
 | `--debug` | off | Streams the engine's internal trace. Very verbose; use it to debug, not to watch progress. |
 
 The sampling flags `run` shares with `generate` are in [§7](#7-generating-text).
-`prepare` is in [§5.1](#51-train_transformer-prepare), `eval` in
+`prepare` is in [§5.1](#51-train_transformer-prepare), `tokenize` in
+[§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files), `eval` in
 [§8](#8-evaluating-a-model), and the export commands in
 [§9.6](#96-one-command-exports).
 
@@ -702,6 +715,11 @@ saved**, which are not necessarily the last epoch's. `--patience N` stops
 early and prints `early stop at epoch 25, best epoch 24 kept` (the epoch numbers
 are the real ones from your run). The banner names what is trained and saved:
 `int8 QAT` by default, `fp32, no QAT, saved as f32` with `--no-qat --quant f32`.
+
+From a token file, `--val` holds out the last fraction of the *tokens* instead
+(the tokenizer is fixed, so it cannot be refit on a head), and that tail is read
+into memory: keep the fraction small for a very large corpus
+([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)).
 
 **Checkpoints.** `--checkpoint run.fckp --checkpoint-every 500` writes the
 full training state every 500 steps and at the end: weights, Adam moments,
@@ -1004,6 +1022,70 @@ regularize → tune `--vocab` → tune `--lr` and the budget**. Re-run `eval` af
 each change.
 
 ---
+
+### 6.11 Corpora larger than RAM: `tokenize` and token files
+
+`train corpus.txt` reads the whole text, tokenizes it, and keeps every id in
+memory (4 bytes each, plus the text during tokenization). When the corpus is
+bigger than that, tokenize it once into a **token file** and train from the file.
+The trainer then cuts each window with one seek and one read, so the token
+memory is one minibatch (`batch × context` ids), whatever the corpus size.
+
+```bash
+# 1. A tokenizer. `train` creates one if the file is missing (train it on a sample
+#    of the corpus if the whole text does not fit), and reuses it afterwards.
+train_transformer train sample.txt scratch.gguf --vocab 1024 --epochs 1 --tokenizer tok.gguf
+# 2. Tokenize the full corpus, streaming; a directory is read file by file.
+train_transformer tokenize data/prepared/train.txt --tokenizer tok.gguf --out train.tok.gguf
+# 3. Train from the token file with the same flags as always.
+train_transformer train train.tok.gguf model.gguf --tokenizer tok.gguf --tokens 5e7 --cosine --val 0.01
+```
+
+**What you get.** The model is bit-identical to the one `train data/prepared/train.txt`
+gives with the same flags, seed and `--threads` (same window order, same RNG draws,
+serial and threaded, with checkpoint resume and a token budget; tests compare the
+model bytes, per-epoch losses and final checkpoint, and
+[Samples §4](Samples.md#4-training-controls) shows the sha256 of both). Nothing
+else about training changes: the DVC outputs do not move.
+
+**The file.** A token file is GGUF v3 (`general.architecture = ferrum-tokens`),
+like every file Ferrum writes. Metadata: `ferrum.tokens.version`, `vocab_size`,
+`token_count`, `document_count`, `eos_id` and `tokenizer_sha256`; one tensor,
+`tokens`, of I16 ids when the vocabulary is at most 32,768 and I32 otherwise. Disk
+size is therefore **2 bytes per token** for a typical vocabulary (4 above 32,768),
+plus about 1 KB of header. `train_transformer info tokens.gguf` prints the summary.
+Documents are separated by the EOS id exactly as `train` does it
+(`ByteBpeTokenizer::encode_docs`); a directory is its files in path order with an EOS
+between files. `train` refuses a token file whose recorded tokenizer sha256 or
+vocabulary differs from `--tokenizer`, before any training time is spent, and a
+truncated file fails when it is opened.
+
+**Ceilings.**
+
+- `tokenize` holds one document (plus a 1 MiB read chunk) at a time: a corpus
+  with no `<|endoftext|>` separators is one document and must fit in RAM.
+  `--doc-sep` changes the separator.
+- The tokenizer itself is trained from text in memory, so train it on a
+  representative sample (step 1); `tokenize` and `train` only reuse it.
+- The shuffled window order is held as one `usize` per window: `tokens / stride`
+  entries, which is small at the default stride (the context length) and 8 bytes
+  per token at `--stride 1`.
+- `--val F` takes the last fraction `F` of the **tokens** and reads that tail into
+  memory (8 bytes per token), so use a small `F` (or `tokenize` the validation text
+  to its own file and evaluate with `eval`). The in-memory path splits the text by
+  characters and refits the tokenizer on the head, which a fixed token file cannot
+  do, so the two `--val` splits differ.
+- Ids are range-checked as they are read, not at open. Counts are `u64`, the
+  vocabulary `u32`.
+- Windows are read straight from the file, so a corpus much larger than RAM trains
+  at the speed of the page cache and disk. On a corpus that fits (20 MB) no cost
+  from streaming was measurable, and peak memory fell by the size of the text and
+  the ids ([Samples §4](Samples.md#4-training-controls)); a corpus much larger than
+  RAM was not run on this machine.
+
+Library: `ferrum_core::write_token_file`, `TokenFile`,
+`GenerativeSLM::train_transformer_tokens` and `train_transformer_tokens_validated`
+([§12.7](#127-the-ferrum-gguf-format)).
 
 ## 7. Generating text
 
@@ -2022,7 +2104,7 @@ or **per channel** (one scale per output row).
 
 ### 12.7 The Ferrum GGUF format
 
-Every file Ferrum writes is GGUF v3. There are four kinds.
+Every file Ferrum writes is GGUF v3. There are five kinds.
 
 | Kind | `general.architecture` | Runs in llama.cpp |
 |---|---|---|
@@ -2030,6 +2112,7 @@ Every file Ferrum writes is GGUF v3. There are four kinds.
 | Generic Ferrum model (character-level SLMs, Ferrum-ML tabular MLPs) | `ferrum` | No |
 | Training checkpoint | `ferrum-checkpoint` (`ferrum-llama-checkpoint` for Llama fine-tunes) | No |
 | Reusable tokenizer file | `ferrum-tokenizer` | No |
+| Pre-tokenized corpus (`tokenize`) | `ferrum-tokens` | No |
 
 #### The GPT-2 layout
 
@@ -2144,6 +2227,15 @@ scalar settings (`vocab`, `context`, `embed`, `heads`, `hidden`, `blocks`,
 this change (magic `FCKP`) do not load; the error tells you to retrain. Old
 tokenizer files in the `256;257...` text form are also rejected.
 
+#### The token file
+
+`tokenize` writes `general.architecture = ferrum-tokens` with `ferrum.tokens.version
+= 1`, `vocab_size` (u32), `token_count` and `document_count` (u64), an optional
+`eos_id` (u32) and `tokenizer_sha256` (string), and one 1-D tensor `tokens` of
+`token_count` ids: GGML type I16 (25) when `vocab_size <= 32768`, else I32 (26). The
+reader seeks into the tensor data and reads one window at a time, so the file is
+never loaded whole ([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)).
+
 Files are written atomically. The loader bounds-checks every dimension before it
 allocates, and a file that is valid GGUF but not a Ferrum model (for example a
 Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
@@ -2157,6 +2249,7 @@ Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
 | `llm` | `LlamaModel::{forward, generate}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
 | `llm_train` | `LlamaTrainer::{new, set_lr, set_lr_schedule, set_grad_clip, train_step, train_batch, finetune_epoch_threaded, save_checkpoint, load_checkpoint_into}` | finite-difference-checked backward pass; AdamW; `.flck` checkpoints; rejects quantized weights |
 | `gguf_write` | `GgufBuilder`, `write_llama_gguf`, `LlamaModel::write_gguf`, `GgufQuant` | byte-exact GGUF v3; encoders are exact inverses of the decoders (verified round trip) |
+| `token_file` | `write_token_file`, `TokenSink::push`, `TokenFile::{open, read_window, len}`, `is_gguf_file`; `GenerativeSLM::{train_transformer_tokens, train_transformer_tokens_validated}` | the `ferrum-tokens` corpus file and streamed training, bit-identical to in-memory training ([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)) |
 | `chat_format` | `ChatFormat::{ChatMl, Llama3, Llama2Inst, Zephyr}`, `detect`, `render`, `stop_token` | single-turn instruct formatting |
 
 ---

@@ -23,11 +23,12 @@ for small models. It is not a runtime for frontier LLMs.
 |---|---|
 | **Few dependencies, each with a reason** | `ferrum_core` has two (`unicode-general-category` and `unicode-normalization`, pure-Rust tables) and hand-writes its threading and matmul kernels. The CLI adds `sha2` and `serde_json`, the server `axum`/`tokio`/`serde`, the browser crate `wasm-bindgen`, and the GUI Tauri plus a few helper crates. A crate is admitted only if it is faster on a benchmark and keeps results deterministic and `wasm32` builds working. `rayon`, `ndarray`, and `faer` were measured and none is in the tree ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)). |
 | **CPU only, deterministic** | Every matmul splits across a worker pool. Training, generation, and evaluation give bit-for-bit identical results at any pool size (override with `FERRUM_NUM_THREADS`), and a test enforces this. One knob changes the trained weights: the number of data-parallel training workers, `--threads` (auto = the core count). Fix it to reproduce a run on another machine. |
-| **GGUF only** | Every file Ferrum writes is GGUF v3: models, training checkpoints, and tokenizer files. The old FINF `.bin` format is removed. |
+| **GGUF only** | Every file Ferrum writes is GGUF v3: models, training checkpoints, tokenizer files, and pre-tokenized corpora. The old FINF `.bin` format is removed. |
 | **Runs in llama.cpp, Ollama, and LM Studio** | A trained BPE SLM is a `gpt2`-architecture GGUF. The same file gives the same greedy continuation in Ferrum and in llama.cpp (a test checks this). Models can be as small as about 0.1M parameters. |
 | **Quantization-aware** | QAT simulates GGUF Q8_0 exactly, so an int8 file reloads bit-identical to the model you trained. int4 (Q4_0) export is a lossy option. |
 | **Byte-level BPE with a GPT-2 pre-tokenizer** | Any UTF-8 text round-trips. llama.cpp tokenizes prompts exactly as Ferrum does. `<|endoftext|>` is always a reserved special token. |
 | **A real data pipeline** | `train_transformer prepare` cleans, dedups, and splits a corpus and writes a hash manifest. DVC reproduces fetch, prepare, train, and eval from `params.yaml`. |
+| **Corpora larger than RAM** | `train_transformer tokenize` writes a pre-tokenized GGUF token file (2 bytes per token); `train tokens.gguf` streams windows from disk and gives the same model, bit for bit, as training on the text ([Manual §6.11](Manual.md#611-corpora-larger-than-ram-tokenize-and-token-files)). |
 | **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
 | **Llama/Qwen GGUF in and out** | Import Llama/Qwen checkpoints, run them, fine-tune them with AdamW, and export them back to GGUF. |
 
@@ -56,7 +57,7 @@ tokenizer. Only BPE transformer SLMs run there.
 | Path | Kind | What it is |
 |---|---|---|
 | `ferrum_core` | library | The engine: tensors, layers, the transformer trainer, tokenizer, quantization, the GGUF model codecs, and the GGUF reader/writer plus Llama/Qwen runner and trainer |
-| `slm_cli` | binary `train_transformer` | Train, generate, evaluate, inspect, and `prepare` data; `export-ollama`, `export-lmstudio`; `run-gguf`, `eval-gguf`, `finetune-gguf`, `export-gguf` for external checkpoints |
+| `slm_cli` | binary `train_transformer` | Train, generate, evaluate, inspect, `prepare` and `tokenize` data; `export-ollama`, `export-lmstudio`; `run-gguf`, `eval-gguf`, `finetune-gguf`, `export-gguf` for external checkpoints |
 | `slm_server` | binary `ferrum-serve` | HTTP inference server (axum): log-likelihood, rolling log-likelihood, generation |
 | `slm_wasm` | cdylib + rlib | `wasm-bindgen` bindings that run a trained SLM in the browser (`TransformerSLMModel`) |
 | `eval/lighteval/` | Python package | `FerrumModel` and custom tasks for Hugging Face LightEval 0.13.0, plus `run.sh` |
