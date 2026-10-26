@@ -254,6 +254,16 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
             .await
             .map_err(|e| format!("benchmark task error: {e}"))?;
 
+    // Debug builds run the benchmark loops unoptimized (~60x too slow), so only a
+    // release-build measurement may scale the GUI's time estimates.
+    if !cfg!(debug_assertions) {
+        *state.bench.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(crate::estimate::Throughput {
+                gemm_single_gflops: gemm_single,
+                mem_bw_gbps: bw / 1e9,
+            });
+    }
+
     Ok(assemble_report(
         cpu,
         cores,

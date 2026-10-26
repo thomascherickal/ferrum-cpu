@@ -13,22 +13,59 @@ impl TransformerNet {
     /// its gradient (about twice the cached floats) for every position of the
     /// batch. Saturating, so absurd inputs give `usize::MAX`, not a wrap.
     pub fn train_peak_bytes(&self, windows: usize, batch: usize, shards: usize) -> usize {
-        let (t, e, v) = (self.context_len, self.embed_dim, self.vocab_size);
         let hidden = self.blocks.first().map_or(0, |b| b.f1_w.data.shape[1]);
+        Self::peak_bytes(
+            self.num_params(),
+            [self.vocab_size, self.context_len, self.embed_dim, hidden],
+            [self.num_heads, self.blocks.len()],
+            [windows, batch, shards],
+        )
+    }
+
+    /// [`TransformerNet::train_peak_bytes`] for a net that does not exist yet:
+    /// the same estimate from the dimensions alone (what the training loop will
+    /// check), so a UI can warn before anything is allocated. Errors exactly
+    /// when [`TransformerNet::check_size`] does.
+    #[allow(clippy::too_many_arguments)]
+    pub fn estimate_train_peak_bytes(
+        vocab: usize,
+        ctx: usize,
+        embed: usize,
+        heads: usize,
+        hidden: usize,
+        blocks: usize,
+        windows: usize,
+        batch: usize,
+        shards: usize,
+    ) -> Result<usize> {
+        let params = Self::check_size(vocab, ctx, embed, hidden, blocks)?;
+        Ok(Self::peak_bytes(
+            params,
+            [vocab, ctx, embed, hidden],
+            [heads, blocks],
+            [windows, batch, shards],
+        ))
+    }
+
+    /// Shared arithmetic: `dims` = `[vocab, context, embed, hidden]`,
+    /// `arch` = `[heads, blocks]`, `run` = `[windows, batch, shards]`.
+    fn peak_bytes(params: usize, dims: [usize; 4], arch: [usize; 2], run: [usize; 3]) -> usize {
+        let [v, t, e, hidden] = dims;
+        let [heads, blocks] = arch;
+        let [windows, batch, shards] = run;
         // Floats cached per position: embedding output, per block (LN, q/k/v,
         // attention probabilities over the context, context, projections,
         // residuals, FFN in/out), final LN, and logits + softmax + their gradient.
         let per_block = e
             .saturating_mul(10)
             .saturating_add(hidden.saturating_mul(2))
-            .saturating_add(self.num_heads.saturating_mul(t));
+            .saturating_add(heads.saturating_mul(t));
         let per_pos = per_block
-            .saturating_mul(self.blocks.len())
+            .saturating_mul(blocks)
             .saturating_add(v.saturating_mul(3))
             .saturating_add(e.saturating_mul(2));
         let positions = batch.min(windows.max(1)).saturating_mul(t);
         let act = positions.saturating_mul(per_pos).saturating_mul(8); // x2 cache+grad, 4 B each
-        let params = self.num_params();
         params
             .saturating_mul(16)
             .saturating_add(
@@ -104,6 +141,33 @@ impl TransformerNet {
 mod tests {
     use crate::rng::Rng;
     use crate::train_transformer::TransformerNet;
+
+    #[test]
+    fn estimate_from_dims_equals_the_net_method_and_rejects_oversize() {
+        for (v, c, e, h, hid, b, w, bs, sh) in [
+            (30, 8, 16, 2, 32, 1, 100, 4, 1),
+            (512, 64, 32, 4, 64, 3, 1000, 16, 4),
+            (6, 4, 8, 2, 16, 2, 1, 99, 8),
+        ] {
+            let net = TransformerNet::new(v, c, e, h, hid, b, &mut Rng::new(1)).unwrap();
+            assert_eq!(
+                TransformerNet::estimate_train_peak_bytes(v, c, e, h, hid, b, w, bs, sh).unwrap(),
+                net.train_peak_bytes(w, bs, sh)
+            );
+        }
+        assert!(TransformerNet::estimate_train_peak_bytes(
+            1 << 30,
+            1 << 30,
+            1 << 30,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+        )
+        .is_err());
+    }
 
     #[test]
     fn param_lens_match_real_nets_and_detect_overflow() {

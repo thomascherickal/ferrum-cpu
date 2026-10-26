@@ -1690,6 +1690,42 @@ reported as "detected, not used by Ferrum". A GPU's core count is shown only
 when a driver file really reports it (otherwise "unknown"); it is never guessed
 from the product name. GPUs are detected once per process, RAM on every call.
 
+**Time and RAM estimates.** The `estimate_job` command turns a button's current
+form values and the live hardware into an *estimate*: a time with a low-high
+range, the peak RAM, the RAM the app allows for that job, and whether it fits.
+The model is first-principles and every constant comes from a measurement on
+the reference machine (11th Gen Core i5-1135G7, 4 cores / 8 threads, release
+build), listed in the comments of `src/estimate.rs`:
+
+- **Training** costs about `6*M + 12*L*T*C` FLOPs per token (M = matmul
+  parameters, L blocks, T context, C width) at a rate fitted to the four rows
+  of [§6.7](#67-sizing-a-run-for-your-machine) (within 35% of each), scaled by
+  the measured 1/2/4/8-thread speed-ups of [§13.2](#132-end-to-end-scaling)
+  and assumed flat beyond 8 threads (not measured). Corpus bytes become tokens
+  with the measured bytes-per-token of the vocabulary (1.0 for characters, 1.8
+  at 512, 2.3 at 1,024, 2.8 at 2,048, 3.3 at 4,096 on English text). Training
+  RAM is `TransformerNet::estimate_train_peak_bytes`, the same function the
+  training loop uses for its refusal, so a warning here means the run will be
+  refused. Measured peaks in §6.7 sit about 130 MB higher for tiny models (the
+  corpus and tokenizer training) and about 1.5x lower for larger ones.
+- **Generate and evaluate** use the model's parameter count read from the GGUF
+  header: generation is serial (about 3 GFLOP/s, no benefit from cores),
+  evaluation runs at roughly the training token rate.
+- **GGUF run** adds load time, prompt prefill (compute-bound) and decode
+  (memory-bandwidth-bound, the 6.7 tokens/s of [§13.4](#134-quantized-decode-and-the-gguf-runner)
+  for a 1B int4 model). **Fine-tune** counts every overlapping window of every
+  epoch, so a 135M model takes about 6 token-passes per second: the estimate
+  often says days, which is the honest answer. Its peak RAM is 12x the f32
+  weights. **Export** mirrors the RAM guard of the export command.
+- **Downloads** depend on your connection; the estimate assumes 5 MB/s and
+  says so. Buttons that only switch a tab, refresh or save are "instant".
+- Without a benchmark the reference machine's speed is used, which is
+  conservative for a modern desktop. The Capable check (release builds only;
+  a debug build runs the benchmark loops unoptimized) scales every rate by how
+  much faster or slower your CPU is, clamped to 0.25x..4x.
+- **GPUs never enter an estimate.** Ferrum is CPU-only; a GPU is shown as
+  "detected, not used by Ferrum".
+
 Every form validates input and shows plain-language errors. If the Rust
 backend is unavailable (for example, in a plain web preview), a banner says so.
 
@@ -1730,6 +1766,7 @@ src/lib.rs        Tauri builder, shared state, verbose → event sink, command r
 src/commands.rs   #[tauri::command]s calling ferrum_core directly
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
+src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
 src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)

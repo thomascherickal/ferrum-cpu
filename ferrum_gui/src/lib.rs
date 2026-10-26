@@ -20,8 +20,12 @@
 mod capable;
 mod commands;
 mod datasets;
+pub mod estimate;
+pub mod estimate_cmd;
 pub mod hardware;
 mod paths;
+#[cfg(test)]
+mod test_support;
 
 use std::sync::Mutex;
 use sysinfo::System;
@@ -31,6 +35,8 @@ use tauri::Emitter;
 pub struct AppState {
     /// Reused `sysinfo` handle so CPU usage deltas are meaningful between polls.
     pub sys: Mutex<System>,
+    /// Last Capable-tab benchmark (release builds only), used to scale estimates.
+    pub bench: Mutex<Option<estimate::Throughput>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
+            bench: Mutex::new(None),
         })
         .setup(|app| {
             // Mirror every ferrum_core `--verbose` line into the GUI terminal.
@@ -63,6 +70,7 @@ pub fn run() {
             commands::export_gguf,
             commands::system_stats,
             hardware::hardware_info,
+            estimate_cmd::estimate_job,
             capable::capability_report,
             datasets::list_datasets,
             datasets::download_dataset,
