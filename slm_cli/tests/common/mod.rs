@@ -116,6 +116,19 @@ pub fn tiny_llama_gguf_with_tokens(tokens: &[String]) -> Vec<u8> {
 /// The tiny llama model with an optional vocabulary (`None`: no tokenizer metadata at all) and
 /// extra metadata keys (chat template, BOS id, ...).
 pub fn tiny_llama_gguf(tokens: Option<&[String]>, extra: &[(&str, MetaValue)]) -> Vec<u8> {
+    tiny_llama_gguf_opts(tokens, extra, false)
+}
+
+/// The tiny llama with tied embeddings: no `output.weight`, the head reuses `token_embd.weight`.
+pub fn tiny_llama_gguf_tied(tokens: &[String]) -> Vec<u8> {
+    tiny_llama_gguf_opts(Some(tokens), &[], true)
+}
+
+fn tiny_llama_gguf_opts(
+    tokens: Option<&[String]>,
+    extra: &[(&str, MetaValue)],
+    tied: bool,
+) -> Vec<u8> {
     const GGML_F32: u32 = 0;
     let (dim, n_layers, n_heads, ffn, vocab) = (8usize, 2usize, 2usize, 16usize, 32usize);
     let head_dim = dim / n_heads;
@@ -224,7 +237,9 @@ pub fn tiny_llama_gguf(tokens: Option<&[String]>, extra: &[(&str, MetaValue)]) -
         );
     }
     t(&mut b, "output_norm.weight", &[dim as u64], 200);
-    t(&mut b, "output.weight", &[dim as u64, vocab as u64], 201);
+    if !tied {
+        t(&mut b, "output.weight", &[dim as u64, vocab as u64], 201);
+    }
     b.into_bytes()
 }
 

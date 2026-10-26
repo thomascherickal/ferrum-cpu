@@ -103,7 +103,7 @@ Do not break these; they are the product's selling points.
 | Path | What |
 |---|---|
 | `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs`. `dataset` (cleaning), `ckpt`, `meta`, `ops`, `parallel`, `quant` and `llm` are single files. `examples/library_tour.rs` is the program behind `Samples.md` §10. |
-| `slm_cli/` | Binary `train_transformer`: train, run, generate, eval, info, prepare, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio. `tests/tiny_e2e.rs` drives the BPE pipeline end to end through the real binary with a tiny model |
+| `slm_cli/` | Binary `train_transformer`: train, run, generate, eval, info, prepare, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio. `tests/tiny_e2e.rs` and `tests/tiny_gguf_e2e.rs` drive the BPE pipeline and the imported-GGUF fine-tune/export path end to end through the real binary with tiny models |
 | `slm_server/` | Binary `ferrum-serve` (axum): `/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate` |
 | `slm_wasm/` | wasm-bindgen browser bindings (`TransformerSLMModel`) |
 | `eval/lighteval/` | Python: `FerrumModel`, `ferrum_tasks.py`, `run.sh`; pinned `lighteval==0.13.0` |
