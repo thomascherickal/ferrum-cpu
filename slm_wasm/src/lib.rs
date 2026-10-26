@@ -3,12 +3,103 @@
 //! `TransformerSLMModel` loads a GGUF transformer SLM and exposes next-token
 //! prediction (full forward or KV-cached), sampling helpers, and the last
 //! attention map for visualization — so a trained model runs in any browser.
+//!
+//! `Slm` is the text API: encode, decode, generate and score with the same tokenizer and sampler
+//! as the CLI, for BPE and character-level models. Its logic lives in `text.rs` so it is tested
+//! natively.
 
 #![forbid(unsafe_code)]
 
+mod text;
+
+#[cfg(test)]
+mod test_support;
+
 use ferrum_core::layer::{Embedding, KvCache, TransformerBlock};
 use ferrum_core::{from_bytes, TaskType};
+use text::{GenParams, TextSlm};
 use wasm_bindgen::prelude::*;
+
+/// A text model in the browser: `new Slm(bytes)`, then `encode`, `decode`, `generate`, `score`.
+///
+/// ```js
+/// const bytes = new Uint8Array(await (await fetch('model.gguf')).arrayBuffer());
+/// const slm = new Slm(bytes);
+/// const info = JSON.parse(slm.info());   // { params, vocab, context, quant, tokenizer }
+/// const ids = slm.encode('the cat');     // Uint32Array
+/// const text = slm.decode(ids);          // 'the cat'
+/// const out = slm.generate('the cat', 40, 0.8, 0, 1.0, 1.0, 42, ['\n']);
+/// const logp = slm.score('the cat sat'); // rolling log-probability
+/// ```
+///
+/// `generate` returns only the continuation (the prompt is not repeated) and equals
+/// `train_transformer generate <model> <prompt> --max-tokens N --temp T --top-k K --top-p P
+/// --repetition-penalty R --gen-seed SEED --stop S` minus the prompt. Errors are thrown as
+/// JavaScript `Error`s.
+/// Core errors are strings; the browser sees them as `Error`s.
+fn js_err(e: String) -> JsError {
+    JsError::new(&e)
+}
+
+#[wasm_bindgen]
+pub struct Slm(TextSlm);
+
+#[wasm_bindgen]
+impl Slm {
+    /// Load a Ferrum GGUF text model from bytes.
+    #[wasm_bindgen(constructor)]
+    pub fn new(bytes: &[u8]) -> Result<Slm, JsError> {
+        Ok(Slm(TextSlm::from_bytes(bytes).map_err(js_err)?))
+    }
+
+    /// Model facts as JSON: `{"params","vocab","context","quant","tokenizer"}`.
+    pub fn info(&self) -> String {
+        self.0.info()
+    }
+
+    /// Token ids for `text`.
+    pub fn encode(&self, text: &str) -> Result<Vec<u32>, JsError> {
+        self.0.encode(text).map_err(js_err)
+    }
+
+    /// Text for token ids.
+    pub fn decode(&self, ids: &[u32]) -> Result<String, JsError> {
+        self.0.decode(ids).map_err(js_err)
+    }
+
+    /// Generate up to `max_tokens` tokens after `prompt`; stops early at any `stop` string (not
+    /// included) or the end-of-text token. `temperature` 0 is greedy, `top_k` 0 and `top_p` 1
+    /// disable those filters, `repetition_penalty` 1 disables the penalty. `seed` fixes the draw.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate(
+        &self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f32,
+        top_k: usize,
+        top_p: f32,
+        repetition_penalty: f32,
+        seed: u32,
+        stop: Vec<String>,
+    ) -> Result<String, JsError> {
+        let p = GenParams::new(
+            max_tokens,
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            u64::from(seed),
+            stop,
+        )
+        .map_err(js_err)?;
+        self.0.generate(prompt, &p).map_err(js_err)
+    }
+
+    /// Rolling log-probability of `text` (higher is likelier; every token is scored).
+    pub fn score(&self, text: &str) -> Result<f64, JsError> {
+        self.0.score(text).map_err(js_err)
+    }
+}
 
 /// Edge Small Language Model — causal Transformer running in WASM.
 ///
@@ -400,29 +491,7 @@ mod tests {
         assert!(from_bytes(&[]).is_err());
     }
 
-    /// A tiny BPE model trained with the library (the same bytes the browser would fetch).
-    fn trained(quantized: bool) -> (ferrum_core::GenerativeSLM, Vec<u8>) {
-        use ferrum_core::{GenerativeSLM, TransformerConfig};
-        let cfg = TransformerConfig {
-            context_len: 16,
-            embed_dim: 16,
-            num_heads: 2,
-            num_blocks: 2,
-            hidden_dim: 32,
-            epochs: 3,
-            vocab_size: 280,
-            ..TransformerConfig::default()
-        };
-        let corpus = "the cat sat on the mat. the dog sat on the log. ".repeat(20);
-        let m = GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(3), |_, _| {})
-            .unwrap();
-        let bytes = if quantized {
-            m.to_bytes_quantized().unwrap()
-        } else {
-            m.to_bytes().unwrap()
-        };
-        (GenerativeSLM::from_bytes(&bytes).unwrap(), bytes)
-    }
+    use crate::test_support::trained;
 
     fn ids_f32(ids: &[usize]) -> Vec<f32> {
         ids.iter().map(|&i| i as f32).collect()

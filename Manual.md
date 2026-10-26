@@ -1948,28 +1948,51 @@ Serve `pkg/` and your `model.gguf` from any static host. There is no backend,
 and the visitor's input never leaves their machine.
 
 ```js
-import init, { TransformerSLMModel } from "./pkg/slm_wasm.js";
+import init, { Slm } from "./pkg/slm_wasm.js";
 await init();
 const bytes = new Uint8Array(await (await fetch("model.gguf")).arrayBuffer());
-const slm = new TransformerSLMModel(bytes);
-const meta = JSON.parse(slm.metadata());          // model dimensions; tokenizer_state is an empty string
-const contextIds = [/* token ids: see the note below */];
-let probs = slm.prime(new Float32Array(contextIds)); // KV-cached: prime once…
-const next = slm.sample_from_probs(probs, 0.7, Math.random());
-probs = slm.predict_next_cached(next);            // …then one token at a time
-const attn = slm.get_last_attention_weights();    // [heads × T × T] for visualization
+const slm = new Slm(bytes);                       // a Ferrum GGUF text model, BPE or character-level
+const info = JSON.parse(slm.info());              // { params, vocab, context, quant, tokenizer: "bpe" | "char" }
+const ids = slm.encode("the cat");                // Uint32Array, same ids as the CLI
+slm.decode(ids);                                  // "the cat"
+const out = slm.generate(
+  "the cat",   // prompt
+  40,          // max_tokens
+  0.8,         // temperature (0 = greedy)
+  0,           // top_k (0 = off)
+  1.0,         // top_p (1 = off)
+  1.0,         // repetition_penalty (1 = off)
+  42,          // seed (0 to 4294967295)
+  ["."],       // stop strings: generation ends before the first one
+);
+const logp = slm.score("the cat sat");            // rolling log-probability of the whole text
 ```
 
-**The BPE text API is planned, not built.** `slm_wasm` takes and returns token
-ids only. It has no `encode` or `decode`, and `metadata()` carries no
-tokenizer, so a browser page cannot yet turn text into ids for a BPE model (or
-ids back into text) with this crate alone. Until the text API lands, tokenize
-outside the browser (for example with `llama-tokenize`, §9.5) or ship the ids
-with the page.
+`generate` returns only the continuation, and its text equals the CLI's for the
+same model and seed: `train_transformer generate model.gguf "the cat"
+--max-tokens 40 --temp 0.8 --gen-seed 42 --stop "."` prints the prompt
+followed by the same text (a native test compares the two paths on tiny BPE
+and character-level models, f32 and int8). Bad arguments (a negative
+temperature, `top_p` outside [0, 1], a character the character-level
+vocabulary lacks) and a file that is not a Ferrum text model throw an
+`Error`. The seed is 32 bits here; the CLI's `--gen-seed` is 64 bits and gives
+the same text for values below 2^32.
 
-Other methods: `predict_next` (full forward), `num_heads`, `vocab_size`,
-`context_len`, `num_layers`, `cached_len`, `entropy`, and `top_k_indices`.
-WASM runs single-threaded but is otherwise the same engine.
+`TransformerSLMModel` is the low-level class for token ids, for example to draw
+attention heat-maps. It takes and returns ids only:
+
+```js
+import init, { TransformerSLMModel } from "./pkg/slm_wasm.js";
+const model = new TransformerSLMModel(bytes);
+let probs = model.prime(new Float32Array(contextIds)); // KV-cached: prime once…
+const next = model.sample_from_probs(probs, 0.7, Math.random());
+probs = model.predict_next_cached(next);               // …then one token at a time
+const attn = model.get_last_attention_weights();       // [heads × T × T] for visualization
+```
+
+Its other methods are `predict_next` (full forward), `metadata`, `num_heads`,
+`vocab_size`, `context_len`, `num_layers`, `cached_len`, `entropy`, and
+`top_k_indices`. WASM runs single-threaded but is otherwise the same engine.
 
 ### 11.4 Air-gapped deployment
 

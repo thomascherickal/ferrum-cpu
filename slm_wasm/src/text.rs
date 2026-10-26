@@ -1,0 +1,280 @@
+//! The text API behind the `Slm` browser class, in plain Rust so it runs (and is tested) natively.
+//!
+//! Everything here is a thin layer over [`ferrum_core::GenerativeSLM`]: the same tokenizer, the
+//! same sampler and the same RNG as the CLI, so a prompt, a seed and the sampling knobs give the
+//! same text in the browser as in `train_transformer generate`. Errors are plain strings; the
+//! wasm class turns them into `JsError`.
+
+use ferrum_core::slm::hex_to_char;
+use ferrum_core::{ByteBpeTokenizer, GenerativeSLM, Rng, SamplingParams, TaskType};
+
+/// A loaded text model (byte-level BPE or character-level).
+pub struct TextSlm {
+    pub(crate) slm: GenerativeSLM,
+    quant: String,
+    /// The BPE tokenizer for `decode` (`None` for a character-level model).
+    tok: Option<ByteBpeTokenizer>,
+}
+
+/// Decoding controls for [`TextSlm::generate`] (the CLI's `--temp --top-k --top-p
+/// --repetition-penalty --gen-seed --max-tokens --stop`).
+#[derive(Clone, Debug)]
+pub struct GenParams {
+    pub max_tokens: usize,
+    pub sampling: SamplingParams,
+    pub seed: u64,
+    pub stop: Vec<String>,
+}
+
+impl GenParams {
+    /// Validated like the CLI: temperature finite and >= 0, top-p in [0, 1], repetition penalty
+    /// finite and > 0.
+    pub fn new(
+        max_tokens: usize,
+        temperature: f32,
+        top_k: usize,
+        top_p: f32,
+        repetition_penalty: f32,
+        seed: u64,
+        stop: Vec<String>,
+    ) -> Result<Self, String> {
+        if !(temperature.is_finite() && temperature >= 0.0) {
+            return Err(format!(
+                "temperature must be a finite number >= 0 (0 = greedy), got {temperature}"
+            ));
+        }
+        if !(top_p.is_finite() && (0.0..=1.0).contains(&top_p)) {
+            return Err(format!("top_p must be a number in [0, 1], got {top_p}"));
+        }
+        if !(repetition_penalty.is_finite() && repetition_penalty > 0.0) {
+            return Err(format!(
+                "repetition_penalty must be a positive, finite number, got {repetition_penalty}"
+            ));
+        }
+        Ok(Self {
+            max_tokens,
+            sampling: SamplingParams {
+                temperature,
+                top_k,
+                top_p,
+                repetition_penalty,
+            },
+            seed,
+            stop,
+        })
+    }
+}
+
+impl TextSlm {
+    /// Load a Ferrum GGUF (a `gpt2` or `ferrum` text model) from bytes. No file system.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let slm = GenerativeSLM::from_bytes(bytes).map_err(|e| e.to_string())?;
+        if slm.meta.task != TaskType::TransformerSLM {
+            return Err(format!(
+                "not a text model (task {:?}); expected a Ferrum transformer SLM",
+                slm.meta.task
+            ));
+        }
+        let quant = ferrum_core::gguf_quant(bytes).map_err(|e| e.to_string())?;
+        let state = &slm.meta.tokenizer_state;
+        let tok = if state.is_empty() {
+            None
+        } else {
+            Some(ByteBpeTokenizer::from_state(state).map_err(|e| e.to_string())?)
+        };
+        Ok(Self { slm, quant, tok })
+    }
+
+    /// `{"params":N,"vocab":N,"context":N,"quant":"int8","tokenizer":"bpe"}` (`"char"` for a
+    /// character-level model).
+    pub fn info(&self) -> String {
+        let m = &self.slm.meta;
+        format!(
+            "{{\"params\":{},\"vocab\":{},\"context\":{},\"quant\":\"{}\",\"tokenizer\":\"{}\"}}",
+            self.slm.model.num_params(),
+            m.output_dim,
+            m.input_dim,
+            self.quant,
+            if self.tok.is_some() { "bpe" } else { "char" }
+        )
+    }
+
+    /// Token ids for `text` (a character outside a character-level vocabulary is an error).
+    pub fn encode(&self, text: &str) -> Result<Vec<u32>, String> {
+        let ids = self.slm.encode_text(text).map_err(|e| e.to_string())?;
+        Ok(ids.into_iter().map(|i| i as u32).collect())
+    }
+
+    /// Text for token ids; ids outside the vocabulary and special tokens vanish.
+    pub fn decode(&self, ids: &[u32]) -> Result<String, String> {
+        let ids: Vec<usize> = ids.iter().map(|&i| i as usize).collect();
+        if let Some(tok) = &self.tok {
+            return Ok(tok.decode(&ids));
+        }
+        Ok(ids
+            .iter()
+            .filter_map(|&i| self.slm.meta.class_names.get(i))
+            .map(|hex| hex_to_char(hex))
+            .collect())
+    }
+
+    /// The continuation of `prompt` (the prompt itself is not repeated), exactly what
+    /// `train_transformer generate --max-tokens N --stop S ... --gen-seed SEED` prints after the
+    /// prompt.
+    pub fn generate(&self, prompt: &str, p: &GenParams) -> Result<String, String> {
+        let mut rng = Rng::new(p.seed);
+        self.slm
+            .generate_tokens(prompt, p.max_tokens, &p.stop, &p.sampling, &mut rng)
+            .map(|g| g.text)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Rolling log-probability of all of `text` (every token scored, the first one conditioned on
+    /// the document separator): what `eval` and `/v1/loglikelihood_rolling` report.
+    pub fn score(&self, text: &str) -> Result<f64, String> {
+        self.slm
+            .score_rolling(text)
+            .map(|s| s.logprob)
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GenParams, TextSlm};
+    use crate::test_support::{trained, trained_char};
+    use ferrum_core::{GenerativeSLM, Rng};
+
+    /// (library model, browser model) for f32 BPE, int8 BPE and f32 character-level.
+    fn models() -> Vec<(&'static str, GenerativeSLM, TextSlm)> {
+        let mut v = Vec::new();
+        for (name, (lib, bytes)) in [
+            ("bpe-f32", trained(false)),
+            ("bpe-int8", trained(true)),
+            ("char-f32", trained_char()),
+        ] {
+            v.push((name, lib, TextSlm::from_bytes(&bytes).unwrap()));
+        }
+        v
+    }
+
+    fn params(max: usize, t: f32, k: usize, p: f32, r: f32, seed: u64, stop: &[&str]) -> GenParams {
+        let stop = stop.iter().map(|s| s.to_string()).collect();
+        GenParams::new(max, t, k, p, r, seed, stop).unwrap()
+    }
+
+    #[test]
+    fn info_describes_the_model() {
+        for (name, lib, w) in models() {
+            let info = w.info();
+            let want = format!(
+                "\"params\":{},\"vocab\":{},\"context\":16,",
+                lib.model.num_params(),
+                lib.meta.output_dim
+            );
+            assert!(info.contains(&want), "{name}: {info}");
+            let tok = if name.starts_with("bpe") {
+                "bpe"
+            } else {
+                "char"
+            };
+            assert!(
+                info.ends_with(&format!("\"tokenizer\":\"{tok}\"}}")),
+                "{info}"
+            );
+            let quant = if name == "bpe-int8" { "int8" } else { "f32" };
+            assert!(info.contains(&format!("\"quant\":\"{quant}\"")), "{info}");
+        }
+    }
+
+    #[test]
+    fn encode_and_decode_match_the_library_and_round_trip() {
+        for (name, lib, w) in models() {
+            for text in ["the cat sat on the mat.", "dog", ""] {
+                let ids = w.encode(text).unwrap();
+                let want: Vec<u32> = lib
+                    .encode_text(text)
+                    .unwrap()
+                    .into_iter()
+                    .map(|i| i as u32)
+                    .collect();
+                assert_eq!(ids, want, "{name}: {text:?}");
+                assert_eq!(w.decode(&ids).unwrap(), text, "{name}: {text:?}");
+            }
+            // Ids beyond the vocabulary are skipped, not an error.
+            assert_eq!(w.decode(&[u32::MAX]).unwrap(), "", "{name}");
+        }
+        // A character the character-level vocabulary does not have is an error.
+        let (_, _, ch) = models().pop().unwrap();
+        assert!(ch.encode("Z☃").is_err());
+    }
+
+    #[test]
+    fn generate_equals_the_library_for_the_same_seed() {
+        let cases = [
+            params(30, 0.0, 0, 1.0, 1.0, 1, &[]),
+            params(30, 0.8, 0, 1.0, 1.0, 7, &[]),
+            params(30, 1.0, 5, 0.9, 1.2, 42, &[]),
+            params(40, 0.7, 0, 1.0, 1.0, 5, &["sat", "."]),
+            params(0, 0.8, 0, 1.0, 1.0, 5, &[]),
+        ];
+        for (name, lib, w) in models() {
+            for (i, p) in cases.iter().enumerate() {
+                let want = lib
+                    .generate_tokens(
+                        "the cat",
+                        p.max_tokens,
+                        &p.stop,
+                        &p.sampling,
+                        &mut Rng::new(p.seed),
+                    )
+                    .unwrap()
+                    .text;
+                assert_eq!(w.generate("the cat", p).unwrap(), want, "{name} case {i}");
+            }
+            // Different seeds at temperature > 0 give different text (the seed is used).
+            let a = w
+                .generate("the", &params(40, 1.5, 0, 1.0, 1.0, 1, &[]))
+                .unwrap();
+            let b = w
+                .generate("the", &params(40, 1.5, 0, 1.0, 1.0, 2, &[]))
+                .unwrap();
+            assert_ne!(a, b, "{name}");
+        }
+    }
+
+    #[test]
+    fn stop_strings_are_excluded_and_end_generation() {
+        let (_, _, w) = models().remove(0);
+        let free = w
+            .generate("the", &params(60, 0.0, 0, 1.0, 1.0, 0, &[]))
+            .unwrap();
+        let stop = free.chars().skip(5).take(3).collect::<String>();
+        let cut = w
+            .generate("the", &params(60, 0.0, 0, 1.0, 1.0, 0, &[&stop]))
+            .unwrap();
+        assert_eq!(cut, &free[..free.find(&stop).unwrap()]);
+    }
+
+    #[test]
+    fn score_equals_the_librarys_rolling_logprob() {
+        for (name, lib, w) in models() {
+            let text = "the cat sat on the mat. the dog";
+            let want = lib.score_rolling(text).unwrap().logprob;
+            assert_eq!(w.score(text).unwrap(), want, "{name}");
+            assert!(w.score(text).unwrap() < 0.0);
+        }
+    }
+
+    #[test]
+    fn bad_input_is_an_error_not_a_panic() {
+        assert!(TextSlm::from_bytes(b"not a model").is_err());
+        assert!(TextSlm::from_bytes(&[]).is_err());
+        let bad = |t, k, p, r| GenParams::new(1, t, k, p, r, 0, vec![]).is_err();
+        assert!(bad(-1.0, 0, 1.0, 1.0));
+        assert!(bad(f32::NAN, 0, 1.0, 1.0));
+        assert!(bad(1.0, 0, 1.5, 1.0));
+        assert!(bad(1.0, 0, 1.0, 0.0));
+        assert!(!bad(0.0, 0, 0.0, 1.0));
+    }
+}
