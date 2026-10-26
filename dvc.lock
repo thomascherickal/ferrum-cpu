@@ -34,14 +34,14 @@ stages:
       size: 22502601
     - path: ferrum_core/src
       hash: md5
-      md5: 0d0bd21117d84a31e1f4c2a8d42cc5a0.dir
-      size: 1122143
-      nfiles: 95
+      md5: 1159e0130a3acd7bd415ebbb963a57bb.dir
+      size: 1144038
+      nfiles: 96
     - path: slm_cli/src
       hash: md5
-      md5: 1a3796b55f3f6ada3c98656436b0d8ef.dir
-      size: 151688
-      nfiles: 15
+      md5: 4703ab7358b7b106e40d2e69166a2d53.dir
+      size: 176073
+      nfiles: 16
     params:
       params.yaml:
         prepare:
@@ -80,14 +80,14 @@ stages:
       size: 20190677
     - path: ferrum_core/src
       hash: md5
-      md5: 0d0bd21117d84a31e1f4c2a8d42cc5a0.dir
-      size: 1122143
-      nfiles: 95
+      md5: 1159e0130a3acd7bd415ebbb963a57bb.dir
+      size: 1144038
+      nfiles: 96
     - path: slm_cli/src
       hash: md5
-      md5: 1a3796b55f3f6ada3c98656436b0d8ef.dir
-      size: 151688
-      nfiles: 15
+      md5: 4703ab7358b7b106e40d2e69166a2d53.dir
+      size: 176073
+      nfiles: 16
     params:
       params.yaml:
         model:
