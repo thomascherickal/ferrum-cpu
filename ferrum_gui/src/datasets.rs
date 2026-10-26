@@ -253,7 +253,8 @@ pub struct DownloadResult {
 }
 
 /// Stream `url` (with optional Basic / Bearer auth) to `dest`, capped at
-/// [`DOWNLOAD_CAP`]. Validates the URL scheme and creates parent directories.
+/// [`DOWNLOAD_CAP`] (over-cap is an error). Goes through `<dest>.part`. Validates
+/// the URL scheme and creates parent directories.
 fn download_to_file(
     url: &str,
     basic: Option<&KaggleCreds>,
@@ -279,15 +280,36 @@ fn download_to_file(
         }
     }
     let resp = req.call().map_err(|e| format!("download failed: {e}"))?;
-    let mut reader = resp.into_reader().take(DOWNLOAD_CAP as u64);
-    let mut file =
-        std::fs::File::create(dest).map_err(|e| format!("cannot create {dest:?}: {e}"))?;
-    let n = std::io::copy(&mut reader, &mut file).map_err(|e| format!("write failed: {e}"))?;
-    if n == 0 {
-        let _ = std::fs::remove_file(dest);
-        return Err("downloaded resource was empty (check the dataset id / file path)".into());
+    stream_to_dest(resp.into_reader(), dest, DOWNLOAD_CAP as u64)
+}
+
+/// Copy `reader` into `<dest>.part`, then rename over `dest` once complete.
+/// More than `cap` bytes, an empty body, or any I/O error removes the `.part`
+/// file and leaves `dest` untouched. Memory use is the copy buffer only.
+fn stream_to_dest(reader: impl Read, dest: &Path, cap: u64) -> Result<u64, String> {
+    let mut part_name = dest.as_os_str().to_owned();
+    part_name.push(".part");
+    let part = PathBuf::from(part_name);
+    let result = (|| {
+        let mut file =
+            std::fs::File::create(&part).map_err(|e| format!("cannot create {part:?}: {e}"))?;
+        // Read one byte past the cap so a longer body is detected, not truncated.
+        let n = std::io::copy(&mut reader.take(cap + 1), &mut file)
+            .map_err(|e| format!("write failed: {e}"))?;
+        if n > cap {
+            return Err(format!("download exceeds the {cap} byte limit"));
+        }
+        if n == 0 {
+            return Err("downloaded resource was empty (check the dataset id / file path)".into());
+        }
+        file.sync_all().map_err(|e| format!("write failed: {e}"))?;
+        std::fs::rename(&part, dest).map_err(|e| format!("cannot move into place: {e}"))?;
+        Ok(n)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
     }
-    Ok(n)
+    result
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
@@ -501,6 +523,66 @@ mod tests {
         let dest = std::env::temp_dir().join("ferrum_ds_test_noop.bin");
         let err = download_to_file("ftp://example.com/x", None, None, &dest).unwrap_err();
         assert!(err.contains("http://"));
+    }
+
+    /// Fresh scratch dir per test (std only; removed by the caller).
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ferrum_ds_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    struct FailingReader(usize);
+    impl Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0 == 0 {
+                return Err(std::io::Error::other("connection reset"));
+            }
+            let n = self.0.min(buf.len());
+            buf[..n].fill(b'x');
+            self.0 -= n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn stream_complete_renames_and_leaves_no_part() {
+        let d = scratch("ok");
+        let dest = d.join("f.txt");
+        assert_eq!(stream_to_dest(&b"hello"[..], &dest, 10).unwrap(), 5);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+        assert!(!d.join("f.txt.part").exists());
+        // Exactly at the cap is fine.
+        assert_eq!(stream_to_dest(&b"0123456789"[..], &dest, 10).unwrap(), 10);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn stream_over_cap_errors_and_leaves_nothing() {
+        let d = scratch("cap");
+        let dest = d.join("f.txt");
+        let err = stream_to_dest(&b"0123456789A"[..], &dest, 10).unwrap_err();
+        assert!(err.contains("exceeds the 10 byte limit"), "{err}");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn stream_midway_error_leaves_nothing_and_keeps_existing_dest() {
+        let d = scratch("err");
+        let dest = d.join("f.txt");
+        let err = stream_to_dest(FailingReader(100), &dest, 1000).unwrap_err();
+        assert!(err.contains("connection reset"), "{err}");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
+
+        std::fs::write(&dest, b"old").unwrap();
+        assert!(stream_to_dest(FailingReader(100), &dest, 1000).is_err());
+        assert!(stream_to_dest(&b"0123456789A"[..], &dest, 10).is_err());
+        assert!(stream_to_dest(&b""[..], &dest, 10).is_err());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"old");
+        assert!(!d.join("f.txt.part").exists());
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

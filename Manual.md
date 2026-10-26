@@ -484,7 +484,9 @@ combine: `strip_invisible`, `gutenberg_bodies`, `squeeze_spaces`,
 The GUI **Datasets** tab can also download corpora directly from a URL, from
 Hugging Face (including gated files with a token), or from Kaggle. It ships a
 small catalog: TinyStories, TinyStories V2 (GPT-4), WikiText-2, Shakespeare,
-and Poetry Foundation.
+and Poetry Foundation. A download is written to `<file>.part` and renamed only when
+complete; a file over the 512 MiB cap fails with an error instead of being
+truncated, and a failed download leaves no partial file.
 
 ### 5.4 The default corpus
 
