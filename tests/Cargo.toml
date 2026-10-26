@@ -63,3 +63,7 @@ path = "tests/test_hostile_inputs.rs"
 [[test]]
 name = "test_dvc_pin"
 path = "tests/test_dvc_pin.rs"
+
+[[test]]
+name = "test_tiny_library"
+path = "tests/test_tiny_library.rs"

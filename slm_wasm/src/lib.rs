@@ -399,4 +399,129 @@ mod tests {
         assert!(from_bytes(b"CORRUPT").is_err());
         assert!(from_bytes(&[]).is_err());
     }
+
+    /// A tiny BPE model trained with the library (the same bytes the browser would fetch).
+    fn trained(quantized: bool) -> (ferrum_core::GenerativeSLM, Vec<u8>) {
+        use ferrum_core::{GenerativeSLM, TransformerConfig};
+        let cfg = TransformerConfig {
+            context_len: 16,
+            embed_dim: 16,
+            num_heads: 2,
+            num_blocks: 2,
+            hidden_dim: 32,
+            epochs: 3,
+            vocab_size: 280,
+            ..TransformerConfig::default()
+        };
+        let corpus = "the cat sat on the mat. the dog sat on the log. ".repeat(20);
+        let m = GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(3), |_, _| {})
+            .unwrap();
+        let bytes = if quantized {
+            m.to_bytes_quantized().unwrap()
+        } else {
+            m.to_bytes().unwrap()
+        };
+        (GenerativeSLM::from_bytes(&bytes).unwrap(), bytes)
+    }
+
+    fn ids_f32(ids: &[usize]) -> Vec<f32> {
+        ids.iter().map(|&i| i as f32).collect()
+    }
+
+    #[test]
+    fn wasm_model_reports_the_trained_models_shape() {
+        let (lib, bytes) = trained(true);
+        let w = super::TransformerSLMModel::new(&bytes).unwrap();
+        assert_eq!(w.vocab_size(), lib.meta.output_dim);
+        assert_eq!(w.context_len(), 16);
+        assert_eq!(w.num_heads(), 2);
+        assert_eq!(w.num_layers(), 2);
+        assert_eq!(w.cached_len(), 0);
+        assert!(w.metadata().contains("\"input_dim\""), "{}", w.metadata());
+    }
+
+    #[test]
+    fn predict_next_matches_the_library_model_and_the_cached_path() {
+        for quantized in [false, true] {
+            let (lib, bytes) = trained(quantized);
+            let mut w = super::TransformerSLMModel::new(&bytes).unwrap();
+            let mut ids = vec![lib.bos_id()];
+            ids.extend(
+                lib.encode_text(
+                    "the cat sat on the mat. the dog sat on the log. the cat sat on the mat.",
+                )
+                .unwrap(),
+            );
+            assert!(ids.len() >= 16, "{}", ids.len());
+            let ctx = ids_f32(&ids[..16]);
+
+            // The library's own forward pass on the same window.
+            let t = Tensor::matrix(1, 16, ctx.clone()).unwrap();
+            let want = lib.model.forward(&t).unwrap();
+            let (rows, cols) = want.matrix_dims().unwrap();
+            let want = &want.data[(rows - 1) * cols..];
+
+            let full = w.predict_next(&ctx).unwrap();
+            assert_eq!(full.len(), lib.meta.output_dim);
+            assert_eq!(full, want, "quantized={quantized}");
+            assert!((full.iter().sum::<f32>() - 1.0).abs() < 1e-3);
+
+            // Priming and extending the KV cache gives the same distribution (to rounding).
+            w.prime(&ctx[..8]).unwrap();
+            let mut cached = Vec::new();
+            for &id in &ids[8..16] {
+                cached = w.predict_next_cached(id).unwrap();
+            }
+            assert_eq!(w.cached_len(), 16);
+            for (a, b) in cached.iter().zip(&full) {
+                assert!((a - b).abs() < 1e-4, "{a} vs {b}");
+            }
+            assert_eq!(w.prime(&ctx).unwrap(), cached);
+        }
+    }
+
+    #[test]
+    fn cached_log_probabilities_sum_to_the_librarys_rolling_score() {
+        let (lib, bytes) = trained(true);
+        let mut w = super::TransformerSLMModel::new(&bytes).unwrap();
+        let text = "the cat sat";
+        let mut ids = vec![lib.bos_id()];
+        ids.extend(lib.encode_text(text).unwrap());
+        assert!(ids.len() <= 16);
+        let mut probs = w.prime(&ids_f32(&ids[..1])).unwrap();
+        let mut logprob = 0.0f64;
+        for &id in &ids[1..] {
+            logprob += (probs[id] as f64).ln();
+            probs = w.predict_next_cached(id).unwrap();
+        }
+        let want = lib.score_rolling(text).unwrap();
+        assert_eq!(want.n_tokens, ids.len() - 1);
+        assert!(
+            (logprob - want.logprob).abs() < 1e-3,
+            "{logprob} vs {}",
+            want.logprob
+        );
+        // Greedy next token from the browser path equals the library's greedy continuation.
+        let next = w.top_k_indices(&probs, 1)[0];
+        let cont = lib
+            .generate_tokens(
+                text,
+                1,
+                &[],
+                &ferrum_core::SamplingParams {
+                    temperature: 0.0,
+                    top_k: 0,
+                    top_p: 1.0,
+                    repetition_penalty: 1.0,
+                },
+                &mut Rng::new(0),
+            )
+            .unwrap();
+        let mut with_next = ids.clone();
+        with_next.push(next);
+        assert_eq!(
+            lib.encode_text(&format!("{text}{}", cont.text)).unwrap(),
+            with_next[1..].to_vec()
+        );
+    }
 }
