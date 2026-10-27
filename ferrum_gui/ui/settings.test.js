@@ -49,8 +49,8 @@ assert.strictEqual(S.dirOf("c.txt"), "");
   const doc = documentFromHtml(html);
   const ids = S.savedFields(doc).map((e) => e.id);
   assert.ok(ids.length >= 90, "only " + ids.length + " saved fields");
-  for (const id of ["trCorpus", "trEpochs", "trLr", "genSeed", "genTemp", "ggQuant", "exQuant", "sysOn", "dpInputs", "trCosine"]) assert.ok(ids.includes(id), id);
-  for (const id of ["dsRaw", "dsPreview", "evText", "dsHfToken", "trForce", "ggForce", "exForce", "ftForce", "evForce"]) assert.ok(!ids.includes(id), id + " must not be saved");
+  for (const id of ["trCorpus", "trEpochs", "trLr", "genSeed", "genTemp", "ggQuant", "exQuant", "sysOn", "dpInputs", "trCosine", "svModel", "svHost", "svPort", "svMaxTokens"]) assert.ok(ids.includes(id), id);
+  for (const id of ["dsRaw", "dsPreview", "evText", "dsHfToken", "svToken", "svShowToken", "trForce", "ggForce", "exForce", "ftForce", "evForce"]) assert.ok(!ids.includes(id), id + " must not be saved");
   // Every field that could hold file contents or a secret is accounted for: a new textarea or
   // token-like field has to be named here (and in settings.js) on purpose.
   const textareas = Array.from(doc.querySelectorAll("textarea")).map((e) => e.id).sort();

@@ -13,7 +13,7 @@
 (function (global) {
   const KINDS = [
     "instant", "download", "load_file", "clean_text", "train", "generate", "evaluate",
-    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare", "runtime_export", "tokenize",
+    "model_info", "gguf_info", "gguf_run", "gguf_finetune", "gguf_export", "capability", "prepare", "runtime_export", "tokenize", "serve",
   ];
 
   // A "Browse..." button next to a path field.
@@ -682,6 +682,62 @@
       beginner: "A safety brake that you can override at your own risk.",
     },
 
+
+    // ── Serve ─────────────────────────────────────────────────────────────
+    svModel: {
+      title: "Model to serve",
+      what: "The Ferrum model file (a .gguf made on the Train tab) that the server loads and answers questions about.",
+      how: "Type the path or press Browse. The whole file is read when you press Start server, and the model stays in memory until you press Stop server.",
+      beginner: "A server is a program that waits for other programs to send it requests. Here the requests are 'continue this text' or 'how likely is this text'.",
+    },
+    svHost: {
+      title: "Host",
+      what: "Which network address the server listens on. 127.0.0.1 (also called localhost) means only programs on this computer can reach it. Default 127.0.0.1.",
+      how: "Use 0.0.0.0 to let other computers on your network connect. Any host other than 127.0.0.1, ::1 or localhost needs a bearer token, and the server refuses to start without one.",
+      beginner: "Think of it as which doors of the house are open. 127.0.0.1 opens only the door to your own room; 0.0.0.0 opens the front door to the whole network, so you then need a password (the token).",
+    },
+    svPort: {
+      title: "Port",
+      what: "The number that, together with the host, forms the address programs connect to, for example 127.0.0.1:8080. Default 8080; 0 means pick any free port.",
+      how: "If another program already uses the port, Start server fails and says so; choose another number or 0. The address that was chosen is shown after the start.",
+      beginner: "If the host is a building, the port is the door number. Use 0 when you do not care which door; the Studio tells you which one it got.",
+    },
+    svMaxBatch: {
+      title: "Max batch",
+      what: "The most texts one request may contain. A request with more is refused with an error before any work is done. Default 64.",
+      how: "Raise it for a harness that sends big batches, lower it to keep requests small. Each text is still processed one after the other.",
+      beginner: "A limit that protects the server from one huge request taking all your computer's time.",
+    },
+    svMaxChars: {
+      title: "Max characters per text",
+      what: "The longest single text (prompt, context or continuation) the server accepts, counted in characters. Default 65536.",
+      how: "Longer texts are refused with an error. Models only look at their context window anyway, so a very high value rarely helps.",
+      beginner: "Another safety limit: a text longer than this is turned away instead of being worked on for ages.",
+    },
+    svMaxBody: {
+      title: "Max request body (bytes)",
+      what: "The biggest request the server will even read, in bytes. Default 8388608, which is 8 MiB.",
+      how: "A bigger request is refused with error 413 before it is read. Keep it above max batch times max characters if you use both near their limits.",
+      beginner: "A byte is one character of plain English text, so 8 MiB is roughly an 8 million letter message.",
+    },
+    svMaxTokens: {
+      title: "Max tokens per generation",
+      what: "The most new tokens a single generate request may ask for. Default 4096.",
+      how: "A request that asks for more is refused. Generating is slow on a CPU, so a lower value keeps each answer quick.",
+      beginner: "A token is a small piece of a word. 4096 tokens is several pages of text; small models rarely stay sensible that long.",
+    },
+    svToken: {
+      title: "Bearer token",
+      what: "A secret word that clients must send in an Authorization header (Bearer, then the token) with every request except GET /health. Leave it empty to turn the check off, which is only allowed on this machine.",
+      how: "Type your own or press Generate. It is kept in memory while the server runs and is never saved by the Studio, not even in the remembered settings, so it is empty again after a restart. There is no HTTPS, so on a shared network the token keeps honest users out but does not hide traffic from someone who can watch it.",
+      beginner: "A token is a password for programs. Clients must send it with each request, like showing a membership card at the door.",
+    },
+    svShowToken: {
+      title: "Show token",
+      what: "Shows the token in the field instead of dots, so you can read or copy it.",
+      how: "Tick it right after pressing Generate to copy the new token before you start the server. Untick it when others can see your screen.",
+      beginner: "Normally a password is hidden as dots while you type. This switch lets you look at it.",
+    },
     // ── System ────────────────────────────────────────────────────────────
     sysOn: {
       title: "Monitoring on",
@@ -862,6 +918,36 @@
     },
 
     // Tabs
+    // ── Serve: buttons ────────────────────────────────────────────────────
+    svGenToken: {
+      title: "Generate token",
+      does: "Fills the token field with a new random token of 48 letters and digits made by your system's secure random generator, and shows it so you can copy it. Nothing is saved or sent anywhere.",
+      kind: "instant",
+      beginner: "Handy when you want a strong password but do not want to invent one. Copy it somewhere safe before you start the server.",
+    },
+    svStart: {
+      title: "Start server",
+      does: "Loads the model, opens the port and starts answering HTTP requests, then shows the address, a request counter and a log of every request. It refuses to start when a server is already running, a limit is below 1, the port is taken, or the host is not this machine and no token is set.",
+      kind: "serve",
+      beginner: "Loading reads the whole file and takes a moment for a big model. While the server runs the model stays in memory.",
+    },
+    svStop: {
+      title: "Stop server",
+      does: "Stops the server after the requests that are running have finished, closes the port and frees the model's memory. Waits at most 10 seconds for a stuck request before cutting it off.",
+      kind: "instant",
+    },
+    svCopyUrl: {
+      title: "Copy URL",
+      does: "Copies the address of the running server, for example http://127.0.0.1:8080, to the clipboard.",
+      kind: "instant",
+    },
+    svCopyCurl: {
+      title: "Copy curl example",
+      does: "Copies a ready-made curl command that asks the running server to generate a few tokens. When a token is set the command reads it from the FERRUM_TOKEN environment variable, so your token is not in the copied text.",
+      kind: "instant",
+      beginner: "curl is a command-line tool that sends a request. Paste the command into a terminal to see the server answer.",
+    },
+
     // ── Export: run in Ollama / LM Studio ─────────────────────────────────
     rxPath: {
       title: "Ferrum model for Ollama or LM Studio",
@@ -1083,6 +1169,7 @@
     "tab-gguf": tab("GGUF", "inspect and run an external Llama or Qwen model."),
     "tab-finetune": tab("Fine-tune", "adapt an external GGUF model to your own text."),
     "tab-export": tab("Export", "write a (fine-tuned) GGUF model to a new file in another number format."),
+    "tab-serve": tab("Serve", "run an HTTP server for one model so other programs can use it."),
     "tab-system": tab("System", "live CPU, memory and thread load."),
     "tab-capable": tab("Capable", "benchmark this machine and see which model sizes it can handle."),
 
@@ -1108,6 +1195,7 @@
     exPathBrowse: browse("source GGUF"),
     exResumeBrowse: browse("fine-tune checkpoint"),
     exOutBrowse: browse("output GGUF file", "save"),
+    svModelBrowse: browse("model to serve"),
   };
 
   const helpFor = (id) => HELP[id] || null;

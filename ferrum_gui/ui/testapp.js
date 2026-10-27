@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { documentFromHtml } = require("./testdom.js");
 
-const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "a11y.js", "errors.js", "common.js", "settings.js", "shell.js", "datasets_tab.js", "prepare_tab.js", "tokenize_tab.js", "train_tab.js", "generate_tab.js", "evaluate_tab.js", "models_tab.js", "capable_tab.js", "gguf_budget.js", "gguf_tab.js", "finetune_tab.js", "runtime_tab.js", "export_tab.js", "system_tab.js", "app.js"];
+const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "a11y.js", "errors.js", "common.js", "settings.js", "shell.js", "datasets_tab.js", "prepare_tab.js", "tokenize_tab.js", "train_tab.js", "generate_tab.js", "evaluate_tab.js", "models_tab.js", "capable_tab.js", "gguf_budget.js", "gguf_tab.js", "finetune_tab.js", "runtime_tab.js", "export_tab.js", "serve_tab.js", "system_tab.js", "app.js"];
 const read = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 
 // Canvas context that accepts any drawing call.
@@ -41,7 +41,7 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, na
   }
   const intervals = [];
   const sandbox = {
-    window: win, document: doc, console, Promise, Math, Number, JSON, Array, String, Object, Error, parseInt, parseFloat, isNaN,
+    window: win, document: doc, console, crypto: globalThis.crypto, Promise, Math, Number, JSON, Array, String, Object, Error, parseInt, parseFloat, isNaN,
     setTimeout: (f, ms) => setTimeout(f, Math.min(ms || 0, 5)), clearTimeout, setInterval: (f, ms) => { intervals.push({ f, ms }); return intervals.length; },
     clearInterval() {},
   };

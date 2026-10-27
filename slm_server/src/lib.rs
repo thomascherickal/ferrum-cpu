@@ -10,6 +10,7 @@ mod http;
 mod info;
 mod limits;
 mod model_thread;
+mod serve;
 #[cfg(test)]
 mod test_util;
 
@@ -17,3 +18,4 @@ pub use auth::with_bearer_token;
 pub use http::app;
 pub use info::{info_for, Info};
 pub use limits::Limits;
+pub use serve::{bind, Bound, RequestLog};

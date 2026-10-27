@@ -54,6 +54,9 @@ class Element {
     return c;
   }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new TextNode(c) : c)); }
+  get childElementCount() { return this.children.length; }
+  get firstChild() { return this.children[0] || null; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
   removeChild(c) { this.children = this.children.filter((x) => x !== c); c.parentNode = null; return c; }
   replaceChildren(...cs) { this.textContent = ""; this.append(...cs); }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }

@@ -118,6 +118,12 @@
       "target": "modelfile"
     }
   },
+  "svStart": {
+    "kind": "serve",
+    "params": {
+      "modelPath": ""
+    }
+  },
   "tkRun": {
     "kind": "tokenize",
     "params": {

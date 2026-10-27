@@ -34,6 +34,7 @@
     <button class="tab" id="tab-gguf" data-tab="gguf" role="tab" aria-controls="panel-gguf" aria-selected="false" tabindex="-1">GGUF</button>
     <button class="tab" id="tab-finetune" data-tab="finetune" role="tab" aria-controls="panel-finetune" aria-selected="false" tabindex="-1">Fine-tune</button>
     <button class="tab" id="tab-export" data-tab="export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
+    <button class="tab" id="tab-serve" data-tab="serve" role="tab" aria-controls="panel-serve" aria-selected="false" tabindex="-1">Serve</button>
     <button class="tab" id="tab-system" data-tab="system" role="tab" aria-controls="panel-system" aria-selected="false" tabindex="-1">System</button>
     <button class="tab" id="tab-capable" data-tab="capable" role="tab" aria-controls="panel-capable" aria-selected="false" tabindex="-1">Capable</button>
   </div>
@@ -577,6 +578,49 @@
       </fieldset>
     </section>
 
+    <!-- ── Serve ─────────────────────────────────────────────────────────── -->
+    <section class="panel" id="panel-serve" role="tabpanel" aria-labelledby="tab-serve">
+      <h2>Serve — an HTTP server for one model</h2>
+      <p class="hint">Starts the same server as the <code>ferrum-serve</code> command inside this
+        window, so other programs (an evaluation harness, a script, <code>curl</code>) can score
+        text and generate with a Ferrum model over HTTP. One model at a time. It listens on this
+        machine only unless you change the host, and then it needs a bearer token. Nothing is sent
+        anywhere else.</p>
+      <div class="row">
+        <label>Model <input type="text" id="svModel" placeholder="/path/to/model.gguf" /></label>
+        <button class="ghost browse" id="svModelBrowse" data-target="svModel">Browse…</button>
+      </div>
+      <div class="grid">
+        <label>Host <input type="text" id="svHost" value="127.0.0.1" autocomplete="off" /></label>
+        <label>Port (0 = pick a free one) <input type="number" id="svPort" value="8080" min="0" max="65535" step="1" /></label>
+        <label>Max batch <input type="number" id="svMaxBatch" value="64" min="1" step="1" /></label>
+        <label>Max characters per text <input type="number" id="svMaxChars" value="65536" min="1" step="1" /></label>
+        <label>Max request body (bytes) <input type="number" id="svMaxBody" value="8388608" min="1" step="1" /></label>
+        <label>Max tokens per generation <input type="number" id="svMaxTokens" value="4096" min="1" step="1" /></label>
+      </div>
+      <div class="row">
+        <label>Bearer token (optional on this machine) <input type="password" id="svToken" autocomplete="off" spellcheck="false" /></label>
+        <button class="ghost" id="svGenToken">Generate</button>
+        <label class="chk"><input type="checkbox" id="svShowToken" /> Show token</label>
+      </div>
+      <span class="err" id="errServe" role="alert"></span>
+      <div class="row">
+        <button id="svStart" class="primary">Start server</button>
+        <button id="svStop" class="ghost hidden">Stop server</button>
+        <span class="spinner hidden" id="svSpin" aria-hidden="true"></span><span id="svStatus" class="muted" role="status"></span>
+      </div>
+      <div id="svRunning" class="hidden">
+        <p>Listening at <code id="svUrl"></code> — <b id="svRequests">0</b> requests so far</p>
+        <div class="row">
+          <button class="ghost" id="svCopyUrl">Copy URL</button>
+          <button class="ghost" id="svCopyCurl">Copy curl example</button>
+        </div>
+        <pre id="svCurl" class="result"></pre>
+      </div>
+      <h3>Server log</h3>
+      <div id="svLog" class="serverlog" role="log" aria-live="off" aria-label="Server log" tabindex="0"></div>
+    </section>
+
     <!-- ── System ────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system">
       <h2>System monitor</h2>
@@ -681,6 +725,7 @@
   <script src="finetune_tab.js"></script>
   <script src="runtime_tab.js"></script>
   <script src="export_tab.js"></script>
+  <script src="serve_tab.js"></script>
   <script src="system_tab.js"></script>
   <script src="app.js"></script>
 </body>

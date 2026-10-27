@@ -28,6 +28,9 @@ pub enum Job {
     Prepare,
     RuntimeExport,
     Tokenize,
+    /// The Serve tab's HTTP server. Stopped by `serve_stop`, which waits for it to end, not by
+    /// `cancel_job`; the slot only makes a second start fail at once.
+    Serve,
 }
 
 impl Job {
@@ -43,6 +46,7 @@ impl Job {
             Job::Prepare => "a dataset preparation",
             Job::RuntimeExport => "an Ollama / LM Studio export",
             Job::Tokenize => "a tokenizing job",
+            Job::Serve => "a model server",
         }
     }
 }
@@ -172,6 +176,7 @@ mod tests {
             ("prepare", Job::Prepare),
             ("runtime_export", Job::RuntimeExport),
             ("tokenize", Job::Tokenize),
+            ("serve", Job::Serve),
         ] {
             let k: Job = serde_json::from_value(serde_json::json!(name)).unwrap();
             assert_eq!(k, kind);

@@ -861,6 +861,112 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("dsDestDir").value, "/picked/dir");
   }
 
+  // ── Serve tab: validation, the token, start / poll / stop, a server that dies, restore ──
+  {
+    let status = { running: false, url: null, requests: 0, auth: false };
+    const copied = [];
+    const a = await start({
+      serve_start: async (args) => { status = { running: true, url: "http://127.0.0.1:41234", requests: 0, auth: args.params.token !== null }; return status; },
+      serve_stop: async () => { status = { running: false, url: null, requests: status.requests, auth: false }; return status; },
+      serve_status: async () => status,
+    }, { navigator: { clipboard: { writeText: async (t) => { copied.push(t); } } } });
+    await a.click("tab-serve");
+    assert.ok(a.$("panel-serve").classList.contains("active"));
+    assert.ok(a.$("svStop").classList.contains("hidden") && a.$("svRunning").classList.contains("hidden"));
+    assert.strictEqual(a.$("svToken").getAttribute("type"), "password");
+
+    // Invalid forms send nothing.
+    await a.click("svStart");
+    assert.strictEqual(a.$("errServe").textContent, "Model is required");
+    a.set("svModel", "/m/m.gguf"); a.set("svPort", "70000");
+    await a.click("svStart");
+    assert.strictEqual(a.$("errServe").textContent, "Port must be at most 65535");
+    a.set("svPort", "0"); a.set("svMaxBatch", "0");
+    await a.click("svStart");
+    assert.strictEqual(a.$("errServe").textContent, "Max batch must be an integer ≥ 1");
+    a.set("svMaxBatch", "64");
+    assert.strictEqual(a.of("serve_start").length, 0);
+
+    // Generate: 48 hex digits, different each time, shown so it can be copied.
+    await a.click("svGenToken");
+    const tok = a.$("svToken").value;
+    assert.match(tok, /^[0-9a-f]{48}$/);
+    await a.click("svGenToken");
+    assert.notStrictEqual(a.$("svToken").value, tok);
+    assert.ok(a.$("svShowToken").checked && a.$("svToken").getAttribute("type") === "text");
+    a.$("svShowToken").checked = false; a.$("svShowToken").dispatch("change");
+    assert.strictEqual(a.$("svToken").getAttribute("type"), "password");
+    a.set("svToken", "0123456789abcdef".repeat(3)); // a fixed one, so the pinned fixture is stable
+    const token = a.$("svToken").value;
+
+    // Start: the exact arguments, then the address, locked form and curl example (without the token).
+    await a.click("svStart");
+    const sent = a.of("serve_start")[0].args.params;
+    captured.serve_start = sent;
+    assert.deepStrictEqual(sent, { modelPath: "/m/m.gguf", host: "127.0.0.1", port: 0, maxBatch: 64, maxChars: 65536, maxBody: 8388608, maxTokens: 4096, token });
+    assert.strictEqual(a.$("errServe").textContent, "");
+    assert.strictEqual(a.$("svUrl").textContent, "http://127.0.0.1:41234");
+    assert.ok(!a.$("svRunning").classList.contains("hidden") && !a.$("svStop").classList.contains("hidden"));
+    assert.ok(a.$("svStart").disabled && a.$("svModel").disabled && a.$("svToken").disabled && a.$("svPort").disabled);
+    assert.strictEqual(a.$("svStatus").textContent, "running");
+    const curl = a.$("svCurl").textContent;
+    assert.ok(curl.startsWith("curl -s -H 'Content-Type: application/json' -H \"Authorization: Bearer $FERRUM_TOKEN\" http://127.0.0.1:41234/v1/generate -d '"), curl);
+    assert.ok(!curl.includes(token), "the token is never written into the example");
+
+    // Log lines arrive as events and are shown as text; the page keeps the last 500.
+    a.emit("serve-log", "ferrum-serve: auth ON");
+    a.emit("serve-log", EVIL);
+    const lines = a.$("svLog").children;
+    assert.strictEqual(lines.length, 2);
+    assert.strictEqual(lines[1].textContent, EVIL);
+    assert.strictEqual(lines[1].children.length, 0, "no markup from the log");
+    for (let i = 0; i < 600; i++) a.emit("serve-log", "line " + i);
+    assert.strictEqual(a.$("svLog").children.length, 500);
+    assert.strictEqual(a.$("svLog").lastChild.textContent, "line 599");
+
+    // The counter follows the poll; copy buttons use the clipboard.
+    status = { ...status, requests: 7 };
+    await a.intervals[a.intervals.length - 1].f(); await settle(4);
+    assert.strictEqual(a.$("svRequests").textContent, "7");
+    await a.click("svCopyUrl");
+    await a.click("svCopyCurl");
+    assert.deepStrictEqual(copied, ["http://127.0.0.1:41234", curl]);
+
+    // Stop: unlocked again, the count reported.
+    await a.click("svStop");
+    assert.strictEqual(a.of("serve_stop").length, 1);
+    assert.ok(a.$("svRunning").classList.contains("hidden") && a.$("svStop").classList.contains("hidden"));
+    assert.ok(!a.$("svStart").disabled && !a.$("svModel").disabled && !a.$("svToken").disabled);
+    assert.strictEqual(a.$("svStatus").textContent, "stopped (7 requests answered)");
+
+    // No token: the example has no Authorization header, and sends token: null.
+    a.set("svToken", "");
+    await a.click("svStart");
+    assert.strictEqual(a.of("serve_start")[1].args.params.token, null);
+    assert.ok(!a.$("svCurl").textContent.includes("Authorization"));
+
+    // The server dies by itself: the next poll unlocks the form and says so.
+    status = { running: false, url: "http://127.0.0.1:41234", requests: 9, auth: false };
+    await a.intervals[a.intervals.length - 1].f(); await settle(4);
+    assert.ok(a.$("svRunning").classList.contains("hidden") && !a.$("svStart").disabled);
+    assert.strictEqual(a.$("svStatus").textContent, "stopped");
+    assert.ok(a.$("toasts").textContent.includes("stopped on its own"));
+  }
+  {
+    // A refused start shows the structured error and leaves the form usable.
+    const a = await start({ serve_start: async () => { throw { code: "busy", message: "a model server is already running", hint: "Stop it first." }; } });
+    a.set("svModel", "/m/m.gguf");
+    await a.click("svStart");
+    assert.strictEqual(a.$("errServe").textContent, "a model server is already running");
+    assert.strictEqual(a.$("svStatus").textContent, "error");
+    assert.ok(!a.$("svStart").disabled && a.$("svRunning").classList.contains("hidden"));
+    // A server that was already running when the page loaded is shown.
+    const b = await start({ serve_status: async () => ({ running: true, url: "http://127.0.0.1:8080", requests: 3, auth: true }) });
+    assert.strictEqual(b.$("svUrl").textContent, "http://127.0.0.1:8080");
+    assert.strictEqual(b.$("svRequests").textContent, "3");
+    assert.ok(b.$("svStart").disabled && !b.$("svStop").classList.contains("hidden"));
+  }
+
   // ── Plain browser (no Tauri) ────────────────────────────────────────────
   {
     const a = await start({}, { tauri: false });
@@ -875,7 +981,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
   {
     const file = require("node:path").join(__dirname, "command_params.fixture.json");
     const sorted = Object.fromEntries(Object.keys(captured).sort().map((k) => [k, captured[k]]));
-    assert.strictEqual(Object.keys(sorted).length, 11, "every flow captured its arguments");
+    assert.strictEqual(Object.keys(sorted).length, 12, "every flow captured its arguments");
     if (process.env.UPDATE_FIXTURE) require("node:fs").writeFileSync(file, JSON.stringify(sorted, null, 2) + "\n");
     assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/app_flows.test.js");
   }

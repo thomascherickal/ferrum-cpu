@@ -340,3 +340,43 @@ fn tokenize_estimate_matches_the_measured_wall_time() {
     assert_in_band("tokenize ~6 MB", secs(&est), measured);
     assert!(est.fits_in_ram);
 }
+
+#[test]
+fn serve_start_estimate_matches_the_measured_load_and_bind() {
+    let d = dir("serve");
+    let slm = GenerativeSLM::train_transformer_config_threaded(
+        &corpus_3kb(),
+        &cfg(2),
+        1,
+        &mut Rng::new(1),
+        |_, _| {},
+    )
+    .unwrap();
+    let model = d.0.join("m.gguf").to_string_lossy().into_owned();
+    slm.save(&model).unwrap();
+    let t = Instant::now();
+    let bound = tauri::async_runtime::block_on(slm_server::bind(
+        slm_server::cli::Config {
+            model: model.clone(),
+            host: "127.0.0.1".into(),
+            port: 0,
+            limits: slm_server::Limits::default(),
+            token: None,
+            allow_unauthenticated: false,
+        },
+        None,
+    ))
+    .unwrap();
+    let measured = t.elapsed().as_secs_f64();
+    drop(bound);
+    let est = estimate_now(
+        JobKind::Serve,
+        JobParams {
+            model_path: model,
+            ..JobParams::default()
+        },
+        None,
+    );
+    assert_in_band("serve start (tiny model)", secs(&est), measured);
+    assert!(est.fits_in_ram);
+}

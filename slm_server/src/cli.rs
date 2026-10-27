@@ -1,6 +1,6 @@
 //! Command-line parsing and the serve loop behind `ferrum-serve`.
 
-use crate::{app, with_bearer_token, Limits};
+use crate::{bind, Limits};
 use std::future::Future;
 use std::str::FromStr;
 
@@ -24,7 +24,7 @@ const KNOWN: &[&str] = &[
 ];
 
 /// Hosts that only accept connections from this machine.
-fn is_loopback(host: &str) -> bool {
+pub fn is_loopback(host: &str) -> bool {
     ["127.0.0.1", "::1", "localhost"]
         .iter()
         .any(|h| host.eq_ignore_ascii_case(h))
@@ -145,48 +145,16 @@ pub async fn start(
     }
 }
 
-/// Load the model, bind, and serve until `shutdown` resolves.
+/// Load the model, bind, print the banner, and serve until `shutdown` resolves.
 pub async fn run(
     cfg: Config,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), String> {
-    if cfg.token.is_none() && !cfg.allow_unauthenticated && !is_loopback(&cfg.host) {
-        return Err(format!(
-            "refusing to listen on non-loopback host {} without a bearer token: set FERRUM_TOKEN \
-(or --token), or pass --allow-unauthenticated",
-            cfg.host
-        ));
+    let bound = bind(cfg, None).await?;
+    for line in &bound.banner {
+        eprintln!("{line}");
     }
-    let bytes = std::fs::read(&cfg.model).map_err(|e| format!("cannot read {}: {e}", cfg.model))?;
-    let (router, info) = app(bytes, cfg.limits)?;
-    let router = match &cfg.token {
-        Some(t) => with_bearer_token(router, t),
-        None => router,
-    };
-    let listener = tokio::net::TcpListener::bind((cfg.host.as_str(), cfg.port))
-        .await
-        .map_err(|e| format!("cannot bind {}:{}: {e}", cfg.host, cfg.port))?;
-    eprintln!(
-        "ferrum-serve: {} ({} params, context {}, vocab {}) on http://{}",
-        cfg.model,
-        info.params,
-        info.context_len,
-        info.vocab,
-        listener.local_addr().map_err(|e| e.to_string())?
-    );
-    eprintln!(
-        "ferrum-serve: auth {}",
-        match (&cfg.token, is_loopback(&cfg.host)) {
-            (Some(_), _) => "ON (bearer token required, except GET /health)",
-            (None, true) => "OFF (loopback only)",
-            (None, false) =>
-                "OFF (--allow-unauthenticated: anyone who can reach this port can use it)",
-        }
-    );
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
-        .map_err(|e| e.to_string())
+    bound.serve(shutdown).await
 }
 
 #[cfg(test)]

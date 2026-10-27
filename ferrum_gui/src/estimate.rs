@@ -107,6 +107,8 @@ const TOKENIZE_BYTES_PER_S: f64 = 13e6;
 /// file instead and then waits for its listing, up to `LMS_LISTING_WAIT_S`.
 const OLLAMA_CREATE_BYTES_PER_S: f64 = 200e6;
 const LMS_LISTING_WAIT_S: f64 = 15.0;
+/// SHA-256 of the model file (the server reports it in `/v1/info`), bytes/s. Assumed, not measured.
+const SHA256_BYTES_PER_S: f64 = 250e6;
 /// Reading a file from disk, bytes/s. Assumed, not measured.
 const DISK_BYTES_PER_S: f64 = 200e6;
 /// Download speed assumption, bytes/s, and the range shown around it.
@@ -143,6 +145,8 @@ pub enum JobKind {
     RuntimeExport,
     /// The Train tab's "Tokenize corpus": text files to a `ferrum-tokens` file.
     Tokenize,
+    /// The Serve tab's Start button: load the model and open the port.
+    Serve,
 }
 
 /// Facts about a Ferrum SLM file (`generate`, `evaluate`), read from its GGUF header.
@@ -471,7 +475,24 @@ pub fn estimate(
         JobKind::Prepare => prepare(d, p, speed),
         JobKind::RuntimeExport => runtime_export(d, p),
         JobKind::Tokenize => tokenize(d, p, speed),
+        JobKind::Serve => serve(d, p),
     }
+}
+
+fn serve(mut d: Draft, p: &JobParams) -> Estimate {
+    let Some(file) = p.slm.as_ref().map(|s| s.file_bytes as f64) else {
+        d.note("Pick a model file to get an estimate.");
+        return d.done(None, (1.0, 1.0), None, None);
+    };
+    d.note(format!(
+        "Starting reads the file at an assumed {:.0} MB/s and hashes it (SHA-256, about {:.0} MB/s assumed) for /v1/info, then opens the port. Nothing is estimated for the requests themselves: each one costs what Generate or Evaluate costs for the same text.",
+        DISK_BYTES_PER_S / 1e6,
+        SHA256_BYTES_PER_S / 1e6
+    ));
+    d.note("The model stays in RAM until you press Stop; the file bytes are held while it loads, so the peak is assumed to be about twice the file size.");
+    let secs = 0.05 + file / DISK_BYTES_PER_S + file / SHA256_BYTES_PER_S;
+    let limit = d.hw.ram_available_mb.map(|a| a as f64 * GGUF_RAM_FRACTION);
+    d.done(Some(secs), (0.5, 5.0), Some(2.0 * file), limit)
 }
 
 fn tokenize(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {

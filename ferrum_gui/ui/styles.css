@@ -118,6 +118,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   background: #0b1120; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
   font-family: var(--mono); font-size: 13px; white-space: pre-wrap; min-height: 120px; margin-top: 8px;
 }
+.serverlog {
+  background: #0b1120; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+  font-family: var(--mono); font-size: 12.5px; min-height: 80px; max-height: 260px; overflow: auto;
+}
+.serverlog .line { white-space: pre-wrap; word-break: break-word; }
 .output:empty::before { content: attr(placeholder); color: var(--muted); }
 
 /* Tables */

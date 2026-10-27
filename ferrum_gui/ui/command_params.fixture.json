@@ -111,6 +111,16 @@
     "resume": null,
     "raw": true
   },
+  "serve_start": {
+    "modelPath": "/m/m.gguf",
+    "host": "127.0.0.1",
+    "port": 0,
+    "maxBatch": 64,
+    "maxChars": 65536,
+    "maxBody": 8388608,
+    "maxTokens": 4096,
+    "token": "0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
   "tokenize_corpus": {
     "input": "/d/corpus",
     "tokenizerPath": "/d/tok.gguf",

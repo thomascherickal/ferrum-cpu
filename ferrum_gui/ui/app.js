@@ -24,7 +24,7 @@ const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toas
 const env = {
   $, doc: document, invoke, hasTauri, ...common,
   jobRunning: shell.jobRunning, stopAsked: shell.stopAsked,
-  getLive: () => live, openDialog, settings,
+  getLive: () => live, openDialog, settings, navigator: window.navigator,
 };
 
 window.FerrumDatasetsTab.create(env);
@@ -40,6 +40,7 @@ const ggufEnv = { ...env, budget, getBounds };
 window.FerrumGgufTab.create(ggufEnv);
 const finetuneTab = window.FerrumFinetuneTab.create(env);
 const exportTab = window.FerrumExportTab.create(ggufEnv);
+const serveTab = window.FerrumServeTab.create(env);
 const systemTab = window.FerrumSystemTab.create(env);
 
 settings.restore(); // after every tab is built, before the first estimate reads the fields
@@ -58,6 +59,7 @@ async function wireEvents() {
   await listen("tokenize-progress", (e) => trainTab.onTokenizeProgress(e.payload));
   await listen("export-progress", (e) => exportTab.onProgress(e.payload));
   await listen("gen-fragment", (e) => generateTab.onFragment(e.payload));
+  await listen("serve-log", (e) => serveTab.onLog(e.payload));
 }
 
 // The connection dot: colour plus shape (filled or hollow) plus a spoken label.
@@ -87,6 +89,7 @@ function setConn(on, text) {
   setConn(true, "Backend connected");
   await wireEvents();
   systemTab.restart();
+  serveTab.restore(); // a server started before the page was reloaded is still running
   trainTab.runPreflight();
   shell.termLine("Ferrum SLM Studio ready. Verbose engine logs and shell output appear here.", "sys");
 })();

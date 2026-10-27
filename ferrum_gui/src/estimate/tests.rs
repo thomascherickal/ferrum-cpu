@@ -589,6 +589,7 @@ fn every_kind_returns_an_estimate_and_a_gpu_never_changes_it() {
         JobKind::Prepare,
         JobKind::RuntimeExport,
         JobKind::Tokenize,
+        JobKind::Serve,
     ];
     let mut nogpu = hw(8, Some(14_000));
     nogpu.gpus.clear();
@@ -793,4 +794,26 @@ fn tokenize_needs_an_input_then_scales_with_its_size_with_flat_ram() {
         estimate(JobKind::Tokenize, &with(1), &h, None).peak_ram_mb
     );
     assert_eq!(big.threads_used, 1);
+}
+
+#[test]
+fn serve_start_needs_a_model_then_scales_with_its_size_and_holds_twice_the_file() {
+    let h = hw(8, Some(14_000));
+    let with = |bytes: u64| JobParams {
+        slm: Some(SlmFacts {
+            file_bytes: bytes,
+            ..SlmFacts::default()
+        }),
+        ..JobParams::default()
+    };
+    assert!(estimate(JobKind::Serve, &JobParams::default(), &h, None)
+        .seconds
+        .is_none());
+    let small = estimate(JobKind::Serve, &with(1_000_000), &h, None);
+    let big = estimate(JobKind::Serve, &with(2_000_000_000), &h, None);
+    assert!(secs(&small) < 0.1 && secs(&big) > 5.0, "{small:?} {big:?}");
+    assert!((big.peak_ram_mb.unwrap() - 2.0 * 2_000_000_000.0 / 1048576.0).abs() < 1.0);
+    // 14 GB free: 4 GB of file fits, 20 GB does not.
+    assert!(estimate(JobKind::Serve, &with(4_000_000_000), &h, None).fits_in_ram);
+    assert!(!estimate(JobKind::Serve, &with(20_000_000_000), &h, None).fits_in_ram);
 }

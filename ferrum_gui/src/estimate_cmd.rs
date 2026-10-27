@@ -122,9 +122,11 @@ pub fn resolve(kind: JobKind, p: &mut JobParams) {
     match kind {
         // Evaluate takes either kind of model: a Llama/Qwen file is scored like `eval-gguf`.
         JobKind::Evaluate if is_imported(&p.model_path) => p.gguf = gguf_facts(&p.model_path),
-        JobKind::Generate | JobKind::Evaluate | JobKind::ModelInfo | JobKind::RuntimeExport => {
-            p.slm = slm_facts(&p.model_path)
-        }
+        JobKind::Generate
+        | JobKind::Evaluate
+        | JobKind::ModelInfo
+        | JobKind::RuntimeExport
+        | JobKind::Serve => p.slm = slm_facts(&p.model_path),
         JobKind::GgufRun | JobKind::GgufFinetune | JobKind::GgufExport | JobKind::GgufInfo => {
             p.gguf = gguf_facts(&p.model_path)
         }

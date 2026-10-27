@@ -30,6 +30,11 @@ ferrum_core = { path = "../ferrum_core" }
 # run the same code as `train_transformer prepare` / `export-ollama` (it brings sha2 into this
 # lockfile, already used by slm_cli; no other crate).
 slm_cli = { path = "../slm_cli" }
+# The Serve tab runs the `ferrum-serve` server inside the app (library, no child process): it
+# brings axum and its few helper crates into this lockfile, and tokio/hyper/tower were there already.
+slm_server = { path = "../slm_server" }
+# Already in the tree through tauri; declared only to build the server's shutdown signal (`sync`).
+tokio = { version = "1", features = ["sync"] }
 
 # Optimize the engine even in debug builds: the tests train and run tiny models,
 # and an unoptimized matmul would make them (and `cargo tauri dev`) needlessly slow.

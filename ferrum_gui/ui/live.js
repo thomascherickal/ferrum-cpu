@@ -53,6 +53,7 @@
     rxOllama: (d) => ({ modelPath: str(d, "rxPath"), target: "ollama" }),
     rxLms: (d) => ({ modelPath: str(d, "rxPath"), target: "lmstudio" }),
     rxWriteModelfile: (d) => ({ modelPath: str(d, "rxPath"), target: "modelfile" }),
+    svStart: (d) => ({ modelPath: str(d, "svModel") }),
     exExport: (d) => ({ modelPath: str(d, "exPath"), quant: str(d, "exQuant"), resumePath: str(d, "exResume") }),
   };
 

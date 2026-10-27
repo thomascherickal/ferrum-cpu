@@ -15,6 +15,7 @@
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
 //! | `export-progress` | `String` (one phase line)          | GGUF export phase     |
 //! | `tokenize-progress` | `{ file, files, path, bytesDone, bytesTotal, tokens }` | tokenizing a corpus |
+//! | `serve-log`     | `String` (one startup or request line) | the Serve tab's server |
 //! | `prepare-progress` | `{ file, files, path, bytesDone, bytesTotal, documents }` | dataset preparation |
 
 #![forbid(unsafe_code)]
@@ -32,6 +33,7 @@ mod paths;
 mod preflight;
 mod prepare;
 mod runtime_export;
+mod serve;
 #[cfg(test)]
 mod test_support;
 mod tokenize;
@@ -48,6 +50,8 @@ pub struct AppState {
     pub bench: Mutex<Option<estimate::Throughput>>,
     /// The running long jobs, one slot per kind (see [`jobs`]).
     pub jobs: jobs::Jobs,
+    /// The Serve tab's running HTTP server, if any.
+    pub serve: serve::Serve,
 }
 
 /// Shared state and the command registry. `run` and the mock-runtime tests
@@ -58,6 +62,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             sys: Mutex::new(System::new_all()),
             bench: Mutex::new(None),
             jobs: jobs::Jobs::default(),
+            serve: serve::Serve::default(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::download_text,
@@ -71,6 +76,9 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             runtime_export::preview_runtime_export,
             runtime_export::export_to_runtime,
             tokenize::tokenize_corpus,
+            serve::serve_start,
+            serve::serve_stop,
+            serve::serve_status,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,

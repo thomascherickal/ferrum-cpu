@@ -11,7 +11,7 @@ use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
 use tauri::webview::InvokeRequest;
 use tauri::{App, Listener, WebviewWindow, WebviewWindowBuilder};
 
-fn app() -> (
+pub(crate) fn app() -> (
     App<tauri::test::MockRuntime>,
     WebviewWindow<tauri::test::MockRuntime>,
 ) {
@@ -24,7 +24,7 @@ fn app() -> (
     (app, w)
 }
 
-fn call(
+pub(crate) fn call(
     w: &WebviewWindow<tauri::test::MockRuntime>,
     cmd: &str,
     body: Value,
@@ -48,7 +48,7 @@ fn call(
 }
 
 /// The text of a failed command: errors reach the webview as `{ code, message, hint }`.
-fn msg(e: &Value) -> &str {
+pub(crate) fn msg(e: &Value) -> &str {
     e["message"]
         .as_str()
         .expect("an error object with a message")
@@ -204,7 +204,7 @@ fn every_registered_command_is_reachable_and_unknown_ones_are_rejected() {
     assert!(call(&w, "model_info", json!({})).is_err());
 }
 
-fn tmp(tag: &str) -> std::path::PathBuf {
+pub(crate) fn tmp(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("ferrum_ipc_{tag}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
@@ -212,7 +212,7 @@ fn tmp(tag: &str) -> std::path::PathBuf {
 }
 
 /// Collect the payloads of one event for the rest of the test.
-fn collect(app: &App<tauri::test::MockRuntime>, event: &str) -> Arc<Mutex<Vec<String>>> {
+pub(crate) fn collect(app: &App<tauri::test::MockRuntime>, event: &str) -> Arc<Mutex<Vec<String>>> {
     let got = Arc::new(Mutex::new(Vec::new()));
     let sink = got.clone();
     app.listen(event, move |e| {
@@ -374,7 +374,7 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
 }
 
 /// Block until `got` holds `n` payloads (a job that never reports fails the test, not hangs it).
-fn wait_for(got: &Arc<Mutex<Vec<String>>>, n: usize) {
+pub(crate) fn wait_for(got: &Arc<Mutex<Vec<String>>>, n: usize) {
     let t0 = std::time::Instant::now();
     while got.lock().unwrap().len() < n {
         assert!(
@@ -703,6 +703,12 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (2, 7, 50, 20_000, true, true)
     );
     assert_eq!(p.doc_sep, ferrum_core::DOC_SEP);
+    let sv = parses!("serve_start", crate::serve::ServeParams);
+    assert_eq!(
+        (sv.host.as_str(), sv.port, sv.max_batch, sv.max_tokens),
+        ("127.0.0.1", 0, 64, 4096)
+    );
+    assert_eq!(sv.token.as_deref().map(str::len), Some(48));
     let k = parses!("tokenize_corpus", TokenizeParams);
     assert_eq!(
         (k.input.as_str(), k.doc_sep.as_str()),
