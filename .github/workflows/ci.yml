@@ -205,6 +205,7 @@ jobs:
           GDK_BACKEND: x11
           LIBGL_ALWAYS_SOFTWARE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          G_MESSAGES_DEBUG: all
         run: |
           log="$RUNNER_TEMP/ferrum_gui_boot.log"
           xvfb-run -a --server-args="-screen 0 1280x800x24" bash -c '
@@ -220,11 +221,20 @@ jobs:
                 found=yes; echo "window titled Ferrum SLM Studio appeared after $i s"
               fi
             done
+            # The 8 s requirement is met. The window check below is information only: a slow debug
+            # start may need longer to title and size the window.
+            for i in 9 10 11 12 13 14 15 16 17 18 19 20; do
+              [ "$found" = yes ] && break
+              sleep 1
+              if xwininfo -root -tree | grep -q "Ferrum SLM Studio"; then
+                found=yes; echo "window titled Ferrum SLM Studio appeared after $i s"
+              fi
+            done
             if [ "$found" = no ]; then
-              echo "::warning::no window titled Ferrum SLM Studio was found (the process is up)"
+              echo "::warning::no window titled Ferrum SLM Studio was found within 20 s (the process is up)"
               xwininfo -root -tree
             fi
-            kill "$pid"; wait "$pid" 2>/dev/null; echo "still running after 8 s; stopped"
+            kill "$pid"; wait "$pid" 2>/dev/null; echo "still running after 8 s (and after the window check); stopped"
           ' _ "$log" || { echo "--- app output ---"; cat "$log"; exit 1; }
           echo "--- app output ---"; cat "$log"
           if grep -q "panicked at" "$log"; then echo "::error::the app panicked while running"; exit 1; fi
