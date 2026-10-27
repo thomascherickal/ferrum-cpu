@@ -195,7 +195,7 @@ jobs:
       # it. This starts the real webview and loads ui/, but nothing clicks: it cannot say that a
       # tab works, only that the window comes up and the process does not crash or exit.
       - name: Install a virtual display (xvfb)
-        run: sudo apt-get install -y xvfb x11-utils
+        run: sudo apt-get install -y xvfb x11-utils dbus dbus-x11
       - name: Build the app (debug)
         working-directory: ferrum_gui
         run: cargo build --locked
@@ -206,9 +206,11 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           G_MESSAGES_DEBUG: all
+          NO_AT_BRIDGE: "1"
         run: |
           log="$RUNNER_TEMP/ferrum_gui_boot.log"
-          xvfb-run -a --server-args="-screen 0 1280x800x24" bash -c '
+          # dbus-run-session gives GTK a session bus (without one it never shows the window).
+          xvfb-run -a --server-args="-screen 0 1280x800x24" dbus-run-session -- bash -c '
             target/debug/ferrum_gui > "$1" 2>&1 &
             pid=$!
             found=no
