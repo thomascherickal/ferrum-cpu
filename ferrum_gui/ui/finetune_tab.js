@@ -1,0 +1,77 @@
+// The Fine-tune tab: AdamW-fine-tune an imported GGUF into a `.flck` checkpoint.
+"use strict";
+(function (global) {
+  function create(env) {
+    const { $, invoke, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning } = env;
+    const { drawLoss } = global.FerrumCommon;
+    let lossHistory = [];
+    const drawChart = () => drawLoss($, "ftChart", lossHistory);
+
+    $("ftRun").addEventListener("click", async () => {
+      clearErr("errFt");
+      let params;
+      try {
+        const resume = $("ftResume").value.trim();
+        params = {
+          modelPath: reqStr("ftPath", "GGUF file"),
+          corpusPath: reqStr("ftCorpus", "Training corpus"),
+          outPath: reqStr("ftOut", "Output checkpoint"),
+          epochs: reqInt("ftEpochs", "Epochs"),
+          lr: reqNum("ftLr", "Learning rate", 0),
+          batchSize: reqInt("ftBatch", "Batch size"),
+          seqLen: reqInt("ftSeq", "Sequence length"),
+          warmup: Math.max(0, int("ftWarmup") || 0),
+          clip: Math.max(0, num("ftClip") || 0),
+          weightDecay: Math.max(0, num("ftWd") || 0),
+          dropout: Math.max(0, num("ftDropout") || 0),
+          qat: $("ftQat").checked,
+          seed: Math.max(0, int("ftSeed") || 0),
+          threads: Math.max(0, int("ftThreads") || 0),
+          resume: resume === "" ? null : resume,
+          force: $("ftForce").checked,
+          verbose: false,
+        };
+      } catch (e) { setErr("errFt", String(e)); return; }
+
+      lossHistory = []; drawChart();
+      $("ftBar").style.width = "0%";
+      $("ftResult").textContent = "";
+      $("ftStatus").textContent = "fine-tuning… (CPU: this can take a while)";
+      $("ftRun").disabled = true;
+      jobRunning("ftCancel", "finetune", true);
+      try {
+        const r = await invoke("finetune_gguf", { params });
+        $("ftStatus").textContent = r.stopped ? `stopped at step ${r.steps}` : "done";
+        $("ftResult").textContent = (r.stopped ? `Stopped at step ${r.steps}; the checkpoint so far was saved and can be resumed.\n` : "") +
+          `Saved ${r.bytes.toLocaleString()} bytes → ${r.outPath}\n` +
+          `epochs=${r.epochs}  first loss=${r.firstLoss.toFixed(6)}  final loss=${r.finalLoss.toFixed(6)}\n` +
+          `tokens=${r.tokens.toLocaleString()}  steps=${r.steps}  time=${r.seconds.toFixed(2)}s\n` +
+          `Run it: GGUF tab → set "Fine-tune checkpoint" to ${r.outPath}`;
+        toast(r.stopped ? `Fine-tune stopped at step ${r.steps}; checkpoint saved` : "Fine-tune complete", "ok");
+        if (!$("ggPath").value) $("ggPath").value = params.modelPath;
+        if (!$("ggResume").value) $("ggResume").value = r.outPath;
+      } catch (e) {
+        $("ftStatus").textContent = "error";
+        setErr("errFt", String(e));
+        toast("Fine-tune failed: " + e, "error");
+      } finally { $("ftRun").disabled = false; jobRunning("ftCancel", "finetune", false); }
+    });
+
+    function onProgress(p) {
+      const pct = Math.round((p.epoch / p.total) * 100);
+      $("ftBar").style.width = pct + "%";
+      $("ftStatus").textContent = `epoch ${p.epoch}/${p.total} — loss ${p.loss.toFixed(4)} (ppl ${p.ppl.toFixed(2)})`;
+      lossHistory.push(p.loss);
+      if (lossHistory.length > 1000) lossHistory.shift();
+      drawChart();
+    }
+    return { onProgress };
+  }
+
+  const api = { create };
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = api;
+  } else {
+    global.FerrumFinetuneTab = api;
+  }
+})(typeof window !== "undefined" ? window : globalThis);

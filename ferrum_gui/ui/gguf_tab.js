@@ -1,0 +1,88 @@
+// The GGUF tab: inspect an imported Llama/Qwen GGUF and run it.
+"use strict";
+(function (global) {
+  function create(env) {
+    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, budget, getBounds } = env;
+    const { ggufInfo } = global.FerrumEscape;
+
+    $("ggInspect").addEventListener("click", async () => {
+      clearErr("errGguf");
+      let path;
+      try { path = reqStr("ggPath", "GGUF file"); } catch (e) { setErr("errGguf", String(e)); return; }
+      $("ggStatus").textContent = "inspecting…";
+      try {
+        const i = await invoke("gguf_info", { path });
+        $("ggInfo").innerHTML = ggufInfo(i);
+        $("ggStatus").textContent = "";
+        toast(i.runnable ? "GGUF inspected" : "Inspected — architecture not runnable", i.runnable ? "ok" : "error");
+        const crossedI = budget.check(i.paramCount);
+        if (crossedI.length) {
+          await budget.confirm(i.paramCount, crossedI); // advisory on inspect; result ignored
+        } else if (!getBounds()) {
+          toast("Tip: run the Capable check to flag oversized models.", "info");
+        }
+      } catch (e) { $("ggStatus").textContent = "error"; setErr("errGguf", String(e)); toast("Inspect failed: " + e, "error"); }
+    });
+
+    $("ggRun").addEventListener("click", async () => {
+      clearErr("errGguf");
+      let params;
+      try {
+        const seed = $("ggSeed").value.trim();
+        const ids = $("ggIds").value.trim();
+        const resume = $("ggResume").value.trim();
+        params = {
+          modelPath: reqStr("ggPath", "GGUF file"),
+          prompt: $("ggPrompt").value,
+          quant: $("ggQuant").value,
+          maxNew: reqInt("ggMax", "Max new tokens"),
+          ...samplerParams("gg"),
+          genSeed: seed === "" ? null : parseInt(seed, 10),
+          ids: ids === "" ? null : ids,
+          force: $("ggForce").checked,
+          resume: resume === "" ? null : resume,
+          raw: !$("ggChatFmt").checked,
+        };
+        if (!params.prompt.trim() && !params.ids) throw new Error("Enter a prompt (or token IDs)");
+      } catch (e) { setErr("errGguf", String(e)); return; }
+
+      // Budget gate: if the model exceeds this machine's estimated limits, confirm.
+      if (getBounds()) {
+        try {
+          const info = await invoke("gguf_info", { path: params.modelPath });
+          const crossed = budget.check(info.paramCount);
+          if (crossed.length) {
+            const ok = await budget.confirm(info.paramCount, crossed);
+            if (!ok) { $("ggStatus").textContent = "cancelled"; return; }
+          }
+        } catch (_) { /* inspection failed; fall through to run, which will error clearly */ }
+      }
+
+      $("ggOut").textContent = "";
+      $("ggStatus").textContent = "loading & generating… (CPU: this can take a while)";
+      $("ggRun").disabled = true;
+      jobRunning("ggCancel", "run", true);
+      try {
+        const r = await invoke("run_gguf", { params });
+        $("ggOut").textContent = r.text;
+        $("ggStatus").textContent =
+          `${r.stopped ? "stopped" : "done"} — ${r.generated} tokens in ${r.seconds.toFixed(1)}s (${r.tokensPerSec.toFixed(1)} tok/s, prompt ${r.promptTokens} tok)`;
+      } catch (e) {
+        if (stopAsked.run && /cancelled/.test(String(e))) {
+          $("ggStatus").textContent = "stopped before any text was produced";
+        } else {
+          $("ggStatus").textContent = "error";
+          setErr("errGguf", String(e));
+          toast("Run failed: " + e, "error");
+        }
+      } finally { $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
+    });
+  }
+
+  const api = { create };
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = api;
+  } else {
+    global.FerrumGgufTab = api;
+  }
+})(typeof window !== "undefined" ? window : globalThis);

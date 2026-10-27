@@ -1963,16 +1963,16 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (vanilla), prepare_tab.js (the Prepare tab), runtime_tab.js (the Ollama / LM Studio block of the Export tab), tokenize_tab.js (the Tokenize corpus block of the Train tab), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node`, sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
-src/commands.rs   #[tauri::command]s calling ferrum_core directly
+src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
 src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
 src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, llama.cpp verdict)
 src/capable.rs    machine micro-benchmark + capability bounds
 src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
 src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
-src/tokenize.rs   the Train tab's Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`, progress events, cancel; `train_slm` itself accepts a token file (src/commands.rs)
+src/tokenize.rs   the Train tab's Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`, progress events, cancel; `train_slm` itself accepts a token file (src/commands/train.rs)
 src/runtime_export.rs  the Export tab's Ollama / LM Studio block: `preview_runtime_export`, `export_to_runtime` over `slm_cli::runtime_export`
 src/prepare.rs    the Prepare tab: `prepare_dataset` over `slm_cli::prepare` (the CLI's pipeline), progress events, cancel
 src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads

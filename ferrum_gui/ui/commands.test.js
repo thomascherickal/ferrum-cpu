@@ -19,10 +19,12 @@ const lib = fs.readFileSync(path.join(src, "lib.rs"), "utf8");
 const handler = lib.match(/generate_handler!\[([\s\S]*?)\]/)[1];
 const registered = new Set([...handler.matchAll(/(?:\w+::)*(\w+),/g)].map((m) => m[1]));
 
-// The Rust side: #[tauri::command] fns across src/*.rs.
+// The Rust side: #[tauri::command] fns across src/**/*.rs.
 const defined = new Set();
-for (const f of fs.readdirSync(src).filter((f) => f.endsWith(".rs"))) {
-  const text = fs.readFileSync(path.join(src, f), "utf8");
+const rustFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? rustFiles(path.join(dir, e.name)) : e.name.endsWith(".rs") ? [path.join(dir, e.name)] : []);
+for (const f of rustFiles(src)) {
+  const text = fs.readFileSync(f, "utf8");
   for (const m of text.matchAll(/#\[tauri::command\]\s*pub\s+(?:async\s+)?fn\s+(\w+)/g)) defined.add(m[1]);
 }
 

@@ -190,12 +190,12 @@ cargo tauri dev                           # run the app
 for f in ui/*.js; do node --check "$f"; done && for t in ui/*.test.js; do node "$t" || exit 1; done
 ```
 
-After changing what `live.js` or `app.js` sends to the backend, refresh the pinned
+After changing what `live.js` or a tab module (`*_tab.js`) sends to the backend, refresh the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
 `UPDATE_FIXTURE=1 node ui/app_flows.test.js`; `cargo test` then checks them against
 the Rust types. `cargo test` also needs no display (Tauri's mock runtime).
 
-The UI (`ui/index.html`, `app.js`, `styles.css`) is static — `cargo build`
+The UI (`ui/index.html`, `app.js` plus one `*_tab.js` module per tab, `styles.css`) is static — `cargo build`
 won't catch JS errors; `node --check` is the gate. Tabs are generic: a
 `<button class="tab" data-tab="X">` auto-wires to `<section class="panel" id="panel-X">`.
 
