@@ -191,9 +191,10 @@ jobs:
       - name: Run UI tests (Node, no dependencies)
         run: for t in ferrum_gui/ui/*.test.js; do node "$t" || exit 1; done
       # CI5: does the app start at all? Build it (the cache above already holds the dependencies),
-      # run it under a virtual X display for 8 s and require that it is still running; then stop
-      # it. This starts the real webview and loads ui/, but nothing clicks: it cannot say that a
-      # tab works, only that the window comes up and the process does not crash or exit.
+      # run it under a virtual X display for 8 s, require that its window opens and that the
+      # process is still running; then stop it. This starts the real webview, but nothing clicks
+      # and nothing reads the page: it cannot say that a tab works, only that the window comes up
+      # and the process does not crash or exit.
       - name: Install a virtual display (xvfb)
         run: sudo apt-get install -y xvfb x11-utils dbus dbus-x11
       - name: Build the app (debug)
@@ -205,11 +206,11 @@ jobs:
           GDK_BACKEND: x11
           LIBGL_ALWAYS_SOFTWARE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-          G_MESSAGES_DEBUG: all
           NO_AT_BRIDGE: "1"
         run: |
           log="$RUNNER_TEMP/ferrum_gui_boot.log"
-          # dbus-run-session gives GTK a session bus (without one it never shows the window).
+          # dbus-run-session gives GTK a session bus: without one the process stays up but the
+          # app window is never created (only GDK's 10x10 client-leader window exists).
           xvfb-run -a --server-args="-screen 0 1280x800x24" dbus-run-session -- bash -c '
             target/debug/ferrum_gui > "$1" 2>&1 &
             pid=$!
@@ -223,20 +224,11 @@ jobs:
                 found=yes; echo "window titled Ferrum SLM Studio appeared after $i s"
               fi
             done
-            # The 8 s requirement is met. The window check below is information only: a slow debug
-            # start may need longer to title and size the window.
-            for i in 9 10 11 12 13 14 15 16 17 18 19 20; do
-              [ "$found" = yes ] && break
-              sleep 1
-              if xwininfo -root -tree | grep -q "Ferrum SLM Studio"; then
-                found=yes; echo "window titled Ferrum SLM Studio appeared after $i s"
-              fi
-            done
             if [ "$found" = no ]; then
-              echo "::warning::no window titled Ferrum SLM Studio was found within 20 s (the process is up)"
-              xwininfo -root -tree
+              echo "::error::no window titled Ferrum SLM Studio after 8 s"; xwininfo -root -tree
+              kill "$pid"; exit 1
             fi
-            kill "$pid"; wait "$pid" 2>/dev/null; echo "still running after 8 s (and after the window check); stopped"
+            kill "$pid"; wait "$pid" 2>/dev/null; echo "still running after 8 s; stopped"
           ' _ "$log" || { echo "--- app output ---"; cat "$log"; exit 1; }
           echo "--- app output ---"; cat "$log"
           if grep -q "panicked at" "$log"; then echo "::error::the app panicked while running"; exit 1; fi

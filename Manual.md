@@ -1965,8 +1965,9 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 
 **Desktop** means Linux: CI builds, lints and tests it on Ubuntu 22.04 and
 starts the built app under a virtual display for 8 seconds (the *Boot smoke
-test* step of `.github/workflows/ci.yml`; it checks that the process stays up,
-not that any tab works). macOS and Windows are what Tauri supports; they were
+test* step of `.github/workflows/ci.yml`; it checks that the window titled
+*Ferrum SLM Studio* opens and the process stays up, not that any tab works or
+that the page loaded; it needs a D-Bus session, see Status). macOS and Windows are what Tauri supports; they were
 not built here (no icons for their bundles yet, see Status).
 
 **Android / iOS: untested.** Tauri 2 supports mobile, but Ferrum SLM Studio has
