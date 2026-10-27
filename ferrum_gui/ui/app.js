@@ -14,21 +14,24 @@ const $ = (id) => document.getElementById(id);
 let live = null; // tooltips + live estimates (live.js), created in init()
 
 const common = window.FerrumCommon.create({ $, doc: document });
+// Form values, last-used folders and the Evaluate table survive a restart (settings.js); storage
+// that is missing or blocked just means nothing is remembered.
+const settings = window.FerrumSettings.create({ doc: document, getStorage: () => window.localStorage, win: window });
 const openDialog = (dlg) => window.FerrumA11y.openDialog(dlg, document);
-const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast });
+const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast, settings });
 
 // What every tab module gets: the page, the backend and the shared helpers.
 const env = {
   $, doc: document, invoke, hasTauri, ...common,
   jobRunning: shell.jobRunning, stopAsked: shell.stopAsked,
-  getLive: () => live, openDialog,
+  getLive: () => live, openDialog, settings,
 };
 
 window.FerrumDatasetsTab.create(env);
 const prepareTab = window.FerrumPrepareTab.create(env);
 const trainTab = window.FerrumTrainTab.create(env);
 const generateTab = window.FerrumGenerateTab.create(env);
-window.FerrumEvaluateTab.create(env);
+const evaluateTab = window.FerrumEvaluateTab.create(env);
 window.FerrumModelsTab.create(env);
 const capableTab = window.FerrumCapableTab.create(env);
 const getBounds = capableTab.getBounds;
@@ -38,6 +41,13 @@ window.FerrumGgufTab.create(ggufEnv);
 const finetuneTab = window.FerrumFinetuneTab.create(env);
 const exportTab = window.FerrumExportTab.create(ggufEnv);
 const systemTab = window.FerrumSystemTab.create(env);
+
+settings.restore(); // after every tab is built, before the first estimate reads the fields
+$("resetSettings").addEventListener("click", () => {
+  settings.reset();
+  evaluateTab.clearTable();
+  common.toast("Settings reset to the defaults", "ok");
+});
 
 // ── Backend event wiring ──────────────────────────────────────────────────────
 async function wireEvents() {

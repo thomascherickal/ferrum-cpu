@@ -3,7 +3,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, dialog, toast } = env;
+    const { $, doc, invoke, dialog, toast, settings } = env;
     const bySel = (s) => Array.from(doc.querySelectorAll(s));
 
     // ── Tabs: a tablist with roving tabindex; arrows, Home and End move and activate ──
@@ -31,23 +31,30 @@
     // ── File dialogs (Browse buttons) ──
     const asPath = (p) => (typeof p === "string" ? p : p.path || p);
     // Open the dialog `kind` with `opts`, hand the result to `use`; no dialog means type the path.
-    async function pick(kind, opts, use) {
+    // `folderKind` ("open" / "save" / "dir") names the remembered starting folder of the dialog.
+    async function pick(kind, opts, folderKind, use) {
       if (!dialog) { toast("File dialog unavailable; type the path manually.", "info"); return; }
       try {
-        const picked = await dialog[kind](opts);
-        if (picked) use(picked);
+        const start = settings.folder(folderKind);
+        const picked = await dialog[kind](start ? { ...opts, defaultPath: start } : opts);
+        if (picked) {
+          use(picked);
+          const first = Array.isArray(picked) ? picked[0] : picked;
+          // A chosen folder is its own start next time; for a file it is the folder it is in.
+          if (first) settings.setFolder(folderKind, folderKind === "dir" ? asPath(first) : global.FerrumSettings.dirOf(asPath(first)));
+        }
       } catch (e) { toast("dialog error: " + e, "error"); }
     }
-    const pickOne = (kind, opts) => (targetId) => pick(kind, opts, (f) => { $(targetId).value = asPath(f); });
-    const pickOpen = pickOne("open", { multiple: false, directory: false });
-    const pickSave = pickOne("save", {});
-    const pickDir = pickOne("open", { multiple: false, directory: true });
+    const pickOne = (kind, opts, folderKind) => (targetId) => pick(kind, opts, folderKind, (f) => { $(targetId).value = asPath(f); });
+    const pickOpen = pickOne("open", { multiple: false, directory: false }, "open");
+    const pickSave = pickOne("save", {}, "save");
+    const pickDir = pickOne("open", { multiple: false, directory: true }, "dir");
     bySel(".browse").forEach((b) => b.addEventListener("click", () => pickOpen(b.dataset.target)));
     bySel(".browse-save").forEach((b) => b.addEventListener("click", () => pickSave(b.dataset.target)));
     bySel(".browse-dir").forEach((b) => b.addEventListener("click", () => pickDir(b.dataset.target)));
     // "Add file/folder": append the picked paths as new lines of a list (the Prepare inputs).
     function pickAdd(targetId, directory) {
-      return pick("open", { multiple: true, directory }, (picked) => {
+      return pick("open", { multiple: true, directory }, directory ? "dir" : "open", (picked) => {
         const paths = (Array.isArray(picked) ? picked : [picked]).map(asPath);
         if (!paths.length) return;
         const box = $(targetId);

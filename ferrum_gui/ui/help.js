@@ -834,6 +834,12 @@
       kind: "capability",
       beginner: "The numbers are rough upper bounds, not promises. Close other heavy programs for a fair reading.",
     },
+    resetSettings: {
+      title: "Reset settings",
+      does: "Forgets everything the Studio remembered between runs (the values in the forms, the folders the file pickers start in and the Evaluate table) and puts every field back to its starting value. No file on disk is touched.",
+      kind: "instant",
+      beginner: "The Studio saves what you type in this browser profile so the next start looks the way you left it. This button wipes that memory and starts fresh.",
+    },
     termClear: {
       title: "Clear",
       does: "Empties the Engine log panel. It does not affect any running job.",

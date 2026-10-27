@@ -2,9 +2,23 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqStr } = env;
+    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqStr, settings } = env;
     const { evalRow } = global.FerrumEscape;
     let lastEval = [];
+
+    // Append result rows to the table (the HTML comes from the escaping builder in escape.js).
+    function addRows(rows) {
+      const html = rows.map((r) => evalRow(r, r.perplexity < r.uniformBaseline * 0.5)); // all or none
+      for (const h of html) {
+        const tr = doc.createElement("tr");
+        tr.innerHTML = h;
+        $("evTable").querySelector("tbody").appendChild(tr);
+      }
+    }
+    // The table of the last session, from settings. A stored row that does not fit is skipped.
+    for (const run of settings.evalRuns()) {
+      try { addRows(run); lastEval = run; } catch (_) { /* stale or hand-edited row */ }
+    }
 
     $("evRun").addEventListener("click", async () => {
       clearErr("errEval");
@@ -27,12 +41,9 @@
       $("evStatus").textContent = "evaluating…"; $("evRun").disabled = true;
       try {
         const rows = await invoke("evaluate_slm", { params });
-        for (const r of rows) {
-          const tr = doc.createElement("tr");
-          tr.innerHTML = evalRow(r, r.perplexity < r.uniformBaseline * 0.5);
-          $("evTable").querySelector("tbody").appendChild(tr);
-        }
+        addRows(rows);
         lastEval = rows;
+        settings.addEvalRun(rows);
         $("evStatus").textContent = rows.length > 1 ? `added ${rows.length} rows` : "added";
         toast(rows.map((r) => `${r.label} perplexity ${r.perplexity.toFixed(3)}`).join(" · "), "ok");
       } catch (e) {
@@ -41,7 +52,8 @@
         toast("Evaluation failed: " + e, "error");
       } finally { $("evRun").disabled = false; }
     });
-    $("evClear").addEventListener("click", () => { $("evTable").querySelector("tbody").textContent = ""; });
+    function clearTable() { $("evTable").querySelector("tbody").textContent = ""; lastEval = []; }
+    $("evClear").addEventListener("click", () => { clearTable(); settings.clearEval(); });
 
     // Save the latest run as JSON: one row is exactly `eval --json`; a held-out + test pair is
     // {"held_out": {...}, "test": {...}} with the same keys in each.
@@ -57,6 +69,8 @@
         toast(`Saved ${n.toLocaleString()} bytes → ${path}`, "ok");
       } catch (e) { setErr("errEvalJson", String(e)); }
     });
+
+    return { clearTable };
   }
 
   const api = { create };

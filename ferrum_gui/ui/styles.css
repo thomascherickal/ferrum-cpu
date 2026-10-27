@@ -90,6 +90,8 @@ button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
 button.primary:hover { background: var(--accent-strong-hover); border-color: var(--accent-strong-hover); }
 button.ghost { background: transparent; }
+button.linkbtn { background: none; border: none; padding: 0; color: var(--accent2); text-decoration: underline; font-size: 12px; }
+button.linkbtn:hover { color: var(--fg); }
 button.small { padding: 4px 10px; font-size: 12px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 
