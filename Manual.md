@@ -244,6 +244,35 @@ build settings (`CARGO_PROFILE_RELEASE_LTO=off`, 16 codegen units).
 | `faer` | 8,368 (+24%) | 1.50 | 0.235 | 158.2 | Rejected: it failed the thread-count determinism rule. |
 | **A 4×8 register tile in the existing kernel (kept)** | **8,056 (+20%)** | 1.48 | 0.304 | 49.8 | Kept. Safe `std` Rust, and bit-identical results to the kernel it replaced. |
 
+**Copying the operands (P2a, 2026-10-27).** The persistent pool needs owned
+inputs, so every pooled matmul copies `A` and `B` into `Arc<[f32]>` and each
+worker returns an owned block that the caller copies into the output. A
+counter around the copies measured about 9% of the wall time of a reference
+training run (941 ms of 10.9 s over 20,000 calls, on a loaded machine; 5 to 14 µs per call
+in a quiet loop). Three ways to avoid them were tried, all in safe `std` Rust:
+
+| Option | Result |
+|---|---|
+| Recycle the operand buffers between calls (a per-thread free list; the pool hands the operands back) | No effect: interleaved per-call A/B on six model shapes, median -2.6% to +1.6%. The cost is the memory traffic, not the allocation. Not kept. |
+| Hold `Linear` weights in an `Arc` and clone it per call | Not done. `Linear.weight`, the training `Param`s and `Tensor.data` are public `Vec<f32>` fields mutated in place (the optimizer, fine-tuning, tying), and the training matmuls do not go through `Linear` at all. An upper bound, from caching both operands by pointer for a fixed `A` and `B`, was 6% to 14% of a call's time. |
+| Borrow with `std::thread::scope` and write straight into the output (**kept above 20 M multiply-adds**) | Faster once the multiply dominates the 7 thread spawns, slower below that. Pooled against scoped, alternating per call, four runs, difference of the medians of the calls: 2.4 M multiply-adds +15% to +47%, 7.9 M -9% to +7%, 25 M -4% to -23%, 33 M -8% to -27%, 57 M -26% to -28%, 134 M -13% to -27%, 1,074 M -7% to -13%. `ops` uses the pool below `parallel::SCOPED_MIN_COST` (20 M) and scoped threads from there. |
+
+Rows are split as before, so the results are bit-identical at any thread count
+(a new test compares the serial, pooled and scoped paths with a reference for
+odd shapes at 1 to 8 row blocks, with and without a bias, and the trained
+model's sha256 matches the previous build at 1, 3 and 8 threads).
+End to end the effect on the 507,552-parameter model is not measurable (its
+matmuls are mostly below the threshold): train 7,725 against 7,703 tokens/s,
+eval 1.43 against 1.57 s, generate 0.292 against 0.308 ms/token (new against
+previous build, medians of 7 interleaved `bench_slm.sh` rounds; single train
+runs spread from 6,533 to 8,569 tokens/s). The gemm benchmark's 512² matmul
+went from 4.95 to 4.20 ms (-15%, median of 3 interleaved runs). 256² is
+unchanged by construction (below the threshold; +0.4%), and 1024² and 2048² show
+no consistent change (+1% and +18% in the three full runs, +2% and +3% in four
+more runs of those two sizes, against a run-to-run spread of 10% to 20%).
+Machine: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz, 8 CPUs, with a
+browser and an IDE open (load average 5 to 14), 2026-10-27.
+
 | Benefit | Why it matters |
 |---|---|
 | Small, readable engine | The forward and backward pass, the tokenizer, and the GGUF codecs are all in the repo |
@@ -2367,7 +2396,10 @@ to update in the field.
 The matmul kernels split output rows across a **persistent worker pool**
 (`parallel`). It is built only on `std` threads, channels, and `Arc`, with no
 `unsafe`. Workers are spawned once and reused, so generation pays no per-call
-thread-creation cost. Single-token decode (`m = 1`) cannot be split by rows,
+thread-creation cost. A matmul of 20 million multiply-adds or more skips the
+pool: it runs on scoped threads that borrow the operands and write straight
+into the output (`run_scoped`), which saves the operand copies
+([§2.2.1](#221-what-is-used-and-what-was-tried-and-not-kept)). Single-token decode (`m = 1`) cannot be split by rows,
 so the quantized path splits the GEMV **by output column** (`run_1d`). The
 worker count comes from `std::thread::available_parallelism()`; override it
 with `FERRUM_NUM_THREADS` and query it with `ferrum_core::num_threads()`. Small

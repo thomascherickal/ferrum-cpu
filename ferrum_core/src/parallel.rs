@@ -14,6 +14,10 @@
 //! cheap clone per matmul, not per worker) and each worker computes and returns
 //! an **owned** output block; the caller stitches the blocks back together.
 //!
+//! Large matmuls skip the pool: [`run_scoped`] starts scoped threads that
+//! *borrow* the operands and write straight into the output, which is cheaper
+//! than copying everything once the multiply dominates the spawn ([`SCOPED_MIN_COST`]).
+//!
 //! The design is opt-out-safe:
 //!
 //! * Workloads below a scalar-work threshold run serially on the calling thread
@@ -215,6 +219,86 @@ where
     }
 }
 
+/// Scalar multiply-add count from which a matmul is run by [`run_scoped`] (fresh
+/// scoped threads that borrow their inputs) instead of by the persistent pool
+/// ([`run`]).
+///
+/// The pool needs owned inputs, so every call copies `A` and `B` into `Arc`s and
+/// every worker returns an owned block that the caller copies into the output. A
+/// scoped call borrows `A` and `B` and lets each thread write its rows straight
+/// into the output, but it pays for spawning the threads. Per-call interleaved
+/// A/B runs (Manual §2.2.1) put the break-even at 17 to 25 million multiply-adds:
+/// below it the pool wins (scoped +15% to +27% at 2.4 M), above it scoped calls
+/// are faster (median -8% to -27% from 33 M). The threshold keeps every
+/// measured break-even and loss on the pool side.
+pub const SCOPED_MIN_COST: usize = 20_000_000;
+
+/// Whether a matmul of `cost` multiply-adds should use [`run_scoped`].
+pub fn prefers_scoped(cost: usize) -> bool {
+    cost >= SCOPED_MIN_COST
+}
+
+/// Fill a row-major `[m, n]` output like [`run`], but on scoped threads that
+/// **borrow** their inputs: no copy of the operands, and every thread writes its
+/// rows straight into the output instead of returning a block to stitch.
+/// `kernel(r0, r1, block)` is the contract of [`run`] (`block` is a zeroed slice
+/// of `(r1 - r0) * n` elements indexed locally).
+///
+/// The row split is `ceil(m / threads)` rows per block, as in [`run`], and every
+/// block is computed once, so the result is **bit-for-bit identical** at any
+/// thread count. The caller works on the blocks too and `threads - 1` helper
+/// threads are started; one that cannot be spawned just leaves its share to the
+/// others, so the call never fails for lack of threads.
+pub fn run_scoped<K>(m: usize, n: usize, kernel: K) -> Vec<f32>
+where
+    K: Fn(usize, usize, &mut [f32]) + Sync,
+{
+    run_scoped_with(num_threads(), m, n, kernel)
+}
+
+/// [`run_scoped`] with an explicit thread count (clamped to `1..=m`); the tests
+/// use it to check the result at every thread count.
+pub(crate) fn run_scoped_with<K>(threads: usize, m: usize, n: usize, kernel: K) -> Vec<f32>
+where
+    K: Fn(usize, usize, &mut [f32]) + Sync,
+{
+    let mut out = vec![0.0f32; m * n];
+    let threads = threads.clamp(1, m.max(1));
+    if threads == 1 || n == 0 || cfg!(target_arch = "wasm32") {
+        kernel(0, m, &mut out);
+        return out;
+    }
+    let rows_per = m.div_ceil(threads);
+    let work: Vec<(usize, usize, &mut [f32])> = out
+        .chunks_mut(rows_per * n)
+        .enumerate()
+        .map(|(i, block)| (i * rows_per, ((i + 1) * rows_per).min(m), block))
+        .collect();
+    let helpers = work.len() - 1;
+    let work = std::sync::Mutex::new(work);
+    let drain = || loop {
+        // The lock is released before the kernel runs, so a panicking kernel
+        // cannot poison it.
+        let next = work.lock().unwrap_or_else(|e| e.into_inner()).pop();
+        match next {
+            Some((r0, r1, block)) => kernel(r0, r1, block),
+            None => break,
+        }
+    };
+    std::thread::scope(|scope| {
+        for _ in 0..helpers {
+            if std::thread::Builder::new()
+                .spawn_scoped(scope, drain)
+                .is_err()
+            {
+                break;
+            }
+        }
+        drain();
+    });
+    out
+}
+
 /// Fill a length-`total` 1-D output by running `kernel(j0, j1, block)` over
 /// contiguous column ranges on the persistent worker pool, where `block` is a
 /// fresh buffer of `j1 - j0` elements indexed locally (`j` at `j - j0`).
@@ -326,6 +410,42 @@ mod tests {
         for (idx, &v) in out.iter().enumerate() {
             assert_eq!(v, idx as f32, "element {idx} not written exactly once");
         }
+    }
+
+    #[test]
+    fn run_scoped_covers_every_row_exactly_once_at_any_thread_count() {
+        for (m, n) in [
+            (0usize, 4usize),
+            (1, 3),
+            (2, 5),
+            (7, 3),
+            (64, 1),
+            (257, 129),
+        ] {
+            for threads in 1..=8 {
+                let out = run_scoped_with(threads, m, n, |r0, r1, block| {
+                    assert_eq!(block.len(), (r1 - r0) * n);
+                    assert!(block.iter().all(|&v| v == 0.0), "block starts zeroed");
+                    for i in r0..r1 {
+                        for j in 0..n {
+                            block[(i - r0) * n + j] = (i * n + j) as f32;
+                        }
+                    }
+                });
+                assert_eq!(out.len(), m * n);
+                for (idx, &v) in out.iter().enumerate() {
+                    assert_eq!(v, idx as f32, "{m}x{n} threads={threads} element {idx}");
+                }
+            }
+        }
+        // A zero-width output must not panic in the row split.
+        assert!(run_scoped_with(4, 5, 0, |_, _, _| {}).is_empty());
+    }
+
+    #[test]
+    fn prefers_scoped_switches_at_the_threshold() {
+        assert!(!prefers_scoped(SCOPED_MIN_COST - 1));
+        assert!(prefers_scoped(SCOPED_MIN_COST));
     }
 
     #[test]

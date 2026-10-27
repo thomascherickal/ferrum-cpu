@@ -1251,6 +1251,25 @@ threads = 8   (FERRUM_NUM_THREADS = unset)
 | 1024² | 42.0 | 14.2 | 3.0× |
 | 2048² | 40.3 | 13.6 | 3.0× |
 
+The benchmark gained a block of the reference model's own matmul shapes (the fused QKV projection, MLP up and down, the LM head, and four sequences at once), which are small enough for per-call overhead to show. Matmuls of 20 million multiply-adds or more (here the 512² and larger squares) now run on scoped threads that borrow their operands instead of copying them for the worker pool ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)). The first two blocks of the third of three runs of that build (same machine, 2026-10-27, a browser and an IDE open, so the rates are below the 2026-10-26 ones above); the median of three interleaved runs against the previous build was 4.95 ms before and 4.20 ms after for 512², and unchanged within noise for the other rows:
+
+```text
+threads = 8   (FERRUM_NUM_THREADS = unset)
+
+== Square GEMM   C[m×n] = A[m×k]·B[k×n]   (compute-bound; m≥2 ⇒ parallel) ==
+  [  256×256  ]·[  256×256  ]      0.515 ms     65.2 GFLOP/s   (1223 iters)
+  [  512×512  ]·[  512×512  ]      4.503 ms     59.6 GFLOP/s   (162 iters)
+  [ 1024×1024 ]·[ 1024×1024 ]     48.079 ms     44.7 GFLOP/s   (19 iters)
+  [ 2048×2048 ]·[ 2048×2048 ]    434.290 ms     39.6 GFLOP/s   (3 iters)
+
+== Reference-model matmuls   (507,552-param SLM: context 128, embed 96, hidden 320, vocab 1024) ==
+  [  128×96   ]·[   96×288  ]      0.128 ms     55.2 GFLOP/s   (4635 iters)
+  [  128×96   ]·[   96×320  ]      0.143 ms     54.9 GFLOP/s   (4591 iters)
+  [  128×320  ]·[  320×96   ]      0.138 ms     56.8 GFLOP/s   (4649 iters)
+  [  128×96   ]·[   96×1024 ]      0.462 ms     54.4 GFLOP/s   (1513 iters)
+  [  512×96   ]·[   96×320  ]      0.546 ms     57.6 GFLOP/s   (1222 iters)
+```
+
 The f32 decode GEMV (`m = 1`) runs on one core whatever the thread count and streams 8.0 GB/s (2048×2048), 7.5 (2048×8192), 5.2 (8192×2048), 4.6 (2048×32000) at 8 threads, against 7.2 GB/s (2048×2048), 3.8 (2048×8192), 4.1 (8192×2048), 3.1 (2048×32000) at one thread (medians). The synthesized 1B-class f32 decode step takes 807 ms/token at 8 threads (1.24 tokens/s); with int4 weights it takes 150 ms/token (6.68 tokens/s) at 8 threads and 253 ms/token (3.95 tokens/s) at one thread.
 
 3. Thread scaling.

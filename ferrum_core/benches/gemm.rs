@@ -11,8 +11,10 @@
 //!
 //! Three sections, each illustrating a point from the 1B-SLM analysis:
 //!   1. Square GEMM   `C[m×n] = A[m×k]·B[k×n]` — compute-bound, crosses the
-//!      parallel threshold, so it exercises the persistent worker pool. Reported
-//!      as GFLOP/s.
+//!      parallel threshold, so it exercises the persistent worker pool (and, from
+//!      about 20 M multiply-adds, the scoped threads). Reported
+//!      as GFLOP/s. A second block times the matmul shapes of the 507,552-parameter
+//!      reference SLM, small enough that per-call overhead shows.
 //!   2. Decode GEMV   `c[1×n] = a[1×k]·W[k×n]` — the autoregressive hot path.
 //!      Because `m == 1`, `should_parallelize` returns `false`, so this runs
 //!      **serial on one core regardless of `FERRUM_NUM_THREADS`**. It is
@@ -142,6 +144,25 @@ fn main() {
             black_box(c);
         });
         gemm_row(s, s, s, best, iters);
+    }
+    println!();
+
+    // ── 1b. Reference-model shapes: small enough that per-call overhead shows ──
+    println!("== Reference-model matmuls   (507,552-param SLM: context 128, embed 96, hidden 320, vocab 1024) ==");
+    for &(m, k, n) in &[
+        (128usize, 96usize, 288usize), // fused QKV projection
+        (128, 96, 320),                // MLP up
+        (128, 320, 96),                // MLP down
+        (128, 96, 1024),               // LM head
+        (512, 96, 320),                // 4 sequences
+    ] {
+        let a = rand_matrix(m, k, &mut seed);
+        let b = rand_matrix(k, n, &mut seed);
+        let (best, iters) = time_best(budget, || {
+            let c = ops::matmul(black_box(&a), black_box(&b)).unwrap();
+            black_box(c);
+        });
+        gemm_row(m, k, n, best, iters);
     }
     println!();
 

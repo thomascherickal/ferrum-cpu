@@ -125,6 +125,73 @@ fn edge_rows(
     }
 }
 
+/// Rows `r0..r1` of `A·B` (`A` `[m, k]`, `B` `[k, n]`) plus an optional bias row,
+/// written into `block` (those rows, indexed locally, starting at zero). The one
+/// kernel behind every path below: the bias is added after the contraction of
+/// the row finishes, as the fused epilogue of [`linear_forward`].
+fn matmul_bias_block(
+    a: &[f32],
+    b: &[f32],
+    bias: Option<&[f32]>,
+    (k, n): (usize, usize),
+    (r0, r1): (usize, usize),
+    block: &mut [f32],
+) {
+    matmul_block(a, b, k, n, r0, r1, block);
+    if let Some(bias) = bias.filter(|_| n > 0) {
+        for row in block.chunks_exact_mut(n) {
+            for (ov, &bv) in row.iter_mut().zip(bias) {
+                *ov += bv;
+            }
+        }
+    }
+}
+
+/// `A·B (+ bias)` as a fresh `[m, n]` buffer, on as many threads as the work is
+/// worth, split by output rows (so the result is bit-identical at any thread
+/// count):
+///
+/// * small work runs serially on the calling thread, with no copy;
+/// * mid-sized work goes to the persistent pool, which needs owned inputs, so
+///   `A`, `B` and the bias are copied into `Arc`s first;
+/// * large work ([`crate::parallel::prefers_scoped`]) runs on scoped threads that
+///   borrow `A` and `B`, with no copy at all and no per-block buffers.
+fn matmul_rows(
+    a: &[f32],
+    b: &[f32],
+    bias: Option<&[f32]>,
+    (m, k, n): (usize, usize, usize),
+) -> Vec<f32> {
+    let cost = m.saturating_mul(k).saturating_mul(n);
+    if !crate::parallel::should_parallelize(m, cost) {
+        let mut out = vec![0.0f32; m * n];
+        matmul_bias_block(a, b, bias, (k, n), (0, m), &mut out);
+        out
+    } else if crate::parallel::prefers_scoped(cost) {
+        crate::parallel::run_scoped(m, n, |r0, r1, block| {
+            matmul_bias_block(a, b, bias, (k, n), (r0, r1), block);
+        })
+    } else {
+        matmul_pooled(a, b, bias, (m, k, n))
+    }
+}
+
+/// The persistent-pool path of [`matmul_rows`]: copies the operands into `Arc`s
+/// because the pool's threads outlive the call.
+fn matmul_pooled(
+    a: &[f32],
+    b: &[f32],
+    bias: Option<&[f32]>,
+    (m, k, n): (usize, usize, usize),
+) -> Vec<f32> {
+    let a = Arc::<[f32]>::from(a);
+    let b = Arc::<[f32]>::from(b);
+    let bias = bias.map(Arc::<[f32]>::from);
+    crate::parallel::run(m, n, move |r0, r1, block| {
+        matmul_bias_block(&a, &b, bias.as_deref(), (k, n), (r0, r1), block);
+    })
+}
+
 /// Matrix multiply: `[m,k] × [k,n] → [m,n]`. Uses i-k-j loop order for cache
 /// friendliness: the innermost loop walks contiguous memory in b and the output.
 pub fn matmul(a: &Tensor, b: &Tensor) -> Result<Tensor> {
@@ -144,22 +211,11 @@ pub fn matmul(a: &Tensor, b: &Tensor) -> Result<Tensor> {
         m,
         n
     );
-    // Split the output rows across the persistent CPU worker pool when the
-    // workload is large enough; otherwise compute serially with no Arc clone.
-    // Each output row depends only on `a`'s matching row and all of `b`, so the
+    // Split the output rows across CPU threads when the workload is large
+    // enough (see `matmul_rows`); otherwise compute serially with no copy. Each
+    // output row depends only on `a`'s matching row and all of `b`, so the
     // per-element arithmetic is identical regardless of the split.
-    let cost = m.saturating_mul(ka).saturating_mul(n);
-    let out = if crate::parallel::should_parallelize(m, cost) {
-        let a_arc = Arc::<[f32]>::from(a.data.as_slice());
-        let b_arc = Arc::<[f32]>::from(b.data.as_slice());
-        crate::parallel::run(m, n, move |r0, r1, block| {
-            matmul_block(&a_arc, &b_arc, ka, n, r0, r1, block);
-        })
-    } else {
-        let mut out = vec![0.0f32; m * n];
-        matmul_block(&a.data, &b.data, ka, n, 0, m, &mut out);
-        out
-    };
+    let out = matmul_rows(&a.data, &b.data, None, (m, ka, n));
     if verbose::is_verbose() {
         verbose::check_nan_inf(&out, &format!("ops::matmul result [{m},{n}]"));
     }
@@ -192,30 +248,7 @@ pub fn linear_forward(input: &Tensor, weight: &Tensor, bias: &[f32]) -> Result<T
     // the *same* buffer. This drops the intermediate tensor + clone that the old
     // `add_bias(matmul(..))` allocated (the Opt#3 win) while keeping the bias
     // added last — so the result is bit-for-bit identical, not merely close.
-    let cost = m.saturating_mul(k).saturating_mul(n);
-    let out = if crate::parallel::should_parallelize(m, cost) {
-        let a_arc = Arc::<[f32]>::from(input.data.as_slice());
-        let b_arc = Arc::<[f32]>::from(weight.data.as_slice());
-        let bias_arc = Arc::<[f32]>::from(bias);
-        crate::parallel::run(m, n, move |r0, r1, block| {
-            matmul_block(&a_arc, &b_arc, k, n, r0, r1, block);
-            for i in r0..r1 {
-                let o = &mut block[(i - r0) * n..(i - r0) * n + n];
-                for (ov, &bv) in o.iter_mut().zip(bias_arc.iter()) {
-                    *ov += bv;
-                }
-            }
-        })
-    } else {
-        let mut out = vec![0.0f32; m * n];
-        matmul_block(&input.data, &weight.data, k, n, 0, m, &mut out);
-        for i in 0..m {
-            for (ov, &bv) in out[i * n..i * n + n].iter_mut().zip(bias) {
-                *ov += bv;
-            }
-        }
-        out
-    };
+    let out = matmul_rows(&input.data, &weight.data, Some(bias), (m, k, n));
     if verbose::is_verbose() {
         verbose::check_nan_inf(&out, &format!("ops::linear_forward result [{m},{n}]"));
     }
@@ -661,6 +694,111 @@ mod tests {
         assert_eq!(
             got.data, want,
             "parallel matmul diverged from serial reference"
+        );
+    }
+
+    /// Straightforward i-p-j reference: for each output element the products
+    /// are added in ascending `p`, then the bias, which is the order the tiled
+    /// kernel must keep.
+    fn reference(
+        a: &[f32],
+        b: &[f32],
+        bias: Option<&[f32]>,
+        (m, k, n): (usize, usize, usize),
+    ) -> Vec<f32> {
+        let mut want = vec![0.0f32; m * n];
+        for i in 0..m {
+            for p in 0..k {
+                for j in 0..n {
+                    want[i * n + j] += a[i * k + p] * b[p * n + j];
+                }
+            }
+            if let Some(bias) = bias {
+                for j in 0..n {
+                    want[i * n + j] += bias[j];
+                }
+            }
+        }
+        want
+    }
+
+    /// Every dispatch path (serial, pooled, scoped at 1 to 8 row blocks) must
+    /// equal the reference bit for bit, for shapes that do not divide the
+    /// register tile or the row split, with and without a bias, and for the
+    /// transposed operands the backward pass multiplies.
+    #[test]
+    fn every_matmul_path_matches_reference_for_odd_shapes_and_thread_counts() {
+        let shapes = [
+            (1, 1, 1),
+            (1, 7, 5),
+            (2, 3, 9),
+            (3, 5, 7),
+            (5, 1, 13),
+            (7, 33, 3),
+            (17, 33, 9),
+            (31, 64, 47),
+            (130, 67, 45),
+            (257, 9, 130),
+        ];
+        for (idx, &(m, k, n)) in shapes.iter().enumerate() {
+            let a = det_data(m * k, 11 + idx as u64);
+            let b = det_data(k * n, 101 + idx as u64);
+            let bias = det_data(n, 1001 + idx as u64);
+            for bias in [None, Some(bias.as_slice())] {
+                let want = reference(&a, &b, bias, (m, k, n));
+                assert_eq!(
+                    matmul_pooled(&a, &b, bias, (m, k, n)),
+                    want,
+                    "pooled {m}x{k}x{n}"
+                );
+                assert_eq!(
+                    matmul_rows(&a, &b, bias, (m, k, n)),
+                    want,
+                    "matmul_rows {m}x{k}x{n}"
+                );
+                for threads in 1..=8 {
+                    let got = crate::parallel::run_scoped_with(threads, m, n, |r0, r1, block| {
+                        matmul_bias_block(&a, &b, bias, (k, n), (r0, r1), block);
+                    });
+                    assert_eq!(
+                        got,
+                        want,
+                        "scoped {m}x{k}x{n} threads={threads} bias={}",
+                        bias.is_some()
+                    );
+                }
+            }
+            // The transposed operands of the backward pass: (aᵀ)ᵀ·b through the
+            // public op on transposed storage.
+            let t = transpose(&Tensor::matrix(m, k, a.clone()).unwrap()).unwrap();
+            let bt = Tensor::matrix(k, n, b.clone()).unwrap();
+            let again = matmul(&transpose(&t).unwrap(), &bt).unwrap();
+            assert_eq!(
+                again.data,
+                reference(&a, &b, None, (m, k, n)),
+                "{m}x{k}x{n}"
+            );
+        }
+    }
+
+    /// A product past `SCOPED_MIN_COST` takes the scoped path through the public
+    /// ops and still equals the reference (same bits whether or not threads exist).
+    #[test]
+    fn scoped_size_matmul_and_linear_match_reference() {
+        let (m, k, n) = (150usize, 300usize, 500usize);
+        assert!(crate::parallel::prefers_scoped(m * k * n));
+        let a = det_data(m * k, 5);
+        let b = det_data(k * n, 6);
+        let bias = det_data(n, 7);
+        let at = Tensor::matrix(m, k, a.clone()).unwrap();
+        let bt = Tensor::matrix(k, n, b.clone()).unwrap();
+        assert_eq!(
+            matmul(&at, &bt).unwrap().data,
+            reference(&a, &b, None, (m, k, n))
+        );
+        assert_eq!(
+            linear_forward(&at, &bt, &bias).unwrap().data,
+            reference(&a, &b, Some(&bias), (m, k, n))
         );
     }
 
