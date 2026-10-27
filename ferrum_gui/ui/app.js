@@ -14,13 +14,14 @@ const $ = (id) => document.getElementById(id);
 let live = null; // tooltips + live estimates (live.js), created in init()
 
 const common = window.FerrumCommon.create({ $, doc: document });
+const openDialog = (dlg) => window.FerrumA11y.openDialog(dlg, document);
 const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast });
 
 // What every tab module gets: the page, the backend and the shared helpers.
 const env = {
   $, doc: document, invoke, hasTauri, ...common,
   jobRunning: shell.jobRunning, stopAsked: shell.stopAsked,
-  getLive: () => live,
+  getLive: () => live, openDialog,
 };
 
 window.FerrumDatasetsTab.create(env);
@@ -31,7 +32,7 @@ window.FerrumEvaluateTab.create(env);
 window.FerrumModelsTab.create(env);
 const capableTab = window.FerrumCapableTab.create(env);
 const getBounds = capableTab.getBounds;
-const budget = window.FerrumGgufBudget.create({ $, getBounds });
+const budget = window.FerrumGgufBudget.create({ $, getBounds, openDialog });
 const ggufEnv = { ...env, budget, getBounds };
 window.FerrumGgufTab.create(ggufEnv);
 const finetuneTab = window.FerrumFinetuneTab.create(env);
@@ -49,6 +50,14 @@ async function wireEvents() {
   await listen("gen-fragment", (e) => generateTab.onFragment(e.payload));
 }
 
+// The connection dot: colour plus shape (filled or hollow) plus a spoken label.
+function setConn(on, text) {
+  const dot = $("connDot");
+  dot.textContent = on ? "●" : "○";
+  dot.title = text;
+  dot.setAttribute("aria-label", text);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
   // Tooltips work everywhere; the estimates need the backend and report that they do not have it.
@@ -60,12 +69,12 @@ async function wireEvents() {
   if (!hasTauri) {
     $("webBanner").classList.remove("hidden");
     $("connDot").classList.remove("ok");
-    $("connDot").title = "Backend not connected (running outside Tauri)";
+    setConn(false, "Backend not connected (running outside Tauri)");
     shell.termLine("Ferrum SLM Studio — backend unavailable (open via `cargo tauri dev`).", "sys");
     return;
   }
   $("connDot").classList.add("ok");
-  $("connDot").title = "Backend connected";
+  setConn(true, "Backend connected");
   await wireEvents();
   systemTab.restart();
   trainTab.runPreflight();

@@ -7,10 +7,14 @@
   --fg: #e2e8f0;
   --muted: #94a3b8;
   --accent: #ea580c;
-  --accent2: #f97316;
+  --accent2: #fb923c;
+  --accent-strong: #c2410c;       /* white text on it: 5.2:1 (the plain accent gives 3.6:1) */
+  --accent-strong-hover: #9a3412;
+  --field-line: #8195b0;          /* form-field borders: at least 3:1 against the page */
+  --focus: #fde047;               /* the focus ring */
   --ok: #22c55e;
   --warn: #f59e0b;
-  --err: #ef4444;
+  --err: #f87171;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
@@ -43,6 +47,7 @@ body {
   padding: 10px 14px; cursor: pointer; font-size: 13px;
 }
 .tab:hover { color: var(--fg); }
+.tab:focus-visible { outline-offset: -3px; }
 .tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
 
 /* Content */
@@ -63,10 +68,14 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 label.chk { flex-direction: row; align-items: center; gap: 8px; color: var(--fg); margin: 6px 0; }
 label.narrow { max-width: 150px; }
 input[type=text], input[type=number], textarea, select {
-  background: var(--bg2); color: var(--fg); border: 1px solid var(--line);
+  background: var(--bg2); color: var(--fg); border: 1px solid var(--field-line);
   border-radius: 6px; padding: 8px 10px; font: inherit;
 }
-input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+::placeholder { color: var(--muted); opacity: 1; }
+
+/* Keyboard focus: one high-contrast ring everywhere (never removed). */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offset: 1px; border-color: var(--focus); }
 textarea { resize: vertical; font-family: var(--mono); font-size: 12.5px; width: 100%; }
 .row { display: flex; gap: 10px; align-items: flex-end; margin: 8px 0; flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin: 10px 0; }
@@ -78,8 +87,8 @@ button {
   border-radius: 6px; padding: 8px 14px; cursor: pointer; font: inherit; white-space: nowrap;
 }
 button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-button.primary:hover { background: var(--accent2); }
+button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--accent-strong-hover); border-color: var(--accent-strong-hover); }
 button.ghost { background: transparent; }
 button.small { padding: 4px 10px; font-size: 12px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
@@ -138,13 +147,16 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
 .term-input { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--line); }
 .prompt { color: var(--ok); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
 #termCmd { flex: 1; background: transparent; border: none; color: var(--fg); font-family: var(--mono); font-size: 12.5px; }
-#termCmd:focus { outline: none; }
+.term-out:focus-visible { outline-offset: -3px; }
 
 /* Toasts */
 #toasts { position: fixed; bottom: 250px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
 .toast { background: var(--bg3); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 6px; max-width: 360px; box-shadow: 0 4px 20px rgba(0,0,0,.4); animation: slidein .2s; }
 .toast.err { border-left-color: var(--err); }
 .toast.ok { border-left-color: var(--ok); }
+/* The kind is also a symbol, not only a colour. */
+.toast.err::before { content: "✕ "; font-weight: 700; color: var(--err); }
+.toast.ok::before { content: "✓ "; font-weight: 700; color: var(--ok); }
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
 
 /* Dataset catalog (HuggingFace / Kaggle) */
@@ -199,3 +211,8 @@ dialog.capdlg .capfoot { color: var(--muted); font-size: 11px; margin-top: 12px;
 
 /* "Your hardware" line in the top bar */
 .hwline { flex: 1; min-width: 0; margin: 0 14px; font-size: 12px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Motion: no sliding toasts or animated bars for people who ask for less. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

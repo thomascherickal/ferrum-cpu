@@ -1963,7 +1963,7 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
@@ -2000,11 +2000,50 @@ few seconds:
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, tokenizing, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, and the CSP | `ui/*.test.js` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
 `UPDATE_FIXTURE=1 node ui/app_flows.test.js`, then run `cargo test`.
+
+### 10.8 Accessibility
+
+What the page does for keyboard and screen-reader users:
+
+- **Tab bar.** A WAI-ARIA tablist: `role=tab` buttons with `aria-selected` and
+  `aria-controls`, `role=tabpanel` panels labelled by their tab, and a roving
+  `tabindex` (only the selected tab is in the Tab order). Left and Right move
+  to the neighbouring tab (wrapping) and open it, Home and End jump to the
+  first and last.
+- **Names.** Every field is inside a `<label>` that names it and every button
+  has text or an `aria-label`; the loss charts are `role=img` with a label.
+- **Announcements.** Toasts live in a polite `aria-live` region (an error toast
+  is also `role=alert` and stays 15 s instead of 5). Each tab's status line is
+  `role=status` and each inline error line `role=alert`. Progress bars and the
+  system meters are `role=progressbar` with a live `aria-valuenow`. The engine
+  log is a focusable `role=log` that is not read out as it grows.
+- **Focus.** A 2 px yellow `:focus-visible` ring on every control (nothing sets
+  `outline: none`). The two dialogs (Capable report, over-budget warning) are
+  modal: Tab wraps inside, Esc closes them (the warning then counts as
+  "Cancel"), and focus goes back to the button that opened them. Esc also
+  hides a tooltip.
+- **Colour.** The CSS variables are contrast-checked by `ui/a11y_css.test.js`
+  (a pure WCAG ratio function): text is at least 4.5:1 on every surface it sits
+  on, field borders and the focus ring at least 3:1. The primary button uses a
+  darker orange than the accent for that reason. Nothing relies on colour
+  alone: toasts carry a check or cross, the connection dot is filled or hollow
+  and has a spoken label, and a RAM figure that is over the limit says so in
+  words.
+- **Motion.** `prefers-reduced-motion: reduce` switches off the toast slide and
+  the bar transitions.
+
+Tests: `ui/a11y_html.test.js` reads `index.html` and fails if a field has no
+accessible name, a button has neither text nor a label, a tab does not match
+its panel, or a status, error or progress element lacks its role;
+`ui/a11y.test.js` drives the tab keys, the roving tabindex, the toast roles,
+the progress values, the connection dot and both dialogs' focus handling
+against the stub DOM. These checks cannot show how a screen reader reads the
+page or how the focus ring looks in the real window; that was not tested.
 
 ---
 

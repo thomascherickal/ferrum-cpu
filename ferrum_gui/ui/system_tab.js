@@ -2,7 +2,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, hasTauri, num } = env;
+    const { $, doc, invoke, hasTauri, setBar, num } = env;
     const { fmtBytes } = global.FerrumCommon;
     let sysTimer = null;
 
@@ -14,9 +14,9 @@
         $("miniMem").textContent = s.memPercent.toFixed(0) + "%";
         $("miniThreads").textContent = s.ferrumThreads;
         $("sysCpu").textContent = s.cpuTotal.toFixed(1) + "%";
-        $("sysCpuBar").style.width = Math.min(100, s.cpuTotal) + "%";
+        setBar("sysCpuBar", Math.min(100, s.cpuTotal));
         $("sysMem").textContent = s.memPercent.toFixed(1) + "%";
-        $("sysMemBar").style.width = Math.min(100, s.memPercent) + "%";
+        setBar("sysMemBar", Math.min(100, s.memPercent));
         $("sysMemAbs").textContent = `${fmtBytes(s.memUsed)} / ${fmtBytes(s.memTotal)}`;
         $("sysThreads").textContent = s.ferrumThreads;
         // DOM construction: an inline style="" attribute in markup would need CSP 'unsafe-inline'.

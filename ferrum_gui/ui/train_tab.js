@@ -4,7 +4,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, hasTauri, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning, stopAsked } = env;
+    const { $, doc, invoke, hasTauri, setBar, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning, stopAsked } = env;
     const { preflightView, preflightWhy } = global.FerrumEscape;
     const { drawLoss } = global.FerrumCommon;
 
@@ -51,7 +51,7 @@
     $("trForce").addEventListener("change", updateStartGate);
     // A finished token file becomes the Train corpus, and the pre-flight is asked again.
     const tokenizeTab = global.FerrumTokenizeTab.create({
-      $, invoke, toast, setErr, clearErr, jobRunning, stopAsked,
+      $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked,
       useAsCorpus: (path) => { $("trCorpus").value = path; schedulePreflight(); },
     });
     $("tab-train").addEventListener("click", schedulePreflight);
@@ -107,7 +107,7 @@
       } catch (e) { setErr("errTrain", String(e)); return; }
 
       lossHistory = []; drawChart();
-      $("trBar").style.width = "0%";
+      setBar("trBar", 0);
       $("trResult").textContent = "";
       $("trStatus").textContent = "training…";
       trRunning = true;
@@ -137,7 +137,7 @@
 
     function onProgress(p) {
       // total is null under a token budget (epoch count unknown up front).
-      if (p.total) $("trBar").style.width = Math.round((p.epoch / p.total) * 100) + "%";
+      if (p.total) setBar("trBar", Math.round((p.epoch / p.total) * 100));
       $("trStatus").textContent = `epoch ${p.epoch}${p.total ? "/" + p.total : ""} — loss ${p.loss.toFixed(6)}`;
       lossHistory.push(p.loss);
       if (lossHistory.length > 1000) lossHistory.shift();

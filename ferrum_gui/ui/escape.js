@@ -68,7 +68,7 @@
     const lc = pf.llamaCpp || { runs: false, reason: "" };
     const verdict = `<span class="${lc.runs ? "verdict-good" : "verdict-weak"}">${lc.runs ? "Yes" : "No"}</span>`;
     return card("Parameters", pf.params == null ? "unknown" : pf.params.toLocaleString()) +
-      `<div class="card"><div class="k">Peak RAM (estimate)</div><div class="v ${pf.fitsInRam ? "" : "verdict-weak"}">${esc(ram)}</div></div>` +
+      `<div class="card"><div class="k">Peak RAM (estimate)</div><div class="v ${pf.fitsInRam ? "" : "verdict-weak"}">${esc(ram)}${pf.fitsInRam ? "" : " ✗ over the limit"}</div></div>` +
       `<div class="card"><div class="k">Runs in llama.cpp?</div><div class="v">${verdict}</div></div>` +
       `<div class="card"><div class="k">About</div><div class="v">${esc(lc.reason)}</div></div>` +
       (pf.corpus ? card("Corpus", `Token file: ${pf.corpus.tokens.toLocaleString("en-US")} tokens, ${pf.corpus.documents.toLocaleString("en-US")} documents, vocabulary ${pf.corpus.vocab}`) +

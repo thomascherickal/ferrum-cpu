@@ -69,6 +69,9 @@ class Element {
   }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   walk(fn) { fn(this); this.children.forEach((c) => c.walk && c.walk(fn)); }
+  click() { this.dispatch("click"); }
+  focus() { this.ownerDocument.activeElement = this; this.dispatch("focus"); }
+  blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; this.dispatch("blur"); }
   showModal() { this.open = true; }
   close() { this.open = false; this.dispatch("close"); }
 }
@@ -97,6 +100,7 @@ function matchOne(el, sel) {
 class Document {
   constructor() {
     this.listeners = {};
+    this.activeElement = null;
     this.body = new Element("body", this);
     this.documentElement = new Element("html", this);
     this.documentElement.appendChild(this.body);

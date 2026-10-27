@@ -2,7 +2,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning } = env;
     const { drawLoss } = global.FerrumCommon;
     let lossHistory = [];
     const drawChart = () => drawLoss($, "ftChart", lossHistory);
@@ -34,7 +34,7 @@
       } catch (e) { setErr("errFt", String(e)); return; }
 
       lossHistory = []; drawChart();
-      $("ftBar").style.width = "0%";
+      setBar("ftBar", 0);
       $("ftResult").textContent = "";
       $("ftStatus").textContent = "fine-tuning… (CPU: this can take a while)";
       $("ftRun").disabled = true;
@@ -58,8 +58,7 @@
     });
 
     function onProgress(p) {
-      const pct = Math.round((p.epoch / p.total) * 100);
-      $("ftBar").style.width = pct + "%";
+      setBar("ftBar", Math.round((p.epoch / p.total) * 100));
       $("ftStatus").textContent = `epoch ${p.epoch}/${p.total} — loss ${p.loss.toFixed(4)} (ppl ${p.ppl.toFixed(2)})`;
       lossHistory.push(p.loss);
       if (lossHistory.length > 1000) lossHistory.shift();

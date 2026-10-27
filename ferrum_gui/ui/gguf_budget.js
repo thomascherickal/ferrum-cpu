@@ -21,7 +21,7 @@
   }
 
   // `getBounds()` answers the Capable tab's latest bounds (null until it ran).
-  function create({ $, getBounds }) {
+  function create({ $, getBounds, openDialog }) {
     const { esc } = global.FerrumEscape;
     const { fmtParams } = global.FerrumCommon;
 
@@ -54,7 +54,7 @@
         $("ggWarnProceed").addEventListener("click", onProceed);
         $("ggWarnCancel").addEventListener("click", onCancel);
         dlg.addEventListener("close", onClose, { once: true });
-        dlg.showModal();
+        openDialog(dlg);
       });
     }
 

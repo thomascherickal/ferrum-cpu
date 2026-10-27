@@ -28,10 +28,10 @@
   }
 
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, jobRunning, stopAsked, useAsCorpus } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked, useAsCorpus } = env;
 
     function onProgress(p) {
-      if (p.bytesTotal > 0) $("tkBar").style.width = Math.min(100, Math.round((p.bytesDone / p.bytesTotal) * 100)) + "%";
+      if (p.bytesTotal > 0) setBar("tkBar", Math.min(100, Math.round((p.bytesDone / p.bytesTotal) * 100)));
       $("tkStatus").textContent = `file ${p.file}/${p.files} - ${fmtMb(p.bytesDone)} of ${fmtMb(p.bytesTotal)} - ${fmtInt(p.tokens)} tokens`;
     }
 
@@ -40,13 +40,13 @@
       let params;
       try { params = readParams($); } catch (e) { setErr("errTokenize", e.message); return; }
       $("tkResult").textContent = "";
-      $("tkBar").style.width = "0%";
+      setBar("tkBar", 0);
       $("tkStatus").textContent = "starting...";
       $("tkRun").disabled = true;
       jobRunning("tkCancel", "tokenize", true);
       try {
         const r = await invoke("tokenize_corpus", { params });
-        $("tkBar").style.width = "100%";
+        setBar("tkBar", 100);
         $("tkStatus").textContent = "done";
         $("tkResult").textContent = resultText(r);
         useAsCorpus(r.outPath);

@@ -3,7 +3,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast } = env;
+    const { $, invoke, toast, openDialog } = env;
     const { esc, card } = global.FerrumEscape;
     const { fmtBytes, fmtParams } = global.FerrumCommon;
     let capBounds = null; // {inferInt4/8/F32, trainChinchilla, trainFixed1b, testEval, loadInt4, finetuneHi}
@@ -62,7 +62,7 @@
         const r = await invoke("capability_report");
         renderCapReport(r);
         $("capStatus").textContent = "";
-        $("capDialog").showModal();
+        openDialog($("capDialog"));
         toast("Capability check complete", "ok");
       } catch (e) {
         $("capStatus").textContent = "error";

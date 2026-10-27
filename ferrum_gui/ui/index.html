@@ -18,24 +18,24 @@
       <span class="mini" title="Total CPU load">CPU <b id="miniCpu">–</b></span>
       <span class="mini" title="Memory used">MEM <b id="miniMem">–</b></span>
       <span class="mini" title="Ferrum worker threads">THREADS <b id="miniThreads">–</b></span>
-      <span class="conn" id="connDot" title="Backend connection">●</span>
+      <span class="conn" id="connDot" role="img" aria-label="Backend not connected" title="Backend connection">○</span>
     </div>
   </header>
 
   <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
-  <nav id="tabs">
-    <button class="tab active" id="tab-datasets" data-tab="datasets">Datasets</button>
-    <button class="tab" id="tab-prepare" data-tab="prepare">Prepare</button>
-    <button class="tab" id="tab-train" data-tab="train">Train</button>
-    <button class="tab" id="tab-generate" data-tab="generate">Generate</button>
-    <button class="tab" id="tab-evaluate" data-tab="evaluate">Evaluate</button>
-    <button class="tab" id="tab-models" data-tab="models">Models</button>
-    <button class="tab" id="tab-gguf" data-tab="gguf">GGUF</button>
-    <button class="tab" id="tab-finetune" data-tab="finetune">Fine-tune</button>
-    <button class="tab" id="tab-export" data-tab="export">Export</button>
-    <button class="tab" id="tab-system" data-tab="system">System</button>
-    <button class="tab" id="tab-capable" data-tab="capable">Capable</button>
-  </nav>
+  <div id="tabs" role="tablist" aria-label="Studio sections">
+    <button class="tab active" id="tab-datasets" data-tab="datasets" role="tab" aria-controls="panel-datasets" aria-selected="true" tabindex="0">Datasets</button>
+    <button class="tab" id="tab-prepare" data-tab="prepare" role="tab" aria-controls="panel-prepare" aria-selected="false" tabindex="-1">Prepare</button>
+    <button class="tab" id="tab-train" data-tab="train" role="tab" aria-controls="panel-train" aria-selected="false" tabindex="-1">Train</button>
+    <button class="tab" id="tab-generate" data-tab="generate" role="tab" aria-controls="panel-generate" aria-selected="false" tabindex="-1">Generate</button>
+    <button class="tab" id="tab-evaluate" data-tab="evaluate" role="tab" aria-controls="panel-evaluate" aria-selected="false" tabindex="-1">Evaluate</button>
+    <button class="tab" id="tab-models" data-tab="models" role="tab" aria-controls="panel-models" aria-selected="false" tabindex="-1">Models</button>
+    <button class="tab" id="tab-gguf" data-tab="gguf" role="tab" aria-controls="panel-gguf" aria-selected="false" tabindex="-1">GGUF</button>
+    <button class="tab" id="tab-finetune" data-tab="finetune" role="tab" aria-controls="panel-finetune" aria-selected="false" tabindex="-1">Fine-tune</button>
+    <button class="tab" id="tab-export" data-tab="export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
+    <button class="tab" id="tab-system" data-tab="system" role="tab" aria-controls="panel-system" aria-selected="false" tabindex="-1">System</button>
+    <button class="tab" id="tab-capable" data-tab="capable" role="tab" aria-controls="panel-capable" aria-selected="false" tabindex="-1">Capable</button>
+  </div>
 
   <main id="content">
     <div id="webBanner" class="banner hidden">
@@ -44,7 +44,7 @@
     </div>
 
     <!-- ── Datasets ──────────────────────────────────────────────────────── -->
-    <section class="panel active" id="panel-datasets">
+    <section class="panel active" id="panel-datasets" role="tabpanel" aria-labelledby="tab-datasets">
       <h2>Datasets — fetch &amp; clean a corpus</h2>
       <p class="hint">Download text from the internet (e.g. a Project Gutenberg
         <code>.txt</code>), clean it to match the SLM's requirements, and save a
@@ -86,7 +86,7 @@
           </label>
           <button id="dsKgDownload">Fetch Kaggle</button>
         </div>
-        <span class="err" id="errDsCatalog"></span>
+        <span class="err" id="errDsCatalog" role="alert"></span>
       </fieldset>
 
       <div class="row">
@@ -105,7 +105,7 @@
         <button class="ghost browse" id="dsFileBrowse" data-target="dsFile">Browse…</button>
         <button id="dsLoadFile">Load file</button>
       </div>
-      <span class="err" id="errDsSource"></span>
+      <span class="err" id="errDsSource" role="alert"></span>
 
       <label>Raw text
         <textarea id="dsRaw" rows="6" placeholder="Downloaded / loaded / pasted text appears here. You can also paste directly."></textarea>
@@ -127,7 +127,7 @@
         <button id="dsClean" class="primary">Clean &amp; preview</button>
         <div class="stats" id="dsStats"></div>
       </div>
-      <span class="err" id="errDsClean"></span>
+      <span class="err" id="errDsClean" role="alert"></span>
 
       <label>Cleaned preview
         <textarea id="dsPreview" rows="6" readonly placeholder="Cleaned corpus preview…"></textarea>
@@ -140,11 +140,11 @@
         <button class="ghost browse-save" id="dsOutBrowse" data-target="dsOut">Browse…</button>
         <button id="dsSave" class="primary">Save corpus</button>
       </div>
-      <span class="err" id="errDsSave"></span>
+      <span class="err" id="errDsSave" role="alert"></span>
     </section>
 
     <!-- ── Prepare (clean + split text files, like `train_transformer prepare`) ── -->
-    <section class="panel" id="panel-prepare">
+    <section class="panel" id="panel-prepare" role="tabpanel" aria-labelledby="tab-prepare">
       <h2>Prepare — clean, deduplicate and split a dataset</h2>
       <p class="hint">Reads text files or whole folders straight from disk (a big corpus never
         goes through this window), cleans every document, and writes
@@ -179,13 +179,13 @@
         <label class="chk"><input type="checkbox" id="dpGutenberg" /> Strip Project Gutenberg boilerplate</label>
         <label class="chk"><input type="checkbox" id="dpLossy" /> Replace invalid UTF-8 bytes</label>
       </div>
-      <span class="err" id="errPrepare"></span>
+      <span class="err" id="errPrepare" role="alert"></span>
 
       <div class="row">
         <button id="dpRun" class="primary">Prepare</button>
         <button id="dpCancel" class="ghost hidden">Stop</button>
-        <div class="progress"><div class="bar" id="dpBar"></div></div>
-        <span id="dpStatus" class="muted">idle</span>
+        <div class="progress" role="progressbar" aria-label="Dataset preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dpBar"></div></div>
+        <span id="dpStatus" class="muted" role="status">idle</span>
       </div>
       <div id="dpResult" class="result"></div>
       <div class="row">
@@ -194,7 +194,7 @@
     </section>
 
     <!-- ── Train ─────────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-train">
+    <section class="panel" id="panel-train" role="tabpanel" aria-labelledby="tab-train">
       <h2>Train a transformer SLM</h2>
       <div class="row">
         <label>Corpus <input type="text" id="trCorpus" placeholder="/path/to/corpus.txt, or a token file made below" /></label>
@@ -253,12 +253,12 @@
           <button class="ghost browse-save" id="tkOutBrowse" data-target="tkOut">Save as…</button>
           <label class="narrow">Document separator <input type="text" id="tkSep" value="&lt;|endoftext|&gt;" /></label>
         </div>
-        <span class="err" id="errTokenize"></span>
+        <span class="err" id="errTokenize" role="alert"></span>
         <div class="row">
           <button id="tkRun">Tokenize corpus</button>
           <button id="tkCancel" class="ghost hidden">Stop</button>
-          <div class="progress"><div class="bar" id="tkBar"></div></div>
-          <span id="tkStatus" class="muted">idle</span>
+          <div class="progress" role="progressbar" aria-label="Tokenizing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="tkBar"></div></div>
+          <span id="tkStatus" class="muted" role="status">idle</span>
         </div>
         <div id="tkResult" class="result"></div>
       </fieldset>
@@ -268,20 +268,20 @@
         <p class="hint" id="trPreflightWhy"></p>
         <label class="chk hidden" id="trForceLabel"><input type="checkbox" id="trForce" /> I know, try anyway (skip the RAM check)</label>
       </fieldset>
-      <span class="err" id="errTrain"></span>
+      <span class="err" id="errTrain" role="alert"></span>
 
       <div class="row">
         <button id="trStart" class="primary">Train</button>
         <button id="trCancel" class="ghost hidden">Stop training</button>
-        <div class="progress"><div class="bar" id="trBar"></div></div>
-        <span id="trStatus" class="muted">idle</span>
+        <div class="progress" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="trBar"></div></div>
+        <span id="trStatus" class="muted" role="status">idle</span>
       </div>
-      <canvas id="trChart" width="900" height="140"></canvas>
+      <canvas id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
       <pre id="trResult" class="result"></pre>
     </section>
 
     <!-- ── Generate ──────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-generate">
+    <section class="panel" id="panel-generate" role="tabpanel" aria-labelledby="tab-generate">
       <h2>Generate (with live streaming)</h2>
       <div class="row">
         <label>Model <input type="text" id="genModel" placeholder="/path/to/model.gguf" /></label>
@@ -304,17 +304,17 @@
       </label>
       <label class="chk"><input type="checkbox" id="genStream" checked /> Stream output live</label>
       <label class="chk"><input type="checkbox" id="genVerbose" /> Verbose</label>
-      <span class="err" id="errGen"></span>
+      <span class="err" id="errGen" role="alert"></span>
       <div class="row">
         <button id="genStart" class="primary">Generate</button>
         <button id="genCancel" class="ghost hidden">Stop</button>
-        <span id="genStatus" class="muted"></span>
+        <span id="genStatus" class="muted" role="status"></span>
       </div>
       <div id="genOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Evaluate ──────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-evaluate">
+    <section class="panel" id="panel-evaluate" role="tabpanel" aria-labelledby="tab-evaluate">
       <h2>Evaluate — held-out perplexity</h2>
       <p class="hint">Score one or more models on text they were <em>not</em> trained
         on. Lower perplexity is better; a model that learned nothing scores its
@@ -355,18 +355,18 @@
         </div>
         <label class="chk"><input type="checkbox" id="evForce" /> Load even if it may exceed available RAM</label>
       </fieldset>
-      <span class="err" id="errEval"></span>
+      <span class="err" id="errEval" role="alert"></span>
       <div class="row">
         <button id="evRun" class="primary">Evaluate &amp; add row</button>
         <button id="evClear" class="ghost">Clear table</button>
-        <span id="evStatus" class="muted"></span>
+        <span id="evStatus" class="muted" role="status"></span>
       </div>
       <div class="row">
         <label>Save JSON to <input type="text" id="evJsonPath" placeholder="/path/to/eval.json" /></label>
         <button class="ghost browse-save" id="evJsonBrowse" data-target="evJsonPath">Browse…</button>
         <button id="evSaveJson" class="ghost">Save JSON</button>
       </div>
-      <span class="err" id="errEvalJson"></span>
+      <span class="err" id="errEvalJson" role="alert"></span>
       <table id="evTable" class="data">
         <thead><tr>
           <th>Model</th><th>Set</th><th>Predictions</th><th>Cross-entropy (nats)</th>
@@ -378,19 +378,19 @@
     </section>
 
     <!-- ── Models ────────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-models">
+    <section class="panel" id="panel-models" role="tabpanel" aria-labelledby="tab-models">
       <h2>Models — inspect / load from disk</h2>
       <div class="row">
         <label>Model file <input type="text" id="miPath" placeholder="/path/to/model.gguf" /></label>
         <button class="ghost browse" id="miPathBrowse" data-target="miPath">Browse…</button>
         <button id="miInspect" class="primary">Inspect / reload</button>
       </div>
-      <span class="err" id="errModel"></span>
+      <span class="err" id="errModel" role="alert"></span>
       <div id="miInfo" class="infocards"></div>
     </section>
 
     <!-- ── GGUF (import & run Llama/Qwen checkpoints) ─────────────────────── -->
-    <section class="panel" id="panel-gguf">
+    <section class="panel" id="panel-gguf" role="tabpanel" aria-labelledby="tab-gguf">
       <h2>GGUF — import &amp; run a Llama/Qwen checkpoint</h2>
       <p class="hint">Load an external <code>.gguf</code> model (F32/F16/Q8_0/Q8_1/Q4_0/Q4_1/Q4_K/Q5_K/Q6_K)
         and generate from it. CPU-only: a 1B model decodes at only a few tokens/sec and a
@@ -429,17 +429,17 @@
       </div>
       <label class="chk"><input type="checkbox" id="ggChatFmt" checked /> Chat format (auto)</label>
       <label class="chk"><input type="checkbox" id="ggForce" /> Load even if it may exceed available RAM</label>
-      <span class="err" id="errGguf"></span>
+      <span class="err" id="errGguf" role="alert"></span>
       <div class="row">
         <button id="ggRun" class="primary">Run</button>
         <button id="ggCancel" class="ghost hidden">Stop</button>
-        <span id="ggStatus" class="muted"></span>
+        <span id="ggStatus" class="muted" role="status"></span>
       </div>
       <div id="ggOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Fine-tune (GGUF) ──────────────────────────────────────────────── -->
-    <section class="panel" id="panel-finetune">
+    <section class="panel" id="panel-finetune" role="tabpanel" aria-labelledby="tab-finetune">
       <h2>Fine-tune — adapt an imported GGUF to your corpus</h2>
       <p class="hint">AdamW fine-tunes a Llama/Qwen <code>.gguf</code> on your own text (full-precision f32 masters),
         then writes a <code>.flck</code> checkpoint. Run it back on the <strong>GGUF</strong> tab via the
@@ -475,19 +475,19 @@
       </div>
       <label class="chk"><input type="checkbox" id="ftQat" /> Quantization-aware (int8) fine-tuning</label>
       <label class="chk"><input type="checkbox" id="ftForce" /> Train even if the estimate exceeds available RAM</label>
-      <span class="err" id="errFt"></span>
+      <span class="err" id="errFt" role="alert"></span>
       <div class="row">
         <button id="ftRun" class="primary">Fine-tune</button>
         <button id="ftCancel" class="ghost hidden">Stop fine-tuning</button>
-        <div class="progress"><div class="bar" id="ftBar"></div></div>
-        <span id="ftStatus" class="muted"></span>
+        <div class="progress" role="progressbar" aria-label="Fine-tuning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ftBar"></div></div>
+        <span id="ftStatus" class="muted" role="status"></span>
       </div>
-      <canvas id="ftChart" width="900" height="140"></canvas>
+      <canvas id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
       <div id="ftResult" class="result"></div>
     </section>
 
     <!-- ── Export (write a GGUF back out) ───────────────────────────────── -->
-    <section class="panel" id="panel-export">
+    <section class="panel" id="panel-export" role="tabpanel" aria-labelledby="tab-export">
       <h2>Export — write a model back to GGUF</h2>
       <p class="hint">Serializes a Llama/Qwen <code>.gguf</code> — optionally with a
         fine-tune checkpoint applied — to a new GGUF that runs in llama.cpp, ollama,
@@ -525,11 +525,11 @@
         <button class="ghost browse-save" id="exOutBrowse" data-target="exOut">Save as…</button>
       </div>
       <label class="chk"><input type="checkbox" id="exForce" /> Export even if the estimate exceeds available RAM</label>
-      <span class="err" id="errExport"></span>
+      <span class="err" id="errExport" role="alert"></span>
       <div class="row">
         <button id="exExport" class="primary">Export</button>
         <button id="exCancel" class="ghost hidden">Cancel export</button>
-        <span id="exStatus" class="muted"></span>
+        <span id="exStatus" class="muted" role="status"></span>
       </div>
       <div id="exResult" class="result"></div>
 
@@ -560,14 +560,14 @@
           <label>Modelfile to write (for Write Modelfile only) <input type="text" id="rxModelfileOut" placeholder="/path/to/ferrum.Modelfile" /></label>
           <button class="ghost browse-save" id="rxModelfileOutBrowse" data-target="rxModelfileOut">Save as…</button>
         </div>
-        <span class="err" id="errRuntime"></span>
+        <span class="err" id="errRuntime" role="alert"></span>
         <div class="row">
           <button id="rxPreview" class="ghost">Show Modelfile and commands</button>
           <button id="rxOllama" class="primary">Export to Ollama</button>
           <button id="rxLms" class="primary">Import into LM Studio</button>
           <button id="rxWriteModelfile" class="ghost">Write Modelfile only</button>
           <button id="rxCancel" class="ghost hidden">Stop</button>
-          <span id="rxStatus" class="muted"></span>
+          <span id="rxStatus" class="muted" role="status"></span>
         </div>
         <label>Modelfile
           <textarea id="rxModelfile" rows="6" readonly placeholder="The Modelfile appears here."></textarea>
@@ -577,7 +577,7 @@
     </section>
 
     <!-- ── System ────────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-system">
+    <section class="panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system">
       <h2>System monitor</h2>
       <p class="hint" id="hwSystem">Detecting your hardware...</p>
       <div class="row">
@@ -588,12 +588,12 @@
         <div class="gauge">
           <h3>CPU total</h3>
           <div class="big" id="sysCpu">–</div>
-          <div class="meter"><div id="sysCpuBar"></div></div>
+          <div class="meter" role="progressbar" aria-label="CPU load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysCpuBar"></div></div>
         </div>
         <div class="gauge">
           <h3>Memory</h3>
           <div class="big" id="sysMem">–</div>
-          <div class="meter"><div id="sysMemBar"></div></div>
+          <div class="meter" role="progressbar" aria-label="Memory in use" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysMemBar"></div></div>
           <div class="muted" id="sysMemAbs"></div>
         </div>
         <div class="gauge">
@@ -607,7 +607,7 @@
     </section>
 
     <!-- ── Capable ───────────────────────────────────────────────────────── -->
-    <section class="panel" id="panel-capable">
+    <section class="panel" id="panel-capable" role="tabpanel" aria-labelledby="tab-capable">
       <h2>Capable — what can this machine run?</h2>
       <p class="hint">Runs a quick (~1–2 s) micro-benchmark of memory bandwidth and
         matmul throughput on <em>this</em> CPU, then estimates the parameter range of an
@@ -617,27 +617,27 @@
         architecture and context length.</p>
       <div class="row">
         <button id="capCheck" class="primary">Check this machine</button>
-        <span id="capStatus" class="muted"></span>
+        <span id="capStatus" class="muted" role="status"></span>
       </div>
       <div id="capCards" class="infocards"></div>
     </section>
   </main>
 
   <!-- ── Docked terminal ──────────────────────────────────────────────────── -->
-  <section id="terminal">
+  <section id="terminal" aria-label="Engine log">
     <div class="term-head">
       <span>Engine log — <code>--verbose</code> output</span>
       <div class="term-actions">
         <button id="termClear" class="ghost small">Clear</button>
       </div>
     </div>
-    <div id="termOut" class="term-out"></div>
+    <div id="termOut" class="term-out" role="log" aria-live="off" aria-label="Engine log output" tabindex="0"></div>
   </section>
 
   <!-- ── Capability report dialog ─────────────────────────────────────────── -->
-  <dialog id="capDialog" class="capdlg">
+  <dialog id="capDialog" class="capdlg" aria-labelledby="capDialogTitle">
     <form method="dialog">
-      <h2>Machine capability</h2>
+      <h2 id="capDialogTitle">Machine capability</h2>
       <div id="capDialogBody"></div>
       <menu class="dlg-actions">
         <button class="primary" id="capDialogClose" value="ok">Close</button>
@@ -646,8 +646,8 @@
   </dialog>
 
   <!-- ── GGUF over-budget warning dialog ──────────────────────────────────── -->
-  <dialog id="ggWarnDialog" class="capdlg">
-    <h2>⚠ Model exceeds this machine's estimated limits</h2>
+  <dialog id="ggWarnDialog" class="capdlg" aria-labelledby="ggWarnTitle">
+    <h2 id="ggWarnTitle">⚠ Model exceeds this machine's estimated limits</h2>
     <div id="ggWarnBody"></div>
     <menu class="dlg-actions">
       <button id="ggWarnCancel" class="ghost">Cancel</button>
@@ -655,13 +655,14 @@
     </menu>
   </dialog>
 
-  <div id="toasts"></div>
+  <div id="toasts" aria-live="polite" aria-atomic="false"></div>
   <script src="escape.js"></script>
   <script src="stream.js"></script>
   <script src="help.js"></script>
   <script src="tooltip.js"></script>
   <script src="estimate_view.js"></script>
   <script src="live.js"></script>
+  <script src="a11y.js"></script>
   <script src="common.js"></script>
   <script src="shell.js"></script>
   <script src="datasets_tab.js"></script>

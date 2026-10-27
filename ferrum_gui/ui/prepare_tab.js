@@ -55,11 +55,11 @@
   }
 
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, jobRunning, stopAsked } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked } = env;
     let last = null; // the result of the latest finished run
 
     function onProgress(p) {
-      if (p.bytesTotal > 0) $("dpBar").style.width = Math.min(100, Math.round((p.bytesDone / p.bytesTotal) * 100)) + "%";
+      if (p.bytesTotal > 0) setBar("dpBar", Math.min(100, Math.round((p.bytesDone / p.bytesTotal) * 100)));
       $("dpStatus").textContent = `file ${p.file}/${p.files} - ${fmtMb(p.bytesDone)} of ${fmtMb(p.bytesTotal)} - ${fmtInt(p.documents)} documents read`;
     }
 
@@ -69,14 +69,14 @@
       try { params = readParams($); } catch (e) { setErr("errPrepare", e.message); return; }
       $("dpResult").textContent = "";
       $("dpUse").classList.add("hidden");
-      $("dpBar").style.width = "0%";
+      setBar("dpBar", 0);
       $("dpStatus").textContent = "starting...";
       $("dpRun").disabled = true;
       jobRunning("dpCancel", "prepare", true);
       try {
         const r = await invoke("prepare_dataset", { params });
         last = r;
-        $("dpBar").style.width = "100%";
+        setBar("dpBar", 100);
         $("dpStatus").textContent = "done";
         $("dpResult").textContent = resultText(r);
         $("dpUse").classList.toggle("hidden", r.train.documents === 0);

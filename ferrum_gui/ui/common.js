@@ -17,6 +17,13 @@
     return n.toFixed(0);
   }
 
+  // Set a progress bar's fill (`pct` 0-100) and the aria-valuenow of its progressbar host.
+  function setBar($, id, pct) {
+    const bar = $(id);
+    bar.style.width = pct + "%";
+    if (bar.parentNode && bar.parentNode.setAttribute) bar.parentNode.setAttribute("aria-valuenow", String(Math.round(pct)));
+  }
+
   // Redraw a loss curve on the canvas `id` from `history` (an array of numbers).
   function drawLoss($, id, history) {
     const c = $(id), ctx = c.getContext("2d");
@@ -44,8 +51,11 @@
       const el = doc.createElement("div");
       el.className = "toast " + (kind === "error" ? "err" : kind === "ok" ? "ok" : "");
       el.textContent = msg;
+      // The container is a polite live region; an error is also announced at once and stays
+      // longer, so a slow reader does not lose it.
+      if (kind === "error") el.setAttribute("role", "alert");
       $("toasts").appendChild(el);
-      setTimeout(() => el.remove(), 5000);
+      setTimeout(() => el.remove(), kind === "error" ? 15000 : 5000);
     }
     function setErr(id, msg) { const e = $(id); if (e) e.textContent = msg || ""; }
     function clearErr(id) { setErr(id, ""); }
@@ -81,10 +91,10 @@
       if (!v) throw new Error(`${name} is required`);
       return v;
     }
-    return { toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, samplerParams };
+    return { toast, setErr, clearErr, setBar: (id, pct) => setBar($, id, pct), num, int, reqInt, reqNum, reqStr, samplerParams };
   }
 
-  const api = { create, fmtBytes, fmtParams, drawLoss };
+  const api = { create, fmtBytes, fmtParams, drawLoss, setBar };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {

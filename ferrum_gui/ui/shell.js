@@ -6,13 +6,25 @@
     const { $, doc, invoke, dialog, toast } = env;
     const bySel = (s) => Array.from(doc.querySelectorAll(s));
 
-    // ── Tabs ──
-    bySel(".tab").forEach((btn) => {
+    // ── Tabs: a tablist with roving tabindex; arrows, Home and End move and activate ──
+    const tabs = bySel(".tab");
+    tabs.forEach((btn) => {
       btn.addEventListener("click", () => {
-        bySel(".tab").forEach((b) => b.classList.remove("active"));
+        tabs.forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-selected", String(on));
+          b.setAttribute("tabindex", on ? "0" : "-1");
+        });
         bySel(".panel").forEach((p) => p.classList.remove("active"));
-        btn.classList.add("active");
         $("panel-" + btn.dataset.tab).classList.add("active");
+      });
+      btn.addEventListener("keydown", (e) => {
+        const i = global.FerrumA11y.nextTabIndex(e.key, tabs.indexOf(btn), tabs.length);
+        if (i < 0) return;
+        if (e.preventDefault) e.preventDefault();
+        tabs[i].focus();
+        tabs[i].click(); // so every click listener (pre-flight, estimates) sees the switch
       });
     });
 
