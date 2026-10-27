@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { documentFromHtml } = require("./testdom.js");
 
-const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "a11y.js", "common.js", "settings.js", "shell.js", "datasets_tab.js", "prepare_tab.js", "tokenize_tab.js", "train_tab.js", "generate_tab.js", "evaluate_tab.js", "models_tab.js", "capable_tab.js", "gguf_budget.js", "gguf_tab.js", "finetune_tab.js", "runtime_tab.js", "export_tab.js", "system_tab.js", "app.js"];
+const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "a11y.js", "errors.js", "common.js", "settings.js", "shell.js", "datasets_tab.js", "prepare_tab.js", "tokenize_tab.js", "train_tab.js", "generate_tab.js", "evaluate_tab.js", "models_tab.js", "capable_tab.js", "gguf_budget.js", "gguf_tab.js", "finetune_tab.js", "runtime_tab.js", "export_tab.js", "system_tab.js", "app.js"];
 const read = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 
 // Canvas context that accepts any drawing call.
@@ -16,7 +16,7 @@ const ctx2d = new Proxy({}, { get: () => () => {}, set: () => true });
 // `backend(cmd, args)` answers invoke(); `tauri: false` simulates a plain browser.
 // `storage`: an object with getItem/setItem/removeItem becomes window.localStorage; "blocked" makes
 // reading window.localStorage throw, like a webview with site data disabled; absent leaves it out.
-function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage } = {}) {
+function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, navigator } = {}) {
   const doc = documentFromHtml(read("index.html"));
   doc.createElement = ((orig) => (t) => {
     const el = orig(t);
@@ -46,6 +46,7 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage } =
     clearInterval() {},
   };
   Object.assign(sandbox, win);
+  sandbox.navigator = navigator;
   if (storage === "blocked") Object.defineProperty(sandbox, "localStorage", { get() { throw new Error("SecurityError: storage is blocked"); } });
   else if (storage) sandbox.localStorage = storage;
   sandbox.window = sandbox; // like a browser: window === the global object

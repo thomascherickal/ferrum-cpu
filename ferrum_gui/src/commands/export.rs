@@ -2,6 +2,7 @@
 //! back out as a runnable GGUF at a chosen quantisation.
 
 use super::guard::{available_memory_bytes, gguf_resident_bytes};
+use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::checked_path;
 use crate::AppState;
@@ -173,9 +174,9 @@ pub async fn export_gguf<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: ExportParams,
-) -> Result<ExportResult, String> {
+) -> Result<ExportResult, CmdError> {
     let job = state.jobs.start(Job::Export)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::error::blocking(move || {
         ferrum_core::set_verbose(params.verbose);
         let emit = |m: &str| {
             let _ = app.emit("export-progress", m.to_string());
@@ -185,7 +186,6 @@ pub async fn export_gguf<R: Runtime>(
         r
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@
 //! panic) and carries the [`StopCondition`] that the engine polls once per
 //! optimizer step. `cancel_job` sets the flag behind it.
 
+use crate::error::CmdError;
 use ferrum_core::StopCondition;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -109,7 +110,7 @@ impl Drop for JobGuard {
 /// Stop the running job of `kind` (`"train"`, `"finetune"`, `"export"`,
 /// `"generate"`, `"evaluate"`, `"run"`, `"prepare"`, `"runtime_export"` or `"tokenize"`). Returns whether one was running.
 #[tauri::command]
-pub fn cancel_job(state: State<'_, AppState>, kind: Job) -> Result<bool, String> {
+pub fn cancel_job(state: State<'_, AppState>, kind: Job) -> Result<bool, CmdError> {
     Ok(state.jobs.cancel(kind))
 }
 

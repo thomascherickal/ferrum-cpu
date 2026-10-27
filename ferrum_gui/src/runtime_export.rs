@@ -8,6 +8,7 @@
 //! [`preview_runtime_export`] only reads the model header and looks the tool up, and the
 //! "write the Modelfile only" mode starts nothing at all.
 
+use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::checked_path;
 use crate::AppState;
@@ -182,10 +183,8 @@ pub(crate) fn do_export(
 
 /// Show the Modelfile and the command(s) an export would use. Starts nothing.
 #[tauri::command]
-pub async fn preview_runtime_export(params: RuntimeParams) -> Result<RuntimeResult, String> {
-    tauri::async_runtime::spawn_blocking(move || do_preview(&params))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+pub async fn preview_runtime_export(params: RuntimeParams) -> Result<RuntimeResult, CmdError> {
+    crate::error::blocking(move || do_preview(&params)).await
 }
 
 /// Run `export-ollama` / `export-lmstudio` (or write the Modelfile only). One at a time;
@@ -195,11 +194,9 @@ pub async fn preview_runtime_export(params: RuntimeParams) -> Result<RuntimeResu
 pub async fn export_to_runtime(
     state: State<'_, AppState>,
     params: RuntimeParams,
-) -> Result<RuntimeResult, String> {
+) -> Result<RuntimeResult, CmdError> {
     let job = state.jobs.start(Job::RuntimeExport)?;
-    tauri::async_runtime::spawn_blocking(move || do_export(&params, &|| job.cancelled()))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+    crate::error::blocking(move || do_export(&params, &|| job.cancelled())).await
 }
 
 #[cfg(test)]

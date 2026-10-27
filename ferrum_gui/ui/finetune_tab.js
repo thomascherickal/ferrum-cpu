@@ -2,7 +2,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, setBar, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning, errText, busy } = env;
     const { drawLoss } = global.FerrumCommon;
     let lossHistory = [];
     const drawChart = () => drawLoss($, "ftChart", lossHistory);
@@ -31,12 +31,13 @@
           force: $("ftForce").checked,
           verbose: false,
         };
-      } catch (e) { setErr("errFt", String(e)); return; }
+      } catch (e) { setErr("errFt", e); return; }
 
       lossHistory = []; drawChart();
       setBar("ftBar", 0);
       $("ftResult").textContent = "";
       $("ftStatus").textContent = "fine-tuning… (CPU: this can take a while)";
+      busy("ftSpin", true);
       $("ftRun").disabled = true;
       jobRunning("ftCancel", "finetune", true);
       try {
@@ -52,9 +53,9 @@
         if (!$("ggResume").value) $("ggResume").value = r.outPath;
       } catch (e) {
         $("ftStatus").textContent = "error";
-        setErr("errFt", String(e));
-        toast("Fine-tune failed: " + e, "error");
-      } finally { $("ftRun").disabled = false; jobRunning("ftCancel", "finetune", false); }
+        setErr("errFt", e);
+        toast("Fine-tune failed: " + errText(e), "error");
+      } finally { busy("ftSpin", false); $("ftRun").disabled = false; jobRunning("ftCancel", "finetune", false); }
     });
 
     function onProgress(p) {

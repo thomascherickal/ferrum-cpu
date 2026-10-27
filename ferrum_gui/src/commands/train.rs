@@ -1,5 +1,6 @@
 //! The Train tab: train a transformer SLM in-process with streamed progress.
 
+use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
@@ -96,11 +97,9 @@ pub async fn train_slm<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: TrainParams,
-) -> Result<TrainResult, String> {
+) -> Result<TrainResult, CmdError> {
     let job = state.jobs.start(Job::Train)?;
-    tauri::async_runtime::spawn_blocking(move || train_inner(app, params, job))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+    crate::error::blocking(move || train_inner(app, params, job)).await
 }
 
 /// Open the Train tab's corpus as a token file with its tokenizer (the CLI's checks: the tokenizer

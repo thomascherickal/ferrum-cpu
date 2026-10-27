@@ -28,7 +28,7 @@
   }
 
   function create(env) {
-    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked, useAsCorpus } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked, useAsCorpus, errText, isCancelled } = env;
 
     function onProgress(p) {
       if (p.bytesTotal > 0) setBar("tkBar", Math.min(100, Math.round((p.bytesDone / p.bytesTotal) * 100)));
@@ -52,12 +52,12 @@
         useAsCorpus(r.outPath);
         toast(`Tokenized ${fmtInt(r.tokens)} tokens; the Train corpus now points at the token file`, "ok");
       } catch (e) {
-        if (stopAsked.tokenize && /cancelled/.test(String(e))) {
+        if (stopAsked.tokenize && isCancelled(e)) {
           $("tkStatus").textContent = "stopped; no file was written";
         } else {
           $("tkStatus").textContent = "error";
-          setErr("errTokenize", String(e));
-          toast("Tokenize failed: " + e, "error");
+          setErr("errTokenize", e);
+          toast("Tokenize failed: " + errText(e), "error");
         }
       } finally { $("tkRun").disabled = false; jobRunning("tkCancel", "tokenize", false); }
     });

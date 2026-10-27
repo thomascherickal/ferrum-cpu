@@ -3,7 +3,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, openDialog } = env;
+    const { $, invoke, toast, openDialog, errText, busy } = env;
     const { esc, card } = global.FerrumEscape;
     const { fmtBytes, fmtParams } = global.FerrumCommon;
     let capBounds = null; // {inferInt4/8/F32, trainChinchilla, trainFixed1b, testEval, loadInt4, finetuneHi}
@@ -57,6 +57,7 @@
 
     $("capCheck").addEventListener("click", async () => {
       $("capStatus").textContent = "benchmarking…";
+      busy("capSpin", true);
       $("capCheck").disabled = true;
       try {
         const r = await invoke("capability_report");
@@ -66,8 +67,8 @@
         toast("Capability check complete", "ok");
       } catch (e) {
         $("capStatus").textContent = "error";
-        toast("Capability check failed: " + e, "error");
-      } finally { $("capCheck").disabled = false; }
+        toast("Capability check failed: " + errText(e), "error");
+      } finally { $("capCheck").disabled = false; busy("capSpin", false); }
     });
 
     return { getBounds: () => capBounds };

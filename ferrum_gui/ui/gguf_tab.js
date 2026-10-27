@@ -2,18 +2,20 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, budget, getBounds } = env;
+    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, budget, getBounds, errText, isCancelled, busy } = env;
     const { ggufInfo } = global.FerrumEscape;
 
     $("ggInspect").addEventListener("click", async () => {
       clearErr("errGguf");
       let path;
-      try { path = reqStr("ggPath", "GGUF file"); } catch (e) { setErr("errGguf", String(e)); return; }
+      try { path = reqStr("ggPath", "GGUF file"); } catch (e) { setErr("errGguf", e); return; }
       $("ggStatus").textContent = "inspecting…";
+      busy("ggSpin", true);
       try {
         const i = await invoke("gguf_info", { path });
         $("ggInfo").innerHTML = ggufInfo(i);
         $("ggStatus").textContent = "";
+        busy("ggSpin", false);
         toast(i.runnable ? "GGUF inspected" : "Inspected — architecture not runnable", i.runnable ? "ok" : "error");
         const crossedI = budget.check(i.paramCount);
         if (crossedI.length) {
@@ -21,7 +23,7 @@
         } else if (!getBounds()) {
           toast("Tip: run the Capable check to flag oversized models.", "info");
         }
-      } catch (e) { $("ggStatus").textContent = "error"; setErr("errGguf", String(e)); toast("Inspect failed: " + e, "error"); }
+      } catch (e) { busy("ggSpin", false); $("ggStatus").textContent = "error"; setErr("errGguf", e); toast("Inspect failed: " + errText(e), "error"); }
     });
 
     $("ggRun").addEventListener("click", async () => {
@@ -44,7 +46,7 @@
           raw: !$("ggChatFmt").checked,
         };
         if (!params.prompt.trim() && !params.ids) throw new Error("Enter a prompt (or token IDs)");
-      } catch (e) { setErr("errGguf", String(e)); return; }
+      } catch (e) { setErr("errGguf", e); return; }
 
       // Budget gate: if the model exceeds this machine's estimated limits, confirm.
       if (getBounds()) {
@@ -60,6 +62,7 @@
 
       $("ggOut").textContent = "";
       $("ggStatus").textContent = "loading & generating… (CPU: this can take a while)";
+      busy("ggSpin", true);
       $("ggRun").disabled = true;
       jobRunning("ggCancel", "run", true);
       try {
@@ -68,14 +71,14 @@
         $("ggStatus").textContent =
           `${r.stopped ? "stopped" : "done"} — ${r.generated} tokens in ${r.seconds.toFixed(1)}s (${r.tokensPerSec.toFixed(1)} tok/s, prompt ${r.promptTokens} tok)`;
       } catch (e) {
-        if (stopAsked.run && /cancelled/.test(String(e))) {
+        if (stopAsked.run && isCancelled(e)) {
           $("ggStatus").textContent = "stopped before any text was produced";
         } else {
           $("ggStatus").textContent = "error";
-          setErr("errGguf", String(e));
-          toast("Run failed: " + e, "error");
+          setErr("errGguf", e);
+          toast("Run failed: " + errText(e), "error");
         }
-      } finally { $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
+      } finally { busy("ggSpin", false); $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
     });
   }
 

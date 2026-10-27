@@ -40,7 +40,7 @@
   }
 
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, jobRunning, stopAsked } = env;
+    const { $, invoke, toast, setErr, clearErr, jobRunning, stopAsked, errText, isCancelled } = env;
     const buttons = ["rxPreview", "rxOllama", "rxLms", "rxWriteModelfile"];
     const busy = (on) => buttons.forEach((b) => { $(b).disabled = on; });
 
@@ -59,12 +59,12 @@
         $("rxStatus").textContent = "done";
         toast(r.summary, "ok");
       } catch (e) {
-        if (stopAsked.runtime_export && /cancelled/.test(String(e))) {
+        if (stopAsked.runtime_export && isCancelled(e)) {
           $("rxStatus").textContent = "stopped";
         } else {
           $("rxStatus").textContent = "error";
-          setErr("errRuntime", String(e));
-          toast("Export failed: " + e, "error");
+          setErr("errRuntime", e);
+          toast("Export failed: " + errText(e), "error");
         }
       } finally { busy(false); jobRunning("rxCancel", "runtime_export", false); }
     }
@@ -87,7 +87,7 @@
         $("rxStatus").textContent = "";
       } catch (e) {
         $("rxStatus").textContent = "error";
-        setErr("errRuntime", String(e));
+        setErr("errRuntime", e);
       } finally { busy(false); }
     });
   }

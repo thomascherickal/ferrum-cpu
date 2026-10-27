@@ -1963,9 +1963,10 @@ browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), errors.js (reads a command error, truncates it, builds the copy-details text), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
 src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
+src/error.rs      CmdError {code, message, hint}: the error every command returns, and the blocking-task helper
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
 src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
 src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, llama.cpp verdict)
@@ -2072,6 +2073,40 @@ one for folders) and the Evaluate table. It is stored in the webview's
 hide, the folders, the never-stored fields (a leaked marker string is searched
 for in the stored text), junk and throwing storage, and the whole flow through
 the real page. A real webview's `localStorage` was not exercised.
+
+### 10.10 Errors
+
+Every command that fails rejects with one object, `{ code, message, hint }`
+(`src/error.rs`):
+
+| Field | What |
+|---|---|
+| `code` | `cancelled`, `busy`, `memory`, `not_found`, `path`, `network`, `invalid`, `model`, `io`, `internal` or `error` |
+| `message` | The text the command always produced (it names the field and the value) |
+| `hint` | One sentence on what to try next, the same for every message of a code |
+
+The functions behind the commands still return plain strings; the wrapper
+turns one into a `CmdError` and picks the code from what the message says
+(`error::classify`, covered by a test over real messages). That keeps the
+change at the IPC boundary, so a new message needs no new code: it falls under
+`error` until a rule names it. The webview also accepts a plain string (an
+argument error from Tauri itself, or a page running outside Tauri) and shows it
+without a hint.
+
+In the UI an error line shows the message, the hint under it and a
+*Copy details* button (code, message, hint and time; the async clipboard API,
+else a hidden textarea and `execCommand("copy")`). A message longer than 300
+characters is cut with an ellipsis and a *Show full message* button; error
+toasts are cut at 240. Long calls show a small spinner next to the status line:
+Inspect and Run on the GGUF tab, Export, Fine-tune, Evaluate, Generate and the
+Capable check (which stops with `prefers-reduced-motion`, the status text
+carries the meaning). Progress events for downloads and *Clean* were not added;
+those still show only a start and an end.
+
+`ui/errors.test.js` covers the reading, truncation, details text, both copy
+paths, and the whole display through the real page; `src/error.rs` and the
+headless IPC tests cover the wire shape and the codes. The clipboard and the
+spinner were not seen in a real window.
 
 ---
 

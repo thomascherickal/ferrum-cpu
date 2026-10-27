@@ -2,18 +2,18 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, reqStr } = env;
+    const { $, invoke, toast, setErr, clearErr, reqStr, errText } = env;
     const { modelInfo } = global.FerrumEscape;
 
     $("miInspect").addEventListener("click", async () => {
       clearErr("errModel");
       let path;
-      try { path = reqStr("miPath", "Model file"); } catch (e) { setErr("errModel", String(e)); return; }
+      try { path = reqStr("miPath", "Model file"); } catch (e) { setErr("errModel", e); return; }
       try {
         const i = await invoke("model_info", { path });
         $("miInfo").innerHTML = modelInfo(i);
         toast("Model loaded", "ok");
-      } catch (e) { setErr("errModel", String(e)); toast("Inspect failed: " + e, "error"); }
+      } catch (e) { setErr("errModel", e); toast("Inspect failed: " + errText(e), "error"); }
     });
   }
 

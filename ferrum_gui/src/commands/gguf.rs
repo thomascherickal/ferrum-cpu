@@ -3,6 +3,7 @@
 use super::generate::{one_f32, sampling_from};
 use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant};
 use super::time_seed;
+use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
@@ -27,7 +28,7 @@ pub struct ModelInfo {
 
 /// Inspect a saved model file (mirrors `slm_cli info`).
 #[tauri::command]
-pub fn model_info(path: String) -> Result<ModelInfo, String> {
+pub fn model_info(path: String) -> Result<ModelInfo, CmdError> {
     checked_path("model path", &path, true)?;
     let raw = std::fs::read(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
     let slm = GenerativeSLM::from_bytes(&raw).map_err(|e| format!("not a valid model: {e}"))?;
@@ -95,8 +96,8 @@ pub struct GgufSummary {
 
 /// Inspect a GGUF file without loading its weights (streamed header parse).
 #[tauri::command]
-pub async fn gguf_info(path: String) -> Result<GgufSummary, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn gguf_info(path: String) -> Result<GgufSummary, CmdError> {
+    crate::error::blocking(move || {
         checked_path("GGUF path", &path, true)?;
         let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let g = Gguf::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
@@ -148,7 +149,6 @@ pub async fn gguf_info(path: String) -> Result<GgufSummary, String> {
         })
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[derive(Deserialize)]
@@ -199,11 +199,9 @@ pub struct GgufRunResult {
 pub async fn run_gguf(
     state: State<'_, AppState>,
     params: GgufRunParams,
-) -> Result<GgufRunResult, String> {
+) -> Result<GgufRunResult, CmdError> {
     let job = state.jobs.start(Job::Run)?;
-    tauri::async_runtime::spawn_blocking(move || gguf_run_inner(params, job))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+    crate::error::blocking(move || gguf_run_inner(params, job)).await
 }
 
 /// The error of a run that was cancelled before it produced anything.

@@ -2,7 +2,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqStr, settings } = env;
+    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqStr, settings, errText, busy } = env;
     const { evalRow } = global.FerrumEscape;
     let lastEval = [];
 
@@ -36,9 +36,9 @@
           force: $("evForce").checked,
         };
         if (!params.text && !params.textPath) throw new Error("Provide held-out text or a file");
-      } catch (e) { setErr("errEval", String(e)); return; }
+      } catch (e) { setErr("errEval", e); return; }
 
-      $("evStatus").textContent = "evaluating…"; $("evRun").disabled = true;
+      $("evStatus").textContent = "evaluating…"; $("evRun").disabled = true; busy("evSpin", true);
       try {
         const rows = await invoke("evaluate_slm", { params });
         addRows(rows);
@@ -48,9 +48,9 @@
         toast(rows.map((r) => `${r.label} perplexity ${r.perplexity.toFixed(3)}`).join(" · "), "ok");
       } catch (e) {
         $("evStatus").textContent = "error";
-        setErr("errEval", String(e));
-        toast("Evaluation failed: " + e, "error");
-      } finally { $("evRun").disabled = false; }
+        setErr("errEval", e);
+        toast("Evaluation failed: " + errText(e), "error");
+      } finally { $("evRun").disabled = false; busy("evSpin", false); }
     });
     function clearTable() { $("evTable").querySelector("tbody").textContent = ""; lastEval = []; }
     $("evClear").addEventListener("click", () => { clearTable(); settings.clearEval(); });
@@ -67,7 +67,7 @@
           : Object.fromEntries(lastEval.map((r) => [r.label.replace("-", "_"), r.report]));
         const n = await invoke("save_corpus", { text: JSON.stringify(report, null, 2) + "\n", path });
         toast(`Saved ${n.toLocaleString()} bytes → ${path}`, "ok");
-      } catch (e) { setErr("errEvalJson", String(e)); }
+      } catch (e) { setErr("errEvalJson", e); }
     });
 
     return { clearTable };

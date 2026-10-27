@@ -13,12 +13,12 @@ const dialog = hasTauri && T.dialog ? T.dialog : null;
 const $ = (id) => document.getElementById(id);
 let live = null; // tooltips + live estimates (live.js), created in init()
 
-const common = window.FerrumCommon.create({ $, doc: document });
+const common = window.FerrumCommon.create({ $, doc: document, navigator: window.navigator });
 // Form values, last-used folders and the Evaluate table survive a restart (settings.js); storage
 // that is missing or blocked just means nothing is remembered.
 const settings = window.FerrumSettings.create({ doc: document, getStorage: () => window.localStorage, win: window });
 const openDialog = (dlg) => window.FerrumA11y.openDialog(dlg, document);
-const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast, settings });
+const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast, errText: common.errText, settings });
 
 // What every tab module gets: the page, the backend and the shared helpers.
 const env = {

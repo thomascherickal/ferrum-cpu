@@ -61,7 +61,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     const a = await start({ train_slm: async () => TRAINED });
     await a.click("tab-train");
     await a.click("trStart");
-    assert.strictEqual(a.$("errTrain").textContent, "Error: Corpus is required");
+    assert.strictEqual(a.$("errTrain").textContent, "Corpus is required");
     assert.strictEqual(a.of("train_slm").length, 0, "nothing is sent for an invalid form");
 
     a.set("trCorpus", "/data/c.txt"); a.set("trModel", "/m/out.gguf");

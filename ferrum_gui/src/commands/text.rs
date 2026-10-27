@@ -1,5 +1,6 @@
 //! Corpus text commands: download, clean, save and read text files.
 
+use crate::error::CmdError;
 use crate::paths::checked_path;
 use ferrum_core::{clean_corpus, corpus_stats, CleanOptions};
 use serde::{Deserialize, Serialize};
@@ -43,13 +44,12 @@ fn fetch_text(url: &str, cap: usize) -> Result<String, String> {
 /// UTF-8 string (lossily decoded), capped at `max_bytes` (default 8 MiB). Uses an
 /// HTTP client with connect/read timeouts so a slow host cannot hang the task.
 #[tauri::command]
-pub async fn download_text(url: String, max_bytes: Option<usize>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn download_text(url: String, max_bytes: Option<usize>) -> Result<String, CmdError> {
+    crate::error::blocking(move || {
         let cap = max_bytes.unwrap_or(8 * 1024 * 1024);
         fetch_text(&url, cap)
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[derive(Deserialize)]
@@ -78,7 +78,7 @@ pub struct CleanResult {
 /// Clean raw text into a training-ready corpus and report statistics. Pure;
 /// does not touch disk.
 #[tauri::command]
-pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, String> {
+pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, CmdError> {
     let options = CleanOptions {
         strip_gutenberg: opts.strip_gutenberg,
         lowercase: opts.lowercase,
@@ -106,7 +106,7 @@ pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, String> {
 
 /// Write a corpus to disk (creating parent directories), returning bytes written.
 #[tauri::command]
-pub fn save_corpus(text: String, path: String) -> Result<usize, String> {
+pub fn save_corpus(text: String, path: String) -> Result<usize, CmdError> {
     checked_path("output file path", &path, false)?;
     if let Some(parent) = Path::new(&path).parent() {
         if !parent.as_os_str().is_empty() {
@@ -120,7 +120,7 @@ pub fn save_corpus(text: String, path: String) -> Result<usize, String> {
 
 /// Read a UTF-8 text file (lossy), capped at `max_bytes` (default 16 MiB).
 #[tauri::command]
-pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, String> {
+pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, CmdError> {
     // Devices and FIFOs are refused up front; the cap still bounds huge regular files.
     checked_path("file path", &path, true)?;
     let cap = max_bytes.unwrap_or(16 * 1024 * 1024) as u64;

@@ -22,6 +22,7 @@
 mod capable;
 mod commands;
 mod datasets;
+mod error;
 pub mod estimate;
 pub mod estimate_cmd;
 mod evaluate;

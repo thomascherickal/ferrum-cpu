@@ -45,20 +45,81 @@
     ctx.fillText(min.toFixed(4), pad, h - 4);
   }
 
-  function create({ $, doc }) {
+  function create({ $, doc, navigator: nav }) {
+    const E = global.FerrumErrors;
+    const env = { navigator: nav };
     // ── Toasts & errors ──
     function toast(msg, kind = "info") {
       const el = doc.createElement("div");
       el.className = "toast " + (kind === "error" ? "err" : kind === "ok" ? "ok" : "");
-      el.textContent = msg;
+      el.textContent = msg.length > 240 ? msg.slice(0, 239) + "…" : msg;
       // The container is a polite live region; an error is also announced at once and stays
       // longer, so a slow reader does not lose it.
       if (kind === "error") el.setAttribute("role", "alert");
       $("toasts").appendChild(el);
       setTimeout(() => el.remove(), kind === "error" ? 15000 : 5000);
     }
-    function setErr(id, msg) { const e = $(id); if (e) e.textContent = msg || ""; }
+    // An error line: the message (cut when long, with a button for the rest), the hint beneath it
+    // and a "Copy details" button. The line itself holds only the message; the rest sits in a
+    // companion block right after it, built on first use. `err` is anything a catch block
+    // received (errors.js reads it).
+    const mores = new Map(); // error line id -> { box, hint, expand, copy, state }
+    function moreFor(el) {
+      if (mores.has(el.id)) return mores.get(el.id);
+      const mk = (tag, cls, label) => {
+        const x = doc.createElement(tag);
+        x.className = cls;
+        if (label) x.textContent = label;
+        return x;
+      };
+      const m = {
+        box: mk("div", "errmore hidden"),
+        hint: mk("span", "hint-line"),
+        expand: mk("button", "ghost small hidden", "Show full message"),
+        copy: mk("button", "ghost small", "Copy details"),
+        state: null,
+      };
+      m.hint.setAttribute("aria-live", "polite");
+      for (const b of [m.expand, m.copy]) b.setAttribute("type", "button");
+      m.expand.addEventListener("click", () => {
+        m.state.open = !m.state.open;
+        paint(el, m);
+      });
+      m.copy.addEventListener("click", async () => {
+        const ok = await E.copy(E.details(m.state.err), { navigator: env.navigator, document: doc });
+        toast(ok ? "Error details copied" : "Could not copy; select the message and copy it by hand", ok ? "ok" : "error");
+      });
+      m.box.append(m.hint, m.expand, m.copy);
+      if (el.parentNode && el.parentNode.insertBefore) el.parentNode.insertBefore(m.box, el.nextSibling);
+      mores.set(el.id, m);
+      return m;
+    }
+    function paint(el, m) {
+      const n = E.normalize(m.state.err);
+      const cut = E.truncate(n.message);
+      el.textContent = m.state.open ? n.message : cut.shown;
+      m.hint.textContent = n.hint;
+      m.expand.classList.toggle("hidden", !cut.truncated);
+      m.expand.textContent = m.state.open ? "Show less" : "Show full message";
+    }
+    function setErr(id, err) {
+      const el = $(id);
+      if (!el) return;
+      const m = moreFor(el);
+      if (err === "" || err == null) {
+        m.state = null;
+        el.textContent = "";
+        m.hint.textContent = "";
+        m.box.classList.add("hidden");
+        return;
+      }
+      m.state = { err, open: false };
+      paint(el, m);
+      m.box.classList.remove("hidden");
+    }
     function clearErr(id) { setErr(id, ""); }
+    // A spinner next to a status line while a long call runs.
+    function busy(spinId, on) { $(spinId).classList.toggle("hidden", !on); }
 
     // ── Number/validation helpers ──
     function num(id) { return parseFloat($(id).value); }
@@ -91,7 +152,7 @@
       if (!v) throw new Error(`${name} is required`);
       return v;
     }
-    return { toast, setErr, clearErr, setBar: (id, pct) => setBar($, id, pct), num, int, reqInt, reqNum, reqStr, samplerParams };
+    return { toast, setErr, clearErr, busy, errText: E.text, isCancelled: E.isCancelled, setBar: (id, pct) => setBar($, id, pct), num, int, reqInt, reqNum, reqStr, samplerParams };
   }
 
   const api = { create, fmtBytes, fmtParams, drawLoss, setBar };

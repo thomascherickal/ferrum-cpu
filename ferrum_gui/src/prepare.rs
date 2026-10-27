@@ -4,6 +4,7 @@
 //! manifest are byte-identical to the CLI's. The manifest `args` are the
 //! equivalent CLI flags, so a GUI run can be repeated on the command line.
 
+use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::{checked_dir, checked_input};
 use crate::AppState;
@@ -218,9 +219,9 @@ pub async fn prepare_dataset<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: PrepareParams,
-) -> Result<PrepareResult, String> {
+) -> Result<PrepareResult, CmdError> {
     let job = state.jobs.start(Job::Prepare)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::error::blocking(move || {
         let mut emit = |p: PrepareProgress| {
             let _ = app.emit(
                 "prepare-progress",
@@ -233,7 +234,6 @@ pub async fn prepare_dataset<R: Runtime>(
         do_prepare(&params, job.stop().clone(), &mut emit)
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[cfg(test)]

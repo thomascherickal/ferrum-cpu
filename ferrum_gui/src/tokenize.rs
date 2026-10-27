@@ -4,6 +4,7 @@
 //! ids are those of `ByteBpeTokenizer::encode_docs` over the files joined with the separator,
 //! and `train` accepts the result in place of the text (detected by content).
 
+use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::{checked_input, checked_path};
 use crate::AppState;
@@ -104,9 +105,9 @@ pub async fn tokenize_corpus<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: TokenizeParams,
-) -> Result<TokenizeResult, String> {
+) -> Result<TokenizeResult, CmdError> {
     let job = state.jobs.start(Job::Tokenize)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::error::blocking(move || {
         let mut emit = |p: TokenizeProgress| {
             let _ = app.emit(
                 "tokenize-progress",
@@ -119,7 +120,6 @@ pub async fn tokenize_corpus<R: Runtime>(
         do_tokenize(&params, job.stop().clone(), &mut emit)
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[cfg(test)]

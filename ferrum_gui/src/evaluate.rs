@@ -8,6 +8,7 @@
 //! crate, so the JSON is built here with the same keys.)
 
 use crate::commands::{available_memory_bytes, file_name, gguf_resident_bytes, parse_quant};
+use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::checked_path;
 use crate::AppState;
@@ -292,16 +293,15 @@ fn score_llama(
 pub async fn evaluate_slm(
     state: State<'_, AppState>,
     params: EvalParams,
-) -> Result<Vec<EvalRow>, String> {
+) -> Result<Vec<EvalRow>, CmdError> {
     // One pass of the engine's scorer, which has no stop hook: it can be refused while another
     // evaluation runs, but not cancelled.
     let job = state.jobs.start(Job::Evaluate)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::error::blocking(move || {
         let _job = job;
         evaluate_now(&params)
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[cfg(test)]

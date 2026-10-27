@@ -4,6 +4,7 @@
 //! Design specs (archived in ../Ferrum-Junk/docs-archive/docs/superpowers/specs/):
 //! 2026-06-23-capable-module-design.md and 2026-07-02-capable-ranges-design.md.
 
+use crate::error::CmdError;
 use crate::AppState;
 use serde::Serialize;
 use std::hint::black_box;
@@ -223,7 +224,7 @@ fn assemble_report(
 /// Micro-benchmark the host and return capability bounds. Polled on demand by
 /// the "Capable" tab.
 #[tauri::command]
-pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport, String> {
+pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport, CmdError> {
     // Snapshot machine facts under the shared sysinfo lock, then release it.
     let (cpu, cores, mem_total, mem_avail) = {
         let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
@@ -250,7 +251,7 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
 
     // Run the blocking benchmark off the async runtime thread.
     let (bw, gemm_single) =
-        tauri::async_runtime::spawn_blocking(|| (measure_mem_bandwidth(), measure_gemm_gflops()))
+        crate::error::blocking_ok(|| (measure_mem_bandwidth(), measure_gemm_gflops()))
             .await
             .map_err(|e| format!("benchmark task error: {e}"))?;
 

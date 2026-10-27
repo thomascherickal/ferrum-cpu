@@ -7,6 +7,7 @@
 //! [`crate::estimate`] module, so the numbers match the Train button's tooltip
 //! and the engine's refusal). Nothing is allocated or trained.
 
+use crate::error::CmdError;
 use crate::estimate::{estimate, JobKind, JobParams, Throughput};
 use crate::estimate_cmd::resolve;
 use crate::hardware::{self, HardwareInfo};
@@ -163,15 +164,14 @@ pub fn preflight(p: &JobParams, hw: &HardwareInfo, bench: Option<&Throughput>) -
 pub async fn preflight_train(
     state: State<'_, AppState>,
     params: JobParams,
-) -> Result<Preflight, String> {
+) -> Result<Preflight, CmdError> {
     let bench = *state.bench.lock().unwrap_or_else(|e| e.into_inner());
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::error::blocking_ok(move || {
         let mut params = params;
         resolve(JobKind::Train, &mut params);
         preflight(&params, &hardware::detect(), bench.as_ref())
     })
     .await
-    .map_err(|e| format!("task error: {e}"))
 }
 
 #[cfg(test)]

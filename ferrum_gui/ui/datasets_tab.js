@@ -17,7 +17,7 @@
         const text = await invoke("download_text", { url, maxBytes });
         $("dsRaw").value = text;
         toast(`Downloaded ${text.length.toLocaleString()} chars`, "ok");
-      } catch (e) { setErr("errDsSource", String(e)); }
+      } catch (e) { setErr("errDsSource", e); }
       finally { $("dsDownload").disabled = false; }
     });
 
@@ -28,7 +28,7 @@
         const text = await invoke("read_text_file", { path, maxBytes: null });
         $("dsRaw").value = text;
         toast(`Loaded ${text.length.toLocaleString()} chars`, "ok");
-      } catch (e) { setErr("errDsSource", String(e)); }
+      } catch (e) { setErr("errDsSource", e); }
     });
 
     // ── Dataset catalog (HuggingFace / Kaggle) ──
@@ -66,7 +66,7 @@
             btn.disabled = true; toast(`Downloading ${d.name}…`);
             const res = await invoke("download_dataset", { id: d.id, destDir: destDir() });
             afterDownload(res);
-          } catch (e) { setErr("errDsCatalog", String(e)); }
+          } catch (e) { setErr("errDsCatalog", e); }
           finally { btn.disabled = false; }
         });
         card.appendChild(meta);
@@ -78,7 +78,7 @@
     async function loadCatalog() {
       try {
         renderCatalog(await invoke("list_datasets"));
-      } catch (e) { setErr("errDsCatalog", String(e)); }
+      } catch (e) { setErr("errDsCatalog", e); }
     }
 
     $("dsCatalogLoad").addEventListener("click", loadCatalog);
@@ -92,7 +92,7 @@
         $("dsHfDownload").disabled = true; toast("Downloading from HuggingFace…");
         const res = await invoke("download_hf_file", { repo, file, revision: null, destDir: destDir(), hfToken });
         afterDownload(res);
-      } catch (e) { setErr("errDsCatalog", String(e)); }
+      } catch (e) { setErr("errDsCatalog", e); }
       finally { $("dsHfDownload").disabled = false; }
     });
 
@@ -104,7 +104,7 @@
         $("dsKgDownload").disabled = true; toast("Downloading from Kaggle…");
         const res = await invoke("download_kaggle_file", { ownerSlug, file, destDir: destDir() });
         afterDownload(res);
-      } catch (e) { setErr("errDsCatalog", String(e)); }
+      } catch (e) { setErr("errDsCatalog", e); }
       finally { $("dsKgDownload").disabled = false; }
     });
 
@@ -132,7 +132,7 @@
           `lines <b>${esc(r.lines.toLocaleString())}</b> · bytes <b>${esc(r.bytes.toLocaleString())}</b> · ` +
           `char-vocab <b>${esc(r.uniqueChars)}</b>`;
         toast("Cleaned. char-level vocab = " + r.uniqueChars, "ok");
-      } catch (e) { setErr("errDsClean", String(e)); }
+      } catch (e) { setErr("errDsClean", e); }
     });
 
     $("dsSave").addEventListener("click", async () => {
@@ -144,7 +144,7 @@
         toast(`Saved ${n.toLocaleString()} bytes → ${path}`, "ok");
         // Convenience: prefill the Train corpus field.
         if (!$("trCorpus").value) $("trCorpus").value = path;
-      } catch (e) { setErr("errDsSave", String(e)); }
+      } catch (e) { setErr("errDsSave", e); }
     });
   }
 

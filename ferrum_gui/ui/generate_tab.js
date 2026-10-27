@@ -2,7 +2,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked } = env;
+    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, errText, busy } = env;
     let generating = false;
 
     $("genStart").addEventListener("click", async () => {
@@ -21,10 +21,11 @@
           stream: $("genStream").checked,
           verbose: $("genVerbose").checked,
         };
-      } catch (e) { setErr("errGen", String(e)); return; }
+      } catch (e) { setErr("errGen", e); return; }
 
       $("genOut").textContent = "";
       $("genStatus").textContent = "generating…";
+      busy("genSpin", true);
       $("genStart").disabled = true;
       generating = params.stream;
       jobRunning("genCancel", "generate", true);
@@ -43,9 +44,9 @@
         $("genStatus").textContent = `${stopped ? "stopped" : "done"} (${out.length} chars)`;
       } catch (e) {
         $("genStatus").textContent = "error";
-        setErr("errGen", String(e));
-        toast("Generation failed: " + e, "error");
-      } finally { generating = false; $("genStart").disabled = false; jobRunning("genCancel", "generate", false); }
+        setErr("errGen", e);
+        toast("Generation failed: " + errText(e), "error");
+      } finally { generating = false; busy("genSpin", false); $("genStart").disabled = false; jobRunning("genCancel", "generate", false); }
     });
 
     return { onFragment: (text) => { if (generating) $("genOut").textContent += text; } };

@@ -309,7 +309,7 @@
       <div class="row">
         <button id="genStart" class="primary">Generate</button>
         <button id="genCancel" class="ghost hidden">Stop</button>
-        <span id="genStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="genSpin" aria-hidden="true"></span><span id="genStatus" class="muted" role="status"></span>
       </div>
       <div id="genOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
@@ -360,7 +360,7 @@
       <div class="row">
         <button id="evRun" class="primary">Evaluate &amp; add row</button>
         <button id="evClear" class="ghost">Clear table</button>
-        <span id="evStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="evSpin" aria-hidden="true"></span><span id="evStatus" class="muted" role="status"></span>
       </div>
       <div class="row">
         <label>Save JSON to <input type="text" id="evJsonPath" placeholder="/path/to/eval.json" /></label>
@@ -434,7 +434,7 @@
       <div class="row">
         <button id="ggRun" class="primary">Run</button>
         <button id="ggCancel" class="ghost hidden">Stop</button>
-        <span id="ggStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="ggSpin" aria-hidden="true"></span><span id="ggStatus" class="muted" role="status"></span>
       </div>
       <div id="ggOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
@@ -481,7 +481,7 @@
         <button id="ftRun" class="primary">Fine-tune</button>
         <button id="ftCancel" class="ghost hidden">Stop fine-tuning</button>
         <div class="progress" role="progressbar" aria-label="Fine-tuning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ftBar"></div></div>
-        <span id="ftStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="ftSpin" aria-hidden="true"></span><span id="ftStatus" class="muted" role="status"></span>
       </div>
       <canvas id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
       <div id="ftResult" class="result"></div>
@@ -530,7 +530,7 @@
       <div class="row">
         <button id="exExport" class="primary">Export</button>
         <button id="exCancel" class="ghost hidden">Cancel export</button>
-        <span id="exStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="exSpin" aria-hidden="true"></span><span id="exStatus" class="muted" role="status"></span>
       </div>
       <div id="exResult" class="result"></div>
 
@@ -618,7 +618,7 @@
         architecture and context length.</p>
       <div class="row">
         <button id="capCheck" class="primary">Check this machine</button>
-        <span id="capStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="capSpin" aria-hidden="true"></span><span id="capStatus" class="muted" role="status"></span>
       </div>
       <div id="capCards" class="infocards"></div>
     </section>
@@ -664,6 +664,7 @@
   <script src="estimate_view.js"></script>
   <script src="live.js"></script>
   <script src="a11y.js"></script>
+  <script src="errors.js"></script>
   <script src="common.js"></script>
   <script src="settings.js"></script>
   <script src="shell.js"></script>

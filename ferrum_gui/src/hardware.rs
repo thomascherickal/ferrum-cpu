@@ -13,6 +13,7 @@
 //!
 //! Every parser is a pure function over text so it is tested with fixtures.
 
+use crate::error::CmdError;
 use serde::Serialize;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -267,10 +268,8 @@ pub fn detect() -> HardwareInfo {
 
 /// Tauri command: the machine's hardware (see [`HardwareInfo`]).
 #[tauri::command]
-pub async fn hardware_info() -> Result<HardwareInfo, String> {
-    tauri::async_runtime::spawn_blocking(detect)
-        .await
-        .map_err(|e| format!("task error: {e}"))
+pub async fn hardware_info() -> Result<HardwareInfo, CmdError> {
+    crate::error::blocking_ok(detect).await
 }
 
 #[cfg(test)]

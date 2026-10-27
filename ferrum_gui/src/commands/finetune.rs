@@ -1,6 +1,7 @@
 //! The Fine-tune tab: AdamW-fine-tune an imported GGUF into a `.flck` checkpoint.
 
 use super::guard::{available_memory_bytes, gguf_resident_bytes};
+use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
@@ -55,11 +56,9 @@ pub async fn finetune_gguf<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: FinetuneParams,
-) -> Result<FinetuneResult, String> {
+) -> Result<FinetuneResult, CmdError> {
     let job = state.jobs.start(Job::Finetune)?;
-    tauri::async_runtime::spawn_blocking(move || finetune_inner(app, params, job))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+    crate::error::blocking(move || finetune_inner(app, params, job)).await
 }
 
 /// Write `bytes` to `path` through `<path>.tmp` and a rename, so a failure never leaves a

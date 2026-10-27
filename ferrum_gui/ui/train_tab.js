@@ -4,7 +4,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, hasTauri, setBar, toast, setErr, clearErr, num, int, reqInt, reqNum, reqStr, jobRunning, stopAsked } = env;
+    const { $, doc, invoke, hasTauri, setBar, toast, setErr, clearErr, errText, isCancelled, num, int, reqInt, reqNum, reqStr, jobRunning, stopAsked } = env;
     const { preflightView, preflightWhy } = global.FerrumEscape;
     const { drawLoss } = global.FerrumCommon;
 
@@ -36,7 +36,7 @@
       } catch (e) {
         if (n !== preflightSeq) return;
         preflight = null;
-        $("trPreflight").textContent = "Pre-flight unavailable: " + String(e);
+        $("trPreflight").textContent = "Pre-flight unavailable: " + errText(e);
       }
       updateStartGate();
     }
@@ -51,7 +51,7 @@
     $("trForce").addEventListener("change", updateStartGate);
     // A finished token file becomes the Train corpus, and the pre-flight is asked again.
     const tokenizeTab = global.FerrumTokenizeTab.create({
-      $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked,
+      $, invoke, setBar, toast, setErr, clearErr, errText, isCancelled, jobRunning, stopAsked,
       useAsCorpus: (path) => { $("trCorpus").value = path; schedulePreflight(); },
     });
     $("tab-train").addEventListener("click", schedulePreflight);
@@ -104,7 +104,7 @@
           throw new Error(`Embed dim (${params.embedDim}) must be divisible by heads (${params.numHeads})`);
         if (params.vocabSize !== 0 && params.vocabSize < 256)
           throw new Error("Vocab must be 0 (char-level) or ≥ 256 (BPE)");
-      } catch (e) { setErr("errTrain", String(e)); return; }
+      } catch (e) { setErr("errTrain", e); return; }
 
       lossHistory = []; drawChart();
       setBar("trBar", 0);
@@ -130,8 +130,8 @@
         if (!$("rxPath").value && r.tokenizer === "byte-level BPE") $("rxPath").value = r.modelPath;
       } catch (e) {
         $("trStatus").textContent = "error";
-        setErr("errTrain", String(e));
-        toast("Training failed: " + e, "error");
+        setErr("errTrain", e);
+        toast("Training failed: " + errText(e), "error");
       } finally { trRunning = false; updateStartGate(); jobRunning("trCancel", "train", false); }
     });
 

@@ -1,6 +1,7 @@
 //! The `estimate_job` command: resolves file sizes and model facts, reads the
 //! live hardware, and calls the pure [`crate::estimate::estimate`].
 
+use crate::error::CmdError;
 use crate::estimate::{estimate, Estimate, GgufFacts, JobKind, JobParams, SlmFacts, Throughput};
 use crate::hardware;
 use crate::paths::{checked_input, checked_path};
@@ -144,11 +145,9 @@ pub async fn estimate_job(
     state: State<'_, AppState>,
     kind: JobKind,
     params: JobParams,
-) -> Result<Estimate, String> {
+) -> Result<Estimate, CmdError> {
     let bench = *state.bench.lock().unwrap_or_else(|e| e.into_inner());
-    tauri::async_runtime::spawn_blocking(move || estimate_now(kind, params, bench))
-        .await
-        .map_err(|e| format!("task error: {e}"))
+    crate::error::blocking_ok(move || estimate_now(kind, params, bench)).await
 }
 
 #[cfg(test)]

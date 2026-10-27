@@ -3,7 +3,7 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, dialog, toast, settings } = env;
+    const { $, doc, invoke, dialog, toast, settings, errText } = env;
     const bySel = (s) => Array.from(doc.querySelectorAll(s));
 
     // ── Tabs: a tablist with roving tabindex; arrows, Home and End move and activate ──
@@ -43,7 +43,7 @@
           // A chosen folder is its own start next time; for a file it is the folder it is in.
           if (first) settings.setFolder(folderKind, folderKind === "dir" ? asPath(first) : global.FerrumSettings.dirOf(asPath(first)));
         }
-      } catch (e) { toast("dialog error: " + e, "error"); }
+      } catch (e) { toast("dialog error: " + errText(e), "error"); }
     }
     const pickOne = (kind, opts, folderKind) => (targetId) => pick(kind, opts, folderKind, (f) => { $(targetId).value = asPath(f); });
     const pickOpen = pickOne("open", { multiple: false, directory: false }, "open");
@@ -70,7 +70,7 @@
       $(btnId).addEventListener("click", async () => {
         stopAsked[kind] = true;
         $(btnId).disabled = true; // asked once; the job ends at its next check
-        try { await invoke("cancel_job", { kind }); } catch (e) { toast("Stop failed: " + e, "error"); }
+        try { await invoke("cancel_job", { kind }); } catch (e) { toast("Stop failed: " + errText(e), "error"); }
       });
     }
     function jobRunning(btnId, kind, on) {

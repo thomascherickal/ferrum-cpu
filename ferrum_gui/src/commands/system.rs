@@ -1,5 +1,6 @@
 //! The system monitor: CPU and memory load, polled by the frontend.
 
+use crate::error::CmdError;
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;
@@ -19,7 +20,7 @@ pub struct SysStats {
 
 /// Sample current CPU and memory load. Polled by the frontend on an interval.
 #[tauri::command]
-pub fn system_stats(state: State<'_, AppState>) -> Result<SysStats, String> {
+pub fn system_stats(state: State<'_, AppState>) -> Result<SysStats, CmdError> {
     // A poisoned lock only means an earlier poll panicked; sysinfo state is still valid.
     let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
     sys.refresh_cpu_usage();

@@ -11,6 +11,7 @@
 //! `KAGGLE_USERNAME` / `KAGGLE_KEY` or `~/.kaggle/kaggle.json`.
 
 use crate::commands::http_agent;
+use crate::error::CmdError;
 use crate::paths::checked_dir;
 use serde::Serialize;
 use std::io::Read;
@@ -323,8 +324,8 @@ pub fn list_datasets() -> Vec<DatasetEntry> {
 
 /// Download a curated catalog entry by `id` into `dest_dir`.
 #[tauri::command]
-pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadResult, CmdError> {
+    crate::error::blocking(move || {
         checked_dir("download folder", &dest_dir)?;
         let entry = catalog()
             .into_iter()
@@ -361,7 +362,6 @@ pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadRe
         })
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 /// Download any HuggingFace dataset file (`repo` = `owner/name`), not just the
@@ -373,8 +373,8 @@ pub async fn download_hf_file(
     revision: Option<String>,
     dest_dir: String,
     hf_token: Option<String>,
-) -> Result<DownloadResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<DownloadResult, CmdError> {
+    crate::error::blocking(move || {
         checked_dir("download folder", &dest_dir)?;
         if repo.trim().is_empty() || file.trim().is_empty() {
             return Err("provide a HuggingFace repo (owner/name) and file".into());
@@ -390,7 +390,6 @@ pub async fn download_hf_file(
         })
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 /// Download any Kaggle dataset file (`owner_slug` = `owner/dataset`).
@@ -399,8 +398,8 @@ pub async fn download_kaggle_file(
     owner_slug: String,
     file: String,
     dest_dir: String,
-) -> Result<DownloadResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<DownloadResult, CmdError> {
+    crate::error::blocking(move || {
         checked_dir("download folder", &dest_dir)?;
         if owner_slug.trim().is_empty() || file.trim().is_empty() {
             return Err("provide a Kaggle owner/slug and file".into());
@@ -420,7 +419,6 @@ pub async fn download_kaggle_file(
         })
     })
     .await
-    .map_err(|e| format!("task error: {e}"))?
 }
 
 #[cfg(test)]

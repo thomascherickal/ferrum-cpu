@@ -29,6 +29,7 @@ class Element {
     this._text = "";
     this.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }
+  get isConnected() { for (let n = this; n; n = n.parentNode) if (n === this.ownerDocument.body) return true; return false; }
   get id() { return this.attrs.id || ""; }
   set id(v) { this.attrs.id = v; }
   get className() { return [...this.classList.set].join(" "); }
@@ -41,6 +42,17 @@ class Element {
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   hasAttribute(k) { return k in this.attrs; }
   appendChild(c) { c.parentNode = this; this.children.push(c); return c; }
+  get nextSibling() {
+    const p = this.parentNode;
+    return p ? p.children[p.children.indexOf(this) + 1] || null : null;
+  }
+  insertBefore(c, ref) {
+    if (c.parentNode) c.parentNode.removeChild(c);
+    c.parentNode = this;
+    const i = ref ? this.children.indexOf(ref) : -1;
+    if (i < 0) this.children.push(c); else this.children.splice(i, 0, c);
+    return c;
+  }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new TextNode(c) : c)); }
   removeChild(c) { this.children = this.children.filter((x) => x !== c); c.parentNode = null; return c; }
   replaceChildren(...cs) { this.textContent = ""; this.append(...cs); }

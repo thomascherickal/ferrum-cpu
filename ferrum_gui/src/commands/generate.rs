@@ -1,6 +1,7 @@
 //! The Generate tab: sampling controls, stop strings, streaming and cancel.
 
 use super::time_seed;
+use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
@@ -164,11 +165,9 @@ pub async fn generate_slm<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     params: GenParams,
-) -> Result<String, String> {
+) -> Result<String, CmdError> {
     let job = state.jobs.start(Job::Generate)?;
-    tauri::async_runtime::spawn_blocking(move || gen_inner(app, params, job))
-        .await
-        .map_err(|e| format!("task error: {e}"))?
+    crate::error::blocking(move || gen_inner(app, params, job)).await
 }
 
 fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Result<String, String> {

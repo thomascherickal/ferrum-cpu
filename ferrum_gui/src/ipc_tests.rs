@@ -47,6 +47,13 @@ fn call(
     })
 }
 
+/// The text of a failed command: errors reach the webview as `{ code, message, hint }`.
+fn msg(e: &Value) -> &str {
+    e["message"]
+        .as_str()
+        .expect("an error object with a message")
+}
+
 #[test]
 fn hardware_info_and_system_stats_answer_through_ipc() {
     let (_app, w) = app();
@@ -151,7 +158,7 @@ fn clean_text_and_file_commands_round_trip_through_ipc() {
         "{r}"
     );
     assert_eq!(r["words"], 3);
-    // Errors come back as the plain message string the UI shows.
+    // Errors come back as `{ code, message, hint }`; the message is the text the UI shows.
     let e = call(
         &w,
         "clean_text",
@@ -160,7 +167,7 @@ fn clean_text_and_file_commands_round_trip_through_ipc() {
         "normalizePunctuation": false, "stripControlChars": false, "maxChars": null}}),
     )
     .unwrap_err();
-    assert!(e.as_str().unwrap().contains("nothing left"), "{e}");
+    assert!(msg(&e).contains("nothing left"), "{e}");
 
     let dir = std::env::temp_dir().join(format!("ferrum_ipc_{}", std::process::id()));
     let path = dir.join("sub/c.txt").to_string_lossy().into_owned();
@@ -326,7 +333,7 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
         json!({"params": {"modelPath": model, "seedText": "x", "numChars": 4, "temp": -1, "genSeed": 1, "stream": false, "verbose": false}}),
     )
     .unwrap_err();
-    assert!(bad.as_str().unwrap().contains("temperature"), "{bad}");
+    assert!(msg(&bad).contains("temperature"), "{bad}");
 
     let ev = call(&w, "evaluate_slm", json!({"params": {"modelPath": model, "text": "the lazy dog. the quick brown fox.", "textPath": null}})).unwrap();
     let ev = &ev.as_array().unwrap()[0];
@@ -421,11 +428,7 @@ fn a_running_training_job_is_cancelled_saves_a_loadable_model_and_refuses_a_seco
 
     // A second training job is refused while the first runs.
     let e = call(&w, "train_slm", params.clone()).unwrap_err();
-    assert_eq!(
-        e.as_str().unwrap(),
-        "a training job is already running",
-        "{e}"
-    );
+    assert_eq!(msg(&e), "a training job is already running", "{e}");
     // Other kinds have their own slot, and an unknown kind is a clear error.
     assert!(call(&w, "cancel_job", json!({"kind": "nonsense"})).is_err());
     assert_eq!(
@@ -490,7 +493,7 @@ fn a_running_finetune_is_cancelled_and_its_checkpoint_resumes() {
     let job = std::thread::spawn(move || call(&w2, "finetune_gguf", p2));
     wait_for(&progress, 1);
     let e = call(&w, "finetune_gguf", params.clone()).unwrap_err();
-    assert_eq!(e.as_str().unwrap(), "a fine-tuning job is already running");
+    assert_eq!(msg(&e), "a fine-tuning job is already running");
     assert_eq!(
         call(&w, "cancel_job", json!({"kind": "finetune"})).unwrap(),
         true
@@ -514,7 +517,7 @@ fn a_running_finetune_is_cancelled_and_its_checkpoint_resumes() {
 }
 
 #[test]
-fn training_errors_reach_the_ui_as_plain_messages() {
+fn command_errors_reach_the_ui_as_code_message_and_hint() {
     let (_app, w) = app();
     let dir = tmp("trainerr");
     let corpus = dir.join("c.txt");
@@ -525,15 +528,30 @@ fn training_errors_reach_the_ui_as_plain_messages() {
         "contextLen": 8, "embedDim": 16, "numHeads": heads, "numBlocks": 1, "hiddenDim": 32, "epochs": 1,
         "lr": 0.01, "batchSize": 4, "vocabSize": 0, "seed": 1, "threads": 1, "verbose": false}})
     };
+    // The whole object: exactly these three keys, strings, and a hint that says what to do.
     let e = call(&w, "train_slm", base(3)).unwrap_err();
-    assert!(e.as_str().unwrap().contains("divisible"), "{e}");
+    assert!(msg(&e).contains("divisible"), "{e}");
+    assert_eq!(e["code"], "invalid");
+    assert_eq!(e.as_object().unwrap().len(), 3, "{e}");
+    assert!(e["hint"].as_str().unwrap().len() > 20, "{e}");
     let mut missing = base(2);
     missing["params"]["corpusPath"] = json!(dir.join("nope.txt").to_string_lossy());
-    assert!(call(&w, "train_slm", missing)
-        .unwrap_err()
-        .as_str()
-        .unwrap()
-        .contains("does not exist"));
+    let e = call(&w, "train_slm", missing).unwrap_err();
+    assert!(msg(&e).contains("does not exist"));
+    assert_eq!(e["code"], "not_found");
+    // A device path is a path error; a command that never produced a message of its own still
+    // gets a code from what it says.
+    let e = call(&w, "read_text_file", json!({"path": "/dev/zero"})).unwrap_err();
+    assert_eq!(e["code"], "path", "{e}");
+    let e = call(
+        &w,
+        "model_info",
+        json!({"path": dir.join("c.txt").to_string_lossy()}),
+    )
+    .unwrap_err();
+    assert_eq!(e["code"], "model", "{e}");
+    let e = call(&w, "download_text", json!({"url": "ftp://x/y"})).unwrap_err();
+    assert_eq!(e["code"], "invalid", "{e}");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -741,10 +759,7 @@ fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
         let state = app.state::<crate::AppState>();
         let held = state.jobs.start(Job::Prepare).unwrap();
         let e = call(&w, "prepare_dataset", body(json!({}))).unwrap_err();
-        assert_eq!(
-            e.as_str().unwrap(),
-            "a dataset preparation is already running"
-        );
+        assert_eq!(msg(&e), "a dataset preparation is already running");
         assert_eq!(
             call(&w, "cancel_job", json!({"kind": "prepare"})).unwrap(),
             true
@@ -798,25 +813,22 @@ fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
         body(json!({"inputs": [bad.to_string_lossy()]})),
     )
     .unwrap_err();
-    assert!(
-        e.as_str().unwrap().contains("invalid UTF-8 at byte 5"),
-        "{e}"
-    );
-    assert!(e.as_str().unwrap().contains(&*bad.to_string_lossy()), "{e}");
+    assert!(msg(&e).contains("invalid UTF-8 at byte 5"), "{e}");
+    assert!(msg(&e).contains(&*bad.to_string_lossy()), "{e}");
     let e = call(
         &w,
         "prepare_dataset",
         body(json!({"inputs": ["/proc/cpuinfo"]})),
     )
     .unwrap_err();
-    assert!(e.as_str().unwrap().contains("not allowed"), "{e}");
+    assert!(msg(&e).contains("not allowed"), "{e}");
     let e = call(
         &w,
         "prepare_dataset",
         body(json!({"outDir": "/proc/prepared"})),
     )
     .unwrap_err();
-    assert!(e.as_str().unwrap().contains("not allowed"), "{e}");
+    assert!(msg(&e).contains("not allowed"), "{e}");
     assert!(
         call(&w, "prepare_dataset", json!({"params": {"outDir": "x"}})).is_err(),
         "inputs are required"
@@ -887,10 +899,7 @@ fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
         let state = app.state::<crate::AppState>();
         let held = state.jobs.start(Job::RuntimeExport).unwrap();
         let e = call(&w, "export_to_runtime", form("ollama", json!({}))).unwrap_err();
-        assert_eq!(
-            e.as_str().unwrap(),
-            "an Ollama / LM Studio export is already running"
-        );
+        assert_eq!(msg(&e), "an Ollama / LM Studio export is already running");
         assert_eq!(
             call(&w, "cancel_job", json!({"kind": "runtime_export"})).unwrap(),
             true
@@ -940,10 +949,7 @@ fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
         form("ollama", json!({"name": "-rf"})),
     )
     .unwrap_err();
-    assert!(
-        e.as_str().unwrap().contains("not a usable model name"),
-        "{e}"
-    );
+    assert!(msg(&e).contains("not a usable model name"), "{e}");
     let e = call(&w, "preview_runtime_export", form("other", json!({}))).unwrap_err();
     assert!(
         e.to_string().contains("other") || e.to_string().contains("variant"),
@@ -1035,17 +1041,9 @@ fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_thro
 
     // The errors a user meets, in the tab's words.
     let e = train(&s("c.tok.gguf"), &s("x.gguf"), json!({"tokenizerPath": ""})).unwrap_err();
-    assert!(
-        e.as_str()
-            .unwrap()
-            .contains("needs the Tokenizer file field"),
-        "{e}"
-    );
+    assert!(msg(&e).contains("needs the Tokenizer file field"), "{e}");
     let e = train(&s("c.tok.gguf"), &s("x.gguf"), json!({"vocabSize": 0})).unwrap_err();
-    assert!(
-        e.as_str().unwrap().contains("Vocab 0 (character-level)"),
-        "{e}"
-    );
+    assert!(msg(&e).contains("Vocab 0 (character-level)"), "{e}");
     // Another tokenizer than the one the file was made with.
     let other =
         ferrum_core::ByteBpeTokenizer::train("something else entirely, with other words", 280)
@@ -1057,7 +1055,7 @@ fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_thro
         json!({"tokenizerPath": s("other.gguf")}),
     )
     .unwrap_err();
-    assert!(e.as_str().unwrap().contains("is not the tokenizer"), "{e}");
+    assert!(msg(&e).contains("is not the tokenizer"), "{e}");
     assert!(!dir.join("x.gguf").exists());
 
     // The pre-flight: the token file's own vocabulary, no tokenizing time, RAM that does not scale.
@@ -1124,7 +1122,7 @@ fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_thro
         "tokenizerPath": s("tok.gguf"), "outPath": s("again.tok.gguf")}}),
     )
     .unwrap_err();
-    assert_eq!(e.as_str().unwrap(), "a tokenizing job is already running");
+    assert_eq!(msg(&e), "a tokenizing job is already running");
     assert_eq!(
         call(&w, "cancel_job", json!({"kind": "tokenize"})).unwrap(),
         true

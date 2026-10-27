@@ -55,7 +55,7 @@
   }
 
   function create(env) {
-    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked } = env;
+    const { $, invoke, setBar, toast, setErr, clearErr, jobRunning, stopAsked, errText, isCancelled } = env;
     let last = null; // the result of the latest finished run
 
     function onProgress(p) {
@@ -82,12 +82,12 @@
         $("dpUse").classList.toggle("hidden", r.train.documents === 0);
         toast(`Prepared: train=${r.train.documents} val=${r.val.documents} test=${r.test.documents}`, "ok");
       } catch (e) {
-        if (stopAsked.prepare && /cancelled/.test(String(e))) {
+        if (stopAsked.prepare && isCancelled(e)) {
           $("dpStatus").textContent = "stopped; no files were changed";
         } else {
           $("dpStatus").textContent = "error";
-          setErr("errPrepare", String(e));
-          toast("Prepare failed: " + e, "error");
+          setErr("errPrepare", e);
+          toast("Prepare failed: " + errText(e), "error");
         }
       } finally { $("dpRun").disabled = false; jobRunning("dpCancel", "prepare", false); }
     });
