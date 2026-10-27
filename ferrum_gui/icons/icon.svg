@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Ferrum SLM Studio</title>
+  <!-- Source of every icon in this folder: `cargo tauri icon icons/icon.svg` regenerates them. -->
+  <rect width="1024" height="1024" rx="224" fill="#1e293b"/>
+  <rect x="170" y="170" width="684" height="684" rx="96" fill="#ea580c"/>
+  <path fill="#ffffff" d="M360 290h300v104H464v76h116v96H464v168H360z"/>
+</svg>

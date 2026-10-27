@@ -1,0 +1,89 @@
+name: Release
+
+# Builds the Linux bundles of Ferrum SLM Studio (an AppImage and a .deb) with `cargo tauri build`.
+# On a tag `v*` the bundles are also attached to a DRAFT GitHub release; run by hand
+# (workflow_dispatch) they are only uploaded to the workflow run. No code signing and no
+# updater: see Status.md. Windows and macOS bundles are not built here (Manual 10.5).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep on the same major (and, so the build is repeatable, minor) as the `tauri` crate in
+  # ferrum_gui/Cargo.lock.
+  TAURI_CLI_VERSION: "2.11.3"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux bundles (AppImage, deb)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write # create the draft release on a tag
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("ferrum_gui/tauri.conf.json"))["version"])')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in ferrum_gui/tauri.conf.json"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf \
+            file
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ferrum_gui/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('ferrum_gui/Cargo.lock') }}
+      - name: Cache the Tauri CLI
+        id: tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: ${{ runner.os }}-cargo-tauri-${{ env.TAURI_CLI_VERSION }}
+      - name: Install the Tauri CLI
+        if: steps.tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "=${TAURI_CLI_VERSION}" --locked
+      - name: Build the bundles
+        working-directory: ferrum_gui
+        env:
+          # linuxdeploy (which builds the AppImage) is itself an AppImage; the runner has no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: cargo tauri build --bundles appimage,deb -- --locked
+      - name: List what was built
+        run: ls -l ferrum_gui/target/release/bundle/*/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ferrum-slm-studio-linux
+          path: |
+            ferrum_gui/target/release/bundle/appimage/*.AppImage
+            ferrum_gui/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+      - name: Draft release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Ferrum SLM Studio $GITHUB_REF_NAME" \
+            --notes "Linux bundles (AppImage and deb), unsigned. Built by .github/workflows/release.yml." \
+            ferrum_gui/target/release/bundle/appimage/*.AppImage ferrum_gui/target/release/bundle/deb/*.deb
