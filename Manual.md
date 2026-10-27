@@ -1707,7 +1707,9 @@ Notes:
 
 ### 10.1 What it is
 
-Ferrum SLM Studio is a cross-platform **Tauri 2** desktop (and mobile) app.
+Ferrum SLM Studio is a **Tauri 2** desktop app (built and tested on Linux; Tauri 2
+also supports mobile, but this app has not been built or run for it, see
+[§10.5](#105-platform-support)).
 Its interface is plain HTML, CSS, and vanilla JavaScript with no framework and
 no Node build step, and every button calls straight into `ferrum_core`. It puts
 the whole pipeline in one window: data preparation, training, streaming
@@ -1743,8 +1745,10 @@ env -u GTK_PATH -u GTK_EXE_PREFIX -u LOCPATH -u GIO_MODULE_DIR \
     XDG_DATA_DIRS=/usr/local/share:/usr/share ./target/release/ferrum_gui
 ```
 
-**Mobile:** `cargo tauri android init && cargo tauri android dev`, or `cargo
-tauri ios init && cargo tauri ios dev` (macOS only).
+**Mobile (untested):** Tauri 2 can target Android and iOS (`cargo tauri android
+init`, `cargo tauri ios init`, the latter on macOS only), and the crate keeps
+the mobile entry point, but nobody has run either command for Ferrum SLM Studio.
+See [§10.5](#105-platform-support).
 
 ### 10.3 The tabs
 
@@ -1951,14 +1955,26 @@ backend is unavailable (for example, in a plain web preview), a banner says so.
 
 | Feature | Desktop | Android / iOS | Web |
 |---|:-:|:-:|:-:|
-| Datasets, Train, Generate, Evaluate, Models | ✅ | ✅ | ❌¹ |
-| GGUF run, fine-tune, export | ✅ | ✅² | ❌¹ |
-| Engine log | ✅ | ✅ | ❌¹ |
-| System monitor | ✅ | partial³ | ❌¹ |
+| Datasets, Train, Generate, Evaluate, Models | ✅ | untested | ❌¹ |
+| GGUF run, fine-tune, export | ✅ | untested | ❌¹ |
+| Engine log | ✅ | untested | ❌¹ |
+| System monitor | ✅ | untested | ❌¹ |
 
 ¹ Tauri's Rust backend does not run in a plain browser. To run a *model* in a
 browser, use `slm_wasm` ([§11.3](#113-in-the-browser-webassembly)).
-² Limited by device RAM. ³ Limited by `sysinfo`'s mobile backends.
+
+**Desktop** means Linux: CI builds, lints and tests it on Ubuntu 22.04 and
+starts the built app under a virtual display for 8 seconds (the *Boot smoke
+test* step of `.github/workflows/ci.yml`; it checks that the process stays up,
+not that any tab works). macOS and Windows are what Tauri supports; they were
+not built here (no icons for their bundles yet, see Status).
+
+**Android / iOS: untested.** Tauri 2 supports mobile, but Ferrum SLM Studio has
+not been built or run for it. The crate has the mobile entry point and a
+library target, nothing more: there is no `gen/android` or `gen/apple` project,
+CI builds no mobile target, and nothing has been tried on a phone. Whether the
+features work there (memory for GGUF run and fine-tune, `sysinfo` on mobile,
+the file dialogs) is unknown.
 
 ### 10.6 Architecture
 

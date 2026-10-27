@@ -190,6 +190,36 @@ jobs:
         run: cargo test --locked
       - name: Run UI tests (Node, no dependencies)
         run: for t in ferrum_gui/ui/*.test.js; do node "$t" || exit 1; done
+      # CI5: does the app start at all? Build it (the cache above already holds the dependencies),
+      # run it under a virtual X display for 8 s and require that it is still running; then stop
+      # it. This starts the real webview and loads ui/, but nothing clicks: it cannot say that a
+      # tab works, only that the window comes up and the process does not crash or exit.
+      - name: Install a virtual display (xvfb)
+        run: sudo apt-get install -y xvfb x11-utils
+      - name: Build the app (debug)
+        working-directory: ferrum_gui
+        run: cargo build --locked
+      - name: Boot smoke test (xvfb, 8 s)
+        working-directory: ferrum_gui
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: |
+          log="$RUNNER_TEMP/ferrum_gui_boot.log"
+          xvfb-run -a --server-args="-screen 0 1280x800x24" bash -c '
+            target/debug/ferrum_gui > "$1" 2>&1 &
+            pid=$!
+            sleep 8
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"; echo "::error::ferrum_gui exited before 8 s (status $?)"; exit 1
+            fi
+            if xwininfo -root -tree | grep -q "Ferrum SLM Studio"; then echo "window titled Ferrum SLM Studio is open"
+            else echo "::warning::no window titled Ferrum SLM Studio was found (the process is up)"; fi
+            kill "$pid"; wait "$pid" 2>/dev/null; echo "still running after 8 s; stopped"
+          ' _ "$log" || { echo "--- app output ---"; cat "$log"; exit 1; }
+          echo "--- app output ---"; cat "$log"
+          if grep -q "panicked at" "$log"; then echo "::error::the app panicked while running"; exit 1; fi
 
   runtimes:
     name: Runtimes (llama.cpp + Ollama)
