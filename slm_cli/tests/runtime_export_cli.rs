@@ -16,7 +16,7 @@ use ferrum_core::{GgufBuilder, MetaValue};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-const DEV: &str = "/home/thomas/Projects/ferrum-cpu/.ferrum-dev";
+const DEV: &str = "/home/thomas/Projects/Ferrum/.ferrum-dev";
 const PROMPT: &str = "Hello, my name is";
 const N: usize = 8;
 

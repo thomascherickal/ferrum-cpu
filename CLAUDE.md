@@ -116,9 +116,13 @@ Do not break these; they are the product's selling points.
 | `docs/` | `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/serve.rs` runs the `slm_server` library in-process for the Serve tab; `icons/icon.svg` is the source of every bundle icon (`cargo tauri icon icons/icon.svg -o <dir>`); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
+This repo's directory is `ferrum-cpu` inside the workspace folder `Ferrum`
+(`/home/thomas/Projects/Ferrum/`; the GitHub repo is still named `Ferrum`).
 Sibling folders `../Ferrum-ML` (tabular MLP demos, depends on `ferrum_core` by
-path; its models are GGUF) and `../Ferrum-Junk` (archive of removed features)
-are separate repos. Changing a `ferrum_core` public API can break `Ferrum-ML`.
+path `../../ferrum-cpu/ferrum_core`; its models are GGUF), `../Ferrum-Junk`
+(archive of removed features) and `../ferrum-gpu` (plan for a GPU edition, no
+code yet: `../ferrum-gpu/PLAN.md`) are separate repos. Changing a `ferrum_core`
+public API can break `Ferrum-ML`.
 
 ## Two Transformer stacks — don't mix them up
 

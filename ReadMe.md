@@ -76,6 +76,7 @@ to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
   tabular MLP classifier/regressor, its CSV loader, ten datasets, pretrained
   models (now GGUF), and a browser binding. It builds on `ferrum_core` by path.
 - `../Ferrum-Junk` is an archive of removed features.
+- `../ferrum-gpu` holds the plan (`PLAN.md`) for a GPU-capable edition of this engine. There is no code yet.
 
 ---
 

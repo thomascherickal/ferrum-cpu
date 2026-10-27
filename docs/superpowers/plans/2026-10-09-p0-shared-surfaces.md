@@ -1222,7 +1222,7 @@ Expected: all green.
 - [ ] **Step 2: Measure the eval speed-up on the review model**
 
 ```bash
-S=/home/thomas/Projects/ferrum-cpu/.ferrum-dev/corpus
+S=/home/thomas/Projects/Ferrum/.ferrum-dev/corpus
 cargo build --release -p slm_cli
 # The review's FINF model no longer loads (Phase 0-G); train the reference config once and reuse it.
 [ -f $S/ref.gguf ] || ./target/release/train_transformer train $S/train.txt $S/ref.gguf --context 128 --embed 96 --heads 4 --blocks 3 --hidden 320 --vocab 1024 --tokens 1.2e6 --lr 5e-3 --cosine --warmup 30 --clip 1 --tokenizer $S/ref_tok.gguf

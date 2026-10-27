@@ -1022,7 +1022,7 @@ EOF
 - [ ] **Step 4: Smoke run on a real model**
 
 ```bash
-S=/home/thomas/Projects/ferrum-cpu/.ferrum-dev/corpus
+S=/home/thomas/Projects/Ferrum/.ferrum-dev/corpus
 # Build a small test split with document separators from the review's held-out text.
 python3 -c "
 import re,sys
