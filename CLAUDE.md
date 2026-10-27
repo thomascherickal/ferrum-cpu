@@ -107,14 +107,14 @@ Do not break these; they are the product's selling points.
 |---|---|
 | `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs`. `token_file/` (the `ferrum-tokens` writer and streaming reader) is a small directory too. `dataset` (cleaning), `ckpt`, `meta`, `ops`, `parallel`, `quant` and `llm` are single files. `examples/library_tour.rs` is the program behind `Samples.md` §10. |
 | `slm_cli/` | Binary `train_transformer`: train, run, generate, eval, info, prepare, tokenize, run-gguf, eval-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio. It is also a library (`src/lib.rs`: `slm_cli::prepare`, the prepare pipeline with progress and cancel, `slm_cli::runtime_export`, the Ollama / LM Studio export, and `slm_cli::tokenize` / `token_corpus`, the token-file writer and opener) that `ferrum_gui` depends on by path, so front ends share the logic instead of copying it (it lives here, not in `ferrum_core`, because it needs `sha2`/`serde_json`). `tests/tokenize_cli.rs` and `tests/token_train_cli.rs` cover token files; `tests/tiny_e2e.rs` and `tests/tiny_gguf_e2e.rs` drive the BPE pipeline and the imported-GGUF fine-tune/export path end to end through the real binary with tiny models |
-| `slm_server/` | Binary `ferrum-serve` (axum): `/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`. `tests/tiny_http_e2e.rs` serves a tiny model from the real binary |
+| `slm_server/` | Binary `ferrum-serve` (axum): `/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`. It is also a library: `bind` (exposure guard, model load, socket bind; real address, startup banner, request counter and log) then `Bound::serve`, which the binary and `ferrum_gui`'s Serve tab share. `tests/tiny_http_e2e.rs` serves a tiny model from the real binary |
 | `slm_wasm/` | wasm-bindgen browser bindings (`Slm` text API, `TransformerSLMModel` token-id model); native-callable logic in `text.rs`, unit tests compare it with the library; `demo/` is the browser demo page + Web Worker with dependency-free Node tests (`node slm_wasm/demo/*.test.js`); `tests/node.rs` is the `wasm-bindgen-test` suite (wasm32 only, runs on CI) |
 | `eval/lighteval/` | Python: `FerrumModel`, `ferrum_tasks.py`, `run.sh`; pinned `lighteval==0.13.0` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) and `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) |
 | `docs/` | `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
-| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace** |
+| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/serve.rs` runs the `slm_server` library in-process for the Serve tab; `icons/icon.svg` is the source of every bundle icon (`cargo tauri icon icons/icon.svg -o <dir>`); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
 Sibling folders `../Ferrum-ML` (tabular MLP demos, depends on `ferrum_core` by
 path; its models are GGUF) and `../Ferrum-Junk` (archive of removed features)
@@ -187,6 +187,7 @@ root fails. Work inside the crate:
 cd ferrum_gui
 cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo tauri dev                           # run the app
+cargo tauri build --bundles appimage,deb  # what .github/workflows/release.yml runs (it downloads linuxdeploy: CI only)
 for f in ui/*.js; do node --check "$f"; done && for t in ui/*.test.js; do node "$t" || exit 1; done
 ```
 

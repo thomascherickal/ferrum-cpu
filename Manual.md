@@ -1516,6 +1516,8 @@ Rules for both commands:
 
 ### 9.7 Serving: `ferrum-serve`
 
+(The GUI's Serve tab runs this same server in the app: [§10.3](#103-the-tabs).)
+
 ```text
 ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
              [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
@@ -1713,7 +1715,8 @@ also supports mobile, but this app has not been built or run for it, see
 Its interface is plain HTML, CSS, and vanilla JavaScript with no framework and
 no Node build step, and every button calls straight into `ferrum_core`. It puts
 the whole pipeline in one window: data preparation, training, streaming
-generation, evaluation, model inspection, GGUF run, fine-tune, and export, plus
+generation, evaluation, model inspection, GGUF run, fine-tune, and export, a
+Serve tab that runs `ferrum-serve`'s HTTP server for one model, plus
 a system monitor and a live engine log.
 
 ### 10.2 Building and launching
@@ -1732,8 +1735,11 @@ cargo tauri dev      # development window
 cargo tauri build    # installers / binaries for this OS
 ```
 
-For real release artifacts, replace the placeholder icons with `cargo tauri
-icon path/to/logo.png`.
+`cargo tauri build` writes the bundles under `ferrum_gui/target/release/bundle/`;
+see [§10.5](#105-platform-support) for what each platform needs and for the
+release workflow. The icons are generated from `ferrum_gui/icons/icon.svg`:
+`cargo tauri icon icons/icon.svg -o <dir>`, then copy the files that
+`tauri.conf.json` lists (`ui/icons.test.js` checks them).
 
 **Snap-polluted environments.** Launching from a terminal inside a snap app
 (for example, the VS Code snap) can crash with `undefined symbol:
@@ -1834,6 +1840,30 @@ every path goes through the path guard. **Stop** works before a program starts a
 Studio's listing is awaited, not inside a running `ollama create`. The tests never start either
 program: the tools are shell scripts in a temp directory, passed as the program field.
 
+**Serving a model.** The Serve tab runs the HTTP server of [§9.7](#97-serving-ferrum-serve) inside
+the app. It is the `slm_server` library (the code the `ferrum-serve` binary runs), spawned on
+Tauri's async runtime, so no second program has to be found or shipped; it adds `axum` and its
+helper crates to the GUI's lockfile (`tokio`, `hyper` and `tower` were there through Tauri). One
+model at a time (the `serve` job slot: a second **Start server** fails at once with "a model server
+is already running"). The form is the CLI's: model, host (default `127.0.0.1`), port (`0` picks a
+free one and the real address is shown), `--max-batch`, `--max-chars`, `--max-body`, `--max-tokens`
+(each at least 1) and an optional bearer token. A host other than `127.0.0.1`, `::1` or
+`localhost` is refused without a token, as on the command line; the CLI's
+`--allow-unauthenticated` has no button, so the app never serves an open port to the network.
+**Generate** fills the token field with 48 hex digits from the webview's `crypto.getRandomValues`
+and ticks **Show token** so it can be copied; the token is held in memory while the server runs,
+is not in the remembered settings, an event, a log line or the status, and the page shows an
+example with `$FERRUM_TOKEN` instead of the token (export it in the shell that runs the example).
+While the server runs the address, a request counter (every request, 401s and 404s included, polled
+once a second), **Copy URL**, **Copy curl example** and a log tail (the two startup lines of the CLI,
+then `POST /v1/generate -> 200` per request, last 500 lines) appear and the form is locked.
+**Stop server** shuts down gracefully (requests in flight finish; after 10 s a stuck one is cut off)
+and returns when the model is released. The model load
+is estimated (`serve` kind: read at an assumed 200 MB/s and SHA-256 at an assumed 250 MB/s, peak
+RAM assumed twice the file); requests are not. Tested over a real socket on 127.0.0.1 (health,
+info, generate, 401 and 404, the counter, the log, stop closing the port, a restart), never to anything
+outside the machine; the tab itself was not click-tested.
+
 **Train pre-flight.** Under the Train form a panel (the `preflight_train` command,
 refreshed 300 ms after any change) shows the parameter count (`TransformerNet::check_size`),
 the estimated peak RAM against what the engine allows (the same
@@ -1898,7 +1928,7 @@ build), listed in the comments of `src/estimate.rs`:
   epoch, so a 135M model takes about 6 token-passes per second: the estimate
   often says days, which is the honest answer. Its peak RAM is 12x the f32
   weights. **Export** mirrors the RAM guard of the export command.
-- **Prepare** and **Tokenize corpus** read the input sizes from disk and run on one thread, at 18 MB/s (Prepare) and 13 MB/s (Tokenize corpus; measured 14) of input on one thread (22.5 MB of TinyStories: 0.62 s plain, 1.18 s with dedup, NFKC and lowercase), with RAM that does not grow with the corpus. **Ollama / LM Studio export** have no measured rate: `ollama create` is assumed to read the file at 200 MB/s, and an LM Studio import is about a second plus up to 15 s of waiting for its listing; both say so in their notes.
+- **Prepare** and **Tokenize corpus** read the input sizes from disk and run on one thread, at 18 MB/s (Prepare) and 13 MB/s (Tokenize corpus; measured 14) of input on one thread (22.5 MB of TinyStories: 0.62 s plain, 1.18 s with dedup, NFKC and lowercase), with RAM that does not grow with the corpus. **Serve start** is the model's file size at an assumed 200 MB/s read plus an assumed 250 MB/s SHA-256 (the server hashes the model for `/v1/info`), with a peak assumed at twice the file size; it has a wall-time regression test on a tiny model. **Ollama / LM Studio export** have no measured rate: `ollama create` is assumed to read the file at 200 MB/s, and an LM Studio import is about a second plus up to 15 s of waiting for its listing; both say so in their notes.
 - **Downloads** depend on your connection; the estimate assumes 5 MB/s and
   says so. Buttons that only switch a tab, refresh or save are "instant".
 - Without a benchmark the reference machine's speed is used, which is
@@ -1968,7 +1998,32 @@ starts the built app under a virtual display for 8 seconds (the *Boot smoke
 test* step of `.github/workflows/ci.yml`; it checks that the window titled
 *Ferrum SLM Studio* opens and the process stays up, not that any tab works or
 that the page loaded; it needs a D-Bus session, see Status). macOS and Windows are what Tauri supports; they were
-not built here (no icons for their bundles yet, see Status).
+not built here (the icons for their bundles exist, but no job builds or runs them, see Status).
+
+**Packaging.** `tauri.conf.json` has `bundle.active` with every target for the host OS and the
+icons generated from `ferrum_gui/icons/icon.svg` (PNGs, `icon.ico`, `icon.icns`).
+`.github/workflows/release.yml` builds the Linux bundles, an **AppImage** and a **deb**, with
+`cargo tauri build --bundles appimage,deb` and a `tauri-cli` pinned to the same minor as the
+`tauri` crate (`TAURI_CLI_VERSION`, cached). Start it by hand with
+`gh workflow run release.yml --ref master` (the bundles are uploaded to the run as the artifact
+`ferrum-slm-studio-linux`), or push a tag `vX.Y.Z` that equals `version` in `tauri.conf.json`:
+the same bundles are then attached to a **draft** GitHub release (nothing is published until you
+publish the draft). The bundles are not signed and there is no updater: Windows SmartScreen and
+macOS Gatekeeper will warn, and a signing key, a notarization account and the updater plugin are
+out of scope for now. **Windows** and **macOS** bundles are not built by CI; by hand, on that
+system, the steps are the same (`cargo install tauri-cli --version "^2" --locked`, the WebView2 /
+Xcode prerequisites of §10.2, then `cargo tauri build` in `ferrum_gui/`; Windows gives an `.msi`
+and an NSIS `.exe`, macOS an `.app` and a `.dmg`). They need `icon.ico` and `icon.icns`, which the
+repository now has, but nobody has built or run either bundle here, so treat them as untried.
+
+The Linux workflow was run by hand on `master` (workflow run 40439676923, commit `c9c53f5`): it
+built both bundles on the first try, `Ferrum SLM Studio_0.3.0_amd64.AppImage` (83,884,536 bytes) and
+`Ferrum SLM Studio_0.3.0_amd64.deb` (5,999,602 bytes), uploaded them as one artifact and took 11
+minutes 14 seconds with a cold cache. Neither bundle was installed or started, the draft-release
+step has only run as "skipped" (it needs a tag), and the run did not check that the app starts
+from the AppImage, so the bundles are built, not tested. The AppImage is built by linuxdeploy,
+which the build downloads, so the job needs network access to GitHub; `APPIMAGE_EXTRACT_AND_RUN=1`
+lets it run on a runner without FUSE.
 
 **Android / iOS: untested.** Tauri 2 supports mobile, but Ferrum SLM Studio has
 not been built or run for it. The crate has the mobile entry point and a
@@ -1980,8 +2035,9 @@ the file dialogs) is unknown.
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), errors.js (reads a command error, truncates it, builds the copy-details text), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
+ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, serve_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), errors.js (reads a command error, truncates it, builds the copy-details text), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
 src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
+src/serve.rs       the Serve tab: `serve_start` / `serve_stop` / `serve_status` over `slm_server::bind` (the HTTP server runs in-process), the `serve` job slot, `serve-log` events
 src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
 src/error.rs      CmdError {code, message, hint}: the error every command returns, and the blocking-task helper
 src/jobs.rs       one running slot per kind of long job + the cancel_job command
@@ -2001,7 +2057,7 @@ capabilities/     Tauri v2 permissions (event listen/unlisten + dialog open/save
 
 Heavy commands run on blocking tasks and stream events back to the UI
 (`engine-log`, `train-progress`, `train-done`, `gen-fragment`,
-`finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`), so the window stays responsive. Under
+`finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`, and `serve-log` from the Serve tab's server), so the window stays responsive. Under
 a token budget, `train-progress` sends `total: null` because the epoch count is
 not known in advance.
 
@@ -2014,11 +2070,11 @@ few seconds:
 | Layer | What it checks | Where |
 |---|---|---|
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
-| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; tokenizing and training from the token file through IPC (the model file byte-identical to training from the text, the ids equal to `encode_docs`, errors, the pre-flight and estimates of a token file); the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot) | `src/ipc_tests.rs` |
+| IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; tokenizing and training from the token file through IPC (the model file byte-identical to training from the text, the ids equal to `encode_docs`, errors, the pre-flight and estimates of a token file); the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot); the Serve tab's server started on port 0 with a tiny model and called over a real `std::net::TcpStream` on 127.0.0.1 (`/health`, `/v1/info`, `/v1/generate`, 401 with and without the token, 404, the request counter, the startup banner and request lines in `serve-log`, a second start refused, stop closing the port and a restart), start-up errors (non-loopback host without a token, zero limit, missing or damaged model, a taken port) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, tokenizing, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Serve tab (validation, generated token, start, poll, copy, stop, a server that dies), the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` (`ui/icons.test.js` also checks the bundle icons' PNG, ICO and ICNS structure) |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
