@@ -18,7 +18,7 @@
 
 - **Full unit-test coverage (user requirement, 2026-10-09):** every function you add or change gets unit tests written with it, in the same commit. Cover every branch, error path and edge case (empty input, boundaries, invalid input). Measure with `cargo llvm-cov --release -p <crate> --summary-only` (and `--html` for detail). Every new or changed line must be covered; justify any line that cannot be (e.g. `main()`'s process exit) in the report. Reviewers check this per function.
 
-- Worktree: `git worktree add ../Ferrum-E -b feat/dos-E feat/dataops-serve-eval`, taken after Phase 0 is complete.
+- Worktree: `git worktree add ../ferrum-cpu-E -b feat/dos-E feat/dataops-serve-eval`, taken after Phase 0 is complete.
 - No `unsafe`. Unit tests come first and land in the same commit as the feature.
 - Each subcommand's flags live in its own `const *_FLAGS: Spec` table (Phase 0 parser).
 - Tool binaries are found in this order: the flag `--bin <path>`, then the env var (`FERRUM_OLLAMA`, `FERRUM_LMS`), then `PATH`, then the default install location (`~/.local/bin/ollama`, `~/.lmstudio/bin/lms`). A missing tool gives an error naming all four places checked.
