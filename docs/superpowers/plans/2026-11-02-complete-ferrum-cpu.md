@@ -52,11 +52,14 @@ Copied from `CLAUDE.md`. Every task's requirements include these.
 
 1. **Gate:** `cargo llvm-cov --workspace --release --fail-under-lines 100 --ignore-filename-regex '<EXCLUDE>'`. Lines are gated. Functions and regions are reported but not gated, because generic monomorphs and `?` regions produce unreachable regions on stable. Branch coverage needs nightly, so it is neither gated nor claimed.
 2. **Exclusions** (stable has no `#[coverage(off)]`) live in one regex, in `scripts/coverage.sh`, and each one is named here with its reason:
-   - `slm_wasm/src/lib.rs`. After Task 1.1 it holds only `#[wasm_bindgen]` shims that forward to native-tested functions. The Node `wasm-bindgen-test` suite (`slm_wasm/tests/node.rs`) runs them.
-   - `ferrum_gui/src/main.rs`. This is the Tauri entry point. The CI boot smoke test runs it.
+   - `ferrum_gui/src/main.rs`. This is the Tauri entry point. The CI boot smoke test runs it. It is excluded from Task 0.1 on.
+   - `slm_wasm/src/lib.rs`. It is excluded **only from Task 1.1 on**, in the same commit that leaves it holding nothing but `#[wasm_bindgen]` shims that forward to native-tested functions. The Node `wasm-bindgen-test` suite (`slm_wasm/tests/node.rs`) runs them. Excluding it earlier would hide 130 lines and let Task 1.1 be skipped.
    - Nothing else. Each `test_support.rs` is **not** excluded: a missed helper line is dead test code and gets deleted.
 3. **Dead code is deleted, not tested.** When a missed line cannot be reached from any public input, remove it, and say so in the commit message. Candidates spotted in the baseline: the `arch`/`name` fields `slm_cli/src/runtime_export.rs:10` marks as read only by tests, and the `rng.rs:65-71` block.
-4. **JS** gate: `node --test --experimental-test-coverage --test-coverage-lines=100` over `ferrum_gui/ui/*.test.js` and `slm_wasm/demo/*.test.js`, with `--test-coverage-exclude='**/*.test.js'`.
+4. **JS** gate: `node --test --experimental-test-coverage --test-coverage-lines=100` over `ferrum_gui/ui/*.test.js`, run from `ferrum_gui/`, and over `slm_wasm/demo/*.test.js`, with `--test-coverage-exclude='**/*.test.js'`.
+   - **Known blind spot (checked 2026-11-02):** `ui/testapp.js:54` loads `app.js` and the `*_tab.js` modules with `vm.runInContext(read(f), sandbox, { filename: f })`. Because `filename` is a bare name, V8 coverage attributes nothing to those files. A run over `ui/app_flows.test.js` listed only `testapp.js` and `testdom.js`.
+   - Task 0.1 therefore passes `filename: path.join(__dirname, f)`.
+   - The script also fails when any `ui/*.js` or `demo/*.js` (other than tests) is **missing** from the report. Node lists only the files that were loaded, so a file no test touches would otherwise show nothing instead of 0 %.
 5. **Python** gate: stdlib `python3 -m trace --count --missing --coverdir <scratch>` over the unittest run. Code that needs LightEval and is skipped without it is reported but not gated. It is checked locally with LightEval installed.
 
 ## Review Focus
@@ -82,20 +85,26 @@ These are the failure modes most likely to bite, with no current test. Each line
 **Interfaces:**
 - Produces: `scripts/coverage.sh [--rust|--gui|--js|--py|--all] [--fail-under N]`. It writes `target/coverage/{summary.txt,missing.txt,gui-summary.txt,js.txt,py.txt}` and exits non-zero when lines fall below N (default `100`). Later tasks run `scripts/coverage.sh --rust --fail-under 100`.
 
-- [ ] **Step 1: Write the failing tests** in `tests/tests/test_coverage_script.rs`. Run the script with `bash` from `CARGO_MANIFEST_DIR/..`, the same pattern as `test_bench_script.rs`, and replace `cargo` with a fake on `PATH`:
+- [ ] **Step 1: Write the failing tests** in `tests/tests/test_coverage_script.rs`. Run the script with `bash` from `CARGO_MANIFEST_DIR/..`, the same pattern as `test_bench_script.rs`. Replace `cargo` with a fake on `PATH`. Every test also needs a fake `pgrep`, which prints nothing by default, because the real `pgrep -x cargo` finds the `cargo test` running the suite:
   - `coverage_script_rejects_unknown_flag`: `--bogus` exits 2, and stderr contains `usage: scripts/coverage.sh`.
   - `coverage_script_refuses_concurrent_cargo`: with a fake `pgrep` that prints a pid, the script exits 1 with `another cargo process is running`.
   - `coverage_script_passes_release_and_low_memory_env`: a fake `cargo` that records its argv and env into a temp file. Assert that `llvm-cov`, `--release` and `--fail-under-lines 100` are present, along with `CARGO_BUILD_JOBS=3`.
 - [ ] **Step 2: Run them.** `cargo test -p integration_tests --release --test test_coverage_script` gives FAIL (no script).
-- [ ] **Step 3: Write `scripts/coverage.sh`** (`set -euo pipefail`; exports the three low-memory variables; `EXCLUDE='slm_wasm/src/lib\.rs|ferrum_gui/src/main\.rs'`).
+- [ ] **Step 3: Write `scripts/coverage.sh`** (`set -euo pipefail`; exports the three low-memory variables; `EXCLUDE='ferrum_gui/src/main\.rs'`; Task 1.1 adds `slm_wasm/src/lib\.rs`).
   - `--rust` runs `cargo llvm-cov --workspace --release --ignore-filename-regex "$EXCLUDE" --fail-under-lines "$N" --summary-only`, then `cargo llvm-cov report --release --show-missing-lines` into `missing.txt`.
   - `--gui` does the same inside `ferrum_gui/` (no `--release`, since the crate's dev profile already optimizes the engine).
-  - `--js` runs the Node command from "What 100 % means" item 4.
+  - `--js` runs the Node command from "What 100 % means" item 4, after the `filename: path.join(__dirname, f)` fix in `ui/testapp.js`. It fails when a non-test `ui/*.js` or `demo/*.js` is absent from the report. Check this works by confirming that `app.js` and each `*_tab.js` appear in `js.txt`.
   - `--py` runs `trace`.
   - `--all` runs them in sequence, never in parallel.
 - [ ] **Step 4: Run the tests.** They PASS.
 - [ ] **Step 5: Measure the unmeasured baselines.** Run `scripts/coverage.sh --gui --fail-under 0`, then `--js --fail-under 0`, then `--py --fail-under 0`, one at a time. Copy the four totals into `Status.md` §9 as measured on that date. These numbers fix the size of Tasks 1.5 and 1.6.
-- [ ] **Step 6: Add the CI job `coverage`** (ubuntu, `taiki-e/install-action` for `cargo-llvm-cov`). It runs `scripts/coverage.sh --rust --fail-under 98` (the ratchet floor). Tasks 1.1–1.4 raise the floor in their own commits, and Task 1.4 sets it to 100. Add the JS gate at its measured floor too.
+- [ ] **Step 6: Add the CI job `coverage`** (ubuntu, `taiki-e/install-action` for `cargo-llvm-cov`). The floor is set from the **first CI run** of this job, not from the local 98.19 %, because some covered lines depend on the environment:
+  - `loader/gpt2.rs:632-633` runs only when `.ferrum-dev` exists.
+  - Tool-gated runtime branches depend on whether the tools are installed.
+  - Pool and shard paths depend on the core count.
+  - `memory.rs` and GUI hardware detection read `/proc` and `/sys`.
+
+  Run the job once with `--fail-under 0`, then set the floor to its reported total, rounded down. Tasks 1.1–1.4 raise the floor in their own commits, and Task 1.4 sets it to 100. Add the JS gate at its measured floor too. **A Phase 1 task is done when the CI `coverage` job passes at the new floor**, not when the local script does.
 - [ ] **Step 7: Fix the stale `Status.md` header.** It names branch `feat/finish-remaining`. The work is on `master`. Correct the header and §1 "Date and branch"/"Commits" rows.
 - [ ] **Step 8: Run the full suite**, then the coverage script on its own. Commit `build(coverage): coverage script and a ratcheting CI gate`.
 
@@ -131,6 +140,7 @@ The test names below are the decisions. The implementer writes the assertions fr
   - `entropy_of_one_hot_is_zero`
   - `attention_weights_shape_is_heads_x_len`
 - [ ] Write tests in `text.rs` for its missed lines. Read the lines and name each test for the error it reaches.
+- [ ] In the same commit, add `slm_wasm/src/lib\.rs` to `EXCLUDE` in `scripts/coverage.sh`. Its reason is already recorded under "What 100 % means".
 - [ ] Move the logic, then run `cargo test -p slm_wasm --release` (native). Build the wasm32 target. Run the Node suite with the runner installed in the scratchpad (`cargo install wasm-bindgen-cli --version 0.2.122 --locked --root <scratchpad>/wbcli`, then `PATH=<scratchpad>/wbcli/bin:$PATH CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test -p slm_wasm --target wasm32-unknown-unknown --release --test node`). It must show 6 passed.
 - [ ] Run the full suite. Run coverage alone and raise the floor. Commit `test(wasm): token-model logic moves out of the bindings and is tested natively`.
 
@@ -228,7 +238,7 @@ The marker is `ferrum_core/src/slm/training_loop.rs:187`: "a resumed run reshuff
 - Produces: a new checkpoint key `ferrum.ckpt.epoch_rng` (u64 array, the RNG state at the start of the current epoch). A checkpoint without it resumes as today, with the reshuffle and a note. This is backward compatible; record it in §7.
 
 - [ ] Unit: `checkpoint_roundtrips_epoch_rng`, and `old_checkpoint_without_epoch_rng_still_loads`, which uses a checkpoint written by the current code and committed as test bytes.
-- [ ] Integration: `resume_mid_epoch_is_bit_identical`, in `test_tiny_library.rs`. Train N steps with a checkpoint at step N/2 + 3 (not an epoch boundary), resume, and compare the model bytes with an uninterrupted run, both serial and with `threads = 2`.
+- [ ] Integration: `resume_mid_epoch_is_bit_identical`, in `test_tiny_library.rs`. Train N steps with a checkpoint at step N/2 + 3 (not an epoch boundary), resume, and compare the model bytes with an uninterrupted run, both serial and with `threads = 2`. Add `resume_mid_epoch_is_bit_identical_from_token_file` next to it: `train tokens.gguf` shuffles its windows in `train_transformer/source.rs`, and `Status.md` claims token-file training is bit-identical to in-memory training across a resume.
 - [ ] Implement it: store the epoch-start RNG state. On resume, regenerate that epoch's permutation and skip the `partial` windows already done. Remove the `ponytail:` marker.
 - [ ] Functional: extend the resume case in `slm_cli/tests/tiny_e2e.rs` to compare the sha256 of the interrupted and the uninterrupted model.
 - [ ] Docs: `Status.md` §5 row "Resume may not replay…" goes, §7 gains a note, and `Manual.md` §6.6 changes. Commit `feat(train): exact mid-epoch resume`.
@@ -259,13 +269,15 @@ The marker is `ferrum_gui/src/commands/generate.rs:131`: the GUI cancels by `res
   - `no_cancel_flag_is_bit_identical_to_today` (same text and same RNG draws as `generate_tokens` on the tiny BPE and char models)
 - [ ] GUI: replace `catch_unwind`/`resume_unwind` in `run_generation` with the flag. The existing IPC cancel tests must pass unchanged. Remove the marker.
 - [ ] Server (optional consumer): none now. Note it in Manual §9.7 as possible.
+- [ ] Struct literals: run `grep -rn 'SamplingParams {' --include=*.rs .` over the workspace, `ferrum_gui` and `../ferrum-ml`. Confirm that `SamplingParams` implements `Default` (it derives only `Clone, Debug, PartialEq` today, `slm/sampling.rs:17`, so check its constructors). Then fix every literal that lacks `..Default::default()` in this commit, and record it in `Status.md` §7 if it is a public break.
+- [ ] Wasm: `Slm::start`/`next_chunk` go through `stream_next`. Build `slm_wasm` for wasm32 and run the Node `wasm-bindgen-test` suite (6 passed). The cancel check reads only the `AtomicBool`, never the clock (`Instant::now` traps on `wasm32-unknown-unknown`). That is why this hook is a plain flag and not a `StopCondition`.
 - [ ] Commit `feat(generate): cooperative cancel in every decode loop`.
 
 ### Task 2.4: `prepare` output is never half-written
 
 The marker is `slm_cli/src/prepare/mod.rs:340`.
 
-- [ ] Unit: `failed_rename_leaves_no_manifest`. Pre-create a directory at `out/test.txt` so the third rename fails, then assert that the call errors, that `out/manifest.json` does not exist, and that a second run after removing the obstacle succeeds with byte-identical outputs.
+- [ ] Unit: `failed_rename_leaves_no_manifest`. Factor the rename loop into `fn commit_outputs(out: &Path, rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>) -> Result<(), String>`, and pass a `rename` that fails on the third call. (A directory pre-created at `out/test.txt` would be refused earlier by `slm_cli::outputs::check_writable`, which rejects directories, so it never reaches the renames.) Assert that the call errors, that `out/manifest.json` does not exist, and that a second run after removing the obstacle succeeds with byte-identical outputs.
 - [ ] Implement: remove an existing `out/manifest.json` **first**, rename the data files, and rename the manifest **last**. A present manifest then means a complete set. Document "the manifest is the commit marker" in Manual §5.2, and keep the `ponytail:` marker rewritten to that guarantee.
 - [ ] Functional: the DVC `prepare` output stays byte-identical. Run `.venv/bin/dvc repro prepare` if the venv exists, or say it was not run. Commit `fix(prepare): the manifest is written last and marks a complete output`.
 
