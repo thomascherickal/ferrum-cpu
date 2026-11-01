@@ -1501,7 +1501,7 @@ is a Modelfile you write by hand: `FROM` the exported file, plus the
 the source model's Ollama or Hugging Face card). Ferrum does not generate it.
 
 **What does not run there.** Character-level models (no BPE vocabulary) and
-Ferrum-ML tabular MLPs are valid GGUF files, but llama.cpp has no architecture
+ferrum-ml tabular MLPs are valid GGUF files, but llama.cpp has no architecture
 for them. Use `train_transformer` or the Ferrum library for those.
 
 ### 9.6 One-command exports
@@ -2504,7 +2504,7 @@ Every file Ferrum writes is GGUF v3. There are five kinds.
 | Kind | `general.architecture` | Runs in llama.cpp |
 |---|---|---|
 | BPE transformer SLM (what `train` writes) | `gpt2` | Yes |
-| Generic Ferrum model (character-level SLMs, Ferrum-ML tabular MLPs) | `ferrum` | No |
+| Generic Ferrum model (character-level SLMs, ferrum-ml tabular MLPs) | `ferrum` | No |
 | Training checkpoint | `ferrum-checkpoint` (`ferrum-llama-checkpoint` for Llama fine-tunes) | No |
 | Reusable tokenizer file | `ferrum-tokenizer` | No |
 | Pre-tokenized corpus (`tokenize`) | `ferrum-tokens` | No |
@@ -2603,7 +2603,7 @@ that one id.
 
 #### The generic codec (not runnable in llama.cpp)
 
-Character-level SLMs and Ferrum-ML tabular classifiers do not fit the GPT-2
+Character-level SLMs and ferrum-ml tabular classifiers do not fit the GPT-2
 layout. They use a generic layer list: `ferrum.layer_count`,
 `ferrum.layer.{i}.type` (`linear`, `activation`, `flatten`, `embedding`,
 `layernorm`, `transformer_block`), per-layer dimension keys, and `l{i}.*`
@@ -2795,7 +2795,7 @@ without a GPU, a Python runtime, or a network connection**.
 | 9 | Cheap, horizontally scaled CPU inference | Embed `ferrum_core` in a Rust service with no model server |
 | 10 | Rapid prototyping | Compare tokenizers, contexts, and sizes in minutes with identical APIs |
 
-(Tabular classification and regression now live in the sibling **Ferrum-ML**
+(Tabular classification and regression now live in the sibling **ferrum-ml**
 project.)
 
 **A starter project.** Train a small BPE transformer on your own shell history
@@ -2892,8 +2892,8 @@ old tokenizer files no longer load (deliberate; retrain). See
 [Status §7](Status.md#7-backward-compatibility).
 
 **Where did the tabular trainer and the web playground go?** The tabular
-trainer is in `../Ferrum-ML`. The old one-hot web playground is archived in
-`../Ferrum-Junk`.
+trainer is in `../ferrum-ml`. The old one-hot web playground is archived in
+`../ferrum-junk`.
 
 **What can it not do?** See the next chapter.
 

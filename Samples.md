@@ -930,7 +930,7 @@ curl -s http://127.0.0.1:11545/api/generate \
 ```
 
 ```text
-FROM "/home/thomas/Projects/Ferrum/ferrum-cpu/models/slm.gguf"
+FROM "/home/thomas/Projects/ferrum/ferrum-cpu/models/slm.gguf"
 TEMPLATE "{{ .Prompt }}"
 PARAMETER num_predict 16
 gathering model components gathering model components gathering model components 
@@ -975,7 +975,7 @@ kill $OLLAMA_PID
 
 ```text
 wrote samples/ferrum-export.Modelfile
-FROM "/home/thomas/Projects/Ferrum/ferrum-cpu/models/slm.gguf"
+FROM "/home/thomas/Projects/ferrum/ferrum-cpu/models/slm.gguf"
 TEMPLATE "{{ .Prompt }}"
 PARAMETER stop "<|endoftext|>"
 PARAMETER temperature 0.8
@@ -1004,8 +1004,8 @@ train_transformer export-lmstudio samples/char.gguf
 ```
 
 ```text
-error: /home/thomas/Projects/Ferrum/ferrum-cpu/samples/char.gguf: architecture 'ferrum' is not runnable in llama.cpp (Ollama / LM Studio run only 'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no llama.cpp architecture). To run a Ferrum SLM there, retrain with a BPE vocabulary (`train ... --vocab 1024`; `--vocab 0` is character-level) to get a 'gpt2' GGUF
-error: /home/thomas/Projects/Ferrum/ferrum-cpu/samples/char.gguf: architecture 'ferrum' is not runnable in llama.cpp (Ollama / LM Studio run only 'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no llama.cpp architecture). To run a Ferrum SLM there, retrain with a BPE vocabulary (`train ... --vocab 1024`; `--vocab 0` is character-level) to get a 'gpt2' GGUF
+error: /home/thomas/Projects/ferrum/ferrum-cpu/samples/char.gguf: architecture 'ferrum' is not runnable in llama.cpp (Ollama / LM Studio run only 'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no llama.cpp architecture). To run a Ferrum SLM there, retrain with a BPE vocabulary (`train ... --vocab 1024`; `--vocab 0` is character-level) to get a 'gpt2' GGUF
+error: /home/thomas/Projects/ferrum/ferrum-cpu/samples/char.gguf: architecture 'ferrum' is not runnable in llama.cpp (Ollama / LM Studio run only 'gpt2' GGUF files; character-level, generic and tabular Ferrum models have no llama.cpp architecture). To run a Ferrum SLM there, retrain with a BPE vocabulary (`train ... --vocab 1024`; `--vocab 0` is character-level) to get a 'gpt2' GGUF
 ```
 
 **Part F. Serve over HTTP.**

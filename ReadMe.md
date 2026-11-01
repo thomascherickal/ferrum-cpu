@@ -32,7 +32,7 @@ for small models. It is not a runtime for frontier LLMs.
 | **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
 | **Llama/Qwen GGUF in and out** | Import Llama/Qwen checkpoints, run them, fine-tune them with AdamW, and export them back to GGUF. |
 
-One limit to know. Ferrum's tabular models (the Ferrum-ML MLP classifiers) and
+One limit to know. Ferrum's tabular models (the ferrum-ml MLP classifiers) and
 character-level models are also GGUF files. They do **not** run in llama.cpp,
 because llama.cpp has no MLP-classifier architecture and no character-level
 tokenizer. Only BPE transformer SLMs run there.
@@ -72,10 +72,10 @@ heavy system WebView libraries. Build it from its own directory.
 **Sibling folders.** Two folders next to this repository hold code that used
 to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
 
-- `../Ferrum-ML` holds the machine-learning demos that are not about SLMs: a
+- `../ferrum-ml` holds the machine-learning demos that are not about SLMs: a
   tabular MLP classifier/regressor, its CSV loader, ten datasets, pretrained
   models (now GGUF), and a browser binding. It builds on `ferrum_core` by path.
-- `../Ferrum-Junk` is an archive of removed features.
+- `../ferrum-junk` is an archive of removed features.
 - `../ferrum-gpu` holds the plan (`PLAN.md`) for a GPU-capable edition of this engine. There is no code yet.
 
 ---
