@@ -252,8 +252,9 @@ fn output_is_identical_across_matmul_thread_counts() {
 #[test]
 fn resume_from_an_epoch_checkpoint_finishes_the_run() {
     let e = Env::new("resume");
-    // The reference: three epochs in one go.
-    e.bpe("full.gguf");
+    // The reference: three epochs in one go (its checkpoint gives the step count).
+    let full_ck = e.s("full.fckp");
+    e.train("full.gguf", &["--vocab", "300", "--checkpoint", &full_ck]);
     // One epoch with a checkpoint, then continue to epoch three from it.
     let ck = e.s("ck.fckp");
     e.train(
@@ -268,6 +269,23 @@ fn resume_from_an_epoch_checkpoint_finishes_the_run() {
     assert!(!generate(&resumed, &["--temp", "0", "--max-tokens", "5"]).is_empty());
     // At an epoch boundary no batch is replayed, so the result equals the uninterrupted run.
     assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("resumed.gguf")));
+
+    // Mid-epoch: a token budget stops the run after N / 2 + 3 of its N steps; the resumed run
+    // replays the rest of that epoch's window order and ends on the same bytes.
+    let n: u64 = info_field(&full_ck, "Step").parse().unwrap();
+    let stop = n / 2 + 3;
+    let mid = e.s("mid.fckp");
+    let budget = (stop * 16 * 16).to_string(); // batch 16 x context 16 tokens per step
+                                               // Three equal epochs: N / 3 steps each, and the stop is not a multiple of that.
+    assert_ne!(stop % (n / 3), 0, "the stop must fall inside an epoch");
+    e.train(
+        "mid.gguf",
+        &["--vocab", "300", "--checkpoint", &mid, "--tokens", &budget],
+    );
+    assert_eq!(info_field(&mid, "Step"), stop.to_string());
+    let out = e.train("mid_resumed.gguf", &["--vocab", "300", "--resume", &mid]);
+    assert!(out.contains("epoch     3/3"), "{out}");
+    assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("mid_resumed.gguf")));
 }
 
 #[test]

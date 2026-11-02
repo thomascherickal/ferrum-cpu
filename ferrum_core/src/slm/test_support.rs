@@ -230,6 +230,15 @@ pub(super) fn scratch_ckpt(name: &str) -> String {
 
 /// Optimizer step counts at the end of every epoch `run_training` reports.
 pub(super) fn epoch_ends(corpus: &str, cfg: &TransformerConfig) -> Vec<u64> {
+    epoch_ends_threaded(corpus, cfg, 1)
+}
+
+/// [`epoch_ends`] with `threads` data-parallel shards.
+pub(super) fn epoch_ends_threaded(
+    corpus: &str,
+    cfg: &TransformerConfig,
+    threads: usize,
+) -> Vec<u64> {
     let tc = tokenize_for_lm_cfg(corpus, cfg).unwrap();
     let mut rng = Rng::new(1);
     let mut net = prepare_net(cfg, tc.vocab_size, &mut rng).unwrap();
@@ -238,7 +247,7 @@ pub(super) fn epoch_ends(corpus: &str, cfg: &TransformerConfig) -> Vec<u64> {
         &mut net,
         &mut tc.tokens.as_slice(),
         cfg,
-        1,
+        threads,
         &mut rng,
         &mut |n, _, _| {
             ends.push(n.step_count());

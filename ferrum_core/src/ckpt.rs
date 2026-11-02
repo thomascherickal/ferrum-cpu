@@ -9,7 +9,7 @@
 //! quantized.
 
 use crate::error::{InferError, Result};
-use crate::gguf::{Gguf, MetaValue, TensorInfo, GGML_F32};
+use crate::gguf::{Gguf, MetaValue, NumArray, TensorInfo, GGML_F32};
 use crate::gguf_write::GgufBuilder;
 
 /// Checkpoint layout version written under `ferrum.ckpt.version`.
@@ -33,6 +33,13 @@ pub(crate) fn put_u32(b: &mut GgufBuilder, name: &str, v: usize) {
 
 pub(crate) fn put_u64(b: &mut GgufBuilder, name: &str, v: u64) {
     b.meta(&format!("ferrum.ckpt.{name}"), MetaValue::U64(v));
+}
+
+pub(crate) fn put_u64s(b: &mut GgufBuilder, name: &str, v: &[u64]) {
+    b.meta(
+        &format!("ferrum.ckpt.{name}"),
+        NumArray::U64(v.to_vec()).into_meta(),
+    );
 }
 
 pub(crate) fn put_bool(b: &mut GgufBuilder, name: &str, v: bool) {
@@ -105,6 +112,16 @@ pub(crate) fn get_u64(g: &Gguf, name: &str) -> Result<u64> {
     match g.meta(&format!("ferrum.ckpt.{name}")) {
         Some(MetaValue::U64(v)) => Ok(*v),
         _ => Err(missing(name)),
+    }
+}
+
+/// An optional `u64` array: `None` when the key is absent (an older checkpoint), an error
+/// when it is there with another type.
+pub(crate) fn get_u64s<'a>(g: &'a Gguf, name: &str) -> Result<Option<&'a [u64]>> {
+    match g.meta(&format!("ferrum.ckpt.{name}")) {
+        None => Ok(None),
+        Some(MetaValue::Nums(NumArray::U64(v))) => Ok(Some(v)),
+        Some(_) => Err(missing(name)),
     }
 }
 
@@ -244,6 +261,17 @@ mod tests {
         assert!(get_bool(&g, "absent").is_err());
         assert!(get_bool(&g, "dim").is_err());
         assert!(get_usize(&g, "flag").is_err()); // Bool is not an integer
+    }
+
+    #[test]
+    fn u64_arrays_roundtrip_and_are_optional() {
+        let mut b = begin(ARCH);
+        put_u64s(&mut b, "xs", &[u64::MAX, 0, 7]);
+        put_u32(&mut b, "dim", 3);
+        let g = open(&b.into_bytes(), b"OLDM", ARCH).unwrap();
+        assert_eq!(get_u64s(&g, "xs").unwrap(), Some(&[u64::MAX, 0, 7][..]));
+        assert_eq!(get_u64s(&g, "absent").unwrap(), None);
+        assert!(get_u64s(&g, "dim").is_err()); // a U32 scalar, not a u64 array
     }
 
     #[test]

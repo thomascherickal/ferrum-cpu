@@ -17,6 +17,36 @@ pub struct CheckpointInfo {
     pub step: u64,
 }
 
+/// The start of the epoch a checkpoint was written in (`ferrum.ckpt.epoch_rng`, stored as
+/// `[rng, step, epoch]`): the RNG state its window order was drawn from, the optimizer step
+/// it began after, and its 1-based number. Epochs are not all the same length (a stride
+/// above 1 draws a random grid phase per epoch), so the step and the number are stored
+/// rather than derived from the step count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EpochStart {
+    pub(crate) rng: u64,
+    pub(crate) step: u64,
+    pub(crate) epoch: u64,
+}
+
+impl EpochStart {
+    /// Read it from a checkpoint taken at `step`: absent in checkpoints older than the key,
+    /// an error when malformed or later than the checkpoint itself.
+    fn read(g: &crate::gguf::Gguf, step: u64) -> Result<Option<Self>> {
+        match ckpt::get_u64s(g, "epoch_rng")? {
+            None => Ok(None),
+            Some(&[rng, start, epoch]) if start <= step && epoch >= 1 => Ok(Some(Self {
+                rng,
+                step: start,
+                epoch,
+            })),
+            Some(_) => Err(InferError::Format(
+                "checkpoint key 'ferrum.ckpt.epoch_rng' is not [rng, step, epoch]".into(),
+            )),
+        }
+    }
+}
+
 impl TransformerNet {
     /// Read just the header of [`TransformerNet::save_checkpoint`] bytes (no weights are decoded),
     /// e.g. to tell the user which architecture a `--resume` will really use.
@@ -45,7 +75,8 @@ impl TransformerNet {
     }
 
     /// Serialize the **full training state** (T6): architecture, QAT/tying
-    /// flags, optimizer timestep, the supplied RNG's state, and every
+    /// flags, optimizer timestep, the supplied RNG's state, the current epoch's start when a
+    /// config-driven run is under way (so a resume replays the rest of its window order), and every
     /// parameter's weights *and* Adam moment buffers (`m`, `v`). Pair with
     /// [`TransformerNet::load_checkpoint`] to resume an interrupted run exactly
     /// where it stopped — unlike a finished-model save, this preserves the
@@ -69,6 +100,9 @@ impl TransformerNet {
         ckpt::put_bool(&mut b, "tie", self.tie_weights);
         ckpt::put_u64(&mut b, "step", self.step_t);
         ckpt::put_u64(&mut b, "rng", rng.state());
+        if let Some(e) = self.epoch_start {
+            ckpt::put_u64s(&mut b, "epoch_rng", &[e.rng, e.step, e.epoch]);
+        }
         for (i, p) in self.params_all().into_iter().enumerate() {
             ckpt::put_param(&mut b, i, &p.data.data, &p.m.data, &p.v.data);
         }
@@ -136,6 +170,7 @@ impl TransformerNet {
         net.tie_weights = ckpt::get_bool(&g, "tie")?;
         net.step_t = ckpt::get_u64(&g, "step")?;
         let rng_state = ckpt::get_u64(&g, "rng")?;
+        net.epoch_start = EpochStart::read(&g, net.step_t)?;
         for (i, p) in net.params_mut_all().into_iter().enumerate() {
             // m and v share the parameter's shape, so each is the same length.
             let len = p.data.data.len();
@@ -153,7 +188,8 @@ mod tests {
     use crate::rng::Rng;
     use crate::train_transformer::epoch::train_transformer_epoch;
     use crate::train_transformer::test_support::{mangled, trained_net};
-    use crate::train_transformer::TransformerNet;
+    use crate::train_transformer::{EpochStart, TransformerNet};
+    use crate::{MetaValue, NumArray};
 
     /// Resuming from a mid-training checkpoint reproduces uninterrupted training
     /// bit-for-bit — proving weights, Adam moments, step counter, and RNG state
@@ -196,6 +232,59 @@ mod tests {
             net_c.snapshot_weights(),
             "resumed training diverged from the uninterrupted run"
         );
+    }
+
+    #[test]
+    fn checkpoint_roundtrips_epoch_rng() {
+        let (mut net, rng) = trained_net(false, false);
+        // A net outside the config-driven loop writes no key and reads none back.
+        let (plain, _) = TransformerNet::load_checkpoint(&net.save_checkpoint(&rng)).unwrap();
+        assert_eq!(plain.epoch_start, None);
+        let start = EpochStart {
+            rng: u64::MAX - 1,
+            step: net.step_count(),
+            epoch: 3,
+        };
+        net.epoch_start = Some(start);
+        let bytes = net.save_checkpoint(&rng);
+        let (back, _) = TransformerNet::load_checkpoint(&bytes).unwrap();
+        assert_eq!(back.epoch_start, Some(start));
+        assert_eq!(back.save_checkpoint(&rng), bytes);
+        // Malformed: a wrong type, a wrong length, a start after the checkpoint, epoch 0.
+        let bad = |v: MetaValue| {
+            let b = crate::ckpt::rewrite(
+                &bytes,
+                |m| {
+                    m.insert("ferrum.ckpt.epoch_rng".into(), v);
+                },
+                None,
+            );
+            TransformerNet::load_checkpoint(&b)
+                .err()
+                .unwrap()
+                .to_string()
+        };
+        let step = net.step_count();
+        let u64s = |v: Vec<u64>| NumArray::U64(v).into_meta();
+        assert!(bad(MetaValue::U64(1)).contains("epoch_rng"));
+        assert!(bad(u64s(vec![1, 2])).contains("[rng, step, epoch]"));
+        assert!(bad(u64s(vec![1, step + 1, 1])).contains("[rng, step, epoch]"));
+        assert!(bad(u64s(vec![1, step, 0])).contains("[rng, step, epoch]"));
+    }
+
+    /// Written by Ferrum before `ferrum.ckpt.epoch_rng` existed (3 steps of a 3-token net).
+    const PRE_EPOCH_RNG: &[u8] = include_bytes!("testdata/pre_epoch_rng.ckpt.gguf");
+
+    #[test]
+    fn old_checkpoint_without_epoch_rng_still_loads() {
+        let (net, rng) = TransformerNet::load_checkpoint(PRE_EPOCH_RNG).unwrap();
+        assert_eq!(net.epoch_start, None);
+        assert_eq!(net.step_count(), 3);
+        assert_eq!(rng.state(), 3354630805809648812);
+        // Without an epoch start the writer emits exactly the old layout.
+        assert_eq!(net.save_checkpoint(&rng), PRE_EPOCH_RNG);
+        let info = TransformerNet::checkpoint_info(PRE_EPOCH_RNG.to_vec()).unwrap();
+        assert_eq!((info.vocab, info.context, info.step), (3, 2, 3));
     }
 
     #[test]

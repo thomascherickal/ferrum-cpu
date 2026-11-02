@@ -62,6 +62,7 @@ pub(super) fn epoch_sharded<S: TokenSource>(
     rng: &mut Rng,
     threads: usize,
     max_steps: usize,
+    replay: Option<(Rng, usize)>,
     on_step: &mut StepHook,
 ) -> Result<f32> {
     {
@@ -70,13 +71,15 @@ pub(super) fn epoch_sharded<S: TokenSource>(
         let t = net.context_len();
         // Same per-epoch shuffle as the serial path (T4): identical RNG use, so
         // a fixed seed gives the same minibatches regardless of thread count.
-        let perm = net.epoch_window_starts(tokens.len(), rng)?;
+        let (perm, skip) = net.epoch_plan(tokens.len(), rng, replay)?;
         let num_windows = perm.len();
-        let steps = num_windows.div_ceil(batch_size).min(max_steps);
+        let steps = num_windows
+            .div_ceil(batch_size)
+            .min(skip.saturating_add(max_steps));
         let mut total = 0.0f32;
         let mut done = 0usize;
 
-        for step in 0..steps {
+        for step in skip..steps {
             // The step's minibatch is the next slice of the permutation (the
             // final batch may be smaller than `batch_size`).
             let batch = &perm[step * batch_size..((step + 1) * batch_size).min(num_windows)];

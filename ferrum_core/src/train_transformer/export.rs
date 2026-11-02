@@ -32,6 +32,7 @@ impl TransformerNet {
             dropout: self.dropout,
             window_stride: self.window_stride,
             metrics: Default::default(),
+            epoch_start: self.epoch_start,
         }
     }
 

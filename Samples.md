@@ -681,7 +681,7 @@ train from token file: 36.60s wall, peak RSS 134040 KB
 
 **What to look at.**
 
-- The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). A resume restarts a partial epoch with a fresh shuffle, so a resumed run is close to, but not bit-identical with, an uninterrupted one, unless the last checkpoint falls on an epoch boundary, where it is bit-identical (a tiny-model check with `--checkpoint-every` equal to the steps per epoch was bit-identical; one that did not divide the epoch was not). The uninterrupted run in Sample 1 ended at validation perplexity 18.690; the resumed run above ended at 18.910.
+- The step counter after `--resume` continues from the checkpoint (it restarts at step 50 plus the first progress interval). The output above was recorded with a build that restarted a partial epoch with a fresh shuffle: the uninterrupted run in Sample 1 ended at validation perplexity 18.690 and this resumed run at 18.910. Since then a checkpoint records where its epoch began (`ferrum.ckpt.epoch_rng`) and a resume replays the rest of that epoch, so a mid-epoch resume is bit-identical to an uninterrupted run in the tests (`slm_cli/tests/tiny_e2e.rs` compares the sha256 of both models); this sample was not re-run with that build, so its numbers still show the old behaviour.
 - With `--val`, the best validation score is restored on resume.
 - `-v` prints one line per 10 steps. `--debug` is the old per-op trace.
 - The CLI never falls back to a default silently. The second error names `.fckp` because `train` checkpoints are `.fckp` (`run-gguf`, `export-gguf` and `finetune-gguf` say `.flck`).

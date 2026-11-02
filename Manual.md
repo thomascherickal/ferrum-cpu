@@ -766,12 +766,15 @@ records no corpus hash, so resuming on a different corpus is not detected; the
 run prints a note saying the corpus is not verified.
 If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
-`--tokenizer` so the vocabulary is guaranteed identical. One detail: a resumed
-run restarts its partially-finished epoch with a fresh shuffle instead of
-replaying the exact remaining batches. When the last checkpoint falls on an
-epoch boundary the resumed run is bit-identical to an uninterrupted one;
-otherwise it ends close to, but not bit-identical with, it
-([Samples §4](Samples.md#4-training-controls)).
+`--tokenizer` so the vocabulary is guaranteed identical. A checkpoint also records
+where its epoch began (`ferrum.ckpt.epoch_rng`), so a run resumed from the middle of
+an epoch replays the rest of that epoch's batches in their original order and ends
+bit-identical to an uninterrupted run (same flags, same `--threads`; tested serial and
+with two threads, from text and from a token file). A checkpoint written by a Ferrum
+build before this key existed still resumes, but the rest of its partly finished
+epoch is reshuffled, so that run ends close to, not bit-identical with, an
+uninterrupted one; it prints `note: the checkpoint (step N) predates
+ferrum.ckpt.epoch_rng; ...` to say so.
 A hard interrupt (Ctrl-C, power cut) does not save on exit; the checkpoint on
 disk is the last periodic one.
 
@@ -785,9 +788,8 @@ and exits 0. Without a checkpoint path the message says so, and the stop cannot
 be resumed. A stop that lands on the run's last step is not a stop. The
 saved model of a stopped run is a partial model; with `--val` it is the best
 epoch so far. `finetune-gguf` takes the same flag and watches `<out.flck>.stop`;
-its `.flck` is the checkpoint. Resuming after a stop at an epoch boundary
-gives the same model as an uninterrupted run (tested); elsewhere the usual
-partial-epoch note above applies. Without these flags nothing changes: the
+its `.flck` is the checkpoint. Resuming after a stop gives the same model as an
+uninterrupted run (tested at an epoch boundary and mid-epoch). Without these flags nothing changes: the
 unstopped path is bit-identical.
 
 ```bash

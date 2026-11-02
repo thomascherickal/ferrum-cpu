@@ -13,7 +13,7 @@ impl TransformerNet {
     /// fresh random order. With stride > 1 the grid gets a random phase each
     /// epoch, so window boundaries differ across epochs. Stride 1 draws exactly
     /// as before (one shuffle), keeping existing runs reproducible.
-    pub(super) fn epoch_window_starts(&self, n_tokens: usize, rng: &mut Rng) -> Result<Vec<usize>> {
+    pub(crate) fn epoch_window_starts(&self, n_tokens: usize, rng: &mut Rng) -> Result<Vec<usize>> {
         let t = self.context_len;
         if n_tokens < t + 1 {
             return Err(InferError::DimMismatch(format!(
@@ -35,6 +35,21 @@ impl TransformerNet {
             .into_iter()
             .map(|i| phase + i * s)
             .collect())
+    }
+
+    /// The epoch's window order and the steps of it already done. Normally both come fresh
+    /// from `rng`; on a mid-epoch resume `replay` holds the RNG state the epoch began with
+    /// and the steps done before the checkpoint, so the same order is rebuilt and resumed.
+    pub(super) fn epoch_plan(
+        &self,
+        n_tokens: usize,
+        rng: &mut Rng,
+        replay: Option<(Rng, usize)>,
+    ) -> Result<(Vec<usize>, usize)> {
+        match replay {
+            Some((mut start, done)) => Ok((self.epoch_window_starts(n_tokens, &mut start)?, done)),
+            None => Ok((self.epoch_window_starts(n_tokens, rng)?, 0)),
+        }
     }
 }
 
@@ -106,11 +121,14 @@ pub fn train_transformer_steps(
         rng,
         threads,
         max_steps,
+        None,
         on_step,
     )
 }
 
 /// [`train_transformer_steps`] over any [`TokenSource`] (ids in memory or streamed from disk).
+/// `replay` resumes an epoch part-way (see [`TransformerNet::epoch_plan`]); `max_steps`
+/// counts the steps run now, not the ones skipped.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn steps_over<S: TokenSource>(
     net: &mut TransformerNet,
@@ -120,19 +138,23 @@ pub(crate) fn steps_over<S: TokenSource>(
     rng: &mut Rng,
     threads: usize,
     max_steps: usize,
+    replay: Option<(Rng, usize)>,
     on_step: &mut StepHook,
 ) -> Result<f32> {
     // One shard (or a single-sequence batch, or wasm32) is the serial path.
     #[cfg(not(target_arch = "wasm32"))]
     if threads.max(1).min(batch_size.max(1)) > 1 {
         return epoch_sharded(
-            net, tokens, batch_size, adam, rng, threads, max_steps, on_step,
+            net, tokens, batch_size, adam, rng, threads, max_steps, replay, on_step,
         );
     }
     let _ = threads;
-    epoch_serial(net, tokens, batch_size, adam, rng, max_steps, on_step)
+    epoch_serial(
+        net, tokens, batch_size, adam, rng, max_steps, replay, on_step,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn epoch_serial<S: TokenSource>(
     net: &mut TransformerNet,
     tokens: &mut S,
@@ -140,18 +162,21 @@ fn epoch_serial<S: TokenSource>(
     adam: &Adam,
     rng: &mut Rng,
     max_steps: usize,
+    replay: Option<(Rng, usize)>,
     on_step: &mut StepHook,
 ) -> Result<f32> {
     use crate::loss::softmax_cross_entropy;
     let t = net.context_len();
     // Shuffle the epoch's windows once and draw minibatches without
     // replacement (T4), so an epoch visits every window exactly once.
-    let perm = net.epoch_window_starts(tokens.len(), rng)?;
+    let (perm, skip) = net.epoch_plan(tokens.len(), rng, replay)?;
     let num_windows = perm.len();
-    let steps = num_windows.div_ceil(batch_size).min(max_steps);
+    let steps = num_windows
+        .div_ceil(batch_size)
+        .min(skip.saturating_add(max_steps));
     let mut total = 0.0f32;
     let mut done = 0usize;
-    for step in 0..steps {
+    for step in skip..steps {
         let batch = &perm[step * batch_size..((step + 1) * batch_size).min(num_windows)];
         let mut input = Vec::with_capacity(batch.len() * t);
         let mut targets = Vec::with_capacity(batch.len() * t);

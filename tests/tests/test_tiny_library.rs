@@ -1,8 +1,12 @@
 //! The library API end to end with a tiny model (about 14k parameters): train, save, load,
-//! generate, score and evaluate, plus checkpoint resume. Complements the per-feature tests in
+//! generate, score and evaluate, plus checkpoint resume (at an epoch boundary and mid-epoch). Complements the per-feature tests in
 //! `test_qat_cache.rs` and `test_slm_library.rs`, which each look at one piece.
 
-use ferrum_core::{GenerativeSLM, Rng, SamplingParams, TransformerConfig};
+use ferrum_core::train_transformer::TransformerNet;
+use ferrum_core::{
+    write_token_file, ByteBpeTokenizer, GenerativeSLM, Rng, SamplingParams, TokenFile,
+    TokenFileMeta, TransformerConfig,
+};
 use std::path::PathBuf;
 
 /// About 1.8 KB of text over an 18-word vocabulary, from a fixed LCG.
@@ -208,4 +212,119 @@ fn checkpoint_resume_at_an_epoch_boundary_equals_uninterrupted_training() {
 
     assert_eq!(whole.to_bytes().unwrap(), resumed.to_bytes().unwrap());
     assert_eq!(fingerprint(&whole), fingerprint(&resumed));
+}
+
+/// Train `c` on `threads` shards, in memory or (with `tokens`) streamed from a token file made
+/// with that tokenizer. Returns the model bytes and the epochs the callback saw.
+fn train_on(
+    c: &TransformerConfig,
+    threads: usize,
+    tokens: Option<(&ByteBpeTokenizer, &str)>,
+) -> (Vec<u8>, Vec<usize>) {
+    let mut eps = Vec::new();
+    let m = match tokens {
+        None => GenerativeSLM::train_transformer_config_threaded(
+            &corpus(),
+            c,
+            threads,
+            &mut Rng::new(7),
+            |ep, _| eps.push(ep),
+        ),
+        Some((tok, path)) => GenerativeSLM::train_transformer_tokens(
+            &mut TokenFile::open(path).unwrap(),
+            tok,
+            c,
+            threads,
+            &mut Rng::new(7),
+            |ep, _| eps.push(ep),
+        ),
+    }
+    .unwrap();
+    (m.to_bytes().unwrap(), eps)
+}
+
+fn ckpt_step(path: &str) -> u64 {
+    TransformerNet::checkpoint_info(std::fs::read(path).unwrap())
+        .unwrap()
+        .step
+}
+
+/// Run `base` (N steps) once; then stop it after N / 2 + 3 steps with a token budget, resume it
+/// from that checkpoint, and return the uninterrupted and the resumed model bytes.
+fn uninterrupted_and_resumed(
+    t: &Tmp,
+    base: &TransformerConfig,
+    threads: usize,
+    tokens: Option<(&ByteBpeTokenizer, &str)>,
+) -> (Vec<u8>, Vec<u8>) {
+    let full_ck = t.s(&format!("full{threads}.fckp"));
+    let full_cfg = TransformerConfig {
+        checkpoint_path: full_ck.clone(),
+        ..base.clone()
+    };
+    let (full, _) = train_on(&full_cfg, threads, tokens);
+    let stop = ckpt_step(&full_ck) / 2 + 3;
+    let ck = t.s(&format!("mid{threads}.fckp"));
+    let short = TransformerConfig {
+        checkpoint_path: ck.clone(),
+        max_tokens: stop * (base.batch_size * base.context_len) as u64,
+        ..base.clone()
+    };
+    let (_, short_eps) = train_on(&short, threads, tokens);
+    assert_eq!(ckpt_step(&ck), stop);
+    let resumed_cfg = TransformerConfig {
+        checkpoint_path: ck,
+        resume: true,
+        ..base.clone()
+    };
+    let (resumed, eps) = train_on(&resumed_cfg, threads, tokens);
+    // The resumed run first finishes the epoch the budget cut short.
+    assert_eq!(
+        eps.first(),
+        short_eps.last(),
+        "the stop must fall inside an epoch"
+    );
+    (full, resumed)
+}
+
+#[test]
+fn resume_mid_epoch_is_bit_identical() {
+    let t = Tmp::new("resume_mid");
+    for threads in [1, 2] {
+        let (full, resumed) = uninterrupted_and_resumed(&t, &cfg(4), threads, None);
+        assert!(full == resumed, "threads {threads}: resumed model differs");
+    }
+}
+
+#[test]
+fn resume_mid_epoch_is_bit_identical_from_token_file() {
+    let t = Tmp::new("resume_mid_tok");
+    let tok = ByteBpeTokenizer::train_with_docs(&corpus(), 280).unwrap();
+    std::fs::write(t.s("tok.gguf"), tok.to_gguf_bytes()).unwrap();
+    let ids: Vec<u32> = tok
+        .encode_docs(&corpus())
+        .iter()
+        .map(|&i| i as u32)
+        .collect();
+    let meta = TokenFileMeta {
+        vocab_size: tok.vocab_size(),
+        eos_id: tok.eos_id().map(|e| e as u32),
+        tokenizer_sha256: "test".into(),
+    };
+    write_token_file(&t.s("t.tok.gguf"), &meta, |s| s.push(&ids)).unwrap();
+    // In memory with the same tokenizer file the ids are the same, so the models must be too.
+    let base = TransformerConfig {
+        tokenizer_path: t.s("tok.gguf"),
+        ..cfg(4)
+    };
+    let path = t.s("t.tok.gguf");
+    for threads in [1, 2] {
+        let (in_memory, _) = train_on(&base, threads, None);
+        let (full, resumed) = uninterrupted_and_resumed(&t, &base, threads, Some((&tok, &path)));
+        assert!(
+            full == in_memory,
+            "threads {threads}: token file differs from in memory"
+        );
+        assert!(full == resumed, "threads {threads}: resumed model differs");
+    }
 }

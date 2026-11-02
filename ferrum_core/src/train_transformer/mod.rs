@@ -24,6 +24,7 @@ mod threaded;
 mod tying;
 
 pub use self::checkpoint::CheckpointInfo;
+pub(crate) use self::checkpoint::EpochStart;
 pub(crate) use self::epoch::steps_over;
 pub use self::epoch::{train_transformer_epoch, train_transformer_steps, StepHook};
 pub use self::forward::FwdCache;
@@ -94,6 +95,9 @@ pub struct TransformerNet {
     window_stride: usize,
     /// Opt-in per-step metrics (see [`StepMetrics`]); no effect on training.
     metrics: step_metrics::MetricsState,
+    /// Where the current epoch of a config-driven run began, so a checkpoint written inside
+    /// it can replay the rest of its window order. `None` outside that loop.
+    pub(crate) epoch_start: Option<checkpoint::EpochStart>,
 }
 
 impl TransformerNet {
@@ -148,6 +152,7 @@ impl TransformerNet {
             dropout: 0.0,
             window_stride: 1,
             metrics: Default::default(),
+            epoch_start: None,
         })
     }
 

@@ -5,7 +5,7 @@ use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
 use crate::slm::memory::{available_memory_bytes, memory_gate};
 use crate::slm::metrics_log::{format_eta, CsvLog, Row};
-use crate::train_transformer::{steps_over, TokenSource, TransformerNet};
+use crate::train_transformer::{steps_over, EpochStart, TokenSource, TransformerNet};
 
 /// A fresh (or checkpoint-resumed) training net configured from `cfg`.
 pub(super) fn prepare_net(
@@ -81,6 +81,46 @@ fn progress_line(
     format!(
         "[train] step {step}/{total_steps}  tokens/s {rate:.0}{norm}  elapsed {secs:.0}s  eta {}",
         format_eta(eta)
+    )
+}
+
+/// Where a resumed net picks up: the epochs already finished, the steps an older checkpoint
+/// has done in the current epoch (it is reshuffled), and for a checkpoint written inside an
+/// epoch, that epoch's start and the steps done in it (its window order is replayed).
+type ResumePoint = (usize, u64, Option<(EpochStart, usize)>);
+
+fn resume_point(
+    net: &TransformerNet,
+    n_tokens: usize,
+    batch: usize,
+    steps_per_epoch: u64,
+) -> Result<ResumePoint> {
+    let step = net.step_count();
+    let Some(start) = net.epoch_start else {
+        let partial = step % steps_per_epoch;
+        if partial > 0 {
+            eprintln!("{}", reshuffle_note(step));
+        }
+        return Ok(((step / steps_per_epoch) as usize, partial, None));
+    };
+    // The epoch's real length: with a stride above 1 it varies with the drawn grid phase.
+    let order = net.epoch_window_starts(n_tokens, &mut Rng::from_state(start.rng))?;
+    let done = (step - start.step) as usize;
+    Ok(if done < order.len().div_ceil(batch) {
+        (start.epoch as usize - 1, 0, Some((start, done)))
+    } else {
+        // Written on the epoch's last step: it is finished and the next one starts fresh.
+        (start.epoch as usize, 0, None)
+    })
+}
+
+/// What a resume from a checkpoint without `ferrum.ckpt.epoch_rng` (written before Ferrum
+/// stored it) prints: the rest of its epoch runs in a fresh order, so the result is close
+/// to, not bit-identical with, an uninterrupted run.
+fn reshuffle_note(step: u64) -> String {
+    format!(
+        "note: the checkpoint (step {step}) predates ferrum.ckpt.epoch_rng; the rest of its \
+         epoch is reshuffled, so the result will differ slightly from an uninterrupted run"
     )
 }
 
@@ -180,12 +220,8 @@ pub(super) fn run_training<S: TokenSource>(
         }
         Ok(true)
     };
-    // ponytail: a resumed run reshuffles its partially-done epoch (so the
-    // remaining steps see a fresh permutation); exact mid-epoch replay would
-    // need the permutation in the checkpoint. The epoch still ends where an
-    // uninterrupted run's would.
-    let mut ep = (net.step_count() / steps_per_epoch) as usize;
-    let mut partial = net.step_count() % steps_per_epoch; // steps already done in this epoch
+    let (mut ep, mut partial, mut replay) =
+        resume_point(net, tokens.len(), batch, steps_per_epoch)?;
     loop {
         let remaining = total_steps.saturating_sub(net.step_count());
         if (budgeted && remaining == 0) || (!budgeted && ep >= cfg.epochs) {
@@ -200,6 +236,16 @@ pub(super) fn run_training<S: TokenSource>(
         } else {
             epoch_left
         };
+        // Record where this epoch began, so a checkpoint written inside it can replay it.
+        let (start, skip) = replay.take().unwrap_or((
+            EpochStart {
+                rng: rng.state(),
+                step: net.step_count(),
+                epoch: ep as u64,
+            },
+            0,
+        ));
+        net.epoch_start = Some(start);
         let loss = steps_over(
             net,
             tokens,
@@ -208,6 +254,7 @@ pub(super) fn run_training<S: TokenSource>(
             rng,
             threads,
             max_steps,
+            (skip > 0).then(|| (Rng::from_state(start.rng), skip)),
             &mut on_step,
         )?;
         vprintln!(
@@ -231,7 +278,9 @@ mod tests {
     use super::progress_line;
     use crate::rng::Rng;
     use crate::slm::config::{TransformerConfig, ValidationConfig};
-    use crate::slm::test_support::{epoch_ends, resume_cfg, scratch_ckpt, RESUME_CORPUS};
+    use crate::slm::test_support::{
+        epoch_ends, epoch_ends_threaded, resume_cfg, scratch_ckpt, RESUME_CORPUS,
+    };
     use crate::slm::GenerativeSLM;
     use crate::train_transformer::TransformerNet;
 
@@ -307,6 +356,98 @@ mod tests {
         assert_eq!(
             epoch_ends(&corpus, &resumed),
             vec![spe, 2 * spe, 2 * spe + 3]
+        );
+    }
+
+    /// Five copies of the corpus at batch 2: the stride grid's random phase makes the epochs
+    /// 5, 5, 6 and 5 steps long against an estimate of 6, so `step / steps_per_epoch` alone
+    /// misplaces a checkpoint inside its epoch. Dropout draws from the RNG on every step.
+    fn drift_cfg(ckpt: &str) -> TransformerConfig {
+        TransformerConfig {
+            batch_size: 2,
+            epochs: 4,
+            dropout: 0.1,
+            checkpoint_every: 0,
+            ..resume_cfg(ckpt)
+        }
+    }
+
+    /// Train `stop` steps (a token budget), resume to the full run, and return the epoch ends
+    /// of the resumed run and its final checkpoint. `edit` may rewrite the interrupted checkpoint.
+    fn interrupted_run(
+        tag: &str,
+        stop: u64,
+        threads: usize,
+        edit: impl Fn(Vec<u8>) -> Vec<u8>,
+    ) -> (Vec<u64>, Vec<u8>) {
+        let corpus = RESUME_CORPUS.repeat(5);
+        let ck = scratch_ckpt(tag);
+        let short = TransformerConfig {
+            max_tokens: stop * 2 * 8,
+            ..drift_cfg(&ck)
+        };
+        assert_eq!(
+            epoch_ends_threaded(&corpus, &short, threads).last(),
+            Some(&stop)
+        );
+        std::fs::write(&ck, edit(std::fs::read(&ck).unwrap())).unwrap();
+        let resumed = TransformerConfig {
+            resume: true,
+            ..drift_cfg(&ck)
+        };
+        let ends = epoch_ends_threaded(&corpus, &resumed, threads);
+        (ends, std::fs::read(&ck).unwrap())
+    }
+
+    #[test]
+    fn resume_mid_epoch_replays_the_interrupted_epoch_exactly() {
+        for threads in [1, 2] {
+            let full_ck = scratch_ckpt(&format!("exact_full{threads}"));
+            let full = epoch_ends_threaded(&RESUME_CORPUS.repeat(5), &drift_cfg(&full_ck), threads);
+            assert_eq!(full, vec![5, 10, 16, 21], "the epochs must drift");
+            let full_bytes = std::fs::read(&full_ck).unwrap();
+            // 21 / 2 + 3 = 13: three steps into the third epoch (13 % 6 would say one), and
+            // 10: the last step of the second epoch (10 % 6 would say four into it).
+            for stop in [13, 10] {
+                let tag = format!("exact_{threads}_{stop}");
+                let (ends, bytes) = interrupted_run(&tag, stop, threads, |b| b);
+                let rest: Vec<u64> = full.iter().copied().filter(|&e| e > stop).collect();
+                assert_eq!(ends, rest, "threads {threads}, stop {stop}");
+                assert!(
+                    bytes == full_bytes,
+                    "threads {threads}, stop {stop}: checkpoints differ"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_checkpoint_without_epoch_rng_resumes_with_a_reshuffle() {
+        let full_ck = scratch_ckpt("reshuffle_full");
+        let full = epoch_ends_threaded(&RESUME_CORPUS.repeat(5), &drift_cfg(&full_ck), 1);
+        let strip = |b: Vec<u8>| {
+            crate::ckpt::rewrite(
+                &b,
+                |m| {
+                    assert!(m.remove("ferrum.ckpt.epoch_rng").is_some());
+                },
+                None,
+            )
+        };
+        // As before the key existed: 13 % 6 = 1 step counts as done, the epoch is reshuffled.
+        let (ends, bytes) = interrupted_run("reshuffle", 13, 1, strip);
+        assert_eq!(ends.len(), 2, "{ends:?}");
+        assert!(
+            bytes != std::fs::read(&full_ck).unwrap(),
+            "{full:?} vs {ends:?}"
+        );
+        // The resumed run itself writes the key again.
+        let (net, _) = TransformerNet::load_checkpoint(&bytes).unwrap();
+        assert_eq!(net.epoch_start.map(|e| e.epoch), Some(4));
+        let note = super::reshuffle_note(13);
+        assert!(
+            note.contains("step 13") && note.contains("ferrum.ckpt.epoch_rng"),
+            "{note}"
         );
     }
 
