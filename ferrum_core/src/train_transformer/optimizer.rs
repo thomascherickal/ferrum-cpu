@@ -228,9 +228,7 @@ mod tests {
         );
         assert!(
             matrix_norm(&decayed) < matrix_norm(&plain),
-            "weight decay should shrink the weight matrices: {} vs {}",
-            matrix_norm(&decayed),
-            matrix_norm(&plain)
+            "weight decay should shrink the weight matrices"
         );
     }
 

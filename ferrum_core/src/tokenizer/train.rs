@@ -165,12 +165,7 @@ mod tests {
         let tok = ByteBpeTokenizer::train(CORPUS, 300).unwrap();
         assert!(!tok.encode_state().is_empty(), "no merges learned");
         let ids = tok.encode(CORPUS);
-        assert!(
-            ids.len() < CORPUS.len(),
-            "encoding not shorter: {} tokens for {} bytes",
-            ids.len(),
-            CORPUS.len()
-        );
+        assert!(ids.len() < CORPUS.len(), "encoding not shorter");
     }
 
     #[test]
@@ -203,6 +198,17 @@ mod tests {
         for vocab in [257, 270, 300, 400] {
             let fast = ByteBpeTokenizer::train(&corpus, vocab).unwrap();
             assert_eq!(fast.merges, naive_merges(&corpus, vocab), "vocab {vocab}");
+        }
+    }
+
+    #[test]
+    fn a_corpus_without_adjacent_pairs_learns_no_merges() {
+        for corpus in ["a", "a b"] {
+            assert!(naive_merges(corpus, 300).is_empty());
+            assert!(ByteBpeTokenizer::train(corpus, 300)
+                .unwrap()
+                .merges
+                .is_empty());
         }
     }
 
@@ -271,12 +277,11 @@ mod tests {
         let tok = ByteBpeTokenizer::train(&"a,b ".repeat(30), 300).unwrap();
         let ids = tok.encode("a,b");
         for id in ids {
-            if let Some(bytes) = tok.token_bytes(id) {
-                assert!(
-                    !(bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',')),
-                    "token {id} spans letter and punctuation: {bytes:?}"
-                );
-            }
+            let bytes = tok.token_bytes(id).expect("every id has bytes");
+            assert!(
+                !(bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',')),
+                "token {id} spans letter and punctuation"
+            );
         }
     }
 

@@ -21,6 +21,12 @@ pub(super) fn tiny_transformer_model() -> Sequential {
     net.to_inference().unwrap()
 }
 
+/// A progress callback that ignores every epoch (a named fn, so it counts as covered when training calls it).
+pub(super) fn ignore_progress(_: usize, _: f32) {}
+
+/// [`ignore_progress`] for the validated trainers.
+pub(super) fn ignore_validation(_: &crate::slm::ValidationProgress) {}
+
 pub(super) fn t5_cfg(epochs: usize) -> TransformerConfig {
     TransformerConfig {
         context_len: 4,
@@ -51,7 +57,8 @@ pub(super) fn tiny_bpe_slm() -> GenerativeSLM {
         vocab_size: 270,
         ..TransformerConfig::default()
     };
-    GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(3), |_, _| {}).unwrap()
+    GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(3), ignore_progress)
+        .unwrap()
 }
 
 pub(super) fn tiny_char_slm() -> GenerativeSLM {
@@ -233,7 +240,7 @@ pub(super) fn epoch_ends(corpus: &str, cfg: &TransformerConfig) -> Vec<u64> {
         cfg,
         1,
         &mut rng,
-        |n, _, _| {
+        &mut |n, _, _| {
             ends.push(n.step_count());
             Ok(true)
         },

@@ -61,14 +61,6 @@ mod tests {
 
     #[test]
     fn same_seed_same_sequence() {
-        let seq = |seed| {
-            (0..50)
-                .map(|_| {
-                    let mut r = Rng::new(seed);
-                    r.next_u64()
-                })
-                .next_back()
-        };
         assert_eq!(
             {
                 let mut r = Rng::new(42);
@@ -79,7 +71,6 @@ mod tests {
                 (0..50).map(|_| r.next_u64()).collect::<Vec<_>>()
             }
         );
-        let _ = seq; // silence unused warning
     }
 
     #[test]

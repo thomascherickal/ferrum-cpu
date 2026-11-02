@@ -508,10 +508,6 @@ mod tests {
         assert_eq!(books.len(), n);
         assert_eq!(books[0], "body 0\n");
         assert_eq!(books[n - 1], format!("body {}\n", n - 1));
-        assert!(
-            t.elapsed() < std::time::Duration::from_secs(5),
-            "splitting {n} books took {:?}",
-            t.elapsed()
-        );
+        assert!(t.elapsed() < std::time::Duration::from_secs(5), "{n} books");
     }
 }

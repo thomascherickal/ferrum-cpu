@@ -228,14 +228,11 @@ mod tests {
         let tokens: Vec<usize> = (0..200).map(|i| (i * 7) % 6).collect();
         let adam = Adam::new(1e30);
         let mut rng = Rng::new(99);
-        let mut result = Ok(0.0);
-        for _ in 0..5 {
-            result = train_transformer_epoch(&mut net, &tokens, 8, &adam, &mut rng);
-            if result.is_err() {
-                break;
-            }
-        }
-        let e = result.expect_err("lr 1e30 must diverge");
+        let e = (0..5)
+            .map(|_| train_transformer_epoch(&mut net, &tokens, 8, &adam, &mut rng))
+            .find(Result::is_err)
+            .expect("lr 1e30 must diverge")
+            .unwrap_err();
         assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
     }
 

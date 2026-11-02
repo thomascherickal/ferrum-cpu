@@ -108,12 +108,12 @@ impl GenerativeSLM {
         num_chars: usize,
         params: &SamplingParams,
         rng: &mut Rng,
-        on_text: F,
+        mut on_text: F,
     ) -> Result<String>
     where
         F: FnMut(&str),
     {
-        self.generate_stream_core(seed, num_chars, params, None, rng, on_text)
+        self.generate_stream_core(seed, num_chars, params, None, rng, &mut on_text)
     }
 
     /// [`GenerativeSLM::generate_with`] that **stops early** at a natural
@@ -141,13 +141,13 @@ impl GenerativeSLM {
         stop: &str,
         params: &SamplingParams,
         rng: &mut Rng,
-        on_text: F,
+        mut on_text: F,
     ) -> Result<String>
     where
         F: FnMut(&str),
     {
         let stop = if stop.is_empty() { None } else { Some(stop) };
-        self.generate_stream_core(seed, max_chars, params, stop, rng, on_text)
+        self.generate_stream_core(seed, max_chars, params, stop, rng, &mut on_text)
     }
 
     /// Generate a completion from `seed` and return **only the newly generated
@@ -415,10 +415,7 @@ mod tests {
         let n = out.chars().count();
         // If it stopped before the budget, it must have stopped right after a space.
         if n < seed.chars().count() + 40 {
-            assert!(
-                out.ends_with(' '),
-                "stopped but not at the boundary: {out:?}"
-            );
+            assert!(out.ends_with(' '), "stopped but not at the boundary");
         }
         // Deterministic.
         let a = slm

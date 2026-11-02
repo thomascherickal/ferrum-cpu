@@ -236,6 +236,15 @@ mod tests {
     use crate::slm::test_support::{bias_only_slm, naive_logprobs, tiny_bpe_slm, tiny_char_slm};
 
     #[test]
+    fn evaluate_ids_scores_every_id_and_rejects_none() {
+        let slm = tiny_bpe_slm();
+        assert!(slm.evaluate_ids(&[]).is_err());
+        let ids = slm.encode_text("the cat sat").unwrap();
+        let e = slm.evaluate_ids(&ids).unwrap();
+        assert_eq!(e.num_predictions, ids.len());
+    }
+
+    #[test]
     fn score_matches_naive_reference() {
         let slm = tiny_bpe_slm();
         let ctx = "the cat sat on";

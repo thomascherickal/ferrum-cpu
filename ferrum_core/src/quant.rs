@@ -626,12 +626,7 @@ mod tests {
             let amax = row.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
             let step = amax / INT4_MAX;
             for c in 0..cols {
-                assert!(
-                    (row[c] - back[r * cols + c]).abs() <= step * 0.5 + 1e-6,
-                    "int4 r{r} c{c}: {} vs {}",
-                    row[c],
-                    back[r * cols + c]
-                );
+                assert!((row[c] - back[r * cols + c]).abs() <= step * 0.5 + 1e-6);
             }
         }
     }
@@ -653,6 +648,18 @@ mod tests {
         assert_eq!(QWeight::nibble_to_i8(0x7), 7);
         assert_eq!(QWeight::nibble_to_i8(0xF), -1);
         assert_eq!(QWeight::nibble_to_i8(0x9), -7);
+    }
+
+    #[test]
+    fn per_channel_all_zero_channel_stays_zero() {
+        let mut data = vec![0.0f32; 64];
+        data[32..]
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, v)| *v = i as f32 - 10.0);
+        assert!(fake_quantize_int8_per_channel(&mut data, 2));
+        assert!(data[..32].iter().all(|&v| v == 0.0));
+        assert!(data[32..].iter().any(|&v| v != 0.0));
     }
 
     #[test]

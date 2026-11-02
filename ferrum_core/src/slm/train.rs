@@ -65,7 +65,7 @@ impl GenerativeSLM {
         batch_size: usize,
         vocab_size: usize,
         rng: &mut Rng,
-        progress_callback: F,
+        mut progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(usize, f32),
@@ -82,7 +82,7 @@ impl GenerativeSLM {
             batch_size,
             vocab_size,
         );
-        Self::train_transformer_inner(corpus, &cfg, 1, rng, progress_callback)
+        Self::train_transformer_inner(corpus, &cfg, 1, rng, &mut progress_callback)
     }
 
     /// Data-parallel [`GenerativeSLM::train_transformer_with_callback`]:
@@ -108,7 +108,7 @@ impl GenerativeSLM {
         vocab_size: usize,
         threads: usize,
         rng: &mut Rng,
-        progress_callback: F,
+        mut progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(usize, f32),
@@ -129,20 +129,17 @@ impl GenerativeSLM {
             batch_size,
             vocab_size,
         );
-        Self::train_transformer_inner(corpus, &cfg, threads, rng, progress_callback)
+        Self::train_transformer_inner(corpus, &cfg, threads, rng, &mut progress_callback)
     }
 
     /// Shared implementation behind the serial and threaded transformer trainers.
-    fn train_transformer_inner<F>(
+    fn train_transformer_inner(
         corpus: &str,
         cfg: &TransformerConfig,
         threads: usize,
         rng: &mut Rng,
-        mut progress_callback: F,
-    ) -> Result<Self>
-    where
-        F: FnMut(usize, f32),
-    {
+        progress_callback: &mut dyn FnMut(usize, f32),
+    ) -> Result<Self> {
         let tc = tokenize_for_lm_cfg(corpus, cfg)?;
         vprintln!("[slm::train_transformer] corpus={} tokens, vocab={}, bpe={}, ctx={}, dim={}, heads={}, blocks={}, hidden={}, threads={}",
             tc.tokens.len(), tc.vocab_size, !tc.tokenizer_state.is_empty(),
@@ -154,7 +151,7 @@ impl GenerativeSLM {
             cfg,
             threads,
             rng,
-            |_, ep, loss| {
+            &mut |_, ep, loss| {
                 progress_callback(ep, loss);
                 Ok(true)
             },
@@ -200,12 +197,12 @@ impl GenerativeSLM {
         corpus: &str,
         cfg: &TransformerConfig,
         rng: &mut Rng,
-        progress_callback: F,
+        mut progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(usize, f32),
     {
-        Self::train_transformer_inner(corpus, cfg, 1, rng, progress_callback)
+        Self::train_transformer_inner(corpus, cfg, 1, rng, &mut progress_callback)
     }
 
     /// Data-parallel [`GenerativeSLM::train_transformer_config`]: trains with
@@ -217,7 +214,7 @@ impl GenerativeSLM {
         cfg: &TransformerConfig,
         threads: usize,
         rng: &mut Rng,
-        progress_callback: F,
+        mut progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(usize, f32),
@@ -227,7 +224,7 @@ impl GenerativeSLM {
         } else {
             threads
         };
-        Self::train_transformer_inner(corpus, cfg, threads, rng, progress_callback)
+        Self::train_transformer_inner(corpus, cfg, threads, rng, &mut progress_callback)
     }
 
     /// Train a transformer SLM with an internal validation split, early stopping
@@ -251,11 +248,24 @@ impl GenerativeSLM {
         threads: usize,
         val: &ValidationConfig,
         rng: &mut Rng,
-        progress_callback: F,
+        mut progress_callback: F,
     ) -> Result<Self>
     where
         F: FnMut(&ValidationProgress),
     {
+        Self::train_validated_dyn(corpus, cfg, threads, val, rng, &mut progress_callback)
+    }
+
+    /// [`GenerativeSLM::train_transformer_config_validated`] without the callback's type
+    /// parameter: one compiled copy of the logic.
+    fn train_validated_dyn(
+        corpus: &str,
+        cfg: &TransformerConfig,
+        threads: usize,
+        val: &ValidationConfig,
+        rng: &mut Rng,
+        progress_callback: &mut dyn FnMut(&ValidationProgress),
+    ) -> Result<Self> {
         if !(val.val_fraction > 0.0 && val.val_fraction < 1.0) {
             return Err(InferError::DimMismatch(
                 "val_fraction must be in the open interval (0, 1)".into(),
@@ -310,7 +320,7 @@ impl GenerativeSLM {
         val: &ValidationConfig,
         rng: &mut Rng,
         eval: &dyn Fn(&Self) -> Result<Evaluation>,
-        mut progress_callback: impl FnMut(&ValidationProgress),
+        progress_callback: &mut dyn FnMut(&ValidationProgress),
     ) -> Result<Self> {
         let mut net = prepare_net(cfg, tc.vocab_size, rng)?;
         let mut best: Option<Self> = None;
@@ -329,7 +339,7 @@ impl GenerativeSLM {
             cfg,
             threads,
             rng,
-            |net, ep, train_loss| {
+            &mut |net, ep, train_loss| {
                 // Score the in-progress model on the held-out split.
                 let candidate = Self::build_transformer_slm(net, tc)?;
                 let ev = eval(&candidate)?;
@@ -399,7 +409,7 @@ mod tests {
     use crate::slm::corpus::{tokenize_for_lm, tokenize_for_lm_cfg};
     use crate::slm::generate::StopReason;
     use crate::slm::sampling::SamplingParams;
-    use crate::slm::test_support::{t5_cfg, tiny_bpe_slm};
+    use crate::slm::test_support::{ignore_progress, ignore_validation, t5_cfg, tiny_bpe_slm};
     use crate::slm::GenerativeSLM;
     use crate::tokenizer::ByteBpeTokenizer;
 
@@ -484,21 +494,42 @@ mod tests {
     #[test]
     fn validated_training_rejects_bad_fraction() {
         let mut rng = Rng::new(1);
-        for f in [0.0f32, 1.0, -0.1, 1.5] {
+        // The last fraction is valid: it makes the run reach the callback.
+        for f in [0.0f32, 1.0, -0.1, 1.5, 0.25] {
             let vcfg = ValidationConfig {
                 val_fraction: f,
                 patience: 0,
             };
             let r = GenerativeSLM::train_transformer_config_validated(
-                "abcdabcdabcdabcd",
+                &"abcd".repeat(20),
                 &t5_cfg(2),
                 1,
                 &vcfg,
                 &mut rng,
-                |_| {},
+                ignore_validation,
             );
-            assert!(r.is_err(), "val_fraction {f} should be rejected");
+            assert_eq!(r.is_err(), f != 0.25, "val_fraction {f}");
         }
+    }
+
+    #[test]
+    fn validated_training_refuses_an_absurd_batch() {
+        // Regression shape of the non-validated test: ctx^2 attention scores cannot fit.
+        let cfg = TransformerConfig {
+            context_len: 100_000,
+            ..t5_cfg(1)
+        };
+        let e = GenerativeSLM::train_transformer_config_validated(
+            &"abcde fghij ".repeat(12_000),
+            &cfg,
+            1,
+            &ValidationConfig::default(),
+            &mut Rng::new(1),
+            ignore_validation,
+        )
+        .err()
+        .expect("must refuse");
+        assert!(e.to_string().contains("training would need"), "{e}");
     }
 
     #[test]
@@ -566,10 +597,10 @@ mod tests {
             tokenizer_path: old.to_str().unwrap().into(),
             ..cfg.clone()
         };
-        let err = match tokenize_for_lm_cfg(&corpus, &old_cfg) {
-            Err(e) => e.to_string(),
-            Ok(_) => panic!("old text tokenizer must be rejected"),
-        };
+        let err = tokenize_for_lm_cfg(&corpus, &old_cfg)
+            .err()
+            .expect("old text tokenizer must be rejected")
+            .to_string();
         assert!(err.contains("old tokenizer file (pre-GGUF)"), "{err}");
         // The old file is left untouched.
         assert_eq!(std::fs::read(&old).unwrap(), b"256,257;258,259");
@@ -584,10 +615,10 @@ mod tests {
             context_len: 10_000,
             ..cfg.clone()
         };
-        let err = match tokenize_for_lm_cfg(&corpus, &tiny) {
-            Err(e) => e.to_string(),
-            Ok(_) => panic!("short corpus must be rejected"),
-        };
+        let err = tokenize_for_lm_cfg(&corpus, &tiny)
+            .err()
+            .expect("short corpus must be rejected")
+            .to_string();
         assert!(err.contains("longer than the context window"), "{err}");
         // Char-level / no path falls through to tokenize_for_lm.
         let no_path = TransformerConfig {
@@ -620,7 +651,7 @@ mod tests {
             &corpus,
             &huge_ctx,
             &mut Rng::new(1),
-            |_, _| {},
+            ignore_progress,
         )
         .err()
         .expect("must refuse");
@@ -640,7 +671,7 @@ mod tests {
             &corpus,
             &huge_batch,
             &mut Rng::new(1),
-            |_, _| {},
+            ignore_progress,
         )
         .err()
         .expect("must refuse");

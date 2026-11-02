@@ -131,6 +131,20 @@ mod tests {
         assert_eq!(framed.first(), Some(&tok.bos_id().unwrap()));
         assert_eq!(framed.last(), Some(&tok.eos_id().unwrap()));
         assert_eq!(&framed[1..framed.len() - 1], bare.as_slice());
+        // Each side is optional.
+        assert_eq!(tok.encode_framed("lower", false, false), bare);
+        assert_eq!(
+            tok.encode_framed("lower", true, false)[0],
+            tok.bos_id().unwrap()
+        );
+        assert_eq!(
+            tok.encode_framed("lower", true, false).len(),
+            bare.len() + 1
+        );
+        assert_eq!(
+            tok.encode_framed("lower", false, true).len(),
+            bare.len() + 1
+        );
         // Without registered specials, framing is a no-op.
         let plain = ByteBpeTokenizer::byte_level();
         assert_eq!(

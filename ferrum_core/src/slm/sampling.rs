@@ -163,10 +163,9 @@ pub(crate) fn sample_with_params(
     }
 
     // 5. Renormalise the surviving mass and sample.
+    // The top token always survives and carries at least 1/n of a unit mass, so
+    // `sum2` is never zero or NaN here.
     let sum2: f32 = probs.iter().sum();
-    if sum2.is_nan() || sum2 <= 1e-10 {
-        return rng.next_u64() as usize % n;
-    }
     for p in &mut probs {
         *p /= sum2;
     }
@@ -178,6 +177,38 @@ mod tests {
     use super::{argmax_first, pick_by_mass, sample_with_params, SamplingParams};
     use crate::rng::Rng;
     use crate::slm::test_support::greedy;
+
+    #[test]
+    fn sampling_ignores_out_of_vocabulary_recent_tokens() {
+        let logits = [0.5f32, -1.2, 2.3];
+        let params = SamplingParams {
+            temperature: 0.0,
+            repetition_penalty: 1.5,
+            ..SamplingParams::default()
+        };
+        let a = sample_with_params(&logits, &params, &[99], &mut Rng::new(1));
+        assert_eq!(
+            a,
+            sample_with_params(&logits, &params, &[], &mut Rng::new(1))
+        );
+    }
+
+    #[test]
+    fn sampling_top_p_one_equals_disabled() {
+        let logits = [0.5f32, -1.2, 2.3, 0.0, 1.1];
+        let off = SamplingParams::default();
+        let one = SamplingParams {
+            top_p: 1.0,
+            ..SamplingParams::default()
+        };
+        let (mut a, mut b) = (Rng::new(5), Rng::new(5));
+        for _ in 0..100 {
+            assert_eq!(
+                sample_with_params(&logits, &off, &[], &mut a),
+                sample_with_params(&logits, &one, &[], &mut b)
+            );
+        }
+    }
 
     #[test]
     fn temperature_only_params_match_legacy_sampler() {
@@ -195,13 +226,12 @@ mod tests {
             }
             let r = rng.next_f32();
             let mut c = 0.0;
-            for (i, &pi) in p.iter().enumerate() {
-                c += pi;
-                if r <= c {
-                    return i;
-                }
-            }
-            p.len() - 1
+            p.iter()
+                .position(|&pi| {
+                    c += pi;
+                    r <= c
+                })
+                .unwrap_or(p.len() - 1)
         };
         let params = SamplingParams::with_temperature(temp);
         let mut r1 = Rng::new(42);

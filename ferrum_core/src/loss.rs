@@ -84,11 +84,6 @@ pub fn softmax_cross_entropy(logits: &Tensor, targets: &[usize]) -> Result<(f32,
                 "[ferrum_core::WARN] ⚠️  softmax_cross_entropy returned NaN loss!",
             );
         }
-        if mean_loss.is_infinite() {
-            crate::verbose::log_line(
-                "[ferrum_core::WARN] ⚠️  softmax_cross_entropy returned Infinite loss!",
-            );
-        }
         let (gmin, gmax, gmean) = verbose::stats(&grad);
         vprintln!(
             "[loss::softmax_cross_entropy] gradient stats: min={:.6e}, max={:.6e}, mean={:.6e}",
@@ -152,11 +147,7 @@ mod tests {
                 .unwrap()
                 .0;
             let numeric = (lp - lm) / (2.0 * eps);
-            assert!(
-                (numeric - grad.data[k]).abs() < 5e-4,
-                "k={k}: analytic={} numeric={numeric}",
-                grad.data[k]
-            );
+            assert!((numeric - grad.data[k]).abs() < 5e-4, "k={k}");
         }
     }
 

@@ -46,12 +46,7 @@ impl GenerativeSLM {
     /// directories are created as needed; the write is atomic (temp file + rename).
     pub fn save(&self, model_path: &str) -> Result<()> {
         let bytes = self.to_bytes_quantized()?;
-        if let Some(parent) = std::path::Path::new(model_path).parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-        crate::fs_atomic::atomic_write(model_path, &bytes)?;
+        write_model(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save] Wrote {} bytes → {}",
             bytes.len(),
@@ -68,12 +63,7 @@ impl GenerativeSLM {
     /// where file size matters more than the last bit of small-model accuracy.
     pub fn save_int4(&self, model_path: &str) -> Result<()> {
         let bytes = self.to_bytes_quantized_int4()?;
-        if let Some(parent) = std::path::Path::new(model_path).parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-        crate::fs_atomic::atomic_write(model_path, &bytes)?;
+        write_model(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save_int4] Wrote {} bytes → {}",
             bytes.len(),
@@ -86,12 +76,7 @@ impl GenerativeSLM {
     /// size. Parent directories are created as needed.
     pub fn save_f32(&self, model_path: &str) -> Result<()> {
         let bytes = self.to_bytes()?;
-        if let Some(parent) = std::path::Path::new(model_path).parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-        crate::fs_atomic::atomic_write(model_path, &bytes)?;
+        write_model(model_path, &bytes)?;
         vprintln!(
             "[slm::GenerativeSLM::save_f32] Wrote {} bytes → {}",
             bytes.len(),
@@ -160,6 +145,16 @@ impl GenerativeSLM {
             tokenizer: TokenizerCache::default(),
         })
     }
+}
+
+/// Create the parent directories of `model_path`, then write `bytes` atomically.
+fn write_model(model_path: &str, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = std::path::Path::new(model_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    crate::fs_atomic::atomic_write(model_path, bytes)
 }
 
 #[cfg(test)]
@@ -238,6 +233,19 @@ mod tests {
         let blocked = format!("{path}/x.gguf");
         assert!(slm.save_f32(&blocked).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_save_to_unwritable_dir_errors() {
+        let slm = tiny_bpe_slm();
+        let file =
+            std::env::temp_dir().join(format!("ferrum_persist_blocked_{}", std::process::id()));
+        std::fs::write(&file, b"not a directory").unwrap();
+        let blocked = format!("{}/x.gguf", file.display());
+        assert!(slm.save(&blocked).is_err());
+        assert!(slm.save_int4(&blocked).is_err());
+        assert!(slm.save_f32(&blocked).is_err());
+        let _ = std::fs::remove_file(&file);
     }
 
     #[test]

@@ -94,18 +94,14 @@ fn write_checkpoint(path: &str, net: &TransformerNet, rng: &Rng) -> Result<()> {
 /// epochs, or until `cfg.max_tokens` is spent, checkpointing as configured.
 /// `on_epoch(net, epoch, mean_loss)` runs after each (possibly partial) epoch
 /// and returns `false` to stop early.
-pub(super) fn run_training<S, F>(
+pub(super) fn run_training<S: TokenSource>(
     net: &mut TransformerNet,
     tokens: &mut S,
     cfg: &TransformerConfig,
     threads: usize,
     rng: &mut Rng,
-    mut on_epoch: F,
-) -> Result<()>
-where
-    S: TokenSource,
-    F: FnMut(&TransformerNet, usize, f32) -> Result<bool>,
-{
+    on_epoch: &mut dyn FnMut(&TransformerNet, usize, f32) -> Result<bool>,
+) -> Result<()> {
     let t = net.context_len();
     let batch = cfg.batch_size.max(1);
     let windows = tokens.len().saturating_sub(t + 1) / net.window_stride() + 1;

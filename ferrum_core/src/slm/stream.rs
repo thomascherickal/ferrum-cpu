@@ -14,18 +14,15 @@ impl GenerativeSLM {
     /// Core streaming generation shared by the plain and stop-criterion APIs.
     /// When `stop` is `Some`, generation halts once the stop string appears in
     /// the continuation (I3).
-    pub(super) fn generate_stream_core<F>(
+    pub(super) fn generate_stream_core(
         &self,
         seed: &str,
         num_chars: usize,
         params: &SamplingParams,
         stop: Option<&str>,
         rng: &mut Rng,
-        on_text: F,
-    ) -> Result<String>
-    where
-        F: FnMut(&str),
-    {
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<String> {
         vprintln!("[slm::GenerativeSLM::generate_stream] seed=\"{}\", num_chars={}, temp={:.2}, top_k={}, top_p={:.2}, rep={:.2}, stop={:?}",
             seed.chars().take(50).collect::<String>(), num_chars,
             params.temperature, params.top_k, params.top_p, params.repetition_penalty, stop);
@@ -54,7 +51,6 @@ impl GenerativeSLM {
                 .generate_char_cached_stream(seed, num_chars, params, stop, rng, on_text, cached);
         }
 
-        let mut on_text = on_text;
         let mut generated = seed.to_string();
         let seed_bytes = seed.len();
 
@@ -164,19 +160,16 @@ impl GenerativeSLM {
     /// characters matches the old full-forward path bit for bit; past that the
     /// model sees a half-window of history right after each re-prime.
     #[allow(clippy::too_many_arguments)]
-    fn generate_char_cached_stream<F>(
+    fn generate_char_cached_stream(
         &self,
         seed: &str,
         num_chars: usize,
         params: &SamplingParams,
         stop: Option<&str>,
         rng: &mut Rng,
-        mut on_text: F,
+        on_text: &mut dyn FnMut(&str),
         mut cached: CachedTransformer,
-    ) -> Result<String>
-    where
-        F: FnMut(&str),
-    {
+    ) -> Result<String> {
         let mut generated = seed.to_string();
         let seed_bytes = seed.len();
         let cap = cached.capacity().max(1);
@@ -275,7 +268,7 @@ impl GenerativeSLM {
     /// land. A trailing partial multi-byte character is held back until it
     /// completes, so a `U+FFFD` placeholder is never emitted and then revised.
     #[allow(clippy::too_many_arguments)]
-    fn generate_bpe_stream<F>(
+    fn generate_bpe_stream(
         &self,
         tok: &ByteBpeTokenizer,
         seed: &str,
@@ -283,11 +276,8 @@ impl GenerativeSLM {
         params: &SamplingParams,
         stop: Option<&str>,
         rng: &mut Rng,
-        mut on_text: F,
-    ) -> Result<String>
-    where
-        F: FnMut(&str),
-    {
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<String> {
         let context_len = self.meta.input_dim;
         let eos = tok.eos_id();
         let ids = tok.encode_docs(seed);
@@ -384,7 +374,7 @@ impl GenerativeSLM {
         let target_chars = seed_chars.saturating_add(num_chars);
         let mut emitted_cont = 0usize;
         let mut budget = num_chars;
-        let mut flush = |full: &str, budget: usize, on_text: &mut F| {
+        let mut flush = |full: &str, budget: usize, on_text: &mut dyn FnMut(&str)| {
             let avail = full.chars().count().saturating_sub(seed_chars).min(budget);
             if avail > emitted_cont {
                 let delta: String = full
@@ -427,10 +417,10 @@ impl GenerativeSLM {
                     break;
                 }
             }
-            flush(&full, budget, &mut on_text);
+            flush(&full, budget, on_text);
         }
         let full = tok.decode(&ids);
-        flush(&full, budget, &mut on_text);
+        flush(&full, budget, on_text);
         Ok(full.chars().take(seed_chars + budget).collect())
     }
 }
@@ -472,8 +462,7 @@ mod tests {
             .len();
         assert!(
             feeds() <= 2 * tokens + 16,
-            "feeds={} tokens={tokens}",
-            feeds()
+            "too many feeds for {tokens} tokens"
         );
     }
 

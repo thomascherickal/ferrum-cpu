@@ -142,9 +142,8 @@ impl GenerativeSLM {
                     let fragment = st.text[st.emitted..safe].to_string();
                     st.emitted = safe;
                     st.window.push(next);
-                    let parts = st.cache.take().ok_or_else(|| {
-                        InferError::DimMismatch("generation state lost its cache".into())
-                    })?;
+                    // ponytail: the cache is put back before `advanced?` below, so it is always here.
+                    let parts = st.cache.take().expect("cache is restored after every step");
                     let mut cached = CachedTransformer::resume(&self.model, parts);
                     let advanced = if st.window.len() > st.cap {
                         st.window.drain(..st.window.len() - st.keep);
@@ -181,7 +180,9 @@ mod tests {
     use crate::rng::Rng;
     use crate::slm::generate::StopReason;
     use crate::slm::sampling::SamplingParams;
-    use crate::slm::test_support::{tiny_bpe_slm, tiny_char_slm, tiny_eos_slm, tiny_utf8_slm};
+    use crate::slm::test_support::{
+        bias_only_slm, tiny_bpe_slm, tiny_char_slm, tiny_eos_slm, tiny_utf8_slm,
+    };
     use crate::slm::GenerativeSLM;
 
     /// Pull a whole stream: the fragments and the final generation.
@@ -268,6 +269,14 @@ mod tests {
             .generate_tokens("the c", 30, &[], &p, &mut Rng::new(2))
             .unwrap();
         assert_eq!(again, full);
+    }
+
+    #[test]
+    fn a_model_without_transformer_blocks_cannot_stream() {
+        let m = bias_only_slm();
+        assert!(m
+            .token_stream("a", 5, &[], &SamplingParams::default())
+            .is_err());
     }
 
     #[test]

@@ -79,7 +79,8 @@ impl TransformerNet {
                         .map(|(&g, &h)| g * crate::activation::gelu_grad(h))
                         .collect(),
                 },
-            )?;
+            )
+            .expect("same element count as dh");
             let (g_f1_w, g_f1_b, d_norm2) = linear_bwd(&bc.norm2, &blk.f1_w.data, &dh_pre)?;
             let (d_xattn_ln, g_ln2_g, g_ln2_b) =
                 ln_bwd(&d_norm2, &bc.xhat2, &bc.inv_std2, &blk.ln2_g.data)?;
@@ -88,7 +89,7 @@ impl TransformerNet {
 
             // x_attn = x + out_proj(concat)
             let (g_o_w, g_o_b, d_concat) = linear_bwd(&bc.concat, &blk.o_w.data, &d_xattn)?;
-            let (dq, dk, dv) = attn_bwd(
+            let attn_grads = attn_bwd(
                 &d_concat,
                 &bc.q,
                 &bc.k,
@@ -97,7 +98,8 @@ impl TransformerNet {
                 batch,
                 t,
                 self.num_heads,
-            )?;
+            );
+            let (dq, dk, dv) = attn_grads?;
             let (g_q_w, g_q_b, d_n1a) = linear_bwd(&bc.norm1, &blk.q_w.data, &dq)?;
             let (g_k_w, g_k_b, d_n1b) = linear_bwd(&bc.norm1, &blk.k_w.data, &dk)?;
             let (g_v_w, g_v_b, d_n1c) = linear_bwd(&bc.norm1, &blk.v_w.data, &dv)?;

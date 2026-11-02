@@ -390,11 +390,13 @@ impl LlamaBlock {
         let (seq, dim) = x.matrix_dims()?;
         let n1 = self.attn_norm.forward(x)?;
         let a = self.attn.forward_full(&n1)?;
+        // ponytail: the vec has exactly seq * dim elements, so this cannot fail.
         let h = Tensor::matrix(
             seq,
             dim,
             (0..seq * dim).map(|i| x.data[i] + a.data[i]).collect(),
-        )?;
+        )
+        .expect("seq * dim elements");
         let n2 = self.ffn_norm.forward(&h)?;
         let f = self.ffn.forward(&n2)?;
         Tensor::matrix(
@@ -727,8 +729,7 @@ mod tests {
             for (d, &got) in inc.iter().enumerate() {
                 assert!(
                     (got - full.data[t * dim + d]).abs() < 1e-4,
-                    "row {t} dim {d}: cached {got} vs full {}",
-                    full.data[t * dim + d]
+                    "row {t} dim {d}"
                 );
             }
         }
@@ -876,12 +877,7 @@ mod tests {
             let logits = model.forward_one(tok, &mut cache).unwrap();
             let row = &full.data[t * vocab..(t + 1) * vocab];
             for v in 0..vocab {
-                assert!(
-                    (logits[v] - row[v]).abs() < 1e-3,
-                    "step {t} vocab {v}: cached {} vs full {}",
-                    logits[v],
-                    row[v]
-                );
+                assert!((logits[v] - row[v]).abs() < 1e-3, "step {t} vocab {v}");
             }
         }
         assert_eq!(cache.pos(), tokens.len());

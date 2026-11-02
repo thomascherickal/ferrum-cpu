@@ -52,6 +52,8 @@
 
 #[macro_use]
 pub mod verbose;
+#[cfg(test)]
+mod verbose_trace_tests;
 
 pub mod activation;
 pub mod chat_format;

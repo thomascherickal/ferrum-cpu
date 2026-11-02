@@ -204,6 +204,26 @@ mod tests {
         }
     }
 
+    /// A net whose tensors disagree with its dimensions cannot be exported: each
+    /// layer's constructor rejects it and the error reaches the caller.
+    #[test]
+    fn to_inference_rejects_inconsistent_weights() {
+        let fresh = || TransformerNet::new(6, 4, 8, 2, 12, 1, &mut Rng::new(2)).unwrap();
+        assert!(fresh().to_inference().is_ok());
+        let mut net = fresh();
+        net.tok_emb.data.data.pop();
+        assert!(net.to_inference().is_err());
+        let mut net = fresh();
+        net.blocks[0].f2_b.data.data.pop();
+        assert!(net.to_inference().is_err());
+        let mut net = fresh();
+        net.lnf_g.data.data.pop();
+        assert!(net.to_inference().is_err());
+        let mut net = fresh();
+        net.head_w.data.data.pop();
+        assert!(net.to_inference().is_err());
+    }
+
     #[test]
     fn head_has_no_bias() {
         let mut rng = Rng::new(9);

@@ -286,14 +286,15 @@ where
         }
     };
     std::thread::scope(|scope| {
-        for _ in 0..helpers {
-            if std::thread::Builder::new()
-                .spawn_scoped(scope, drain)
-                .is_err()
-            {
-                break;
-            }
-        }
+        // ponytail: a failed spawn just means fewer helpers; the caller's own
+        // `drain()` below finishes whatever they did not take.
+        (0..helpers)
+            .take_while(|_| {
+                std::thread::Builder::new()
+                    .spawn_scoped(scope, drain)
+                    .is_ok()
+            })
+            .for_each(drop);
         drain();
     });
     out
@@ -455,9 +456,10 @@ mod tests {
             "single row stays serial"
         );
         assert!(!should_parallelize(1000, 0), "trivial work stays serial");
-        if num_threads() > 1 {
-            assert!(should_parallelize(1000, PARALLEL_THRESHOLD));
-        }
+        assert_eq!(
+            should_parallelize(1000, PARALLEL_THRESHOLD),
+            num_threads() > 1
+        );
     }
 
     #[test]
@@ -493,9 +495,10 @@ mod tests {
             "single element stays serial"
         );
         assert!(!should_parallelize_1d(1000, 0), "no work stays serial");
-        if num_threads() > 1 {
-            assert!(should_parallelize_1d(PARALLEL_THRESHOLD, 1));
-        }
+        assert_eq!(
+            should_parallelize_1d(PARALLEL_THRESHOLD, 1),
+            num_threads() > 1
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -528,12 +531,12 @@ mod tests {
         };
         // Enough rounds that every worker has run (and survived) a panicking job.
         for _ in 0..(2 * num_threads() + 2) {
-            let m = boom(&|| run(512, 4, |_, _, _| panic!("kernel boom")));
-            let m1 = boom(&|| run_1d(4096, 1, |_, _, _| panic!("kernel boom")));
-            if num_threads() > 1 {
-                assert!(m.unwrap().contains(WORKER_PANICKED));
-                assert!(m1.unwrap().contains(WORKER_PANICKED));
-            }
+            let m = boom(&|| run(512, 4, |_, _, _| panic!("{}", "kernel boom")));
+            let m1 = boom(&|| run_1d(4096, 1, |_, _, _| panic!("{}", "kernel boom")));
+            // Serial (one thread) the panic is the kernel's own; pooled it is the pool's report.
+            let want = ["kernel boom", WORKER_PANICKED][(num_threads() > 1) as usize];
+            assert!(m.unwrap().contains(want));
+            assert!(m1.unwrap().contains(want));
         }
         let out = run(257, 3, |r0, r1, b| {
             for i in r0..r1 {

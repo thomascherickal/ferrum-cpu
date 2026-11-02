@@ -150,7 +150,9 @@ mod tests {
     fn stop_file_fires_while_it_exists_and_clears() {
         let p = tmp("file");
         let _ = std::fs::remove_file(&p);
+        assert_eq!(StopCondition::none().stop_file(), None);
         let c = StopCondition::none().with_stop_file(&p);
+        assert_eq!(c.stop_file(), Some(p.as_path()));
         assert_eq!(c.should_stop(), None);
         std::fs::write(&p, b"").unwrap();
         assert_eq!(c.should_stop(), Some(StopCause::StopFile));
@@ -179,6 +181,9 @@ mod tests {
         let c2 = c.clone();
         c.note_stop(StopCause::StopFile, 9);
         assert_eq!(c2.stopped(), Some((StopCause::StopFile, 9)));
+        c.clear_record();
+        assert_eq!(c2.stopped(), None);
+        c.note_stop(StopCause::StopFile, 9);
         assert_eq!(c, c2);
         assert_ne!(c, StopCondition::none());
         assert_eq!(StopCause::Cancelled.to_string(), "cancelled");

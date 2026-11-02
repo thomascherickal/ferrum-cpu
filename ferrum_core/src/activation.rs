@@ -90,6 +90,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn softmax_activation_rejects_non_matrix() {
+        let t = Tensor::vector(vec![1.0, 2.0]);
+        assert!(Activation::Softmax.apply(&t).is_err());
+    }
+
+    #[test]
     fn relu_clamps_negatives() {
         let t = Tensor::vector(vec![-2.0, 0.0, 3.0]);
         let out = Activation::ReLU.apply(&t).unwrap();
@@ -145,11 +151,7 @@ mod tests {
             assert!((gelu(x) - want).abs() < 1e-6, "gelu({x})");
             let h = 1e-3;
             let num = (gelu(x + h) - gelu(x - h)) / (2.0 * h);
-            assert!(
-                (gelu_grad(x) - num).abs() < 1e-3,
-                "gelu'({x}): {} vs {num}",
-                gelu_grad(x)
-            );
+            assert!((gelu_grad(x) - num).abs() < 1e-3, "gelu'({x})");
         }
         assert_eq!(gelu(0.0), 0.0);
     }
@@ -175,12 +177,8 @@ mod tests {
             (-1.0, -0.158_808_1, -0.082_964_1),
             (0.5, 0.345_714, 0.867_369_9),
         ] {
-            assert!((gelu(x) - want).abs() < 2e-6, "gelu({x}) = {}", gelu(x));
-            assert!(
-                (gelu_grad(x) - wg).abs() < 2e-6,
-                "gelu'({x}) = {}",
-                gelu_grad(x)
-            );
+            assert!((gelu(x) - want).abs() < 2e-6, "gelu({x})");
+            assert!((gelu_grad(x) - wg).abs() < 2e-6, "gelu'({x})");
         }
         assert_eq!(gelu_grad(0.0), 0.5);
     }

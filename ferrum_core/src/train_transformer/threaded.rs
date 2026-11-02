@@ -205,15 +205,31 @@ mod tests {
         let tokens: Vec<usize> = (0..200).map(|i| (i * 7) % 6).collect();
         let adam = Adam::new(1e30);
         let mut rng = Rng::new(99);
-        let mut result = Ok(0.0);
-        for _ in 0..5 {
-            result = train_transformer_epoch_threaded(&mut net, &tokens, 8, &adam, &mut rng, 2);
-            if result.is_err() {
-                break;
-            }
-        }
-        let e = result.expect_err("lr 1e30 must diverge");
+        let e = (0..5)
+            .map(|_| train_transformer_epoch_threaded(&mut net, &tokens, 8, &adam, &mut rng, 2))
+            .find(Result::is_err)
+            .expect("lr 1e30 must diverge")
+            .unwrap_err();
         assert!(matches!(e, crate::error::InferError::Diverged(_)), "{e:?}");
+    }
+
+    /// A token outside the vocabulary fails the shard that sees it, and the epoch reports it.
+    #[test]
+    fn threaded_out_of_range_token_is_an_error() {
+        let mut rng0 = Rng::new(7);
+        let mut net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng0).unwrap();
+        let tokens: Vec<usize> = (0..200)
+            .map(|i| (i * 7) % 6 + (i == 100) as usize * 50)
+            .collect();
+        let r = train_transformer_epoch_threaded(
+            &mut net,
+            &tokens,
+            8,
+            &Adam::new(0.01),
+            &mut Rng::new(1),
+            2,
+        );
+        assert!(r.is_err());
     }
 
     /// `threads <= 1` must be the serial path, bit-for-bit.
