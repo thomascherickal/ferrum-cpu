@@ -151,7 +151,7 @@ cargo build -p slm_wasm --target wasm32-unknown-unknown --release
 cargo clippy -p slm_wasm --target wasm32-unknown-unknown -- -D warnings
 cargo deny check
 cargo bench --bench gemm                  # matmul/decode microbenchmark
-scripts/coverage.sh [--rust|--gui|--js|--py|--all] [--fail-under N]   # line coverage -> target/coverage/; run alone, never beside cargo test
+scripts/coverage.sh [--rust|--gui|--js|--py|--all] [--fail-under N]   # line coverage -> target/coverage/; run alone, never beside cargo test (missing lines: missing.txt, gui-missing.txt)
 scripts/bench_slm.sh data/prepared/train.txt   # train/eval/generate speed of the 507,552-param reference
 bash scripts/build_wasm.sh                # slm_wasm → slm_wasm/pkg/ + demo/pkg/ (needs wasm-bindgen 0.2.122)
 # optional, CI only unless you install wasm-bindgen-cli 0.2.122: the wasm module under Node

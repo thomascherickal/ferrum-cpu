@@ -125,6 +125,9 @@ jobs:
         run: scripts/coverage.sh --rust --fail-under 98
       - name: ferrum_gui Rust
         run: scripts/coverage.sh --gui --fail-under 90
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: UI JavaScript (the demo joins at Task 1.6)
         run: FERRUM_JS_DIRS=ferrum_gui/ui scripts/coverage.sh --js --fail-under 98
       - uses: actions/setup-python@v5

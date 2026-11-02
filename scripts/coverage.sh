@@ -18,6 +18,7 @@ modes=() N=100
 while [ $# -gt 0 ]; do
   case "$1" in
     --rust|--gui|--js|--py|--all) modes+=("$1") ;;
+    # a missing or non-numeric N is a usage error (A && B || usage)
     --fail-under) [ $# -ge 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; N=$2; shift ;;
     *) usage ;;
   esac
@@ -35,15 +36,21 @@ OUT=${FERRUM_COVERAGE_OUT:-$PWD/target/coverage}
 mkdir -p "$OUT"
 
 rust() {
+  # Below the floor llvm-cov exits non-zero; still write missing.txt (that is when it is needed), then fail.
+  local rc=0
   cargo llvm-cov --workspace --release --ignore-filename-regex "$EXCLUDE" \
-    --fail-under-lines "$N" --summary-only | tee "$OUT/summary.txt"
+    --fail-under-lines "$N" --summary-only | tee "$OUT/summary.txt" || rc=$?
   cargo llvm-cov report --release --ignore-filename-regex "$EXCLUDE" --show-missing-lines > "$OUT/missing.txt"
+  return "$rc"
 }
 
 gui() {
   # No --release: the crate's dev profile already optimizes the engine.
   (cd ferrum_gui
-   cargo llvm-cov --ignore-filename-regex "$GUI_EXCLUDE" --fail-under-lines "$N" --summary-only | tee "$OUT/gui-summary.txt")
+   local rc=0
+   cargo llvm-cov --ignore-filename-regex "$GUI_EXCLUDE" --fail-under-lines "$N" --summary-only | tee "$OUT/gui-summary.txt" || rc=$?
+   cargo llvm-cov report --ignore-filename-regex "$GUI_EXCLUDE" --show-missing-lines > "$OUT/gui-missing.txt"
+   return "$rc")
 }
 
 # Node lists only the files a test loaded, so a source file nobody loads would show nothing, not 0 %:
@@ -56,7 +63,8 @@ js_dir() { # dir
   local f missing=0
   for f in "$dir"/*.js; do
     case "$f" in *.test.js) continue ;; esac
-    grep -q "$(basename "$f")" "$rep" || { echo "not in the coverage report: $f" >&2; missing=1; }
+    # whole-name match: "app.js" must not be satisfied by the "testapp.js" line
+    grep -qE "(^|[ /])$(basename "$f" | sed 's/\./\\./g')( |\$)" "$rep" || { echo "not in the coverage report: $f" >&2; missing=1; }
   done
   [ "$rc" -eq 0 ] && [ "$missing" -eq 0 ]
 }
