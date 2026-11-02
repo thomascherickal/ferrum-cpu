@@ -72,6 +72,11 @@ skills. When the user states a new rule, add it here.
     with a tutorial in the `docs/` folder. This supersedes the "add no other
     docs" limit in rule 9 and Conventions for tutorials placed in `docs/`.
 
+15. **Coverage floor.** The CI coverage floors stay in the 95 %+ range and are
+    raised toward 100 % as measured runs allow; reach 100 % wherever possible.
+    A floor is only raised to a value a real run has met. (`GEMINI.md` is a
+    symlink to this file, like `AGENTS.md`.)
+
 ## Hard constraints
 
 Do not break these; they are the product's selling points.
