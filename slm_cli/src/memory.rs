@@ -207,8 +207,7 @@ mod tests {
         assert_eq!(available_memory_from("MemAvailable: lots kB\n"), None);
         assert_eq!(available_memory_from(""), None);
         // The real reader agrees with the parser on this machine's /proc (Linux only).
-        if std::path::Path::new("/proc/meminfo").exists() {
-            assert!(available_memory_bytes().is_some_and(|b| b > 0));
-        }
+        #[cfg(target_os = "linux")]
+        assert!(available_memory_bytes().is_some_and(|b| b > 0));
     }
 }

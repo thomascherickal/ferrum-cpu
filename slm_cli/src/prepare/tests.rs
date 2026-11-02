@@ -165,3 +165,27 @@ fn progress_is_reported_per_file_and_a_stop_ends_the_run_with_nothing_written() 
 fn run_with(o: &PrepareOptions, seen: &mut Vec<PrepareProgress>) {
     prepare(o, &mut |p| seen.push(p)).unwrap();
 }
+
+#[test]
+fn a_progress_report_comes_every_progress_every_documents() {
+    let d = tmpdir("every");
+    let n = PROGRESS_EVERY as usize + 1;
+    let text = (0..n)
+        .map(|i| format!("doc {i}"))
+        .collect::<Vec<_>>()
+        .join("<|endoftext|>");
+    std::fs::write(d.join("c.txt"), text).unwrap();
+    let mut seen = Vec::new();
+    run_with(
+        &opts(
+            vec![d.join("c.txt").to_string_lossy().into()],
+            &d.join("out"),
+        ),
+        &mut seen,
+    );
+    // The start of the file, the report at document PROGRESS_EVERY, and the closing one.
+    assert_eq!(seen.len(), 3);
+    assert_eq!(seen[1].documents, PROGRESS_EVERY);
+    assert_eq!(seen[2].documents, n as u64);
+    let _ = std::fs::remove_dir_all(&d);
+}

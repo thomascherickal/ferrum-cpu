@@ -161,9 +161,9 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     }
 
     let capped = finetune_threads(est, available_memory_bytes(), threads);
-    if let Some(note) = thread_cap_note(capped, threads) {
-        println!("{note}");
-    }
+    thread_cap_note(capped, threads)
+        .iter()
+        .for_each(|note| println!("{note}"));
     let threads = capped;
 
     println!(

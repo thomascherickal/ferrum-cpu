@@ -86,4 +86,48 @@ mod tests {
         assert!(open_token_file(&s("c.txt"), Some(&s("tok.gguf")), false).is_err());
         let _ = std::fs::remove_dir_all(d);
     }
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("ferrum_tokcorpus_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn token_corpus_rejects_non_token_gguf() {
+        let d = tmp("nontok");
+        let tok = ByteBpeTokenizer::train("a small corpus of words to learn from", 280).unwrap();
+        let p = d.join("tok.gguf");
+        std::fs::write(&p, tok.to_gguf_bytes()).unwrap();
+        // A tokenizer file is a GGUF, but not a ferrum-tokens one.
+        let e = open_token_file(p.to_str().unwrap(), p.to_str(), false)
+            .err()
+            .unwrap();
+        assert!(e.contains("ferrum-tokens"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_token_file_whose_vocabulary_differs_from_its_tokenizer_is_refused() {
+        let d = tmp("vocab");
+        let tok = ByteBpeTokenizer::train("a small corpus of words to learn from", 280).unwrap();
+        let bytes = tok.to_gguf_bytes();
+        let p = d.join("tok.gguf");
+        std::fs::write(&p, &bytes).unwrap();
+        // The right tokenizer sha256, but a recorded vocabulary one larger than the tokenizer's.
+        let meta = ferrum_core::TokenFileMeta {
+            vocab_size: tok.vocab_size() + 1,
+            eos_id: None,
+            tokenizer_sha256: sha256_hex(&bytes),
+        };
+        let tokens = d.join("c.tok.gguf");
+        ferrum_core::write_token_file(tokens.to_str().unwrap(), &meta, |s| s.push(&[1, 2, 3]))
+            .unwrap();
+        let e = open_token_file(tokens.to_str().unwrap(), p.to_str(), false)
+            .err()
+            .unwrap();
+        assert!(e.contains("has a vocabulary of"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

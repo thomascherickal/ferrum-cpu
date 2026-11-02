@@ -124,4 +124,42 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&d);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_read_only_directory_fails_the_probe_and_names_the_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!("ferrum_ro_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let target = d.join("m.gguf");
+        let r = check_writable(target.to_str().unwrap());
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+        // ponytail: a process that bypasses permissions (root) can write there anyway.
+        if let Err(e) = r {
+            assert!(
+                e.starts_with("cannot write ") && e.contains("m.gguf"),
+                "{e}"
+            );
+        }
+    }
+
+    #[test]
+    fn paths_with_missing_parents_are_compared_by_their_absolute_spelling() {
+        // Neither parent exists, so neither can be canonicalized.
+        let a = "/nonexistent-ferrum-dir/a/../m.gguf";
+        assert_eq!(canonical_target(a), canonical_target(a));
+        assert!(canonical_target("/nonexistent-ferrum-dir/m.gguf").is_absolute());
+        assert!(check_distinct_paths(&[
+            ("a", "/nonexistent-ferrum-dir/x"),
+            ("b", "/nonexistent-ferrum-dir/y")
+        ])
+        .is_ok());
+        // A name with no file component (`..`) falls back to the absolute path too.
+        assert!(canonical_target("nonexistent-ferrum-dir/..").is_absolute());
+        // The empty path has no absolute form: it is returned as given.
+        assert_eq!(canonical_target(""), std::path::PathBuf::from(""));
+    }
 }

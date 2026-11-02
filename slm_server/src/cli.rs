@@ -360,6 +360,10 @@ mod tests {
             );
         }
         assert_eq!(parse_args(&a(&["-h"])).unwrap_err(), "help");
+        for v in ["--version", "-V"] {
+            assert_eq!(super::parse_args(&a(&[v])), Ok(Parsed::Version));
+            assert_eq!(parse_args(&a(&[v])).unwrap_err(), "version");
+        }
         // a lone `-x` is not a flag
         assert!(parse_args(&a(&["-x"])).unwrap_err().contains("unexpected"));
     }

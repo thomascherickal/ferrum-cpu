@@ -134,7 +134,7 @@ Do not break these; they are the product's selling points.
 | `eval/lighteval/` | Python: `FerrumModel`, `ferrum_tasks.py`, `run.sh`; pinned `lighteval==0.13.0` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
-| `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) and `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) |
+| `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) and `test_cli_matrix.rs` (every subcommand has a binary test, every server route an HTTP e2e test) |
 | `docs/` | `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/serve.rs` runs the `slm_server` library in-process for the Serve tab; `icons/icon.svg` is the source of every bundle icon (`cargo tauri icon icons/icon.svg -o <dir>`); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 

@@ -94,6 +94,11 @@ mod tests {
             call("POST", "/v1/x", Some("Bearer s3cret")).await.0,
             StatusCode::OK
         );
+        // POST /health is gated, but a caller with the token reaches its handler.
+        assert_eq!(
+            call("POST", "/health", Some("Bearer s3cret")).await.0,
+            StatusCode::OK
+        );
         assert_eq!(
             call("POST", "/v1/x", Some("bearer s3cret")).await.0,
             StatusCode::OK,

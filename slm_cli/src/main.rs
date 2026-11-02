@@ -176,7 +176,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         "eval-gguf" => cmd_eval_gguf(&args),
         "prepare" => cmd_prepare(&args, raw_args),
         "tokenize" => cmd_tokenize(&args),
-        "info" => cmd_info(&args),
-        _ => unreachable!("spec_for covers every command"),
+        // ponytail: `spec_for` accepted `cmd`, so after the arms above only `info` is left.
+        _ => cmd_info(&args),
     }
 }

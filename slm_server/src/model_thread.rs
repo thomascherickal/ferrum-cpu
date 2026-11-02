@@ -258,6 +258,24 @@ mod tests {
     }
 
     #[test]
+    fn server_model_thread_survives_two_panics() {
+        let m = model(0);
+        let (tx, _info, alive) = spawn_model_thread(m.to_bytes_quantized().unwrap()).unwrap();
+        for _ in 0..2 {
+            let (rtx, rrx) = oneshot::channel();
+            tx.send(Job::Panic(rtx)).unwrap();
+            let e = rrx.blocking_recv().unwrap().unwrap_err();
+            assert_eq!(e, "internal error: model panicked: boom");
+        }
+        // The thread is still alive and still answers.
+        let (rtx, rrx) = oneshot::channel();
+        tx.send(Job::Score(vec![("abc".into(), " abc".into())], rtx))
+            .unwrap();
+        assert!(rrx.blocking_recv().unwrap().is_ok());
+        assert!(alive.strong_count() > 0);
+    }
+
+    #[test]
     fn health_alive_flag_drops_with_thread() {
         let m = model(0);
         let (tx, _info, alive) = spawn_model_thread(m.to_bytes_quantized().unwrap()).unwrap();

@@ -33,3 +33,46 @@ pub(crate) fn cmd_tokenize(args: &Args) -> Result<(), Box<dyn std::error::Error>
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::TOKENIZE_FLAGS;
+
+    fn parse(v: &[&str]) -> Args {
+        let raw: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+        Args::parse_for("tokenize", &raw, TOKENIZE_FLAGS).unwrap()
+    }
+
+    #[test]
+    fn cmd_tokenize_needs_input_tokenizer_and_out_then_writes_the_token_file() {
+        for a in [
+            parse(&["--tokenizer", "t", "--out", "o"]),
+            parse(&["c.txt", "--out", "o"]),
+            parse(&["c.txt", "--tokenizer", "t"]),
+        ] {
+            let e = cmd_tokenize(&a).unwrap_err().to_string();
+            assert!(e.contains("usage: train_transformer tokenize"), "{e}");
+        }
+        let d = std::env::temp_dir().join(format!("ferrum_cmd_tokenize_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let text = "the quick brown fox<|endoftext|>jumps over the lazy dog";
+        std::fs::write(d.join("c.txt"), text).unwrap();
+        let tok = ferrum_core::ByteBpeTokenizer::train(text, 280).unwrap();
+        std::fs::write(d.join("tok.gguf"), tok.to_gguf_bytes()).unwrap();
+        let s = |n: &str| d.join(n).to_str().unwrap().to_string();
+        cmd_tokenize(&parse(&[
+            &s("c.txt"),
+            "--tokenizer",
+            &s("tok.gguf"),
+            "--out",
+            &s("c.tok.gguf"),
+        ]))
+        .unwrap();
+        assert!(!ferrum_core::TokenFile::open(&s("c.tok.gguf"))
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

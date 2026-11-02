@@ -206,10 +206,18 @@ mod tests {
         assert!(b.banner[1].contains("auth OFF (loopback only)"));
         let mut open = cfg(path.clone(), None);
         open.host = "0.0.0.0".into();
-        let e = bind(open, None).await.err().unwrap();
+        let e = bind(open.clone(), None).await.err().unwrap();
         assert!(
             e.contains("refusing to listen on non-loopback host 0.0.0.0"),
             "{e}"
+        );
+        // Explicitly allowed, it listens and the banner says that nothing guards the port.
+        open.allow_unauthenticated = true;
+        let b = bind(open, None).await.unwrap();
+        assert!(
+            b.banner[1].contains("auth OFF (--allow-unauthenticated"),
+            "{:?}",
+            b.banner
         );
         std::fs::remove_file(path).ok();
     }

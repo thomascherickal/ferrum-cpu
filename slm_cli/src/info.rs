@@ -159,3 +159,53 @@ pub(crate) fn cmd_info(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 // ─────────────────────────────────────────────────────────────────────────────
 // run-gguf: import & run an external llama/qwen2 GGUF checkpoint (G-CLI)
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ferrum_core::{GgufBuilder, MetaValue};
+
+    fn open_with(tag: &str, tensors: &[(&str, u32, u64)]) -> Gguf {
+        let mut b = GgufBuilder::new();
+        b.meta("general.architecture", MetaValue::String("llama".into()));
+        for &(name, ty, n) in tensors {
+            b.tensor(name, &[n], ty, vec![0; 4096]);
+        }
+        let path =
+            std::env::temp_dir().join(format!("ferrum_info_{tag}_{}.gguf", std::process::id()));
+        std::fs::write(&path, b.into_bytes()).unwrap();
+        let g = Gguf::open(path.to_str().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        g
+    }
+
+    #[test]
+    fn info_reports_dominant_quant_for_every_ggml_type() {
+        for (ty, label) in [
+            (0, "f32"),
+            (1, "f16"),
+            (2, "q4_0"),
+            (3, "q4_1"),
+            (6, "q5_0"),
+            (7, "q5_1"),
+            (8, "q8_0"),
+            (9, "q8_1"),
+            (10, "q2_k"),
+            (11, "q3_k"),
+            (12, "q4_k"),
+            (13, "q5_k"),
+            (14, "q6_k"),
+            (30, "bf16"),
+            (99, "other"),
+        ] {
+            // The type holding most elements wins, however many small tensors disagree.
+            let g = open_with(&format!("t{ty}"), &[("small", 0, 1), ("big", ty, 256)]);
+            assert_eq!(
+                dominant_quant(&g),
+                if ty == 0 { "f32" } else { label },
+                "type {ty}"
+            );
+        }
+        assert_eq!(dominant_quant(&open_with("none", &[])), "unknown");
+    }
+}

@@ -74,3 +74,78 @@ impl Split {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ferrum_split_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A split whose `.part` file is a symlink to /dev/full: it opens, and every flushed write
+    /// fails with "No space left on device".
+    #[cfg(target_os = "linux")]
+    fn full_disk_split(tag: &str) -> (PathBuf, Split) {
+        let d = tmp(tag);
+        std::os::unix::fs::symlink("/dev/full", part(&d, "train.txt")).unwrap();
+        let s = Split::create(&d, "train").unwrap();
+        (d, s)
+    }
+
+    #[test]
+    fn a_split_joins_documents_counts_them_and_hashes_the_bytes() {
+        let d = tmp("ok");
+        let mut s = Split::create(&d, "train").unwrap();
+        s.write("ab").unwrap();
+        s.write("cd").unwrap();
+        let v = s.finish().unwrap();
+        let want = format!("ab{JOIN}cd");
+        assert_eq!(v["bytes"], want.len());
+        assert_eq!(
+            (v["documents"].as_u64(), v["chars"].as_u64()),
+            (Some(2), Some(4))
+        );
+        assert_eq!(v["sha256"], hex(&Sha256::digest(want.as_bytes())));
+        assert_eq!(
+            std::fs::read_to_string(part(&d, "train.txt")).unwrap(),
+            want
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn create_names_the_part_file_when_it_cannot_be_made() {
+        let e = Split::create(Path::new("/nonexistent-ferrum-dir"), "train")
+            .err()
+            .unwrap();
+        assert!(
+            e.starts_with("cannot create ") && e.contains("train.txt.part"),
+            "{e}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_failed_write_and_a_failed_flush_name_the_part_file() {
+        // A document bigger than the BufWriter buffer is written through at once.
+        let (d, mut s) = full_disk_split("write");
+        let e = s.write(&"x".repeat(1 << 20)).unwrap_err();
+        assert!(
+            e.starts_with("cannot write ") && e.contains("train.txt.part"),
+            "{e}"
+        );
+        // A small one stays buffered, and the failure surfaces when `finish` flushes.
+        let (_, mut s) = full_disk_split("flush");
+        s.write("small").unwrap();
+        let e = s.finish().unwrap_err();
+        assert!(
+            e.starts_with("cannot write ") && e.contains("train.txt.part"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

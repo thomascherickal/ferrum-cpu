@@ -108,9 +108,9 @@ pub fn tokenize_files(
                     ids.push(eos as u32);
                 }
                 first = false;
-                for id in tok.encode_docs(text) {
-                    ids.push(u32::try_from(id).map_err(|_| format!("token id {id} > u32"))?);
-                }
+                // ponytail: ids are below the vocabulary size, which `write_token_file` caps at
+                // i32::MAX, so the cast cannot truncate.
+                ids.extend(tok.encode_docs(text).into_iter().map(|id| id as u32));
                 tokens += ids.len() as u64;
                 docs_seen += 1;
                 if docs_seen % PROGRESS_EVERY == 0 {
@@ -292,6 +292,49 @@ mod tests {
             .store(true, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(tokenize(&o, &mut |_| {}).unwrap_err(), CANCELLED);
         assert!(!Path::new(&o.out).exists() && tokp.exists());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_tokenizer_without_eos_an_unreadable_tokenizer_and_a_missing_input_are_refused() {
+        let d = tmp("noeos");
+        let text = d.join("c.txt");
+        std::fs::write(&text, "some text").unwrap();
+        // A byte-level tokenizer has no <|endoftext|> id.
+        std::fs::write(
+            d.join("tok.gguf"),
+            ByteBpeTokenizer::byte_level().to_gguf_bytes(),
+        )
+        .unwrap();
+        let e = tokenize(&options(&d, &text), &mut |_| {}).unwrap_err();
+        assert!(e.contains("no <|endoftext|> id"), "{e}");
+        // A file that is not a tokenizer.
+        std::fs::write(d.join("tok.gguf"), b"not a gguf at all").unwrap();
+        assert!(tokenize(&options(&d, &text), &mut |_| {}).is_err());
+        // A tokenizer that is fine, with an input that does not exist.
+        tokenizer(&d, "some text to learn from");
+        let e = tokenize(&options(&d, &d.join("missing.txt")), &mut |_| {}).unwrap_err();
+        assert!(e.contains("missing.txt"), "{e}");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_progress_report_comes_every_progress_every_documents() {
+        let d = tmp("every");
+        let n = PROGRESS_EVERY as usize + 1;
+        let text = (0..n)
+            .map(|i| format!("doc {i}"))
+            .collect::<Vec<_>>()
+            .join(DOC_SEP);
+        let text_path = d.join("c.txt");
+        std::fs::write(&text_path, &text).unwrap();
+        tokenizer(&d, &text);
+        let mut seen = Vec::new();
+        let r = tokenize(&options(&d, &text_path), &mut |p| seen.push(p)).unwrap();
+        assert_eq!(r.documents, n as u64);
+        // The start of the file and the report at document PROGRESS_EVERY.
+        assert_eq!(seen.len(), 2);
+        assert!(seen[1].tokens > 0 && seen[1].bytes_done > 0);
         let _ = std::fs::remove_dir_all(d);
     }
 }

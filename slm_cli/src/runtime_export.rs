@@ -7,12 +7,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// ponytail: `arch`/`name` are part of the brief's interface; only tests read them today.
-#[allow(dead_code)]
 pub struct GgufSummary {
-    pub arch: String,
     pub context_len: u32,
-    pub name: String,
 }
 
 const BPE_FIX: &str = "retrain with a BPE vocabulary (`train ... --vocab 1024`; \
@@ -60,15 +56,7 @@ pub fn runnable_summary(path: &Path) -> Result<GgufSummary, String> {
         .meta("gpt2.context_length")
         .and_then(|v| v.as_usize())
         .ok_or_else(|| format!("{p}: missing gpt2.context_length"))? as u32;
-    let name = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    Ok(GgufSummary {
-        arch,
-        context_len,
-        name,
-    })
+    Ok(GgufSummary { context_len })
 }
 
 /// The Modelfile text. The path is double-quoted (spaces are fine); callers
@@ -541,11 +529,6 @@ mod tests {
             &self.0
         }
     }
-    impl AsRef<Path> for Tmp {
-        fn as_ref(&self) -> &Path {
-            &self.0
-        }
-    }
     impl AsRef<OsStr> for Tmp {
         fn as_ref(&self) -> &OsStr {
             self.0.as_os_str()
@@ -590,11 +573,7 @@ mod tests {
     }
 
     fn summary(ctx: u32) -> GgufSummary {
-        GgufSummary {
-            arch: "gpt2".into(),
-            context_len: ctx,
-            name: "m".into(),
-        }
+        GgufSummary { context_len: ctx }
     }
 
     // ---- runnable_summary ----
@@ -604,8 +583,7 @@ mod tests {
         let d = tmp("sum_ok");
         let p = gguf(&d, "tiny model.gguf", Some("gpt2"), Some(64));
         let g = runnable_summary(&p).unwrap();
-        assert_eq!((g.arch.as_str(), g.context_len), ("gpt2", 64));
-        assert_eq!(g.name, "tiny model");
+        assert_eq!(g.context_len, 64);
     }
 
     #[test]
@@ -790,10 +768,11 @@ mod tests {
         let e = find_tool(None, unset, "nope-xyz", None).unwrap_err();
         assert!(e.contains("nope-xyz") && e.contains(unset), "{e}");
         // `$CARGO` is the cargo binary when run under cargo; it must be picked up from the env.
-        if let Some(cargo) = std::env::var_os("CARGO").map(PathBuf::from) {
-            if cargo.is_file() {
-                assert_eq!(find_tool(None, "CARGO", "nope-xyz", None).unwrap(), cargo);
-            }
+        if let Some(cargo) = std::env::var_os("CARGO")
+            .map(PathBuf::from)
+            .filter(|c| c.is_file())
+        {
+            assert_eq!(find_tool(None, "CARGO", "nope-xyz", None).unwrap(), cargo);
         }
         assert!(find_tool(None, unset, "sh", None).is_ok(), "sh is on PATH");
     }

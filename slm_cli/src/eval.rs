@@ -93,3 +93,40 @@ pub(crate) fn cmd_eval(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         args.value("json"),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_nll_converts_nats_to_bits_and_perplexity() {
+        let s = Stats::from_nll(4.0 * std::f64::consts::LN_2, 4);
+        assert!((s.cross_entropy - std::f32::consts::LN_2).abs() < 1e-6);
+        assert!((s.bits_per_token - 1.0).abs() < 1e-6);
+        assert!((s.perplexity - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn report_writes_the_json_and_names_the_path_when_it_cannot() {
+        let d = std::env::temp_dir().join(format!("ferrum_eval_report_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let stats = Stats::from_nll(8.0, 4);
+        let ok = d.join("m.json");
+        report("m.gguf", "t.txt", "abcd", &stats, 0.5, ok.to_str()).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&ok).unwrap()).unwrap();
+        assert_eq!(
+            (v["tokens"].as_u64(), v["bytes"].as_u64()),
+            (Some(4), Some(4))
+        );
+        let bad = d.join("no-such-dir/m.json");
+        let e = report("m.gguf", "t.txt", "abcd", &stats, 0.5, bad.to_str())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.starts_with("cannot write ") && e.contains("no-such-dir"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

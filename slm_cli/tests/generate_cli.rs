@@ -392,3 +392,15 @@ fn val_with_an_existing_tokenizer_file_prints_a_leak_note() {
     let (_, o) = train_with("tok3", &["--epochs", "1", "--tokenizer", tok_s]);
     assert!(!stdout_of(&o).contains("note: reusing"));
 }
+
+#[test]
+fn cli_generate_stream_refuses_seed_chars_outside_a_char_vocabulary() {
+    let model = train("charlevel", &"the cat sat. ".repeat(40), "0", "1");
+    let o = generate_on(&model, "XQZ", &["--max-tokens", "5", "--stream"]);
+    assert!(!o.status.success());
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("XQZ") || err.contains("vocab") || err.contains("char"),
+        "{err}"
+    );
+}

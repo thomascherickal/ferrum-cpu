@@ -58,4 +58,27 @@ mod tests {
             .to_string()
             .contains("usage: train_transformer prepare"));
     }
+
+    #[test]
+    fn cmd_prepare_runs_the_pipeline_and_prints_the_summary() {
+        let d = std::env::temp_dir().join(format!("ferrum_cmd_prepare_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("c.txt"), "one document<|endoftext|>another document").unwrap();
+        let (input, out) = (d.join("c.txt"), d.join("out"));
+        let raw = s(&[
+            "--input",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--val-frac",
+            "0",
+            "--test-frac",
+            "0",
+        ]);
+        let a = Args::parse_for("prepare", &raw, PREPARE_FLAGS).unwrap();
+        cmd_prepare(&a, &raw).unwrap();
+        assert!(out.join("train.txt").is_file() && out.join("manifest.json").is_file());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

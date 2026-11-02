@@ -73,6 +73,10 @@ name = "test_bench_script"
 path = "tests/test_bench_script.rs"
 
 [[test]]
+name = "test_cli_matrix"
+path = "tests/test_cli_matrix.rs"
+
+[[test]]
 name = "test_token_training"
 path = "tests/test_token_training.rs"
 

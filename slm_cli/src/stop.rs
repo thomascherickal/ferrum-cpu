@@ -31,15 +31,20 @@ pub(crate) fn condition(args: &Args, anchor: &str) -> Result<StopCondition, Stri
     Ok(c)
 }
 
-/// Print the one-line stop report; `ckpt` is the checkpoint to resume from, if one was written.
-pub(crate) fn announce(cause: StopCause, step: u64, ckpt: Option<&str>) {
+/// The one-line stop report; `ckpt` is the checkpoint to resume from, if one was written.
+fn announcement(cause: StopCause, step: u64, ckpt: Option<&str>) -> String {
     match ckpt {
-        Some(p) => println!("stopped early at step {step}: {cause}; resume with --resume {p}"),
-        None => println!(
+        Some(p) => format!("stopped early at step {step}: {cause}; resume with --resume {p}"),
+        None => format!(
             "stopped early at step {step}: {cause}; no checkpoint was configured \
              (pass --checkpoint to make a stopped run resumable)"
         ),
     }
+}
+
+/// Print the one-line stop report.
+pub(crate) fn announce(cause: StopCause, step: u64, ckpt: Option<&str>) {
+    println!("{}", announcement(cause, step, ckpt));
 }
 
 #[cfg(test)]
@@ -72,5 +77,16 @@ mod tests {
         assert_eq!(c.should_stop(), None);
         let t = condition(&args(&["--max-seconds", "3600"]), "m").unwrap();
         assert_eq!(t.should_stop(), None);
+    }
+
+    #[test]
+    fn the_stop_report_names_the_checkpoint_or_says_there_is_none() {
+        assert_eq!(
+            announcement(StopCause::StopFile, 7, Some("m.ckpt")),
+            "stopped early at step 7: stop file found; resume with --resume m.ckpt"
+        );
+        let none = announcement(StopCause::TimeBudget, 3, None);
+        assert!(none.starts_with("stopped early at step 3: time budget reached; no checkpoint"));
+        assert!(none.ends_with("(pass --checkpoint to make a stopped run resumable)"));
     }
 }

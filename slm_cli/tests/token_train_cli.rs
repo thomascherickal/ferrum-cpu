@@ -289,3 +289,53 @@ fn existing_models_sampling_and_misuse_are_handled() {
     let (ok, out) = tt(&["run", &i, &m, "hello", "--tokenizer", &e.s("tok.gguf")]);
     assert!(!ok && out.contains("token file"), "{out}");
 }
+
+#[test]
+fn a_token_file_shorter_than_the_context_is_refused_with_and_without_validation() {
+    let e = Env::new("short");
+    std::fs::write(e.s("tiny.txt"), "the cat.").unwrap();
+    let (ok, out) = tt(&[
+        "tokenize",
+        &e.s("tiny.txt"),
+        "--tokenizer",
+        &e.s("tok.gguf"),
+        "--out",
+        &e.s("tiny.tok.gguf"),
+    ]);
+    assert!(ok, "{out}");
+    for extra in [
+        &["--epochs", "1"][..],
+        &["--epochs", "1", "--val", "0.2"][..],
+    ] {
+        let (ok, out) = e.train("tiny.tok.gguf", "never.gguf", extra);
+        assert!(
+            !ok && out.contains("more tokens than the context window"),
+            "{out}"
+        );
+    }
+    assert!(!Path::new(&e.s("never.gguf")).exists());
+}
+
+#[test]
+fn a_reused_tokenizer_fixes_the_vocabulary_whatever_vocab_asks() {
+    let e = Env::new("reuse");
+    let (i, m, t) = (e.s("c.txt"), e.s("r.gguf"), e.s("tok.gguf"));
+    let mut a = vec![
+        "train",
+        &i,
+        &m,
+        "--tokenizer",
+        &t,
+        "--vocab",
+        "350",
+        "--epochs",
+        "1",
+    ];
+    a.extend(ARCH);
+    let (ok, out) = tt(&a);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("(requested 350, fixed by the reused tokenizer)"),
+        "{out}"
+    );
+}

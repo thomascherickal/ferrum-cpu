@@ -4,7 +4,7 @@
 mod common;
 
 use common::{letter_vocab, tiny_llama_gguf_with_tokens};
-use ferrum_core::Gguf;
+use ferrum_core::{Gguf, GgufBuilder, MetaValue};
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -313,4 +313,169 @@ fn runtime_exports_refuse_llama_and_write_a_modelfile_for_gpt2() {
     assert!(text.contains("TEMPLATE \"{{ .Prompt }}\""), "{text}");
     assert!(text.contains("PARAMETER stop \"<|endoftext|>\""), "{text}");
     assert!(text.contains("PARAMETER num_ctx 16"), "{text}");
+}
+
+/// A stand-in for a model far bigger than any RAM, written as a sparse file: llama metadata, a
+/// vocabulary, and one Q8_0 tensor of 2^36 elements (256 GiB as f32). The file only has to be as
+/// long as the tensor claims, and a sparse file costs no disk. Commands that size a model from
+/// its tensor directory refuse it before reading any weights.
+fn write_over_budget_llama(path: &str) {
+    const ELEMENTS: u64 = 1 << 36;
+    const Q8_0: u32 = 8;
+    let mut b = GgufBuilder::new();
+    b.meta("general.architecture", MetaValue::String("llama".into()));
+    for (k, v) in [
+        ("embedding_length", 8u32),
+        ("block_count", 2),
+        ("attention.head_count", 2),
+        ("attention.head_count_kv", 2),
+        ("feed_forward_length", 16),
+        ("context_length", 16),
+    ] {
+        b.meta(&format!("llama.{k}"), MetaValue::U32(v));
+    }
+    b.meta("tokenizer.ggml.model", MetaValue::String("gpt2".into()));
+    b.meta(
+        "tokenizer.ggml.tokens",
+        MetaValue::Array(letter_vocab().into_iter().map(MetaValue::String).collect()),
+    );
+    b.tensor("blk.0.huge.weight", &[ELEMENTS], Q8_0, vec![0; 34]);
+    let bytes = b.into_bytes();
+    std::fs::write(path, &bytes).unwrap();
+    let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    f.set_len(bytes.len() as u64 + ELEMENTS / 32 * 34).unwrap();
+}
+
+/// A GGUF with an unsupported architecture, no tokenizer, and one tensor of ggml type `ty`.
+fn bare_gguf(arch: &str, ty: u32) -> Vec<u8> {
+    let mut b = GgufBuilder::new();
+    b.meta("general.architecture", MetaValue::String(arch.into()));
+    b.tensor("w", &[32], ty, vec![0; 128]);
+    b.into_bytes()
+}
+
+#[test]
+fn every_loading_command_refuses_a_model_over_the_ram_budget() {
+    let t = Tmp::new("budget");
+    write_over_budget_llama(&t.s("big.gguf"));
+    std::fs::write(t.s("c.txt"), "abc abc abc abc abc abc abc abc").unwrap();
+    let (big, corpus) = (t.s("big.gguf"), t.s("c.txt"));
+    let (out, ck) = (t.s("out.gguf"), t.s("out.flck"));
+    for (args, what) in [
+        (vec!["eval-gguf", &big, &corpus], "resident memory"),
+        (vec!["run-gguf", &big, "abc"], "resident memory"),
+        (vec!["export-gguf", &big, &out], "peak memory"),
+        (vec!["finetune-gguf", &big, &corpus, &ck], "memory"),
+    ] {
+        let o = tt(&args);
+        let text = String::from_utf8_lossy(&o.stderr);
+        assert!(!o.status.success(), "{args:?}: {text}");
+        assert!(text.contains(what), "{args:?}: {text}");
+        assert!(!std::path::Path::new(&out).exists() && !std::path::Path::new(&ck).exists());
+    }
+}
+
+#[test]
+fn eval_gguf_usage_options_and_short_text_are_refused() {
+    let t = Tmp::new("evalerr");
+    std::fs::write(t.s("m.gguf"), tiny_llama_gguf_with_tokens(&letter_vocab())).unwrap();
+    std::fs::write(t.s("one.txt"), "a").unwrap();
+    let (m, one) = (t.s("m.gguf"), t.s("one.txt"));
+    for (args, want) in [
+        (vec!["eval-gguf", &m], "usage: train_transformer eval-gguf"),
+        (
+            vec!["eval-gguf", &m, &one, "--quant", "fp8"],
+            "--quant must be f32|int8|int4 (got 'fp8')",
+        ),
+        (vec!["eval-gguf", &m, &one], "at least two tokens"),
+    ] {
+        let o = tt(&args);
+        let text = String::from_utf8_lossy(&o.stderr);
+        assert!(
+            !o.status.success() && text.contains(want),
+            "{args:?}: {text}"
+        );
+    }
+}
+
+#[test]
+fn eval_gguf_with_checkpoint_and_precision() {
+    let t = Tmp::new("evalckpt");
+    std::fs::write(t.s("m.gguf"), tiny_llama_gguf_with_tokens(&letter_vocab())).unwrap();
+    std::fs::write(t.s("c.txt"), "abc abc abc abc abc abc abc abc").unwrap();
+    let (m, c, ck) = (t.s("m.gguf"), t.s("c.txt"), t.s("o.flck"));
+    ok(&[
+        "finetune-gguf",
+        &m,
+        &c,
+        &ck,
+        "--epochs",
+        "2",
+        "--batch",
+        "2",
+        "--seq",
+        "8",
+        "--lr",
+        "1e-2",
+        "--threads",
+        "1",
+    ]);
+    let base = ok(&["eval-gguf", &m, &c, "--quant", "int8"]);
+    assert!(base.contains("Perplexity"), "{base}");
+    // A checkpoint holds f32 weights: --quant is ignored with a note, and the scores change.
+    let tuned = ok(&["eval-gguf", &m, &c, "--quant", "int8", "--resume", &ck]);
+    assert!(tuned.contains("ignoring --quant int8"), "{tuned}");
+    assert!(tuned.contains("applied fine-tuned checkpoint"), "{tuned}");
+    let line = |s: &str| {
+        s.lines()
+            .find(|l| l.starts_with("Perplexity"))
+            .unwrap()
+            .to_string()
+    };
+    assert_ne!(line(&base), line(&tuned));
+}
+
+#[test]
+fn info_describes_an_unrunnable_architecture_without_a_tokenizer() {
+    let t = Tmp::new("infomamba");
+    std::fs::write(t.s("m.gguf"), bare_gguf("mamba", 0)).unwrap();
+    let text = ok(&["info", &t.s("m.gguf")]);
+    assert!(text.contains("Tokenizer : none in file"), "{text}");
+    assert!(
+        text.contains("architecture 'mamba' is not runnable (llama / qwen2 only)"),
+        "{text}"
+    );
+}
+
+#[test]
+fn info_of_a_token_file_without_an_eos_id_says_none() {
+    let t = Tmp::new("infotok");
+    let meta = ferrum_core::TokenFileMeta {
+        vocab_size: 300,
+        eos_id: None,
+        tokenizer_sha256: "ab".repeat(32),
+    };
+    ferrum_core::write_token_file(&t.s("t.gguf"), &meta, |s| s.push(&[1, 2, 3])).unwrap();
+    let text = ok(&["info", &t.s("t.gguf")]);
+    assert!(text.contains("EOS id    : none"), "{text}");
+}
+
+#[test]
+fn a_closed_stdout_ends_a_printing_command_quietly_with_exit_zero() {
+    let t = Tmp::new("pipe");
+    std::fs::write(t.s("m.gguf"), bare_gguf("mamba", 0)).unwrap();
+    // The reader end is gone before the command starts, so its first println hits EPIPE.
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let o = Command::new(BIN)
+        .args(["info", &t.s("m.gguf")])
+        .stdout(writer)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        !err.contains("panicked") && !err.contains("Broken pipe"),
+        "{err}"
+    );
+    assert_eq!(o.status.code(), Some(0), "{err}");
 }

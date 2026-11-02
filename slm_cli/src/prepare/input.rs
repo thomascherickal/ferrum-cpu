@@ -250,15 +250,11 @@ mod tests {
         let d = tmpdir("walk");
         std::fs::write(d.join("a.txt"), b"a").unwrap();
         std::fs::write(d.join(".hidden"), b"h").unwrap();
-        if std::process::Command::new("mkfifo")
-            .arg(d.join("pipe"))
-            .status()
-            .is_ok_and(|s| s.success())
-        {
-            let got = expand_inputs(&[d.to_string_lossy().into()], Path::new("/nonexistent-out"))
-                .unwrap();
-            assert_eq!(got, vec![d.join("a.txt")]);
-        }
+        // A unix socket is another non-regular file; std can make one without any tool.
+        let _socket = std::os::unix::net::UnixListener::bind(d.join("sock")).unwrap();
+        let got =
+            expand_inputs(&[d.to_string_lossy().into()], Path::new("/nonexistent-out")).unwrap();
+        assert_eq!(got, vec![d.join("a.txt")]);
         // A dangling symlink is not a regular file: skipped inside a directory.
         std::os::unix::fs::symlink(d.join("missing"), d.join("dangling")).unwrap();
         assert_eq!(
@@ -266,6 +262,28 @@ mod tests {
             vec![d.join("a.txt")]
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_directory_is_reported_with_its_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmpdir("noread");
+        let locked = d.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let r = expand_inputs(
+            &[locked.to_string_lossy().into()],
+            Path::new("/nonexistent-out"),
+        );
+        // Restore first so the cleanup works even if the assertion fails.
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+        // ponytail: a process that bypasses permissions (root) reads the directory anyway.
+        if let Err(e) = r {
+            assert!(e.to_string().contains("cannot read "), "{e}");
+            assert!(e.to_string().contains("locked"), "{e}");
+        }
     }
 
     #[test]
