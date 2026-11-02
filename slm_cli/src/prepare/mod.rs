@@ -147,6 +147,30 @@ pub fn prepare(
     r
 }
 
+/// Move the finished `*.part` files into place. The manifest is the commit marker: an old one is
+/// removed first and the new one is renamed last, so a `manifest.json` next to the splits always
+/// describes a complete set.
+// ponytail: the data files are not rolled back; a crash or failed rename can leave a partial set
+// WITHOUT a manifest, never a manifest over a partial set. A staging directory swap would make the
+// set atomic if it ever matters.
+fn commit_outputs(
+    out: &Path,
+    rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let manifest = out.join("manifest.json");
+    match std::fs::remove_file(&manifest) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("cannot remove {}: {e}", manifest.display())),
+    }
+    for n in OUTPUTS {
+        let (from, to) = (part(out, n), out.join(n));
+        rename(&from, &to)
+            .map_err(|e| format!("cannot rename {} to {}: {e}", from.display(), to.display()))?;
+    }
+    Ok(())
+}
+
 fn build(
     o: &PrepareOptions,
     out: &Path,
@@ -337,13 +361,7 @@ fn build(
         serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n",
     )
     .map_err(|e| format!("cannot write {}: {e}", mpart.display()))?;
-    // ponytail: the four renames are not atomic as a set; a crash between them mixes old and new
-    // files. A staging directory swap would fix that if it ever matters.
-    for n in OUTPUTS {
-        let (from, to) = (part(out, n), out.join(n));
-        std::fs::rename(&from, &to)
-            .map_err(|e| format!("cannot rename {} to {}: {e}", from.display(), to.display()))?;
-    }
+    commit_outputs(out, &|from, to| std::fs::rename(from, to))?;
     Ok(PrepareReport {
         out: out.to_path_buf(),
         manifest_path: out.join("manifest.json"),

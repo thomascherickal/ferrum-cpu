@@ -189,3 +189,120 @@ fn a_progress_report_comes_every_progress_every_documents() {
     assert_eq!(seen[2].documents, n as u64);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Four `*.part` files in `d`, as `build` leaves them before the commit.
+fn stage(d: &Path, tag: &str) {
+    for n in OUTPUTS {
+        std::fs::write(part(d, n), format!("{tag} {n}")).unwrap();
+    }
+}
+
+#[test]
+fn commit_renames_the_manifest_last() {
+    let d = tmpdir("commit_order");
+    stage(&d, "new");
+    let order = std::cell::RefCell::new(Vec::new());
+    commit_outputs(&d, &|from, to| {
+        order.borrow_mut().push(to.file_name().unwrap().to_owned());
+        std::fs::rename(from, to)
+    })
+    .unwrap();
+    assert_eq!(
+        *order.borrow(),
+        ["train.txt", "val.txt", "test.txt", "manifest.json"]
+    );
+    assert_eq!(
+        std::fs::read_to_string(d.join("manifest.json")).unwrap(),
+        "new manifest.json"
+    );
+}
+
+#[test]
+fn failed_rename_leaves_no_manifest() {
+    let d = tmpdir("failed_rename");
+    stage(&d, "old");
+    commit_outputs(&d, &|f, t| std::fs::rename(f, t)).unwrap();
+    stage(&d, "new");
+    let calls = std::cell::Cell::new(0);
+    let err = commit_outputs(&d, &|from, to| {
+        calls.set(calls.get() + 1);
+        if calls.get() == 3 {
+            Err(std::io::Error::other("obstacle"))
+        } else {
+            std::fs::rename(from, to)
+        }
+    })
+    .unwrap_err();
+    assert!(
+        err.contains("cannot rename") && err.contains("obstacle"),
+        "{err}"
+    );
+    assert!(
+        !d.join("manifest.json").exists(),
+        "stale or partial manifest left"
+    );
+    // The obstacle is gone: a second commit of the same staged files succeeds.
+    stage(&d, "new");
+    commit_outputs(&d, &|f, t| std::fs::rename(f, t)).unwrap();
+    for n in OUTPUTS {
+        assert_eq!(
+            std::fs::read_to_string(d.join(n)).unwrap(),
+            format!("new {n}")
+        );
+        assert!(!part(&d, n).exists());
+    }
+}
+
+#[test]
+fn a_failure_on_the_first_rename_does_not_keep_the_previous_manifest() {
+    let d = tmpdir("first_fails");
+    std::fs::write(d.join("manifest.json"), "previous").unwrap();
+    stage(&d, "new");
+    let r = commit_outputs(&d, &|_, _| Err(std::io::Error::other("nope")));
+    assert!(r.is_err());
+    assert!(!d.join("manifest.json").exists());
+}
+
+#[test]
+fn a_failing_manifest_rename_leaves_no_manifest() {
+    let d = tmpdir("manifest_fails");
+    stage(&d, "new");
+    let r = commit_outputs(&d, &|from, to| {
+        if to.ends_with("manifest.json") {
+            Err(std::io::Error::other("nope"))
+        } else {
+            std::fs::rename(from, to)
+        }
+    });
+    assert!(r.is_err());
+    assert!(d.join("test.txt").exists() && !d.join("manifest.json").exists());
+}
+
+#[test]
+fn an_unremovable_old_manifest_is_an_error() {
+    let d = tmpdir("manifest_dir");
+    std::fs::create_dir(d.join("manifest.json")).unwrap();
+    stage(&d, "new");
+    let err = commit_outputs(&d, &|f, t| std::fs::rename(f, t)).unwrap_err();
+    assert!(err.starts_with("cannot remove"), "{err}");
+}
+
+#[test]
+fn two_runs_give_byte_identical_outputs() {
+    let d = tmpdir("rerun");
+    let input = d.join("in.txt");
+    std::fs::write(
+        &input,
+        "alpha one\n<|endoftext|>beta two\n<|endoftext|>gamma three\n",
+    )
+    .unwrap();
+    let out = d.join("out");
+    let mut o = opts(vec![input.to_string_lossy().into()], &out);
+    o.val_frac = 0.3;
+    o.test_frac = 0.3;
+    run(&o).unwrap();
+    let read = || OUTPUTS.map(|n| std::fs::read(out.join(n)).unwrap());
+    let first = read();
+    run(&o).unwrap();
+    assert_eq!(first, read());
+}

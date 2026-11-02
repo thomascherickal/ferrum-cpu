@@ -496,6 +496,13 @@ one document, so split it with `--doc-sep` or give `prepare` more files.
 | `lossy_repaired` | Only present when non-zero: with `--lossy`, the number of kept documents that had invalid bytes replaced by U+FFFD. Also printed in the summary line. |
 | `train_stats` | `corpus_stats` of the train split (`bytes`, `chars`, `lines`, `unique_chars`, `words`) |
 
+The manifest is the commit marker. `prepare` writes everything to `*.part`
+files, then removes any old `manifest.json`, renames the splits into place and
+renames the new manifest last, so a `manifest.json` in the output folder always
+describes a complete set. A crash or a failed rename between the renames can
+leave a mix of old and new split files, but then there is no manifest: treat an
+output folder without one as unfinished and run `prepare` again.
+
 If the hashes in two manifests match, the inputs and outputs are byte-identical.
 DVC tracks `manifest.json` in git (not in the DVC cache), so a change in the
 data shows up in a `git diff`.
