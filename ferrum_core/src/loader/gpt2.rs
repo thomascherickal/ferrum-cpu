@@ -565,10 +565,9 @@ mod tests {
         let bytes = to_gguf(&m, &n, &meta, QPrec::F32).unwrap();
         let d = 32;
         let foreign = rebuild(&bytes, |kv, ts| {
-            let MetaValue::Array(tokens) = kv.get_mut("tokenizer.ggml.tokens").unwrap() else {
-                panic!()
-            };
-            tokens[..256].rotate_left(1);
+            if let Some(MetaValue::Array(tokens)) = kv.get_mut("tokenizer.ggml.tokens") {
+                tokens[..256].rotate_left(1);
+            }
             for (name, _, data) in ts.iter_mut() {
                 if name == "token_embd.weight" || name == "output.weight" {
                     let mut rows: Vec<Vec<f32>> = data.chunks(d).map(|r| r.to_vec()).collect();
@@ -622,33 +621,55 @@ mod tests {
         assert!(t.elapsed().as_secs() < 5, "took {:?}", t.elapsed());
     }
 
-    #[test]
-    fn loads_foreign_gpt2_gguf() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../.ferrum-dev/gpt2gguf/gpt2-f32.gguf"
-        );
-        let Ok(bytes) = std::fs::read(path) else {
-            eprintln!("skipping loads_foreign_gpt2_gguf: {path} not found");
-            return;
-        };
-        let (m, _, meta) = from_gguf(&bytes).unwrap();
-        drop(bytes);
+    /// Load `bytes` as a GPT-2 GGUF and greedily continue `prompt` by `chars` characters.
+    fn greedy_continuation(bytes: &[u8], prompt: &str, chars: usize) -> String {
+        let (m, _, meta) = from_gguf(bytes).unwrap();
         let slm = GenerativeSLM::new(m, empty_norm(), meta);
         let greedy = crate::slm::SamplingParams {
             top_k: 1,
             ..crate::slm::SamplingParams::with_temperature(1.0)
         };
+        slm.generate_continuation_with(prompt, chars, &greedy, &mut crate::rng::Rng::new(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn greedy_continuation_is_deterministic_on_a_ferrum_written_gpt2_file() {
+        // Covers the helper of the ignored foreign-file test below on a file we can always build.
+        let (m, n, meta) = bpe_parts(32, 64, true);
+        let bytes = to_gguf(&m, &n, &meta, QPrec::F32).unwrap();
+        let a = greedy_continuation(&bytes, "ab", 6);
+        assert_eq!(a.chars().count(), 6);
+        assert_eq!(a, greedy_continuation(&bytes, "ab", 6));
+    }
+
+    /// Needs the real GPT-2 124M f32 GGUF under `.ferrum-dev/` (not in the repo), so it is
+    /// `#[ignore]`d rather than skipping itself: run it with `cargo test -- --ignored`. A missing
+    /// file is a failure, never a silent pass.
+    #[test]
+    #[ignore = "needs .ferrum-dev/gpt2gguf/gpt2-f32.gguf"]
+    fn loads_foreign_gpt2_gguf() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../.ferrum-dev/gpt2gguf/gpt2-f32.gguf"
+        );
+        let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let want = " John. I'm a writer";
-        let got = slm
-            .generate_continuation_with(
-                "Hello, my name is",
-                want.chars().count(),
-                &greedy,
-                &mut crate::rng::Rng::new(0),
-            )
-            .unwrap();
         // What llama.cpp and HF produce greedily (FACTS.md).
-        assert_eq!(got, want);
+        assert_eq!(
+            greedy_continuation(&bytes, "Hello, my name is", want.chars().count()),
+            want
+        );
+    }
+
+    #[test]
+    fn a_gpt2_file_without_its_final_layernorm_is_refused() {
+        let (m, n, meta) = bpe_parts(32, 64, true);
+        let bytes = to_gguf(&m, &n, &meta, QPrec::F32).unwrap();
+        let bad = rebuild(&bytes, |_, ts| {
+            ts.retain(|(name, _, _)| name != "output_norm.weight")
+        });
+        let e = load_err(&bad);
+        assert!(e.contains("output_norm.weight"), "{e}");
     }
 }

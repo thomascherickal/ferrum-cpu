@@ -254,3 +254,105 @@ fn the_reader_streams_it_holds_one_window_not_the_tokens() {
     );
     assert!(out.capacity() < 64);
 }
+
+/// A token-file GGUF with `version`, optionally without the tokenizer hash, carrying `tensors`
+/// (each `[2]` I16 ids) instead of the single `tokens` one.
+fn raw_token_file(version: u32, with_sha: bool, tensors: &[&str]) -> Vec<u8> {
+    let mut b = GgufBuilder::new();
+    b.meta(
+        "general.architecture",
+        MetaValue::String(TOKEN_FILE_ARCH.into()),
+    )
+    .meta("ferrum.tokens.version", MetaValue::U32(version))
+    .meta("ferrum.tokens.vocab_size", MetaValue::U32(300))
+    .meta("ferrum.tokens.token_count", MetaValue::U64(2))
+    .meta("ferrum.tokens.document_count", MetaValue::U64(1));
+    if with_sha {
+        b.meta(
+            "ferrum.tokens.tokenizer_sha256",
+            MetaValue::String("x".into()),
+        );
+    }
+    for name in tensors {
+        b.tensor(name, &[2], crate::gguf::GGML_I16, vec![0; 4]);
+    }
+    b.into_bytes()
+}
+
+#[test]
+fn token_file_reader_rejects_each_malformed_header() {
+    let path = scratch("hdr");
+    let open_err = |bytes: Vec<u8>| {
+        std::fs::write(&path, bytes).unwrap();
+        TokenFile::open(&path).unwrap_err().to_string()
+    };
+    std::fs::write(&path, raw_token_file(1, true, &["tokens"])).unwrap();
+    TokenFile::open(&path).unwrap();
+    let e = open_err(raw_token_file(2, true, &["tokens"]));
+    assert!(e.contains("unsupported token file version"), "{e}");
+    let e = open_err(raw_token_file(1, false, &["tokens"]));
+    assert!(e.contains("tokenizer_sha256"), "{e}");
+    for tensors in [&[][..], &["tokens", "extra"], &["ids"]] {
+        let e = open_err(raw_token_file(1, true, tensors));
+        assert!(e.contains("expected exactly one 'tokens' tensor"), "{e}");
+    }
+}
+
+#[test]
+fn token_file_reader_wrong_dtype_and_truncated_tensor_fail_at_open() {
+    let path = scratch("dtype");
+    // I32 ids for a vocabulary that needs I16.
+    let mut b = GgufBuilder::new();
+    b.meta(
+        "general.architecture",
+        MetaValue::String(TOKEN_FILE_ARCH.into()),
+    )
+    .meta("ferrum.tokens.version", MetaValue::U32(1))
+    .meta("ferrum.tokens.vocab_size", MetaValue::U32(300))
+    .meta("ferrum.tokens.token_count", MetaValue::U64(2))
+    .meta("ferrum.tokens.document_count", MetaValue::U64(1))
+    .meta(
+        "ferrum.tokens.tokenizer_sha256",
+        MetaValue::String("x".into()),
+    );
+    b.tensor("tokens", &[2], GGML_I32, vec![0; 8]);
+    std::fs::write(&path, b.into_bytes()).unwrap();
+    assert!(TokenFile::open(&path)
+        .unwrap_err()
+        .to_string()
+        .contains("must be 1-D [2] of type"));
+    // The directory is intact but the ids were cut off: the GGUF extent check catches it, so the
+    // reader never needs a check of its own.
+    let mut bytes = raw_token_file(1, true, &["tokens"]);
+    bytes.truncate(bytes.len() - 2);
+    std::fs::write(&path, bytes).unwrap();
+    let e = TokenFile::open(&path).unwrap_err().to_string();
+    assert!(e.contains("runs past EOF"), "{e}");
+}
+
+#[test]
+fn is_gguf_file_sniffs_magic_and_version() {
+    let path = scratch("sniff");
+    let p = |bytes: &[u8]| {
+        std::fs::write(&path, bytes).unwrap();
+        is_gguf_file(&path)
+    };
+    assert!(p(&raw_token_file(1, true, &["tokens"])));
+    assert!(p(b"GGUF\x02\x00\x00\x00"));
+    assert!(!p(b"GGUF\x01\x00\x00\x00"), "unsupported version");
+    assert!(!p(b"GGUF\x03\x00"), "shorter than the sniffed head");
+    assert!(!p(b"plain text corpus, not a model"));
+    assert!(!is_gguf_file(&format!("{path}.missing")));
+}
+
+#[test]
+fn the_sink_counts_what_it_was_given() {
+    let path = scratch("sink");
+    write_token_file(&path, &meta(10, None), |sink| {
+        assert!(sink.is_empty());
+        sink.push(&[1, 2, 3])?;
+        assert_eq!((sink.len(), sink.is_empty()), (3, false));
+        Ok(())
+    })
+    .unwrap();
+}

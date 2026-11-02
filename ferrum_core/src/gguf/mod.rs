@@ -317,6 +317,40 @@ mod tests {
     }
 
     #[test]
+    fn array_views_borrow_or_copy_by_representation() {
+        use crate::gguf::NumArray;
+        let nums = |a: NumArray| MetaValue::Nums(a);
+        let (i, f, u, b) = (
+            nums(NumArray::I32(vec![-1, 2])),
+            nums(NumArray::F32(vec![0.5])),
+            nums(NumArray::U32(vec![7, 8, 9])),
+            nums(NumArray::U8(vec![1])),
+        );
+        assert_eq!(i.as_i32_slice(), Some(&[-1, 2][..]));
+        assert_eq!(f.as_f32_slice(), Some(&[0.5][..]));
+        assert_eq!(u.as_u32_slice(), Some(&[7, 8, 9][..]));
+        assert_eq!(b.as_u8_slice(), Some(&[1][..]));
+        // Only the matching element type is borrowed.
+        assert!(i.as_f32_slice().is_none() && f.as_i32_slice().is_none());
+        assert!(u.as_u8_slice().is_none() && b.as_u32_slice().is_none());
+        // Length and element access work on both representations.
+        assert_eq!(
+            (u.array_len(), u.array_get(1)),
+            (Some(3), Some(MetaValue::U32(8)))
+        );
+        assert_eq!(u.array_get(3), None);
+        let strings = MetaValue::Array(vec![MetaValue::String("a".into())]);
+        assert_eq!(
+            (strings.array_len(), strings.array_get(0)),
+            (Some(1), Some(MetaValue::String("a".into())))
+        );
+        assert!(
+            MetaValue::U32(1).array_len().is_none() && MetaValue::U32(1).array_get(0).is_none()
+        );
+        assert!(strings.as_i32_slice().is_none());
+    }
+
+    #[test]
     fn rejects_bad_magic_and_version() {
         assert!(Gguf::parse(vec![0, 1, 2, 3, 4, 5, 6, 7]).is_err());
         let (mut bytes, _, _, _) = synth_gguf();
@@ -329,10 +363,8 @@ mod tests {
         let (bytes, _, _, _) = synth_gguf();
         let g = Gguf::parse(bytes).unwrap();
         // "ferrum-test" is neither llama nor qwen2.
-        match g.load_llama(QKind::Int8) {
-            Err(InferError::Format(_)) => {}
-            _ => panic!("expected a Format error for an unsupported architecture"),
-        }
+        let e = g.load_llama(QKind::Int8).err().expect("must be rejected");
+        assert!(matches!(e, InferError::Format(_)), "{e}");
     }
 
     #[test]

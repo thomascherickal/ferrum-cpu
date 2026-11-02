@@ -230,4 +230,13 @@ mod tests {
         assert!(Gguf::parse(f32s).is_err());
         assert!(t.elapsed().as_secs() < 2);
     }
+
+    #[test]
+    fn read_rejects_a_tag_that_is_not_numeric() {
+        let mut c = crate::gguf::cursor::Cur::new(&[0; 8]);
+        let e = NumArray::read(&mut c, crate::gguf::format::VT_STRING, 1)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("unknown metadata value type"), "{e}");
+    }
 }

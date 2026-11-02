@@ -149,9 +149,6 @@ impl ModelMetadata {
         fn usize_val(s: &str) -> Option<usize> {
             s.split([',', '}']).next()?.trim().parse().ok()
         }
-        fn _f32_val(s: &str) -> Option<f32> {
-            s.split([',', ']', '}']).next()?.trim().parse().ok()
-        }
 
         fn str_arr(s: &str) -> Vec<String> {
             let inner = s.trim_start_matches('[');
@@ -495,6 +492,19 @@ mod tests {
         // encode/decode keeps the statistics.
         let back = Normalizer::decode(&n.encode()).unwrap();
         assert_eq!(back.means, n.means);
+    }
+
+    #[test]
+    fn normalizer_fit_traces_every_column_when_verbose() {
+        let _g = crate::verbose::TEST_GUARD.lock().unwrap();
+        let prev = crate::verbose::is_verbose();
+        crate::verbose::set_verbose(true);
+        // At most 8 columns: all are traced. More than 8: the rest are summarised.
+        for cols in [3, 10] {
+            let x = Tensor::matrix(2, cols, vec![1.0; 2 * cols]).unwrap();
+            assert_eq!(Normalizer::fit(&x).unwrap().means.len(), cols);
+        }
+        crate::verbose::set_verbose(prev);
     }
 
     #[test]

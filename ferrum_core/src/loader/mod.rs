@@ -268,11 +268,10 @@ mod tests {
         };
         let big_full = to_bytes(&big_model, &big_norm, &meta).unwrap();
         let big_quant = to_bytes_quantized(&big_model, &big_norm, &meta).unwrap();
+        let (quant_len, full_len) = (big_quant.len() as f32, big_full.len() as f32);
         assert!(
-            (big_quant.len() as f32) < (big_full.len() as f32) * 0.35,
-            "quantized {} not ≈4× smaller than {}",
-            big_quant.len(),
-            big_full.len()
+            quant_len < full_len * 0.35,
+            "quantized {quant_len} not ≈4× smaller than {full_len}"
         );
 
         // Small model: everything stays f32 and the outputs match closely.
@@ -320,11 +319,10 @@ mod tests {
         assert_eq!(&bytes[..4], b"GGUF");
         // ~8× smaller than the f32 file for the weight payload.
         let f32_bytes = to_bytes(&model, &norm, &meta).unwrap();
+        let (int4_len, f32_len) = (bytes.len() as f32, f32_bytes.len() as f32);
         assert!(
-            (bytes.len() as f32) < (f32_bytes.len() as f32) * 0.4,
-            "int4 file {} not far smaller than f32 {}",
-            bytes.len(),
-            f32_bytes.len()
+            int4_len < f32_len * 0.4,
+            "int4 file {int4_len} not far smaller than f32 {f32_len}"
         );
 
         let (loaded, _, _) = from_bytes(&bytes).unwrap();
@@ -404,6 +402,9 @@ mod tests {
     fn to_bytes_unknown_layer_error() {
         let mut model = Sequential::new();
         model.push(Box::new(DummyLayer));
+        // The stand-in layer passes its input through (it only lacks a serialised form).
+        let x = Tensor::matrix(1, 2, vec![1.0, 2.0]).unwrap();
+        assert_eq!(model.forward(&x).unwrap().data, x.data);
         let norm = Normalizer {
             means: vec![],
             stds: vec![],

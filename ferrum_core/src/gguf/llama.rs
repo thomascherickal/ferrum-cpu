@@ -7,6 +7,22 @@ use crate::layer::Linear;
 use crate::llm::{Attention, FeedForward, LlamaBlock, LlamaConfig, LlamaModel, RmsNorm, RopeType};
 use crate::quant::{QKind, QWeight};
 
+/// A `[n_in, n_out]` [`Linear`] from f32 weights, packed to `prec` when given.
+fn make_linear(
+    n_in: usize,
+    n_out: usize,
+    w: Vec<f32>,
+    bias: Vec<f32>,
+    prec: Option<QKind>,
+) -> Result<Linear> {
+    match prec {
+        Some(kind) => {
+            Linear::quantized(n_in, n_out, QWeight::from_f32(&w, n_in, n_out, kind), bias)
+        }
+        None => Linear::new(n_in, n_out, w, bias),
+    }
+}
+
 impl Gguf {
     fn meta_usize(&self, key: &str) -> Result<usize> {
         self.metadata
@@ -71,12 +87,7 @@ impl Gguf {
         if bias.len() != n_out {
             return Err(fmt(&format!("bias for '{name}' has wrong length")));
         }
-        let lin = match prec {
-            Some(kind) => {
-                Linear::quantized(n_in, n_out, QWeight::from_f32(&w, n_in, n_out, kind), bias)
-            }
-            None => Linear::new(n_in, n_out, w, bias),
-        }?;
+        let lin = make_linear(n_in, n_out, w, bias, prec)?;
         // No bias tensor in the file: the zero bias is a placeholder, never a parameter.
         Ok(if has_bias { lin } else { lin.into_bias_free() })
     }
@@ -235,16 +246,7 @@ impl Gguf {
             self.linear_from("output.weight", None, prec, dim, vocab)?
         } else {
             let w = transpose_2d(&tok_emb, vocab, dim); // [vocab,dim] → [dim,vocab]
-            match prec {
-                Some(kind) => Linear::quantized(
-                    dim,
-                    vocab,
-                    QWeight::from_f32(&w, dim, vocab, kind),
-                    vec![0.0; vocab],
-                )?,
-                None => Linear::new(dim, vocab, w, vec![0.0; vocab])?,
-            }
-            .into_bias_free()
+            make_linear(dim, vocab, w, vec![0.0; vocab], prec)?.into_bias_free()
         };
 
         let cfg = LlamaConfig {
@@ -345,6 +347,17 @@ mod tests {
     }
 
     #[test]
+    fn load_llama_rejects_a_rope_dimension_wider_than_the_head() {
+        // dim 2 over 2 heads gives head_dim 1; a rope dimension of 2 cannot fit in it.
+        let g = l_file(
+            "",
+            None,
+            &[("attention.head_count", 2), ("rope.dimension_count", 2)],
+        );
+        llama_err(&g, "rope_dim");
+    }
+
+    #[test]
     fn linear_from_applies_transpose_so_y_equals_w_times_x() {
         // A single GGUF weight [n_out, n_in]; the imported Ferrum Linear must
         // compute y = W·x (so the transpose is right). int8 keeps error tiny.
@@ -378,11 +391,8 @@ mod tests {
         // Reference y[o] = Σ_i w_gguf[o*n_in + i] · x[i].
         for o in 0..n_out {
             let want: f32 = (0..n_in).map(|i| w_gguf[o * n_in + i] * x[i]).sum();
-            assert!(
-                (y.data[o] - want).abs() < 0.05,
-                "y[{o}]={} want {want}",
-                y.data[o]
-            );
+            let got = y.data[o];
+            assert!((got - want).abs() < 0.05, "y[{o}]={got} want {want}");
         }
     }
 

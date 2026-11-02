@@ -218,13 +218,12 @@ mod tests {
     fn parse_rejects_truncation() {
         let mut bytes = synth_llama();
         bytes.truncate(bytes.len() - 20); // chop tensor data
-                                          // Parse succeeds (directory intact) but dequantizing the last tensor
-                                          // must fail because its data ran off the end.
-        let g = Gguf::parse(bytes);
-        if let Ok(g) = g {
-            let last = g.tensors.last().unwrap().clone();
-            assert!(g.dequantize(&last).is_err());
-        }
+                                          // The directory is intact, but the last tensor's data ran off the end:
+                                          // the extent check refuses the file at parse time.
+        let e = Gguf::parse(bytes)
+            .err()
+            .expect("truncated data must not parse");
+        assert!(e.to_string().contains("runs past EOF"), "{e}");
     }
 
     #[test]

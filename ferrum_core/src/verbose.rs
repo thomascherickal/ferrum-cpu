@@ -119,13 +119,16 @@ pub fn check_nan_inf(data: &[f32], label: &str) -> bool {
     false
 }
 
+/// Serializes the tests (here and in other modules) that mutate the process-global
+/// VERBOSE/SINK state so they cannot observe each other's writes when the harness runs in parallel.
+#[cfg(test)]
+pub(crate) static TEST_GUARD: Mutex<()> = Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Serializes the tests that mutate the process-global VERBOSE/SINK state so
-    // they cannot observe each other's writes when the harness runs in parallel.
-    static GUARD: Mutex<()> = Mutex::new(());
+    use super::TEST_GUARD as GUARD;
 
     #[test]
     fn stats_handles_empty_and_values() {

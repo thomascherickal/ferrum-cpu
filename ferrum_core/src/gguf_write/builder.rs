@@ -51,8 +51,9 @@ impl GgufBuilder {
 
     pub fn tensor(&mut self, name: &str, dims: &[u64], ggml_type: u32, data: Vec<u8>) -> &mut Self {
         // Duplicate names would parse (readers resolve first-match) but the
-        // file would be malformed; this is a caller bug, so catch it in tests.
-        debug_assert!(
+        // file would be malformed; this is a caller bug, so refuse it (a real assert: it
+        // must hold in release builds too, and the test below pins it).
+        assert!(
             self.tensors.iter().all(|t| t.name != name),
             "GgufBuilder: duplicate tensor name '{name}'"
         );
@@ -279,13 +280,17 @@ mod tests {
         assert_eq!(g.dequantize(g.tensor("t0").unwrap()).unwrap(), t0);
         assert_eq!(g.dequantize(g.tensor("t1").unwrap()).unwrap(), t1);
         // Array metadata preserved.
-        match g.meta("tokenizer.ggml.tokens").unwrap() {
-            MetaValue::Array(a) => {
-                assert_eq!(a.len(), 2);
-                assert_eq!(a[0].as_str(), Some("a"));
-            }
-            _ => panic!("tokens not an array"),
-        }
+        let tokens = g.meta("tokenizer.ggml.tokens").unwrap();
+        assert_eq!(tokens.array_len(), Some(2));
+        assert_eq!(tokens.array_get(0).unwrap().as_str(), Some("a"));
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate tensor name 't0'")]
+    fn duplicate_tensor_names_are_refused() {
+        let mut b = GgufBuilder::new();
+        b.tensor("t0", &[1], crate::gguf::GGML_F32, vec![0; 4]);
+        b.tensor("t0", &[1], crate::gguf::GGML_F32, vec![0; 4]);
     }
 
     #[test]

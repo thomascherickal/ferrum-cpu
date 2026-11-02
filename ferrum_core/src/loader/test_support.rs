@@ -369,18 +369,15 @@ pub(super) fn rebuild(bytes: &[u8], edit: impl FnOnce(&mut Kv, &mut Tensors)) ->
 }
 
 pub(super) fn load_err(bytes: &[u8]) -> String {
-    match from_gguf(bytes) {
-        Ok(_) => panic!("expected an error"),
-        Err(e) => e.to_string(),
-    }
+    from_gguf(bytes)
+        .err()
+        .expect("expected an error")
+        .to_string()
 }
 
 pub(super) const FINF_HINT: &str =
     "old Ferrum .bin (FINF) model — this format was removed; retrain to produce a .gguf";
 
 pub(super) fn load_err_of<T>(r: Result<T>) -> String {
-    match r {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e.to_string(),
-    }
+    r.err().expect("expected error").to_string()
 }

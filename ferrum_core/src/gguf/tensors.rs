@@ -205,4 +205,17 @@ mod tests {
         assert!(g.quantized_weight("t_f32", 0, QKind::Int8).is_err());
         assert!(g.quantized_weight("t_f32", 4, QKind::Int8).is_ok());
     }
+
+    #[test]
+    fn integer_tensors_have_a_size_but_no_dequantizer() {
+        // The token-file `tokens` tensor is I16: it parses and is addressable, not decodable to f32.
+        let mut b = GgufBuilder::new();
+        b.tensor("ids", &[3], crate::gguf::GGML_I16, vec![0; 6]);
+        let g = Gguf::parse(b.into_bytes()).unwrap();
+        let e = g.dequantize(g.tensor("ids").unwrap()).unwrap_err();
+        assert!(
+            e.to_string().contains("not yet supported for dequant"),
+            "{e}"
+        );
+    }
 }

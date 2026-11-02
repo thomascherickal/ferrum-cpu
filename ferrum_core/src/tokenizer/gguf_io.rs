@@ -471,16 +471,30 @@ mod tests {
             let key = format!("tokenizer.ggml.{key}");
             let bad = crate::ckpt::rewrite(
                 &b,
-                |m| match m.get_mut(&key) {
-                    Some(MetaValue::Array(a)) => drop(a.pop()),
-                    Some(MetaValue::Nums(crate::gguf::NumArray::I32(a))) => drop(a.pop()),
-                    _ => panic!("{key} is not an array"),
+                |m| {
+                    if let Some(MetaValue::Array(a)) = m.get_mut(&key) {
+                        a.pop();
+                    } else if let Some(MetaValue::Nums(crate::gguf::NumArray::I32(a))) =
+                        m.get_mut(&key)
+                    {
+                        a.pop();
+                    }
                 },
                 None,
             );
             let e = ByteBpeTokenizer::from_gguf_bytes(&bad).err().unwrap();
             assert!(e.to_string().contains("disagree"), "{key}: {e}");
         }
+        // An empty token_type array is accepted by the reader, then the state disagrees.
+        let empty = crate::ckpt::rewrite(
+            &b,
+            |m| {
+                m.insert("tokenizer.ggml.token_type".into(), MetaValue::Array(vec![]));
+            },
+            None,
+        );
+        let e = ByteBpeTokenizer::from_gguf_bytes(&empty).err().unwrap();
+        assert!(e.to_string().contains("disagree"), "{e}");
         // Arrays removed or mistyped.
         for key in ["tokens", "merges", "token_type"] {
             let key = format!("tokenizer.ggml.{key}");

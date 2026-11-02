@@ -272,9 +272,6 @@ impl GgufTokenizer {
                 .bytes()
                 .map(|b| self.byte_encoder[b as usize].to_string())
                 .collect();
-            if pieces.is_empty() {
-                continue;
-            }
             // Greedy lowest-rank merges until none apply (standard BPE). `key` is
             // reused across every pair lookup so the scan allocates nothing.
             let mut key = String::new();

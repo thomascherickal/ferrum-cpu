@@ -205,10 +205,11 @@ mod tests {
         let (m, n, meta) = bpe_parts(32, 64, true);
         let gpt2 = to_gguf(&m, &n, &meta, QPrec::F32).unwrap();
         let set_tokens = |kv: &mut Kv, f: &dyn Fn(&mut Vec<MetaValue>)| {
-            let Some(MetaValue::Array(t)) = kv.get_mut("tokenizer.ggml.tokens") else {
-                panic!()
-            };
-            f(t)
+            // (A missing key leaves the file valid, and `check` then fails on "expected an error".)
+            let key = "tokenizer.ggml.tokens";
+            if let Some(MetaValue::Array(t)) = kv.get_mut(key) {
+                f(t)
+            }
         };
         let cases: Vec<(&str, &str, GgufEdit)> = vec![
             (
@@ -282,44 +283,40 @@ mod tests {
                 "type count",
                 "token types",
                 Box::new(|kv, _| {
-                    let Some(MetaValue::Nums(NumArray::I32(t))) =
+                    if let Some(MetaValue::Nums(NumArray::I32(t))) =
                         kv.get_mut("tokenizer.ggml.token_type")
-                    else {
-                        panic!()
-                    };
-                    t.pop();
+                    {
+                        t.pop();
+                    }
                 }),
             ),
             (
                 "merge result missing",
                 "no unique token",
                 Box::new(move |kv, _| {
-                    let Some(MetaValue::Array(mg)) = kv.get_mut("tokenizer.ggml.merges") else {
-                        panic!()
-                    };
-                    mg[0] = s("q z");
+                    if let Some(MetaValue::Array(mg)) = kv.get_mut("tokenizer.ggml.merges") {
+                        mg[0] = s("q z");
+                    }
                 }),
             ),
             (
                 "merge result reused",
                 "no unique token",
                 Box::new(|kv, _| {
-                    let Some(MetaValue::Array(mg)) = kv.get_mut("tokenizer.ggml.merges") else {
-                        panic!()
-                    };
-                    mg[1] = mg[0].clone();
+                    if let Some(MetaValue::Array(mg)) = kv.get_mut("tokenizer.ggml.merges") {
+                        mg[1] = mg[0].clone();
+                    }
                 }),
             ),
             (
                 "special not control",
                 "not control",
                 Box::new(|kv, _| {
-                    let Some(MetaValue::Nums(NumArray::I32(t))) =
+                    if let Some(MetaValue::Nums(NumArray::I32(t))) =
                         kv.get_mut("tokenizer.ggml.token_type")
-                    else {
-                        panic!()
-                    };
-                    *t.last_mut().unwrap() = 1;
+                    {
+                        *t.last_mut().unwrap() = 1;
+                    }
                 }),
             ),
             (

@@ -102,12 +102,8 @@ impl TokenFile {
         let data_start = (g.data_offset() as u64)
             .checked_add(t.offset)
             .ok_or_else(|| bad(format!("{path}: tensor offset overflows")))?;
-        let end = tokens as u64 * width as u64 + data_start;
-        if end > g.file_len() as u64 {
-            return Err(bad(format!(
-                "{path}: token data runs past the end of the file"
-            )));
-        }
+        // `Gguf::open` has already checked every tensor's extent against the file, and the
+        // tensor is exactly `tokens` ids of `width` bytes, so a truncated file never gets here.
         Ok(Self {
             file: File::open(path)?,
             data_start,

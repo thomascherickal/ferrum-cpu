@@ -55,7 +55,7 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
         &[cfg.model_dim as u64, cfg.vocab_size as u64],
         true,
         quant,
-    )?;
+    );
 
     for (i, blk) in model.blocks.iter().enumerate() {
         let p = format!("blk.{i}");
@@ -64,9 +64,9 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
             &format!("{p}.attn_norm.weight"),
             &blk.attn_norm.weight,
         );
-        add_linear(&mut b, &p, "attn_q", &blk.attn.wq, source, true, quant)?;
-        add_linear(&mut b, &p, "attn_k", &blk.attn.wk, source, true, quant)?;
-        add_linear(&mut b, &p, "attn_v", &blk.attn.wv, source, true, quant)?;
+        add_linear(&mut b, &p, "attn_q", &blk.attn.wq, source, true, quant);
+        add_linear(&mut b, &p, "attn_k", &blk.attn.wk, source, true, quant);
+        add_linear(&mut b, &p, "attn_v", &blk.attn.wv, source, true, quant);
         add_linear(
             &mut b,
             &p,
@@ -75,21 +75,21 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
             source,
             false,
             quant,
-        )?;
+        );
         add_norm(
             &mut b,
             &format!("{p}.ffn_norm.weight"),
             &blk.ffn_norm.weight,
         );
-        add_linear(&mut b, &p, "ffn_gate", &blk.ffn.gate, source, false, quant)?;
-        add_linear(&mut b, &p, "ffn_up", &blk.ffn.up, source, false, quant)?;
-        add_linear(&mut b, &p, "ffn_down", &blk.ffn.down, source, false, quant)?;
+        add_linear(&mut b, &p, "ffn_gate", &blk.ffn.gate, source, false, quant);
+        add_linear(&mut b, &p, "ffn_up", &blk.ffn.up, source, false, quant);
+        add_linear(&mut b, &p, "ffn_down", &blk.ffn.down, source, false, quant);
     }
 
     add_norm(&mut b, "output_norm.weight", &model.final_norm.weight);
     // Emit an explicit LM head only if the source had one (else tying is kept).
     if source.tensor("output.weight").is_some() {
-        add_weight_2d(&mut b, "output.weight", &model.lm_head, quant)?;
+        add_weight_2d(&mut b, "output.weight", &model.lm_head, quant);
     }
 
     // 3. File-type hint, decided from what was *actually* emitted: if every
@@ -153,9 +153,9 @@ fn add_linear(
     source: &Gguf,
     can_have_bias: bool,
     quant: GgufQuant,
-) -> Result<()> {
+) {
     let wname = format!("{prefix}.{stem}.weight");
-    add_weight_2d(b, &wname, lin, quant)?;
+    add_weight_2d(b, &wname, lin, quant);
     // Emit the bias only if this stem can carry one *and* the source had it.
     if can_have_bias {
         let bname = format!("{prefix}.{stem}.bias");
@@ -165,12 +165,11 @@ fn add_linear(
             b.tensor(&bname, &[bias.len() as u64], GGML_F32, bytes);
         }
     }
-    Ok(())
 }
 
 /// Emit a 2-D weight: Ferrum `[n_in, n_out]` → raw `[n_out, n_in]`, dims
 /// `[n_in, n_out]`, quantized per policy.
-fn add_weight_2d(b: &mut GgufBuilder, name: &str, lin: &Linear, quant: GgufQuant) -> Result<()> {
+fn add_weight_2d(b: &mut GgufBuilder, name: &str, lin: &Linear, quant: GgufQuant) {
     let (n_in, n_out) = (lin.in_features(), lin.out_features());
     let w = lin.weight_f32(); // [n_in, n_out]
     let raw = transpose(&w, n_in, n_out); // [n_out, n_in]
@@ -182,11 +181,13 @@ fn add_weight_2d(b: &mut GgufBuilder, name: &str, lin: &Linear, quant: GgufQuant
         &[n_in as u64, n_out as u64],
         true,
         quant,
-    )
+    );
 }
 
 /// Encode `raw` (already in GGUF byte order) as a tensor of `dims`, choosing the
-/// type via `plan_tensor_type` on `block_axis` (= dims[0]).
+/// type via `plan_tensor_type` on `block_axis` (= dims[0]). `plan_tensor_type` only picks a
+/// block type when `block_axis` is a multiple of its block size and every caller passes the
+/// fastest dim of `raw`, so the length is always block-aligned and encoding cannot fail.
 fn add_tensor(
     b: &mut GgufBuilder,
     name: &str,
@@ -195,7 +196,7 @@ fn add_tensor(
     dims: &[u64],
     is_2d: bool,
     quant: GgufQuant,
-) -> Result<()> {
+) {
     let (ggml_type, fell_back) = plan_tensor_type(is_2d, block_axis, quant);
     if fell_back {
         vprintln!(
@@ -203,9 +204,9 @@ fn add_tensor(
              quant; storing it as F16"
         );
     }
-    let bytes = encode_tensor(raw, ggml_type)?;
+    // encode_tensor only fails on a ragged block length, which the plan above rules out.
+    let bytes = encode_tensor(raw, ggml_type).unwrap();
     b.tensor(name, dims, ggml_type, bytes);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -414,10 +415,11 @@ mod tests {
                 ggml_type: crate::gguf::GGML_F32,
                 offset: 0,
             });
-            let msg = match g.load_llama_prec(None) {
-                Ok(_) => panic!("load should reject a file carrying '{name}'"),
-                Err(e) => e.to_string(),
-            };
+            let e = g
+                .load_llama_prec(None)
+                .err()
+                .expect("load must reject a stray bias");
+            let msg = e.to_string();
             assert!(msg.contains(name), "error should name '{name}': {msg}");
         }
     }
