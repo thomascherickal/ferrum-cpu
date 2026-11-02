@@ -1,10 +1,10 @@
 # Coverage results
 
-One entry per `scripts/coverage.sh` run. Runs happen twice a day, at noon and at night (CLAUDE.md rule 10). Numbers are copied from the run's `target/coverage/summary.txt`.
+One entry per `scripts/coverage.sh` run. Runs happen once a day, at noon (CLAUDE.md rule 10). Numbers are copied from the run's `target/coverage/summary.txt`.
 
 ## 2026-11-02
 
-Runs before the twice-a-day rule existed (all `--rust`, branch `feat/coverage-100`, commit 67c4d74 and its parent state):
+Runs before the once-a-day rule existed (all `--rust`, branch `feat/coverage-100`, commit 67c4d74 and its parent state):
 
 | Run | Lines missed | Line cover | Functions | Regions |
 |---|---|---|---|---|
@@ -16,6 +16,6 @@ Files in the Task 1.2 list that were not 100.00 % in the last run: `gguf/cursor.
 
 How the summary counts lines (found by recomputing it from `llvm-cov export` JSON, matching all five files exactly): per function group (same source location), line coverage is the best single instantiation, and `ferrum_core` is compiled twice (the library, used by the other crates' tests, and its own unit-test build). A function whose lines are split between the two builds, with neither build covering all of them, leaves lines missed even though the merged per-line view shows none. Fix: make the unit tests (the build that sees the whole function) cover every line of the function themselves.
 
-Noon slot: skipped on the user's instruction. Night slot: not yet run.
+Noon run of 2026-11-02: skipped on the user's instruction. Next run: noon 2026-11-03.
 
 After the last run, tests were added for exactly the gaps found (see the fix-round commit); they have not been measured by coverage yet. Expected from the analysis: `cursor.rs` unknown scalar type, `tensors.rs` Q5_0/Q5_1 dequant, `gguf_tokenizer.rs` empty token table and the whitespace run of `pretokenize`, `decode.rs` the never-called closure, `gpt2.rs` the foreign-file test now always running.

@@ -49,17 +49,28 @@ skills. When the user states a new rule, add it here.
 9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
    counts, known issues, roadmap, section 7) in the feature's commit. Only the
    docs listed under Conventions exist (plus `docs/coverage-results.md`, rule
-   10); add no others.
-10. **Coverage runs twice a day, at noon and at night, no more.** Run
-    `scripts/coverage.sh` (alone, never beside tests) only in the noon slot
-    (about 12:00) and the night slot (about 22:00), local time, never on demand
-    in between. Record every run in `docs/coverage-results.md`: date, slot,
-    commit, the totals, and the per-file lines that are not 100 %. Between runs,
-    find gaps by reasoning from the last results file and the unit tests, not by
-    rerunning coverage.
+   10, and the tutorials of rule 14); add no others.
+10. **Coverage runs once a day, at noon, no more.** Run `scripts/coverage.sh`
+    (alone, never beside tests) only in the noon slot (about 12:00, local
+    time), never on demand in between. Record every run in
+    `docs/coverage-results.md`: date, commit, the totals, and the per-file lines
+    that are not 100 %. Between runs, find gaps by reasoning from the last
+    results file and the unit tests, not by rerunning coverage. (No run on
+    2026-11-02, by the user's instruction.)
 11. **Run the tests and fix every failure before every commit.** The full
     `cargo test --workspace --release` (plus clippy and fmt) is green before a
     commit is made; a red or untested tree is never committed.
+
+12. **Clean engineering.** Modular code with high cohesion and low coupling:
+    one concern per module, a small public surface, dependencies pointing one
+    way.
+13. **Tests by tier.** Every new feature lands with a unit test. When a
+    functionality is complete, add functional tests for it; when a module is
+    complete, add integration tests for the module. New tests use stubs or
+    fakes instead of full or tiny trained models, so the suite stays fast.
+14. **Docs with tutorials.** When a new functionality is complete, document it
+    with a tutorial in the `docs/` folder. This supersedes the "add no other
+    docs" limit in rule 9 and Conventions for tutorials placed in `docs/`.
 
 ## Hard constraints
 
