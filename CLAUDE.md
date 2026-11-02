@@ -48,7 +48,18 @@ skills. When the user states a new rule, add it here.
    dir; use `node --check` for the UI JavaScript.
 9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
    counts, known issues, roadmap, section 7) in the feature's commit. Only the
-   docs listed under Conventions exist; add no others.
+   docs listed under Conventions exist (plus `docs/coverage-results.md`, rule
+   10); add no others.
+10. **Coverage runs twice a day, at noon and at night, no more.** Run
+    `scripts/coverage.sh` (alone, never beside tests) only in the noon slot
+    (about 12:00) and the night slot (about 22:00), local time, never on demand
+    in between. Record every run in `docs/coverage-results.md`: date, slot,
+    commit, the totals, and the per-file lines that are not 100 %. Between runs,
+    find gaps by reasoning from the last results file and the unit tests, not by
+    rerunning coverage.
+11. **Run the tests and fix every failure before every commit.** The full
+    `cargo test --workspace --release` (plus clippy and fmt) is green before a
+    commit is made; a red or untested tree is never committed.
 
 ## Hard constraints
 

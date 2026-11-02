@@ -527,6 +527,31 @@ mod tests {
     }
 
     #[test]
+    fn from_gguf_with_an_empty_token_table_is_refused() {
+        let mut kvs = Vec::new();
+        kv_str(&mut kvs, "tokenizer.ggml.model", "llama");
+        kv_str_array(&mut kvs, "tokenizer.ggml.tokens", &[]);
+        let e = GgufTokenizer::from_gguf(&tok_gguf(&kvs, 2)).err().unwrap();
+        assert!(e.to_string().contains("tokens is empty"), "{e}");
+    }
+
+    #[test]
+    fn pretokenize_groups_runs_of_non_space_whitespace() {
+        assert_eq!(pretokenize("a\n\t b"), vec!["a", "\n\t ", "b"]);
+    }
+
+    #[test]
+    fn from_gguf_without_a_token_table_is_refused() {
+        let mut kvs = Vec::new();
+        kv_str(&mut kvs, "tokenizer.ggml.model", "llama");
+        let e = GgufTokenizer::from_gguf(&tok_gguf(&kvs, 1)).err().unwrap();
+        assert!(
+            e.to_string().contains("missing tokenizer.ggml.tokens"),
+            "{e}"
+        );
+    }
+
+    #[test]
     fn bpe_roundtrips_via_merges() {
         // Vocab of single-byte GPT-2 chars plus a few merges so "ab"+"c" forms.
         // bytes: 'a','b','c',' ' → GPT-2 chars 'a','b','c','Ġ'.

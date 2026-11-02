@@ -205,7 +205,8 @@ fn add_tensor(
         );
     }
     // encode_tensor only fails on a ragged block length, which the plan above rules out.
-    let bytes = encode_tensor(raw, ggml_type).unwrap();
+    let bytes =
+        encode_tensor(raw, ggml_type).expect("plan_tensor_type guarantees a block-aligned length");
     b.tensor(name, dims, ggml_type, bytes);
 }
 
@@ -298,9 +299,7 @@ mod tests {
             ] {
                 let name = format!("{p}.{stem}.bias");
                 let expected = det_fill(seed, qkv_dim);
-                let t = g1
-                    .tensor(&name)
-                    .unwrap_or_else(|| panic!("expected '{name}' to be emitted"));
+                let t = g1.tensor(&name).expect(&name);
                 let got = g1.dequantize(t).unwrap();
                 assert_eq!(got.len(), expected.len(), "{name}: length mismatch");
                 for (g, e) in got.iter().zip(&expected) {

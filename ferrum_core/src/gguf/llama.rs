@@ -347,6 +347,14 @@ mod tests {
     }
 
     #[test]
+    fn load_llama_without_a_token_embedding_is_refused() {
+        llama_err(
+            &l_file("token_embd.weight", None, &[]),
+            "missing token_embd.weight",
+        );
+    }
+
+    #[test]
     fn load_llama_rejects_a_rope_dimension_wider_than_the_head() {
         // dim 2 over 2 heads gives head_dim 1; a rope dimension of 2 cannot fit in it.
         let g = l_file(

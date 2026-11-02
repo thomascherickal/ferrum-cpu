@@ -215,6 +215,16 @@ mod tests {
     }
 
     #[test]
+    fn a_general_alignment_key_sets_the_data_offset() {
+        let mut b = crate::gguf_write::GgufBuilder::new();
+        b.meta("general.alignment", crate::gguf::MetaValue::U32(64));
+        let bytes = b.into_bytes();
+        let (_, _, _, data_offset) = super::parse_header(&bytes, bytes.len()).unwrap();
+        assert_eq!(data_offset % 64, 0);
+        assert!(data_offset >= bytes.len());
+    }
+
+    #[test]
     fn parse_rejects_truncation() {
         let mut bytes = synth_llama();
         bytes.truncate(bytes.len() - 20); // chop tensor data

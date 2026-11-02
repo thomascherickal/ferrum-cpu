@@ -172,6 +172,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_rejects_a_scalar_of_an_unknown_value_type() {
+        let mut bytes = Vec::new();
+        put_u32(&mut bytes, GGUF_MAGIC);
+        put_u32(&mut bytes, 3);
+        put_u64(&mut bytes, 0);
+        put_u64(&mut bytes, 1);
+        put_str(&mut bytes, "k");
+        put_u32(&mut bytes, 99);
+        let e = Gguf::parse(bytes).err().unwrap();
+        assert!(
+            e.to_string().contains("unknown metadata value type 99"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_an_array_of_an_unknown_element_type() {
+        let mut bytes = Vec::new();
+        put_u32(&mut bytes, GGUF_MAGIC);
+        put_u32(&mut bytes, 3);
+        put_u64(&mut bytes, 0);
+        put_u64(&mut bytes, 1);
+        put_str(&mut bytes, "k");
+        put_u32(&mut bytes, VT_ARRAY);
+        put_u32(&mut bytes, 99); // no such element type
+        put_u64(&mut bytes, 1);
+        bytes.push(0);
+        let e = Gguf::parse(bytes).err().unwrap();
+        assert!(
+            e.to_string().contains("unknown metadata value type 99"),
+            "{e}"
+        );
+    }
+
+    #[test]
     fn to_usize_passes_values_through_and_saturates() {
         assert_eq!(to_usize(0), 0);
         assert_eq!(to_usize(12345), 12345);

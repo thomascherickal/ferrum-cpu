@@ -356,3 +356,39 @@ fn the_sink_counts_what_it_was_given() {
     })
     .unwrap();
 }
+
+#[test]
+fn token_file_reader_rejects_an_eos_outside_the_vocabulary_and_an_overflowing_offset() {
+    let path = scratch("eos");
+    let with_eos = |eos: MetaValue| {
+        let mut b = GgufBuilder::new();
+        b.meta(
+            "general.architecture",
+            MetaValue::String(TOKEN_FILE_ARCH.into()),
+        )
+        .meta("ferrum.tokens.version", MetaValue::U32(1))
+        .meta("ferrum.tokens.vocab_size", MetaValue::U32(300))
+        .meta("ferrum.tokens.token_count", MetaValue::U64(0))
+        .meta("ferrum.tokens.document_count", MetaValue::U64(0))
+        .meta("ferrum.tokens.eos_id", eos)
+        .meta(
+            "ferrum.tokens.tokenizer_sha256",
+            MetaValue::String("x".into()),
+        );
+        b.tensor("tokens", &[0], crate::gguf::GGML_I16, vec![]);
+        b.into_bytes()
+    };
+    for eos in [MetaValue::U32(300), MetaValue::String("x".into())] {
+        std::fs::write(&path, with_eos(eos)).unwrap();
+        let e = TokenFile::open(&path).unwrap_err().to_string();
+        assert!(e.contains("eos_id is outside the vocabulary"), "{e}");
+    }
+    // An empty tensor is exempt from the extent check, so its offset can be anything.
+    let mut bytes = with_eos(MetaValue::U32(299));
+    std::fs::write(&path, &bytes).unwrap();
+    assert_eq!(TokenFile::open(&path).unwrap().eos_id(), Some(299));
+    crate::gguf::patch_tensor_offset(&mut bytes, 0, u64::MAX);
+    std::fs::write(&path, &bytes).unwrap();
+    let e = TokenFile::open(&path).unwrap_err().to_string();
+    assert!(e.contains("tensor offset overflows"), "{e}");
+}

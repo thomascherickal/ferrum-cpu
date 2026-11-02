@@ -218,4 +218,78 @@ mod tests {
             "{e}"
         );
     }
+
+    #[test]
+    fn dequantizes_q5_0_and_q5_1_blocks() {
+        use crate::gguf::format::{GGML_Q5_0, GGML_Q5_1};
+        let f16_one = [0x00u8, 0x3C]; // 1.0
+        let f16_half = [0x00u8, 0x38]; // 0.5
+                                       // Q5_0: d, 4 bytes of high bits, 16 bytes of low nibbles; all zero bits give (0 - 16) * d.
+        let mut q50 = f16_one.to_vec();
+        q50.extend([0u8; 20]);
+        // Q5_1: d, m, 4 bytes of high bits, 16 bytes of nibbles; all zero bits give m.
+        let mut q51 = f16_one.to_vec();
+        q51.extend(f16_half);
+        q51.extend([0u8; 20]);
+        let mut b = GgufBuilder::new();
+        b.tensor("q50", &[32], GGML_Q5_0, q50);
+        b.tensor("q51", &[32], GGML_Q5_1, q51);
+        let g = Gguf::parse(b.into_bytes()).unwrap();
+        assert_eq!(
+            g.dequantize(g.tensor("q50").unwrap()).unwrap(),
+            vec![-16.0; 32]
+        );
+        assert_eq!(
+            g.dequantize(g.tensor("q51").unwrap()).unwrap(),
+            vec![0.5; 32]
+        );
+    }
+
+    fn f32_file() -> Gguf {
+        let mut b = GgufBuilder::new();
+        b.tensor("w", &[2], GGML_F32, vec![0; 8]);
+        Gguf::parse(b.into_bytes()).unwrap()
+    }
+
+    #[test]
+    fn tensor_bytes_rejects_an_offset_or_length_that_overflows() {
+        let g = f32_file();
+        let mut t = g.tensor("w").unwrap().clone();
+        t.offset = u64::MAX;
+        let e = g.tensor_bytes(&t).unwrap_err();
+        assert!(e.to_string().contains("tensor offset overflow"), "{e}");
+        // The start fits, start + length does not.
+        t.offset = (usize::MAX - g.data_offset() - 1) as u64;
+        let e = g.tensor_bytes(&t).unwrap_err();
+        assert!(e.to_string().contains("tensor length overflow"), "{e}");
+    }
+
+    #[test]
+    fn a_poisoned_file_lock_is_an_error_not_a_panic() {
+        let g = f32_file();
+        let path = std::env::temp_dir().join(format!("ferrum_poison_{}.gguf", std::process::id()));
+        let mut b = GgufBuilder::new();
+        b.tensor("w", &[2], GGML_F32, vec![0; 8]);
+        std::fs::write(&path, b.into_bytes()).unwrap();
+        let streamed = Gguf::open(path.to_str().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        // A thread dies holding the file lock (an in-memory file has no lock to poison).
+        let poison = |g: &Gguf| {
+            if let crate::gguf::Source::Streamed { file, .. } = &g.source {
+                let _ = std::thread::scope(|s| {
+                    s.spawn(|| {
+                        let _held = file.lock().unwrap();
+                        panic!("poison the file lock");
+                    })
+                    .join()
+                });
+            }
+        };
+        poison(&g);
+        poison(&streamed);
+        let t = streamed.tensor("w").unwrap().clone();
+        let e = streamed.tensor_bytes(&t).unwrap_err();
+        assert!(e.to_string().contains("lock poisoned"), "{e}");
+        assert!(g.tensor_bytes(&t).is_ok(), "an in-memory file has no lock");
+    }
 }

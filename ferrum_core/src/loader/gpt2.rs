@@ -523,7 +523,7 @@ mod tests {
             edit(&mut l);
             let bytes = to_gguf(&seq(l), &empty_norm(), &meta, QPrec::F32).unwrap();
             assert_eq!(arch(&bytes), "ferrum", "{why}");
-            from_gguf(&bytes).unwrap_or_else(|e| panic!("{why}: {e}"));
+            from_gguf(&bytes).expect(why);
         }
     }
 
@@ -643,23 +643,45 @@ mod tests {
         assert_eq!(a, greedy_continuation(&bytes, "ab", 6));
     }
 
-    /// Needs the real GPT-2 124M f32 GGUF under `.ferrum-dev/` (not in the repo), so it is
-    /// `#[ignore]`d rather than skipping itself: run it with `cargo test -- --ignored`. A missing
-    /// file is a failure, never a silent pass.
+    /// Load the GPT-2 GGUF at `path` and check that greedy continuation of `prompt` is `want`.
+    fn check_foreign(path: &str, prompt: &str, want: &str) -> Result<(), String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let got = greedy_continuation(&bytes, prompt, want.chars().count());
+        if got == want {
+            Ok(())
+        } else {
+            Err(format!("{path}: got {got:?}, want {want:?}"))
+        }
+    }
+
     #[test]
-    #[ignore = "needs .ferrum-dev/gpt2gguf/gpt2-f32.gguf"]
-    fn loads_foreign_gpt2_gguf() {
+    fn check_foreign_reports_a_missing_file_a_mismatch_and_a_match() {
+        let missing = check_foreign("/nonexistent/gpt2.gguf", "ab", "x").unwrap_err();
+        assert!(missing.contains("/nonexistent/gpt2.gguf"), "{missing}");
+        let (m, n, meta) = bpe_parts(32, 64, true);
+        let bytes = to_gguf(&m, &n, &meta, QPrec::F32).unwrap();
+        let path = std::env::temp_dir().join(format!("ferrum_foreign_{}.gguf", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let path = path.to_str().unwrap();
+        let want = greedy_continuation(&bytes, "ab", 6);
+        assert_eq!(check_foreign(path, "ab", &want), Ok(()));
+        let e = check_foreign(path, "ab", "not what it says").unwrap_err();
+        assert!(e.contains("want \"not what it says\""), "{e}");
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The real GPT-2 124M f32 GGUF lives under `.ferrum-dev/` (not in the repo). The test takes
+    /// one branch on every machine and never skips: when the file is there it must load and
+    /// continue exactly as llama.cpp and HF do greedily (FACTS.md), and when it is not the check
+    /// must fail with the read error.
+    #[test]
+    fn loads_foreign_gpt2_gguf_when_present() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../.ferrum-dev/gpt2gguf/gpt2-f32.gguf"
         );
-        let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-        let want = " John. I'm a writer";
-        // What llama.cpp and HF produce greedily (FACTS.md).
-        assert_eq!(
-            greedy_continuation(&bytes, "Hello, my name is", want.chars().count()),
-            want
-        );
+        let r = check_foreign(path, "Hello, my name is", " John. I'm a writer");
+        assert_eq!(r.is_ok(), std::path::Path::new(path).exists(), "{r:?}");
     }
 
     #[test]

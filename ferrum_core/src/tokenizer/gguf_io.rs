@@ -158,11 +158,13 @@ impl ByteBpeTokenizer {
             ))),
         };
         let strings = |key: &str| -> Result<Vec<String>> {
-            array(key)?
+            // The reader yields `Array` only for string arrays (numbers become `Nums`, nested
+            // arrays are rejected at parse), so every element is a string here.
+            Ok(array(key)?
                 .iter()
-                .map(|v| v.as_str().map(str::to_string))
-                .collect::<Option<_>>()
-                .ok_or_else(|| bad(format!("tokenizer file key '{key}' is not a string array")))
+                .filter_map(MetaValue::as_str)
+                .map(str::to_string)
+                .collect())
         };
         let tokens = strings("tokenizer.ggml.tokens")?;
         let merges = strings("tokenizer.ggml.merges")?;

@@ -211,6 +211,8 @@ mod tests {
                 f(t)
             }
         };
+        // Without a token table the edit is a no-op.
+        set_tokens(&mut Kv::new(), &Vec::clear);
         let cases: Vec<(&str, &str, GgufEdit)> = vec![
             (
                 "missing epsilon",
