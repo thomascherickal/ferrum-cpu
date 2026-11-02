@@ -75,3 +75,7 @@ path = "tests/test_bench_script.rs"
 [[test]]
 name = "test_token_training"
 path = "tests/test_token_training.rs"
+
+[[test]]
+name = "test_coverage_script"
+path = "tests/test_coverage_script.rs"

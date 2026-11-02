@@ -21,3 +21,7 @@ eval/lighteval/.hf-cache/
 # Output of scripts/build_wasm.sh
 /slm_wasm/pkg/
 /slm_wasm/demo/pkg/
+
+# coverage.py virtualenv and data (scripts/coverage.sh --py)
+.venv-cov/
+.coverage

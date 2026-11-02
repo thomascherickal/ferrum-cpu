@@ -51,7 +51,7 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, na
   else if (storage) sandbox.localStorage = storage;
   sandbox.window = sandbox; // like a browser: window === the global object
   vm.createContext(sandbox);
-  for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: f });
+  for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: path.join(__dirname, f) });
   return { doc, win, calls, listeners, intervals, emit: (name, payload) => listeners[name]({ payload }), fireWindow: (t) => (winListeners[t] || []).forEach((f) => f({ type: t })) };
 }
 

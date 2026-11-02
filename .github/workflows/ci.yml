@@ -93,6 +93,54 @@ jobs:
       - name: Run the Python tests
         run: python -m unittest discover -s eval/lighteval -p 'test_*.py'
 
+  # Line-coverage gate. Floors ratchet up with each Phase 1 task and reach 100 for Rust in Task 1.4.
+  # ponytail: the Rust floor (98) was set locally (98.19 % measured on a workstation); re-check it after
+  # the first CI run, because env-dependent lines (.ferrum-dev, tool-gated runtimes, core count, /proc)
+  # may cover differently here. GUI/JS/Python floors are the local measurements rounded down.
+  coverage:
+    name: Coverage (llvm-cov, Node, coverage.py)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ferrum_gui/target
+          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('**/Cargo.lock') }}
+      - name: Rust workspace
+        run: scripts/coverage.sh --rust --fail-under 98
+      - name: ferrum_gui Rust
+        run: scripts/coverage.sh --gui --fail-under 90
+      - name: UI JavaScript (the demo joins at Task 1.6)
+        run: FERRUM_JS_DIRS=ferrum_gui/ui scripts/coverage.sh --js --fail-under 98
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Python
+        run: |
+          python -m venv .venv-cov
+          .venv-cov/bin/pip install -r requirements-coverage.txt
+          scripts/coverage.sh --py --fail-under 67
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: target/coverage
+
   deny:
     name: cargo-deny (advisories, licenses, sources)
     runs-on: ubuntu-latest
