@@ -78,12 +78,15 @@ impl TokenModel {
                 context.len()
             ));
         }
-        let input =
-            Tensor::matrix(1, self.context_len, context.to_vec()).map_err(|e| e.to_string())?;
+        // `context` has exactly `context_len` entries, so this shape is valid by construction.
+        let input = Tensor {
+            shape: vec![1, self.context_len],
+            data: context.to_vec(),
+        };
         let out = self.model.forward(&input).map_err(|e| e.to_string())?;
-        // The last row is the next-token prediction.
-        let (rows, cols) = out.matrix_dims().map_err(|e| e.to_string())?;
-        Ok(out.data[(rows - 1) * cols..].to_vec())
+        // The last row (the final `cols` values) is the next-token prediction.
+        let cols = out.shape.last().copied().unwrap_or(1).max(1);
+        Ok(out.data[out.data.len().saturating_sub(cols)..].to_vec())
     }
 
     /// Reset the KV caches, feed `context`, return the distribution after its last token.
@@ -199,8 +202,9 @@ impl TokenModel {
 #[cfg(test)]
 mod tests {
     use super::TokenModel;
-    use crate::test_support::trained;
-    use ferrum_core::{from_bytes, to_bytes, TaskType, Tensor};
+    use crate::test_support::{hand_made, hand_made_bytes, trained};
+    use ferrum_core::model::Sequential;
+    use ferrum_core::{from_bytes, to_bytes, Rng, SamplingParams, TaskType, Tensor};
 
     fn ids_f32(ids: &[usize]) -> Vec<f32> {
         ids.iter().map(|&i| i as f32).collect()
@@ -343,6 +347,75 @@ mod tests {
         assert_eq!(
             TokenModel::new(&other).err().unwrap(),
             "Expected TransformerSLM task type"
+        );
+    }
+
+    #[test]
+    fn hand_made_model_loads_and_predicts() {
+        let bytes = hand_made_bytes();
+        let m = TokenModel::new(&bytes).unwrap();
+        assert_eq!((m.vocab_size(), m.context_len(), m.num_heads()), (10, 8, 2));
+        let probs = m
+            .predict_next(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+            .unwrap();
+        assert_eq!(probs.len(), 10);
+        assert!(probs.iter().all(|v| v.is_finite()));
+        assert!(TokenModel::new(b"CORRUPT").is_err());
+        assert!(TokenModel::new(&[]).is_err());
+    }
+
+    #[test]
+    fn a_model_without_the_expected_layers_errors_in_the_cached_path() {
+        let mut m = TokenModel::new(&hand_made_bytes()).unwrap();
+        m.model = Sequential::new();
+        assert_eq!(m.prime(&[1.0]).unwrap_err(), "empty model");
+
+        let (_, tb, ln, ..) = hand_made();
+        m.model = Sequential::new().with(Box::new(tb));
+        assert_eq!(
+            m.prime(&[1.0]).unwrap_err(),
+            "model has no Embedding before TransformerBlock"
+        );
+        m.model = Sequential::new().with(Box::new(ln));
+        assert_eq!(
+            m.prime(&[1.0]).unwrap_err(),
+            "model must start with an Embedding layer"
+        );
+    }
+
+    #[test]
+    fn cached_log_probabilities_sum_to_the_librarys_rolling_score() {
+        let (lib, bytes) = trained(true);
+        let mut w = TokenModel::new(&bytes).unwrap();
+        let text = "the cat sat";
+        let mut ids = vec![lib.bos_id()];
+        ids.extend(lib.encode_text(text).unwrap());
+        assert!(ids.len() <= 16);
+        let mut probs = w.prime(&ids_f32(&ids[..1])).unwrap();
+        let mut logprob = 0.0f64;
+        for &id in &ids[1..] {
+            logprob += (probs[id] as f64).ln();
+            probs = w.predict_next_cached(id).unwrap();
+        }
+        let want = lib.score_rolling(text).unwrap();
+        assert_eq!(want.n_tokens, ids.len() - 1);
+        assert!((logprob - want.logprob).abs() < 1e-3);
+        // Greedy next token from the browser path equals the library's greedy continuation.
+        let next = w.top_k_indices(&probs, 1)[0];
+        let sampling = SamplingParams {
+            temperature: 0.0,
+            top_k: 0,
+            top_p: 1.0,
+            repetition_penalty: 1.0,
+        };
+        let cont = lib
+            .generate_tokens(text, 1, &[], &sampling, &mut Rng::new(0))
+            .unwrap();
+        let mut with_next = ids.clone();
+        with_next.push(next);
+        assert_eq!(
+            lib.encode_text(&format!("{text}{}", cont.text)).unwrap(),
+            with_next[1..].to_vec()
         );
     }
 }

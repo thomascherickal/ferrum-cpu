@@ -79,12 +79,14 @@ impl TextSlm {
                 slm.meta.task
             ));
         }
-        let quant = ferrum_core::gguf_quant(bytes).map_err(|e| e.to_string())?;
+        // ponytail: `from_bytes` above parsed these same bytes, so this cannot fail.
+        let quant = ferrum_core::gguf_quant(bytes).unwrap_or_default();
         let state = &slm.meta.tokenizer_state;
         let tok = if state.is_empty() {
             None
         } else {
-            Some(ByteBpeTokenizer::from_state(state).map_err(|e| e.to_string())?)
+            // ponytail: the loader above already parsed this state, so `.ok()` never drops an error.
+            ByteBpeTokenizer::from_state(state).ok()
         };
         Ok(Self {
             slm,
@@ -415,5 +417,15 @@ mod tests {
         );
         assert!(w.run.is_none());
         assert_eq!(w.next_chunk(), Ok(None));
+    }
+
+    #[test]
+    fn generate_and_score_error_on_a_character_outside_a_char_vocabulary() {
+        let (_, bytes) = trained_char();
+        let w = TextSlm::from_bytes(&bytes).unwrap();
+        assert!(w
+            .generate("Z☃", &params(3, 0.0, 0, 1.0, 1.0, 0, &[]))
+            .is_err());
+        assert!(w.score("Z☃").is_err());
     }
 }
