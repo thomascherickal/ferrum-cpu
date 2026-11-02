@@ -387,4 +387,33 @@ mod tests {
         assert!(bad(1.0, 0, 1.0, 0.0));
         assert!(!bad(0.0, 0, 0.0, 1.0));
     }
+
+    #[test]
+    fn from_bytes_rejects_a_model_that_is_not_a_text_model() {
+        let (_, bytes) = trained(false);
+        let (model, norm, mut meta) = ferrum_core::from_bytes(&bytes).unwrap();
+        meta.task = ferrum_core::TaskType::Regression;
+        let other = ferrum_core::to_bytes(&model, &norm, &meta).unwrap();
+        let e = TextSlm::from_bytes(&other).err().unwrap();
+        assert!(e.starts_with("not a text model (task "), "{e}");
+        assert!(e.ends_with("expected a Ferrum transformer SLM"), "{e}");
+    }
+
+    #[test]
+    fn next_chunk_error_ends_the_generation() {
+        // Drive a BPE stream with a model whose vocabulary is smaller: the sampled id has no
+        // embedding row, the step fails, and the generation is dropped.
+        let (_, bytes) = trained(false);
+        let mut w = TextSlm::from_bytes(&bytes).unwrap();
+        w.start("the", &params(40, 1.0, 0, 1.0, 1.0, 1, &[]))
+            .unwrap();
+        w.slm = GenerativeSLM::from_bytes(&trained_char().1).unwrap();
+        let err = (0..200).find_map(|_| w.next_chunk().err());
+        assert!(
+            err.is_some(),
+            "the swapped model should reject a sampled id"
+        );
+        assert!(w.run.is_none());
+        assert_eq!(w.next_chunk(), Ok(None));
+    }
 }

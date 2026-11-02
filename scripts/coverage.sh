@@ -7,8 +7,8 @@ set -euo pipefail
 
 # 15 GB machine: low-memory build, always --release for the workspace, never beside another cargo.
 export CARGO_BUILD_JOBS=3 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-# Named in the plan, "What 100 % coverage means here": Tauri entry point (the CI boot smoke test runs it).
-EXCLUDE='ferrum_gui/src/main\.rs'
+# Named in the plan, "What 100 % coverage means here": Tauri entry point (the CI boot smoke test runs it) and slm_wasm/src/lib.rs (one-line wasm-bindgen forwards; the Node suite runs them, the logic is in text.rs / token_model.rs).
+EXCLUDE='ferrum_gui/src/main\.rs|slm_wasm/src/lib\.rs'
 # ferrum_gui pulls the workspace crates in by path; they are measured by --rust, not here.
 GUI_EXCLUDE="$EXCLUDE|/(ferrum_core|slm_cli|slm_server)/src/"
 

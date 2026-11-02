@@ -11,13 +11,13 @@
 #![forbid(unsafe_code)]
 
 mod text;
+mod token_model;
 
 #[cfg(test)]
 mod test_support;
 
-use ferrum_core::layer::{Embedding, KvCache, TransformerBlock};
-use ferrum_core::{from_bytes, TaskType};
 use text::{GenParams, TextSlm};
+use token_model::TokenModel;
 use wasm_bindgen::prelude::*;
 
 /// A text model in the browser: `new Slm(bytes)`, then `encode`, `decode`, `generate`, `score`.
@@ -171,17 +171,10 @@ impl Slm {
 /// const contextLength = slm.context_len();
 /// ```
 #[wasm_bindgen]
-pub struct TransformerSLMModel {
-    model: ferrum_core::Sequential,
-    meta_json: String,
-    vocab_size: usize,
-    context_len: usize,
-    num_heads: usize,
-    num_blocks: usize,
-    /// One KV cache per TransformerBlock, in layer order.
-    caches: Vec<KvCache>,
-    /// Sequence position of the next token fed to the cached path.
-    cache_pos: usize,
+pub struct TransformerSLMModel(TokenModel);
+
+fn js_val(e: String) -> JsValue {
+    JsValue::from_str(&e)
 }
 
 #[wasm_bindgen]
@@ -189,67 +182,32 @@ impl TransformerSLMModel {
     /// Construct from GGUF bytes.
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8]) -> Result<TransformerSLMModel, JsValue> {
-        let (model, _norm, meta) =
-            from_bytes(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        if meta.task != TaskType::TransformerSLM {
-            return Err(JsValue::from_str("Expected TransformerSLM task type"));
-        }
-
-        let vocab_size = meta.output_dim;
-        let context_len = meta.input_dim;
-
-        // Count transformer blocks, extract num_heads, and build one KV cache
-        // per block for the incremental generation path.
-        let mut num_blocks = 0usize;
-        let mut num_heads = 4usize; // default
-        let mut caches = Vec::new();
-        for layer in model.layers() {
-            if let Some(tb) = layer.as_any().downcast_ref::<TransformerBlock>() {
-                if num_blocks == 0 {
-                    num_heads = tb.num_heads();
-                }
-                num_blocks += 1;
-                caches.push(KvCache::new(tb.context_len(), tb.embedding_dim()));
-            }
-        }
-
-        let meta_json = meta.to_json();
-        Ok(Self {
-            model,
-            meta_json,
-            vocab_size,
-            context_len,
-            num_heads,
-            num_blocks,
-            caches,
-            cache_pos: 0,
-        })
+        Ok(Self(TokenModel::new(bytes).map_err(js_val)?))
     }
 
     /// Return model metadata JSON (vocab, context length, architecture details).
     pub fn metadata(&self) -> String {
-        self.meta_json.clone()
+        self.0.metadata()
     }
 
     /// Number of attention heads.
     pub fn num_heads(&self) -> usize {
-        self.num_heads
+        self.0.num_heads()
     }
 
     /// Vocabulary size (number of distinct tokens).
     pub fn vocab_size(&self) -> usize {
-        self.vocab_size
+        self.0.vocab_size()
     }
 
     /// Context length (number of characters the model sees at once).
     pub fn context_len(&self) -> usize {
-        self.context_len
+        self.0.context_len()
     }
 
     /// Number of Transformer blocks.
     pub fn num_layers(&self) -> usize {
-        self.num_blocks
+        self.0.num_layers()
     }
 
     /// Run inference on a context of token indices.
@@ -257,29 +215,7 @@ impl TransformerSLMModel {
     /// `context` must have exactly `context_len` elements (Float32Array of usize-as-f32).
     /// Returns a Float32Array of length `vocab_size` with next-token probabilities.
     pub fn predict_next(&self, context: &[f32]) -> Result<Vec<f32>, JsValue> {
-        if context.len() != self.context_len {
-            return Err(JsValue::from_str(&format!(
-                "Context must have exactly {} elements, got {}",
-                self.context_len,
-                context.len()
-            )));
-        }
-
-        let input = ferrum_core::Tensor::matrix(1, self.context_len, context.to_vec())
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        let out = self
-            .model
-            .forward(&input)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        // out is [1 * T, vocab] from the embedding chain, then [1, vocab] after lm_head.
-        // We want the last row (the next-token prediction).
-        let (rows, cols) = out
-            .matrix_dims()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let last_row_start = (rows - 1) * cols;
-        Ok(out.data[last_row_start..].to_vec())
+        self.0.predict_next(context).map_err(js_val)
     }
 
     /// Reset the KV caches and prime them with a context of token IDs.
@@ -289,67 +225,19 @@ impl TransformerSLMModel {
     /// O(T²) context. Returns the next-token probabilities after the last
     /// context token (same as `predict_next` on the full context).
     pub fn prime(&mut self, context: &[f32]) -> Result<Vec<f32>, JsValue> {
-        if context.is_empty() || context.len() > self.context_len {
-            return Err(JsValue::from_str(&format!(
-                "Context must have 1..={} tokens, got {}",
-                self.context_len,
-                context.len()
-            )));
-        }
-        for c in &mut self.caches {
-            c.clear();
-        }
-        self.cache_pos = 0;
-        let mut probs = Vec::new();
-        for &tok in context {
-            probs = self.feed_token(tok.round() as usize)?;
-        }
-        Ok(probs)
+        self.0.prime(context).map_err(js_val)
     }
 
     /// Feed one token through the KV-cached path and return the next-token
     /// probabilities. Requires a prior `prime()`. Errors when the cache is
     /// full (`context_len` positions) — re-`prime` with a fresh window then.
     pub fn predict_next_cached(&mut self, token_id: usize) -> Result<Vec<f32>, JsValue> {
-        if self.cache_pos == 0 {
-            return Err(JsValue::from_str(
-                "Call prime(context) before predict_next_cached",
-            ));
-        }
-        self.feed_token(token_id)
+        self.0.predict_next_cached(token_id).map_err(js_val)
     }
 
     /// Number of positions currently held in the KV caches.
     pub fn cached_len(&self) -> usize {
-        self.cache_pos
-    }
-
-    fn feed_token(&mut self, token: usize) -> Result<Vec<f32>, JsValue> {
-        let js = |e: ferrum_core::InferError| JsValue::from_str(&e.to_string());
-        let mut x: Option<ferrum_core::Tensor> = None;
-        let mut block_idx = 0usize;
-        for layer in self.model.layers() {
-            let any = layer.as_any();
-            if let Some(emb) = any.downcast_ref::<Embedding>() {
-                x = Some(emb.embed_one(token, self.cache_pos).map_err(js)?);
-            } else if let Some(tb) = any.downcast_ref::<TransformerBlock>() {
-                let cur = x.ok_or_else(|| {
-                    JsValue::from_str("model has no Embedding before TransformerBlock")
-                })?;
-                x = Some(
-                    tb.forward_with_cache(&cur, &mut self.caches[block_idx])
-                        .map_err(js)?,
-                );
-                block_idx += 1;
-            } else {
-                let cur =
-                    x.ok_or_else(|| JsValue::from_str("model must start with an Embedding layer"))?;
-                x = Some(layer.forward(&cur).map_err(js)?);
-            }
-        }
-        self.cache_pos += 1;
-        x.map(|t| t.data)
-            .ok_or_else(|| JsValue::from_str("empty model"))
+        self.0.cached_len()
     }
 
     /// Return the self-attention weights from the LAST Transformer block's last forward pass.
@@ -359,50 +247,24 @@ impl TransformerSLMModel {
     ///
     /// In JavaScript, index as: `attn[h * T * T + i * T + j]` where h=head, i=query pos, j=key pos.
     pub fn get_last_attention_weights(&self) -> Vec<f32> {
-        // Walk the layer list to find the last TransformerBlock
-        for layer in self.model.layers().iter().rev() {
-            if let Some(tb) = layer.as_any().downcast_ref::<TransformerBlock>() {
-                return tb.last_attention.borrow().clone();
-            }
-        }
-        vec![]
+        self.0.get_last_attention_weights()
     }
 
     /// Sample a next token index from probabilities using temperature scaling.
     /// `probs` = output of `predict_next`. `temperature` = 1.0 is neutral.
     /// Lower temperature → more deterministic. Higher → more random.
     pub fn sample_from_probs(&self, probs: &[f32], temperature: f32, random_value: f32) -> usize {
-        let scaled: Vec<f32> = probs
-            .iter()
-            .map(|&p| (p.ln() / temperature.max(0.01)).exp())
-            .collect();
-        let sum: f32 = scaled.iter().sum();
-        let normed: Vec<f32> = scaled.iter().map(|&v| v / sum).collect();
-        let mut cumsum = 0.0f32;
-        let r = random_value.clamp(0.0, 1.0 - 1e-7);
-        for (i, &p) in normed.iter().enumerate() {
-            cumsum += p;
-            if r <= cumsum {
-                return i;
-            }
-        }
-        normed.len() - 1
+        self.0.sample_from_probs(probs, temperature, random_value)
     }
 
     /// Compute Shannon entropy of a probability distribution (0 = certain, ln(V) = uniform).
     pub fn entropy(&self, probs: &[f32]) -> f32 {
-        probs
-            .iter()
-            .filter(|&&p| p > 1e-10)
-            .map(|&p| -p * p.ln())
-            .sum()
+        self.0.entropy(probs)
     }
 
     /// Return the top-k token indices sorted by probability (descending).
     pub fn top_k_indices(&self, probs: &[f32], k: usize) -> Vec<usize> {
-        let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
-        indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
-        indexed.iter().take(k).map(|&(i, _)| i).collect()
+        self.0.top_k_indices(probs, k)
     }
 }
 
