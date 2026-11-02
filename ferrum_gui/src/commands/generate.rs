@@ -7,6 +7,8 @@ use crate::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{GenerativeSLM, Rng, SamplingParams};
 use serde::Deserialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 #[derive(Deserialize)]
@@ -65,6 +67,7 @@ pub(super) fn sampling_from(
         top_k,
         top_p,
         repetition_penalty: rep_penalty,
+        ..SamplingParams::default()
     })
 }
 
@@ -96,19 +99,21 @@ fn parse_stops(raw: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Carried by `resume_unwind` out of the engine's text callback to end a cancelled generation.
-struct Cancelled;
-
 /// Generate exactly as `train_transformer generate` does for the same flags:
 /// a token budget or stop strings select the token path (`generate_tokens_with`,
 /// stop text excluded), otherwise `num_chars` characters. Returns seed +
 /// continuation; `on_text` receives only the continuation, as it is produced.
+/// Setting `cancel` ends it before the next token, with the text so far.
 fn generate_once(
     slm: &GenerativeSLM,
     p: &GenParams,
+    cancel: Arc<AtomicBool>,
     on_text: &mut dyn FnMut(&str),
 ) -> Result<String, String> {
-    let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
+    let params = SamplingParams {
+        cancel: Some(cancel),
+        ..sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?
+    };
     let stops = parse_stops(&p.stop);
     let mut rng = Rng::new(p.gen_seed.unwrap_or_else(time_seed));
     let out = if p.max_tokens > 0 || !stops.is_empty() {
@@ -126,34 +131,22 @@ fn generate_once(
 }
 
 /// [`generate_once`] that ends as soon as `cancelled()` answers true after a fragment, returning
-/// (seed + the text so far, true).
-///
-/// ponytail: the three decode loops in `ferrum_core` have no stop hook, so the callback unwinds
-/// (`resume_unwind` runs no panic hook and prints nothing) and `catch_unwind` stops here; the
-/// loops only borrow the model, so nothing is left half-built. Upgrade path: a cancel hook in
-/// `generate_stream_core` and the stream types.
+/// (seed + the text so far, true): the answer sets the engine's cancel flag, which every decode
+/// loop checks before its next token.
 pub(crate) fn run_generation(
     slm: &GenerativeSLM,
     p: &GenParams,
     cancelled: &dyn Fn() -> bool,
     on_text: &mut dyn FnMut(&str),
 ) -> Result<(String, bool), String> {
-    use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
-    let mut so_far = String::new();
-    let run = catch_unwind(AssertUnwindSafe(|| {
-        generate_once(slm, p, &mut |frag| {
-            so_far.push_str(frag);
-            on_text(frag);
-            if cancelled() {
-                resume_unwind(Box::new(Cancelled));
-            }
-        })
-    }));
-    match run {
-        Ok(text) => text.map(|t| (t, false)),
-        Err(payload) if payload.is::<Cancelled>() => Ok((format!("{}{so_far}", p.seed_text), true)),
-        Err(payload) => resume_unwind(payload),
-    }
+    let flag = Arc::new(AtomicBool::new(false));
+    let text = generate_once(slm, p, flag.clone(), &mut |frag| {
+        on_text(frag);
+        if cancelled() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    })?;
+    Ok((text, flag.load(Ordering::Relaxed)))
 }
 
 /// Load a model and generate text. With `stream = true`, each fragment is
@@ -277,6 +270,7 @@ mod tests {
             top_k: 5,
             top_p: 0.9,
             repetition_penalty: 1.2,
+            ..SamplingParams::default()
         };
         let g = slm
             .generate_tokens("the ", 25, &[], &params, &mut Rng::new(5))

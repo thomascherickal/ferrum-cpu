@@ -560,6 +560,7 @@ impl LlamaModel {
         if prompt.is_empty() {
             return Err(InferError::DimMismatch("prompt must be non-empty".into()));
         }
+        let cancelled = || cancelled() || params.is_cancelled();
         // The KV cache grows with every token, so the declared context window
         // bounds both the prompt and the generation (like llama.cpp's n_ctx);
         // otherwise a huge `max_new` would only end when memory does.
@@ -909,6 +910,18 @@ mod tests {
             .generate_cancellable(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &|| true)
             .unwrap();
         assert!(none.is_empty());
+        // The params' own cancel flag stops it too.
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let flagged = SamplingParams {
+            cancel: Some(flag),
+            ..params
+        };
+        let mut rng = Rng::new(7);
+        let out = model
+            .generate(&[1, 2, 3], 10, &flagged, &[], &mut rng)
+            .unwrap();
+        assert!(out.is_empty());
+        assert_eq!(rng.state(), Rng::new(7).state());
     }
 
     #[test]
@@ -950,6 +963,7 @@ mod tests {
             top_k: 1,
             top_p: 1.0,
             repetition_penalty: 1.0,
+            ..SamplingParams::default()
         };
         let a = m
             .generate(&[1, 2], 8, &params, &[], &mut Rng::new(7))

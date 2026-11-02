@@ -34,6 +34,7 @@ pub struct GenStream {
     reason: StopReason,
     stopped: bool,
     done: bool,
+    cancelled: bool,
 }
 
 impl GenStream {
@@ -53,6 +54,7 @@ impl GenStream {
             text: self.text,
             n_tokens: self.n_tokens,
             stop_reason: self.reason,
+            cancelled: self.cancelled,
         }
     }
 }
@@ -104,16 +106,26 @@ impl GenerativeSLM {
             reason: StopReason::MaxTokens,
             stopped: false,
             done: false,
+            cancelled: false,
         })
     }
 
     /// Advance `stream` by one token and return the text that became safe to show (possibly
     /// empty: a partial UTF-8 character or a possible stop-string prefix is held back), or `None`
     /// when the generation is over. The fragments concatenate to exactly the final text, and stop
-    /// text is never returned. `rng` must be the same generator on every call.
+    /// text is never returned. `rng` must be the same generator on every call. Once the params'
+    /// `cancel` flag is set it returns `None` before drawing another token, and the generation is
+    /// the text returned so far ([`Generation::cancelled`]).
     pub fn stream_next(&self, stream: &mut GenStream, rng: &mut Rng) -> Result<Option<String>> {
         let st = stream;
         if st.done {
+            return Ok(None);
+        }
+        if st.params.is_cancelled() {
+            // Keep exactly what was returned: a held-back stop prefix or half character is dropped.
+            st.text.truncate(st.emitted);
+            st.pending.clear();
+            (st.cancelled, st.done) = (true, true);
             return Ok(None);
         }
         if !st.stopped && st.n_tokens < st.max_tokens {
@@ -181,9 +193,11 @@ mod tests {
     use crate::slm::generate::StopReason;
     use crate::slm::sampling::SamplingParams;
     use crate::slm::test_support::{
-        bias_only_slm, tiny_bpe_slm, tiny_char_slm, tiny_eos_slm, tiny_utf8_slm,
+        bias_only_slm, cancellable, state_after_draws, tiny_bpe_slm, tiny_char_slm, tiny_eos_slm,
+        tiny_utf8_slm,
     };
     use crate::slm::GenerativeSLM;
+    use std::sync::atomic::Ordering;
 
     /// Pull a whole stream: the fragments and the final generation.
     fn pull(
@@ -212,6 +226,7 @@ mod tests {
             top_k: 6,
             top_p: 0.95,
             repetition_penalty: 1.1,
+            ..SamplingParams::default()
         };
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<String>>();
         // (model, prompt, two stop-string sets besides none)
@@ -277,6 +292,127 @@ mod tests {
         assert!(m
             .token_stream("a", 5, &[], &SamplingParams::default())
             .is_err());
+    }
+
+    /// The token-level loop with a flag that `on_text` sets after `k` callbacks.
+    fn tokens_cancelled_after(
+        m: &GenerativeSLM,
+        prompt: &str,
+        k: usize,
+        stops: &[String],
+        seed: u64,
+    ) -> (crate::slm::Generation, String, u64) {
+        let (p, flag) = cancellable(SamplingParams::default());
+        let mut rng = Rng::new(seed);
+        let (mut calls, mut streamed) = (0, String::new());
+        let g = m
+            .generate_tokens_with(prompt, 50, stops, &p, &mut rng, &mut |f| {
+                streamed.push_str(f);
+                calls += 1;
+                if calls >= k {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            })
+            .unwrap();
+        (g, streamed, rng.state())
+    }
+
+    #[test]
+    fn cancel_before_first_token_returns_seed_only() {
+        for m in [tiny_bpe_slm(), tiny_char_slm()] {
+            let (p, flag) = cancellable(SamplingParams::default());
+            flag.store(true, Ordering::Relaxed);
+            let mut rng = Rng::new(4);
+            let mut calls = 0;
+            let g = m
+                .generate_tokens_with("ab", 20, &[], &p, &mut rng, &mut |_| calls += 1)
+                .unwrap();
+            assert_eq!((g.text.as_str(), g.n_tokens, g.cancelled), ("", 0, true));
+            assert_eq!(g.stop_reason, StopReason::MaxTokens);
+            assert_eq!(calls, 0, "nothing is streamed");
+            assert_eq!(rng.state(), Rng::new(4).state(), "no RNG draw");
+        }
+    }
+
+    #[test]
+    fn cancel_after_k_tokens_returns_k_tokens() {
+        for m in [tiny_bpe_slm(), tiny_char_slm()] {
+            for k in [1, 3, 7] {
+                let (g, streamed, state) = tokens_cancelled_after(&m, "ab", k, &[], 6);
+                let want = m
+                    .generate_tokens("ab", k, &[], &SamplingParams::default(), &mut Rng::new(6))
+                    .unwrap();
+                assert_eq!((g.n_tokens, g.cancelled), (k, true), "k {k}");
+                assert_eq!(g.text, want.text, "k {k}");
+                assert_eq!(streamed, g.text);
+                assert_eq!(state, state_after_draws(6, k), "exactly k draws");
+            }
+        }
+    }
+
+    #[test]
+    fn cancel_mid_multibyte_keeps_valid_utf8() {
+        // Byte-level model: every token is one byte of a two-byte character.
+        let m = tiny_utf8_slm();
+        let mut dropped = false;
+        for k in 1..=6 {
+            let (g, streamed, _) = tokens_cancelled_after(&m, "\u{e9}", k, &[], 3);
+            assert!(!g.text.contains('\u{fffd}'), "k {k}: {:?}", g.text);
+            assert_eq!(streamed, g.text, "k {k}");
+            assert!(g.cancelled);
+            dropped |= g.text.len() < g.n_tokens;
+        }
+        assert!(
+            dropped,
+            "some cancel landed between the two bytes of a character"
+        );
+    }
+
+    #[test]
+    fn no_cancel_flag_is_bit_identical_to_today() {
+        let sampled = SamplingParams {
+            temperature: 0.9,
+            top_k: 5,
+            top_p: 0.9,
+            repetition_penalty: 1.2,
+            ..SamplingParams::default()
+        };
+        for m in [tiny_bpe_slm(), tiny_char_slm()] {
+            for p in [SamplingParams::default(), sampled.clone()] {
+                let (with_flag, _flag) = cancellable(p.clone());
+                let (mut a, mut b) = (Rng::new(8), Rng::new(8));
+                let want = m.generate_tokens("ab", 70, &[], &p, &mut a).unwrap();
+                let got = m
+                    .generate_tokens("ab", 70, &[], &with_flag, &mut b)
+                    .unwrap();
+                assert_eq!(got, want);
+                assert!(!got.cancelled);
+                assert_eq!(b.state(), a.state(), "same RNG draws");
+            }
+        }
+    }
+
+    #[test]
+    fn a_cancel_drops_held_back_stop_text_and_ends_the_stream() {
+        let m = tiny_bpe_slm();
+        let stops = vec!["t\u{1}".to_string()]; // every `t` is held back, the stop never lands
+        let (p, flag) = cancellable(SamplingParams::default());
+        let mut rng = Rng::new(2);
+        let mut s = m.token_stream("the c", 60, &stops, &p).unwrap();
+        let mut frags = String::new();
+        while s.text.len() == s.emitted {
+            frags.push_str(&m.stream_next(&mut s, &mut rng).unwrap().unwrap());
+        }
+        flag.store(true, Ordering::Relaxed);
+        let n = s.n_tokens();
+        assert_eq!(m.stream_next(&mut s, &mut rng).unwrap(), None);
+        assert!(s.is_done());
+        assert_eq!(m.stream_next(&mut s, &mut rng).unwrap(), None, "stays done");
+        assert_eq!(s.n_tokens(), n, "no token after the cancel");
+        let g = s.into_generation();
+        assert!(g.cancelled);
+        assert_eq!(g.text, frags, "the fragments are the whole text");
+        assert!(!g.text.ends_with('t'));
     }
 
     #[test]

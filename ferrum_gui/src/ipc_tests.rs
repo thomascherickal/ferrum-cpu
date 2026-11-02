@@ -335,6 +335,36 @@ fn tiny_model_train_generate_evaluate_inspect_end_to_end_with_events() {
     .unwrap_err();
     assert!(msg(&bad).contains("temperature"), "{bad}");
 
+    // cancel_job ends a streamed generation through the engine's cancel flag: the text so far
+    // comes back (no unwinding), it is exactly the streamed fragments, and the slot is freed.
+    let before = frags.lock().unwrap().len();
+    let (w2, m2) = (w.clone(), model.clone());
+    let long = std::thread::spawn(move || {
+        call(
+            &w2,
+            "generate_slm",
+            json!({"params": {"modelPath": m2, "seedText": "the ", "numChars": 1_000_000, "temp": 0.8,
+                "genSeed": 3, "stream": true, "verbose": false}}),
+        )
+    });
+    wait_for(&frags, before + 1);
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "generate"})).unwrap(),
+        true
+    );
+    let part = long.join().unwrap().unwrap();
+    let part = part.as_str().unwrap();
+    assert!(part.starts_with("the ") && part.chars().count() < 1_000_004);
+    let streamed: String = frags.lock().unwrap()[before..]
+        .iter()
+        .map(|p| serde_json::from_str::<String>(p).unwrap())
+        .collect();
+    assert_eq!(format!("the {streamed}"), part);
+    assert_eq!(
+        call(&w, "cancel_job", json!({"kind": "generate"})).unwrap(),
+        false
+    );
+
     let ev = call(&w, "evaluate_slm", json!({"params": {"modelPath": model, "text": "the lazy dog. the quick brown fox.", "textPath": null}})).unwrap();
     let ev = &ev.as_array().unwrap()[0];
     assert!(ev["perplexity"].as_f64().unwrap() > 0.0 && ev["numPredictions"].as_u64().unwrap() > 0);

@@ -86,6 +86,7 @@ fn handle(model: &GenerativeSLM, job: Job) {
                         top_k: g.top_k,
                         top_p: g.top_p,
                         repetition_penalty: 1.0,
+                        ..SamplingParams::default()
                     };
                     model
                         .generate_tokens(

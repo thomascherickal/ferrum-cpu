@@ -407,6 +407,7 @@ mod tests {
             top_k: 0,
             top_p: 1.0,
             repetition_penalty: 1.0,
+            ..SamplingParams::default()
         };
         let cont = lib
             .generate_tokens(text, 1, &[], &sampling, &mut Rng::new(0))

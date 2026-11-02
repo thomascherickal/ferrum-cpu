@@ -24,6 +24,10 @@ pub struct Generation {
     /// itself is not counted).
     pub n_tokens: usize,
     pub stop_reason: StopReason,
+    /// The `cancel` flag of [`SamplingParams`] ended the generation: `text` is
+    /// what was produced (and streamed) before it, and `stop_reason` is
+    /// [`StopReason::MaxTokens`].
+    pub cancelled: bool,
 }
 
 impl GenerativeSLM {
@@ -330,6 +334,7 @@ mod tests {
             top_k: 3,
             top_p: 0.9,
             repetition_penalty: 1.2,
+            ..SamplingParams::default()
         };
         let a = slm
             .generate_with("abca", 10, &params, &mut Rng::new(99))
@@ -575,7 +580,8 @@ mod tests {
             Generation {
                 text: String::new(),
                 n_tokens: 0,
-                stop_reason: StopReason::MaxTokens
+                stop_reason: StopReason::MaxTokens,
+                cancelled: false,
             }
         );
     }
@@ -908,6 +914,7 @@ mod tests {
                                 top_k: k,
                                 top_p: p,
                                 repetition_penalty: r,
+                                ..SamplingParams::default()
                             };
                             for seed in seeds {
                                 for n in [0usize, 1, 5] {

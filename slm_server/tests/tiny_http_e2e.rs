@@ -68,6 +68,7 @@ fn greedy() -> SamplingParams {
         top_k: 0,
         top_p: 1.0,
         repetition_penalty: 1.0,
+        ..SamplingParams::default()
     }
 }
 

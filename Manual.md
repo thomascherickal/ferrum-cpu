@@ -1173,7 +1173,7 @@ stop strings and returns the continuation only:
 ```rust
 use ferrum_core::{Rng, SamplingParams};
 
-let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1 };
+let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1, ..SamplingParams::default() };
 let g = slm.generate_tokens("Once upon a time", 100, &["\n\n".to_string()], &p, &mut Rng::new(1))?;
 println!("{} ({} tokens, {:?})", g.text, g.n_tokens, g.stop_reason);
 ```
@@ -1182,7 +1182,7 @@ println!("{} ({} tokens, {:?})", g.text, g.n_tokens, g.stop_reason);
 `generate_with`, `generate_until`, and `generate_stream` are unchanged:
 
 ```rust
-let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1 };
+let p = SamplingParams { temperature: 0.7, top_k: 40, top_p: 0.9, repetition_penalty: 1.1, ..SamplingParams::default() };
 let text  = slm.generate_with("Once upon a time", 200, &p, &mut Rng::new(1))?;
 let reply = slm.generate_continuation("Q: hi\nA:", 80, 0.5, &mut Rng::new(1))?; // without the seed
 let line  = slm.generate_until("Q: hi\nA:", 200, "\n", &p, &mut Rng::new(1))?;  // stop at newline
@@ -1191,6 +1191,29 @@ let full  = slm.generate_stream("the", 100, 0.7, &mut Rng::new(1), |frag| print!
 
 `format!("{seed}{continuation}") == generate(seed, …)`, and the concatenated
 stream equals the continuation.
+
+**Cancel.** `SamplingParams.cancel` is an optional `Arc<AtomicBool>`. Set it
+from any thread (or from the text callback) and every decode loop
+(`generate*`, `generate_tokens[_with]`, `stream_next`, and
+`LlamaModel::generate[_cancellable]`) stops before its next token and returns
+`Ok` with the text it has already streamed; a half-finished UTF-8 character or a
+held-back stop-string prefix is dropped. `Generation.cancelled` says so, and
+`stream_next` returns `None`. A cancelled run draws no further random numbers,
+and with the flag unset (or `None`, the default) output is bit-identical to a
+run without it. It is a plain flag, not a clock, so it also works in the wasm
+build:
+
+```rust
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+
+let stop = Arc::new(AtomicBool::new(false));
+let p = SamplingParams { cancel: Some(stop.clone()), ..SamplingParams::default() };
+let g = slm.generate_tokens_with("Once", 500, &[], &p, &mut Rng::new(1), &mut |frag| {
+    print!("{frag}");
+    if frag.contains('.') { stop.store(true, Ordering::Relaxed); } // or from a Cancel button
+})?;
+println!("\ncancelled: {}", g.cancelled);
+```
 
 ---
 
@@ -1622,6 +1645,10 @@ token is refused at startup (exit 1) unless you pass `--allow-unauthenticated`;
 the startup line then says `auth OFF (--allow-unauthenticated: ...)`. On
 loopback with no token the server stays open, and says `auth OFF (loopback
 only)`. The routes are Ferrum's own; there are no OpenAI-compatible routes.
+
+A `/v1/generate` request runs to its `max_tokens` even if the client hangs up.
+The library's cancel flag (`SamplingParams.cancel`) could end it on a
+disconnect; the server does not wire that up yet.
 
 ### 9.8 Evaluating with LightEval
 
@@ -2459,8 +2486,10 @@ generation.
 | Evaluate | `evaluate(text) -> Evaluation { num_predictions, cross_entropy, bits_per_token, perplexity }`; `score(context, continuation)` and `score_rolling(text)` return `Score { logprob, n_tokens, greedy }` (§8.3) |
 | Persist | `to_bytes` (f32), `to_bytes_quantized` (int8), `to_bytes_quantized_int4`, `save` (int8), `save_int4`, `load`, `from_bytes` |
 
-`SamplingParams { temperature, top_k, top_p, repetition_penalty }`;
-`SamplingParams::with_temperature(t)` reproduces temperature-only sampling.
+`SamplingParams { temperature, top_k, top_p, repetition_penalty, cancel }`
+(build it with `..SamplingParams::default()`; `cancel` is the cooperative stop
+flag of §7.1, ignored by `==`); `SamplingParams::with_temperature(t)` reproduces
+temperature-only sampling. `Generation { text, n_tokens, stop_reason, cancelled }`.
 
 ### 12.5 The BPE tokenizer
 

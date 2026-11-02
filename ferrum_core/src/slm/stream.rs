@@ -72,8 +72,8 @@ impl GenerativeSLM {
 
         for step in 0..num_chars {
             let current_len = generated.chars().count();
-            if current_len == 0 {
-                break; // nothing to condition on
+            if current_len == 0 || params.is_cancelled() {
+                break; // nothing to condition on, or cancelled
             }
             // Short seeds are left-padded with token 0 (as the BPE path does).
             let pad = context_len.saturating_sub(current_len);
@@ -208,6 +208,9 @@ impl GenerativeSLM {
         let mut dist = cached.prime(&window)?;
 
         for step in 0..num_chars {
+            if params.is_cancelled() {
+                break;
+            }
             // The model ends in Softmax; convert probabilities back to log-space
             // so temperature scaling behaves exactly as on the full-forward path.
             let logits: Vec<f32> = dist.iter().map(|&p| p.max(1e-12).ln()).collect();
@@ -312,6 +315,11 @@ impl GenerativeSLM {
             let mut budget = num_chars;
             let mut steps = 0;
             while cont_chars < num_chars && steps < max_steps {
+                if params.is_cancelled() {
+                    // Return what was streamed: a half character in `pending` is dropped.
+                    pending.clear();
+                    break;
+                }
                 let logits: Vec<f32> = dist.iter().map(|&p| p.max(1e-12).ln()).collect();
                 let next = sample_with_params(&logits, params, &window, rng);
                 if Some(next) == eos {
@@ -386,8 +394,12 @@ impl GenerativeSLM {
                 emitted_cont = avail;
             }
         };
-        let mut steps = 0;
+        let (mut steps, mut cancelled) = (0, false);
         while tok.decode(&ids).chars().count() < target_chars && steps < max_steps {
+            if params.is_cancelled() {
+                cancelled = true;
+                break;
+            }
             let mut ctx: Vec<f32> = Vec::with_capacity(context_len);
             if ids.len() < context_len {
                 ctx.resize(context_len - ids.len(), 0.0);
@@ -420,8 +432,12 @@ impl GenerativeSLM {
             flush(&full, budget, on_text);
         }
         let full = tok.decode(&ids);
-        flush(&full, budget, on_text);
-        Ok(full.chars().take(seed_chars + budget).collect())
+        if !cancelled {
+            flush(&full, budget, on_text);
+        }
+        // A cancelled run returns exactly what was streamed.
+        let keep = if cancelled { emitted_cont } else { budget };
+        Ok(full.chars().take(seed_chars + keep).collect())
     }
 }
 
@@ -434,10 +450,109 @@ mod tests {
     use crate::slm::sampling::SamplingParams;
     use crate::slm::test_support::bias_only_slm;
     use crate::slm::test_support::{
-        constant_bpe_slm, feeds, greedy, tiny_bpe_slm, tiny_char_slm, tiny_eos_slm, tiny_utf8_slm,
+        cancellable, constant_bpe_slm, feeds, greedy, state_after_draws, tiny_bpe_slm,
+        tiny_char_slm, tiny_eos_slm, tiny_utf8_slm,
     };
     use crate::slm::GenerativeSLM;
     use crate::tokenizer::ByteBpeTokenizer;
+    use std::sync::atomic::Ordering;
+
+    /// One model per character-budget decode loop: BPE cached, char cached, char full-forward,
+    /// BPE full-forward.
+    fn every_loop() -> Vec<GenerativeSLM> {
+        vec![
+            tiny_bpe_slm(),
+            tiny_char_slm(),
+            bias_only_slm(),
+            // Only `a`, `b` and `c` have mass: ASCII, one character per token.
+            constant_bpe_slm(|t| {
+                let mut b = vec![0.0; t.vocab_size()];
+                b[b'a' as usize..=b'c' as usize].fill(30.0);
+                b
+            }),
+        ]
+    }
+
+    #[test]
+    fn a_set_cancel_flag_returns_the_seed_and_draws_nothing_in_every_loop() {
+        for (i, m) in every_loop().iter().enumerate() {
+            let (p, flag) = cancellable(SamplingParams::default());
+            flag.store(true, Ordering::Relaxed);
+            let mut rng = Rng::new(4);
+            let mut calls = 0;
+            let out = m
+                .generate_stream_with("ab", 30, &p, &mut rng, |_| calls += 1)
+                .unwrap();
+            assert_eq!(out, "ab", "loop {i}");
+            assert_eq!(calls, 0, "loop {i}");
+            assert_eq!(rng.state(), Rng::new(4).state(), "loop {i}");
+            // `generate_with` and the stop-string path go through the same loops.
+            assert_eq!(
+                m.generate_with("ab", 30, &p, &mut Rng::new(4)).unwrap(),
+                "ab"
+            );
+            assert_eq!(
+                m.generate_until("ab", 30, "zz", &p, &mut Rng::new(4))
+                    .unwrap(),
+                "ab"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cancel_after_k_fragments_stops_every_loop_after_k_tokens() {
+        for (i, m) in every_loop().iter().enumerate() {
+            let k = 3;
+            let (p, flag) = cancellable(SamplingParams::default());
+            let mut rng = Rng::new(6);
+            let (mut calls, mut streamed) = (0, String::new());
+            let out = m
+                .generate_stream_with("ab", 200, &p, &mut rng, |f| {
+                    streamed.push_str(f);
+                    calls += 1;
+                    if calls == k {
+                        flag.store(true, Ordering::Relaxed);
+                    }
+                })
+                .unwrap();
+            assert_eq!(calls, k, "loop {i}");
+            assert_eq!(out, format!("ab{streamed}"), "loop {i}: the text so far");
+            assert!(!out.contains('\u{fffd}'), "loop {i}");
+            // ASCII models: one fragment per token, one draw per token.
+            assert_eq!(rng.state(), state_after_draws(6, k), "loop {i}");
+            let full = m
+                .generate_stream_with(
+                    "ab",
+                    200,
+                    &SamplingParams::default(),
+                    &mut Rng::new(6),
+                    |_| {},
+                )
+                .unwrap();
+            assert!(full.starts_with(&out) && full.len() > out.len(), "loop {i}");
+        }
+    }
+
+    #[test]
+    fn an_unset_cancel_flag_changes_no_loop() {
+        for (i, m) in every_loop().iter().enumerate() {
+            let p = SamplingParams {
+                temperature: 0.9,
+                top_k: 4,
+                repetition_penalty: 1.2,
+                ..SamplingParams::default()
+            };
+            let (with_flag, _flag) = cancellable(p.clone());
+            let (mut a, mut b) = (Rng::new(3), Rng::new(3));
+            let want = m.generate_with("ab", 80, &p, &mut a).unwrap();
+            assert_eq!(
+                m.generate_with("ab", 80, &with_flag, &mut b).unwrap(),
+                want,
+                "loop {i}"
+            );
+            assert_eq!(a.state(), b.state(), "loop {i}");
+        }
+    }
 
     #[test]
     fn bpe_generation_reprimes_once_per_half_window() {

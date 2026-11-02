@@ -62,6 +62,7 @@ impl GenParams {
                 top_k,
                 top_p,
                 repetition_penalty,
+                ..SamplingParams::default()
             },
             seed,
             stop,

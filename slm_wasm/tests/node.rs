@@ -57,6 +57,7 @@ fn sampling(t: f32, k: usize, p: f32) -> SamplingParams {
         top_k: k,
         top_p: p,
         repetition_penalty: 1.0,
+        ..SamplingParams::default()
     }
 }
 

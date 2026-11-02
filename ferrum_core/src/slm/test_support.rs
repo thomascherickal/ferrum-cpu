@@ -11,6 +11,8 @@ use crate::slm::GenerativeSLM;
 use crate::tensor::Tensor;
 use crate::tokenizer::ByteBpeTokenizer;
 use crate::train_transformer::TransformerNet;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 /// A small, genuine decoder-only transformer as an inference `Sequential`
 /// (`Embedding → TransformerBlock×2 → LayerNorm → Linear → Softmax`).
@@ -126,6 +128,26 @@ pub(super) fn bias_only_slm() -> GenerativeSLM {
         },
         meta,
     )
+}
+
+/// `p` with a fresh cancel flag, returned so the test can set it.
+pub(super) fn cancellable(p: SamplingParams) -> (SamplingParams, Arc<AtomicBool>) {
+    let flag = Arc::new(AtomicBool::new(false));
+    let p = SamplingParams {
+        cancel: Some(flag.clone()),
+        ..p
+    };
+    (p, flag)
+}
+
+/// `rng`'s state after `n` draws of one `next_f32` each (what a temperature-only sampler takes
+/// per token).
+pub(super) fn state_after_draws(seed: u64, n: usize) -> u64 {
+    let mut r = Rng::new(seed);
+    for _ in 0..n {
+        r.next_f32();
+    }
+    r.state()
 }
 
 pub(super) fn greedy() -> SamplingParams {

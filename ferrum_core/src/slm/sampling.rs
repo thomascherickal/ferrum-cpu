@@ -1,5 +1,7 @@
 //! Decoding controls and the temperature / top-k / top-p / repetition-penalty sampler.
 use crate::rng::Rng;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Decoding controls for generation (I2). Beyond temperature, these add the
 /// standard knobs that tame the repetition loops a temperature-only sampler
@@ -14,13 +16,33 @@ use crate::rng::Rng;
 /// [`SamplingParams::with_temperature`] reproduces the previous temperature-only
 /// behaviour exactly (all other knobs disabled), so `generate(.., temp, ..)` is
 /// unchanged.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// `cancel` is a cooperative stop for the decode loops: set the flag (from any
+/// thread) and every [`crate::GenerativeSLM`] decode loop, and
+/// [`crate::llm::LlamaModel::generate_cancellable`], stops before its next token
+/// and returns what it has. It is a plain flag, not a clock, so it works on
+/// `wasm32-unknown-unknown`. `Clone` shares the flag, so a stream made from these
+/// params still sees it. `PartialEq` ignores it (it is a control, not a setting).
+#[derive(Clone, Debug)]
 pub struct SamplingParams {
     /// Softmax temperature; `<= 0` selects greedy argmax decoding.
     pub temperature: f32,
     pub top_k: usize,
     pub top_p: f32,
     pub repetition_penalty: f32,
+    /// Cooperative cancel flag, checked once per token (`None`: never cancelled).
+    pub cancel: Option<Arc<AtomicBool>>,
+}
+
+impl PartialEq for SamplingParams {
+    fn eq(&self, o: &Self) -> bool {
+        (
+            self.temperature,
+            self.top_k,
+            self.top_p,
+            self.repetition_penalty,
+        ) == (o.temperature, o.top_k, o.top_p, o.repetition_penalty)
+    }
 }
 
 impl Default for SamplingParams {
@@ -30,11 +52,19 @@ impl Default for SamplingParams {
             top_k: 0,
             top_p: 1.0,
             repetition_penalty: 1.0,
+            cancel: None,
         }
     }
 }
 
 impl SamplingParams {
+    /// Has the `cancel` flag been set?
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::Relaxed))
+    }
+
     /// Temperature-only sampling (top-k / top-p / repetition penalty disabled) —
     /// identical to the pre-I2 sampler.
     pub fn with_temperature(temperature: f32) -> Self {
@@ -194,6 +224,21 @@ mod tests {
     }
 
     #[test]
+    fn equality_ignores_the_cancel_flag_and_clones_share_it() {
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let p = SamplingParams {
+            cancel: Some(flag.clone()),
+            ..SamplingParams::default()
+        };
+        assert_eq!(p, SamplingParams::default());
+        assert_ne!(p, SamplingParams::with_temperature(0.5));
+        let q = p.clone();
+        assert!(!q.is_cancelled() && !SamplingParams::default().is_cancelled());
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(q.is_cancelled(), "a clone sees a flag set later");
+    }
+
+    #[test]
     fn sampling_top_p_one_equals_disabled() {
         let logits = [0.5f32, -1.2, 2.3, 0.0, 1.1];
         let off = SamplingParams::default();
@@ -253,6 +298,7 @@ mod tests {
             top_k: 2,
             top_p: 1.0,
             repetition_penalty: 1.0,
+            ..SamplingParams::default()
         };
         let mut rng = Rng::new(7);
         for _ in 0..500 {
@@ -273,6 +319,7 @@ mod tests {
             top_k: 0,
             top_p: 0.5,
             repetition_penalty: 1.0,
+            ..SamplingParams::default()
         };
         let mut rng = Rng::new(3);
         for _ in 0..500 {
@@ -290,6 +337,7 @@ mod tests {
             top_k: 0,
             top_p: 1.0,
             repetition_penalty: 100.0,
+            ..SamplingParams::default()
         };
         let mut rng = Rng::new(11);
         let mut ones = 0;

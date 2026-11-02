@@ -65,6 +65,7 @@ pub(crate) fn sampling_params(
         top_k: args.get("top-k", 0),
         top_p: args.get("top-p", 1.0),
         repetition_penalty: args.get(rep_flag, 1.0),
+        ..Default::default()
     };
     check_temp(params.temperature)?;
     if !(params.top_p.is_finite() && (0.0..=1.0).contains(&params.top_p)) {
