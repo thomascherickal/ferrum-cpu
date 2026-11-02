@@ -5,9 +5,11 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const src = fs
-  .readFileSync(path.join(__dirname, "worker.js"), "utf8")
-  .replace(/^import .*$/m, "");
+const vm = require("vm");
+const file = path.join(__dirname, "worker.js");
+// Blank the import line (keeps line numbers) and run the rest under worker.js's own absolute
+// filename, so V8 attributes coverage to the real file.
+const src = fs.readFileSync(file, "utf8").replace(/^import .*$/m, "");
 assert(!/^import /m.test(src), "the import line was not removed");
 
 const busy = (ms) => { for (const t = Date.now(); Date.now() - t < ms; ); };
@@ -33,7 +35,7 @@ function fakeSlm(n, ms) {
 function boot(Slm) {
   const out = [];
   const self = { postMessage: (m) => out.push(m) };
-  new Function("self", "init", "Slm", src)(self, async () => {}, Slm);
+  vm.runInNewContext(src, { self, init: async () => {}, Slm, setTimeout, performance, Uint8Array, Error, String }, { filename: file });
   const waiters = [];
   const poll = () => { for (const w of [...waiters]) if (out.some(w.pred)) { waiters.splice(waiters.indexOf(w), 1); w.ok(); } };
   const push = out.push.bind(out);
@@ -88,5 +90,16 @@ const text = (out, id) => out.filter((m) => m.type === "chunk" && m.id === id).m
   w.post({ ...gen, id: 2, max_tokens: 3 });
   await w.wait((m) => m.type === "done" && m.id === 2);
   assert(w.out.some((m) => m.type === "done" && m.id === 1 && m.cancelled));
+  // A cancel with no model loaded is harmless; a constructor failure becomes an error message.
+  w = boot(fakeSlm(1, 0));
+  w.post({ type: "cancel" });
+  w.post({ type: "load", bytes: -1 });
+  await w.wait((m) => m.type === "error");
+  assert.strictEqual(w.out.length, 1);
+  assert.strictEqual(w.out[0].id, undefined);
+  w = boot(class { constructor() { throw "plain string"; } });
+  w.post({ type: "load", bytes: new ArrayBuffer(1) });
+  await w.wait((m) => m.type === "error");
+  assert.strictEqual(w.out[0].message, "plain string");
   console.log("worker.test.js: ok");
 })().catch((e) => { console.error(e); process.exit(1); });

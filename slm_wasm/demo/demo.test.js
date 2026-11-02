@@ -53,4 +53,91 @@ for (const f of labelled) assert(ids.has(f), `<label for="${f}"> points nowhere`
 assert(/<html lang="\w+"/.test(html), "no lang attribute");
 for (const m of html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)) assert(m[1].trim(), "empty button");
 
-console.log("demo.test.js: ok");
+// Run demo.js itself (absolute filename, so coverage is attributed to it) against a stub page.
+const vm = require("vm");
+function page(search, fetchImpl) {
+  const els = {};
+  const el = (id) => (els[id] ||= {
+    id, textContent: "", value: "", hidden: false, disabled: false, dataset: {}, files: [],
+    classList: { add(c) { this.c = c; }, remove() { this.c = null; } },
+  });
+  for (const [k, v] of Object.entries({ "max-tokens": "5.9", temperature: "0.5", "top-k": "3", "top-p": "1", seed: "7", prompt: "hi" })) el(k).value = v;
+  const worker = { sent: [], postMessage(m) { this.sent.push(m); } };
+  const ctx = {
+    document: { getElementById: el }, Worker: function () { return worker; },
+    URLSearchParams, location: { search }, performance, fetch: fetchImpl, Number, Math, JSON, Error, Promise,
+  };
+  vm.runInNewContext(js, ctx, { filename: path.join(__dirname, "demo.js") });
+  return { el, worker };
+}
+const flush = () => new Promise((r) => setImmediate(r));
+(async () => {
+  let { el, worker } = page("");
+  const msg = (m) => worker.onmessage({ data: m });
+  // A generate request carries the parsed controls; the page disables Generate until a model loads.
+  el("generate").onclick();
+  assert.strictEqual(worker.sent[0].max_tokens, 5);
+  assert.strictEqual(worker.sent[0].seed, 7);
+  assert.strictEqual(el("stop").disabled, false);
+  // Model info, chunks, a stale id, done, and a stopped run.
+  msg({ type: "ready", info: '{"params":1500,"tokenizer":"bpe","vocab":9,"context":4,"quant":"F32"}' });
+  assert.match(el("model-info").textContent, /^1,?500 parameters, bpe tokenizer, vocabulary 9, context 4, F32\.$/);
+  el("generate").onclick();
+  msg({ type: "chunk", id: 2, text: "ab" });
+  msg({ type: "chunk", id: 1, text: "stale" });
+  assert.strictEqual(el("output").textContent, "ab");
+  assert.match(el("stats").textContent, /2 characters so far/);
+  msg({ type: "done", id: 2, tokens: 4, ms: 1000, cancelled: true });
+  assert.strictEqual(el("stats").textContent, "4 tokens, 4.0 tokens/s (stopped)");
+  msg({ type: "done", id: 2, tokens: 0, ms: 0, cancelled: false });
+  assert.strictEqual(el("stats").textContent, "0 tokens, 0.0 tokens/s");
+  el("stop").onclick();
+  assert.strictEqual(JSON.stringify(worker.sent.at(-1)), '{"type":"cancel"}');
+  // Errors: a run's error shows; with no model the info line resets; an old run's error is ignored.
+  el("model-info").dataset = {};
+  msg({ type: "error", id: 2, message: "boom" });
+  assert.strictEqual(el("error").textContent, "boom");
+  assert.strictEqual(el("model-info").textContent, "No model loaded.");
+  msg({ type: "error", id: 99, message: "old" });
+  assert.strictEqual(el("error").textContent, "boom");
+  worker.onerror({});
+  assert.match(el("error").textContent, /see the console/);
+  worker.onerror({ message: "x" });
+  assert.match(el("error").textContent, /: x$/);
+  // A bad number is reported, not sent.
+  el("top-p").value = "abc";
+  const before = worker.sent.length;
+  el("generate").onclick();
+  assert.strictEqual(el("error").textContent, "top-p must be a number");
+  assert.strictEqual(worker.sent.length, before);
+  // File picking and drag/drop load through the worker; an unreadable file reports.
+  const file = { arrayBuffer: async () => new ArrayBuffer(3) };
+  el("model-file").onchange({ target: { files: [] } });
+  el("model-file").onchange({ target: { files: [file] } });
+  await flush();
+  assert.strictEqual(worker.sent.at(-1).type, "load");
+  assert.strictEqual(el("model-info").textContent, "Loading...");
+  let prevented = 0;
+  const ev = (f) => ({ preventDefault: () => prevented++, dataTransfer: { files: f } });
+  el("drop").ondragover(ev([]));
+  assert.strictEqual(el("drop").classList.c, "over");
+  el("drop").ondragleave();
+  el("drop").ondrop(ev([]));
+  el("drop").ondrop(ev([{ arrayBuffer: async () => { throw new Error("denied"); } }]));
+  await flush();
+  assert.strictEqual(prevented, 3);
+  assert.strictEqual(el("error").textContent, "Cannot read the file: denied");
+  assert.strictEqual(el("model-info").textContent, "No model loaded.");
+  // ?model=URL: fetched and loaded, or the failure is shown.
+  const ok = { ok: true, arrayBuffer: async () => new ArrayBuffer(1) };
+  let p = page("?model=m.gguf", async () => ok);
+  await flush();
+  assert.strictEqual(p.worker.sent[0].type, "load");
+  p = page("?model=m.gguf", async () => ({ ok: false, status: 404 }));
+  await flush();
+  assert.strictEqual(p.el("error").textContent, "Cannot fetch m.gguf: HTTP 404");
+  p = page("?model=m.gguf", async () => { throw new Error("net"); });
+  await flush();
+  assert.strictEqual(p.el("error").textContent, "Cannot fetch m.gguf: net");
+  console.log("demo.test.js: ok");
+})().catch((e) => { console.error(e); process.exit(1); });
