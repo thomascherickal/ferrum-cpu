@@ -9,7 +9,8 @@ pub(crate) fn read_info(path: &str) -> Option<CheckpointInfo> {
     TransformerNet::checkpoint_info(std::fs::read(path).ok()?).ok()
 }
 
-/// One `note:` line per flag the checkpoint overrides, plus the corpus caveat.
+/// One `note:` line per flag the checkpoint overrides. (The corpus needs no note: the trainer
+/// refuses a resume on a different one.)
 pub(crate) fn notes(args: &Args, info: &CheckpointInfo) -> Vec<String> {
     let mut out = Vec::new();
     for (flag, used) in [
@@ -31,12 +32,6 @@ pub(crate) fn notes(args: &Args, info: &CheckpointInfo) -> Vec<String> {
             "note: --seed {v} ignored, the checkpoint's random state is used"
         ));
     }
-    // ponytail: checkpoints record no corpus hash, so a different corpus cannot be detected.
-    out.push(
-        "note: the corpus is not checked against the checkpoint (it records none); \
-         resume on the corpus it was started with"
-            .into(),
-    );
     out
 }
 
@@ -89,10 +84,8 @@ mod tests {
             "note: --blocks 3 ignored, using 2 from the checkpoint"
         );
         assert!(n[2].starts_with("note: --seed 7 ignored"), "{n:?}");
-        assert!(n[3].contains("corpus is not checked"), "{n:?}");
-        assert_eq!(n.len(), 4, "{n:?}");
-        let n = notes(&args(&[]), &info());
-        assert_eq!(n.len(), 1, "only the corpus caveat: {n:?}");
+        assert_eq!(n.len(), 3, "{n:?}");
+        assert!(notes(&args(&[]), &info()).is_empty());
     }
 
     #[test]

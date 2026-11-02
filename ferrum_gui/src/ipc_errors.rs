@@ -314,6 +314,36 @@ fn train_refuses_bad_forms_and_trains_character_level_with_validation() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[test]
+fn train_resume_other_corpus_is_refused() {
+    let (_app, w) = app();
+    let dir = tmp("train_other_corpus");
+    std::fs::write(dir.join("a.txt"), "abc abd abe ".repeat(60)).unwrap();
+    std::fs::write(dir.join("b.txt"), "abc abd abf ".repeat(60)).unwrap();
+    let ckpt = dir.join("r.fckp");
+    let mut p = train_params(&dir, "a.txt");
+    p["params"]["checkpointPath"] = json!(ckpt);
+    call(&w, "train_slm", p).unwrap();
+    let before = std::fs::read(&ckpt).unwrap();
+    // Resuming on another corpus is refused, naming the corpus, and leaves the checkpoint alone.
+    let mut p = train_params(&dir, "b.txt");
+    p["params"]["checkpointPath"] = json!(ckpt);
+    p["params"]["resume"] = json!(true);
+    p["params"]["epochs"] = json!(2);
+    let e = call(&w, "train_slm", p.clone()).unwrap_err();
+    assert!(
+        msg(&e).contains("training failed")
+            && msg(&e).contains("corpus")
+            && msg(&e).contains("sha256:"),
+        "{e}"
+    );
+    assert_eq!(std::fs::read(&ckpt).unwrap(), before);
+    // The corpus it was started with resumes.
+    p["params"]["corpusPath"] = json!(dir.join("a.txt"));
+    call(&w, "train_slm", p).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn run_params(model: &std::path::Path, extra: Value) -> Value {
     let mut p = json!({"params": {"modelPath": model, "prompt": "hi", "quant": "f32", "maxNew": 3,
         "temp": 0, "genSeed": 1, "ids": null, "force": false, "resume": null, "raw": true}});

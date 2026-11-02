@@ -43,6 +43,13 @@ pub(crate) fn train_and_save_input(
     }
     let preset = crate::preset::selected(args)?;
     let mut cfg = args.config();
+    // Only a run that writes a checkpoint needs the corpus identity.
+    if !cfg.checkpoint_path.is_empty() {
+        cfg.corpus_id = Some(
+            slm_cli::hash::file_id(corpus_path)
+                .map_err(|e| format!("cannot read corpus {corpus_path}: {e}"))?,
+        );
+    }
     cfg.stop = crate::stop::condition(args, model_path)?;
     check_lr(cfg.lr)?;
     check_regularizers(cfg.dropout, cfg.weight_decay, cfg.grad_clip)?;

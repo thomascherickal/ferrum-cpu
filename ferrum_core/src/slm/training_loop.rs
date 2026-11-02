@@ -24,6 +24,14 @@ pub(super) fn prepare_net(
                 cfg.context_len
             )));
         }
+        if let (Some(was), Some(now)) = (&net.corpus_id, &cfg.corpus_id) {
+            if was != now {
+                return Err(InferError::DimMismatch(format!(
+                    "the checkpoint was trained on corpus {was}, this run's corpus is {now}; \
+                     resume on the corpus it was started with"
+                )));
+            }
+        }
         *rng = ckpt_rng;
         vprintln!(
             "[slm::train] resumed {} at step {}",
@@ -42,6 +50,8 @@ pub(super) fn prepare_net(
             rng,
         )?
     };
+    // A run without an id keeps the checkpoint's; one with an id (re)records it.
+    net.corpus_id = cfg.corpus_id.clone().or(net.corpus_id.take());
     net.set_qat(cfg.qat);
     net.set_weight_decay(cfg.weight_decay);
     net.set_dropout(cfg.dropout);
@@ -283,6 +293,83 @@ mod tests {
     };
     use crate::slm::GenerativeSLM;
     use crate::train_transformer::TransformerNet;
+
+    /// Train 5 steps on `RESUME_CORPUS` recording `id`, return the checkpoint path.
+    fn short_run(name: &str, id: Option<&str>) -> String {
+        let ckpt = scratch_ckpt(name);
+        let cfg = TransformerConfig {
+            max_tokens: 5 * 4 * 8,
+            corpus_id: id.map(String::from),
+            ..resume_cfg(&ckpt)
+        };
+        GenerativeSLM::train_transformer_config(
+            &RESUME_CORPUS.repeat(40),
+            &cfg,
+            &mut Rng::new(1),
+            |_, _| {},
+        )
+        .unwrap();
+        ckpt
+    }
+
+    fn resume_with(ckpt: &str, id: Option<&str>) -> crate::error::Result<GenerativeSLM> {
+        let cfg = TransformerConfig {
+            resume: true,
+            max_tokens: 8 * 4 * 8,
+            corpus_id: id.map(String::from),
+            ..resume_cfg(ckpt)
+        };
+        GenerativeSLM::train_transformer_config(
+            &RESUME_CORPUS.repeat(40),
+            &cfg,
+            &mut Rng::new(1),
+            |_, _| {},
+        )
+    }
+
+    fn saved_id(ckpt: &str) -> Option<String> {
+        let (net, _) = TransformerNet::load_checkpoint(&std::fs::read(ckpt).unwrap()).unwrap();
+        net.corpus_id
+    }
+
+    #[test]
+    fn resume_refuses_a_different_corpus() {
+        let ckpt = short_run("corpus_refuse", Some("sha256:aaaa"));
+        assert_eq!(saved_id(&ckpt).as_deref(), Some("sha256:aaaa"));
+        let before = std::fs::read(&ckpt).unwrap();
+        let err = resume_with(&ckpt, Some("sha256:bbbb"))
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            err.contains("corpus") && err.contains("sha256:aaaa") && err.contains("sha256:bbbb"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read(&ckpt).unwrap(),
+            before,
+            "a refusal writes nothing"
+        );
+        // The same corpus resumes.
+        resume_with(&ckpt, Some("sha256:aaaa")).unwrap();
+    }
+
+    #[test]
+    fn resume_without_corpus_id_on_either_side_proceeds() {
+        // Checkpoint has one, the resuming run gives none: proceeds and keeps the id.
+        let ckpt = short_run("corpus_ck_only", Some("sha256:aaaa"));
+        resume_with(&ckpt, None).unwrap();
+        assert_eq!(saved_id(&ckpt).as_deref(), Some("sha256:aaaa"));
+        // Checkpoint has none, the resuming run gives one: proceeds and records it.
+        let ckpt = short_run("corpus_run_only", None);
+        assert_eq!(saved_id(&ckpt), None);
+        resume_with(&ckpt, Some("sha256:bbbb")).unwrap();
+        assert_eq!(saved_id(&ckpt).as_deref(), Some("sha256:bbbb"));
+        // Neither has one.
+        let ckpt = short_run("corpus_none", None);
+        resume_with(&ckpt, None).unwrap();
+        assert_eq!(saved_id(&ckpt), None);
+    }
 
     #[test]
     fn resume_mid_epoch_finishes_the_partial_epoch() {

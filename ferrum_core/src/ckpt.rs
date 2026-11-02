@@ -42,6 +42,10 @@ pub(crate) fn put_u64s(b: &mut GgufBuilder, name: &str, v: &[u64]) {
     );
 }
 
+pub(crate) fn put_str(b: &mut GgufBuilder, name: &str, v: &str) {
+    b.meta(&format!("ferrum.ckpt.{name}"), MetaValue::String(v.into()));
+}
+
 pub(crate) fn put_bool(b: &mut GgufBuilder, name: &str, v: bool) {
     b.meta(&format!("ferrum.ckpt.{name}"), MetaValue::Bool(v));
 }
@@ -121,6 +125,15 @@ pub(crate) fn get_u64s<'a>(g: &'a Gguf, name: &str) -> Result<Option<&'a [u64]>>
     match g.meta(&format!("ferrum.ckpt.{name}")) {
         None => Ok(None),
         Some(MetaValue::Nums(NumArray::U64(v))) => Ok(Some(v)),
+        Some(_) => Err(missing(name)),
+    }
+}
+
+/// An optional string: `None` when the key is absent, an error when it has another type.
+pub(crate) fn get_str(g: &Gguf, name: &str) -> Result<Option<String>> {
+    match g.meta(&format!("ferrum.ckpt.{name}")) {
+        None => Ok(None),
+        Some(MetaValue::String(v)) => Ok(Some(v.clone())),
         Some(_) => Err(missing(name)),
     }
 }

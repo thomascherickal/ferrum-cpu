@@ -190,7 +190,9 @@ fn resuming_a_token_file_run_matches_the_text_run() {
             &["--epochs", "5", "--threads", "2", "--resume", &ck],
         );
         assert!(ok, "{out}");
-        hashes.push((sha(&e.s(&model)), sha(&ck)));
+        // The checkpoints differ in `ferrum.ckpt.corpus_id` (the text file's hash against the
+        // token file's), so the models are what must agree.
+        hashes.push(sha(&e.s(&model)));
     }
     assert_eq!(hashes[0], hashes[1]);
 }

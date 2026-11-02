@@ -319,6 +319,7 @@ impl Args {
             log_every_steps: if self.verbose { 10 } else { 0 },
             stop: d.stop,
             skip_memory_check: d.skip_memory_check,
+            corpus_id: None,
         }
     }
 }

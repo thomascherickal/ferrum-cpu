@@ -33,6 +33,7 @@ impl TransformerNet {
             window_stride: self.window_stride,
             metrics: Default::default(),
             epoch_start: self.epoch_start,
+            corpus_id: self.corpus_id.clone(),
         }
     }
 

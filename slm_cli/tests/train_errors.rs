@@ -177,10 +177,7 @@ fn resume_reports_the_values_actually_used() {
         out.contains("note: --seed 5 ignored") && out.contains("Seed: from checkpoint"),
         "{out}"
     );
-    assert!(
-        out.contains("corpus is not checked against the checkpoint"),
-        "{out}"
-    );
+    assert!(!out.contains("not checked"), "{out}");
     // Flags that agree with the checkpoint get no note.
     let m3 = d.join("m3.gguf");
     let mut a = vec![

@@ -98,6 +98,8 @@ pub struct TransformerNet {
     /// Where the current epoch of a config-driven run began, so a checkpoint written inside
     /// it can replay the rest of its window order. `None` outside that loop.
     pub(crate) epoch_start: Option<checkpoint::EpochStart>,
+    /// Identity of the corpus the run trains on (`ferrum.ckpt.corpus_id`), if the caller gave one.
+    pub(crate) corpus_id: Option<String>,
 }
 
 impl TransformerNet {
@@ -153,6 +155,7 @@ impl TransformerNet {
             window_stride: 1,
             metrics: Default::default(),
             epoch_start: None,
+            corpus_id: None,
         })
     }
 

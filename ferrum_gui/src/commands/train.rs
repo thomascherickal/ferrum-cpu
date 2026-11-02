@@ -123,6 +123,16 @@ fn open_token_corpus(
     })
 }
 
+/// `sha256:<hex>` of the corpus file when the run writes a checkpoint (the CLI's rule), else none.
+fn corpus_id(p: &TrainParams) -> Result<Option<String>, String> {
+    if p.checkpoint_path.trim().is_empty() {
+        return Ok(None);
+    }
+    slm_cli::hash::file_id(&p.corpus_path)
+        .map(Some)
+        .map_err(|e| format!("cannot read corpus {}: {e}", p.corpus_path))
+}
+
 fn train_inner<R: Runtime>(
     app: AppHandle<R>,
     p: TrainParams,
@@ -173,6 +183,7 @@ fn train_inner<R: Runtime>(
         corpus
     };
 
+    let corpus_id = corpus_id(&p)?;
     ferrum_core::set_verbose(p.verbose);
 
     // Capture the most recent loss for the result without changing the callback
@@ -236,6 +247,8 @@ fn train_inner<R: Runtime>(
                 log_every_steps: 0,
                 stop: job.stop().clone(),
                 skip_memory_check: p.force,
+                // The same identity the CLI records, so a checkpoint resumes from either.
+                corpus_id,
                 ..TransformerConfig::default()
             };
             let val = ValidationConfig {

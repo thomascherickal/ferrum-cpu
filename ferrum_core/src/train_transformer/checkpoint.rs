@@ -100,6 +100,9 @@ impl TransformerNet {
         ckpt::put_bool(&mut b, "tie", self.tie_weights);
         ckpt::put_u64(&mut b, "step", self.step_t);
         ckpt::put_u64(&mut b, "rng", rng.state());
+        if let Some(id) = &self.corpus_id {
+            ckpt::put_str(&mut b, "corpus_id", id);
+        }
         if let Some(e) = self.epoch_start {
             ckpt::put_u64s(&mut b, "epoch_rng", &[e.rng, e.step, e.epoch]);
         }
@@ -171,6 +174,7 @@ impl TransformerNet {
         net.step_t = ckpt::get_u64(&g, "step")?;
         let rng_state = ckpt::get_u64(&g, "rng")?;
         net.epoch_start = EpochStart::read(&g, net.step_t)?;
+        net.corpus_id = ckpt::get_str(&g, "corpus_id")?;
         for (i, p) in net.params_mut_all().into_iter().enumerate() {
             // m and v share the parameter's shape, so each is the same length.
             let len = p.data.data.len();
@@ -272,6 +276,32 @@ mod tests {
         assert!(bad(u64s(vec![1, step, 0])).contains("[rng, step, epoch]"));
     }
 
+    #[test]
+    fn checkpoint_roundtrips_corpus_id() {
+        let (mut net, rng) = trained_net(false, false);
+        assert_eq!(net.corpus_id, None);
+        let plain = net.save_checkpoint(&rng);
+        net.corpus_id = Some("sha256:00ff".into());
+        let bytes = net.save_checkpoint(&rng);
+        assert!(bytes != plain);
+        let (back, _) = TransformerNet::load_checkpoint(&bytes).unwrap();
+        assert_eq!(back.corpus_id.as_deref(), Some("sha256:00ff"));
+        assert_eq!(back.save_checkpoint(&rng), bytes);
+        // A wrong type is an error, not a silent "no corpus".
+        let b = crate::ckpt::rewrite(
+            &bytes,
+            |m| {
+                m.insert("ferrum.ckpt.corpus_id".into(), MetaValue::U64(1));
+            },
+            None,
+        );
+        let err = TransformerNet::load_checkpoint(&b)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(err.contains("corpus_id"), "{err}");
+    }
+
     /// Written by Ferrum before `ferrum.ckpt.epoch_rng` existed (3 steps of a 3-token net).
     const PRE_EPOCH_RNG: &[u8] = include_bytes!("testdata/pre_epoch_rng.ckpt.gguf");
 
@@ -279,6 +309,7 @@ mod tests {
     fn old_checkpoint_without_epoch_rng_still_loads() {
         let (net, rng) = TransformerNet::load_checkpoint(PRE_EPOCH_RNG).unwrap();
         assert_eq!(net.epoch_start, None);
+        assert_eq!(net.corpus_id, None);
         assert_eq!(net.step_count(), 3);
         assert_eq!(rng.state(), 3354630805809648812);
         // Without an epoch start the writer emits exactly the old layout.

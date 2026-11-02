@@ -762,8 +762,10 @@ LR schedule picks up where it stopped. The checkpoint fixes the architecture
 and the random state: the banner shows the checkpoint's values, and each
 conflicting `--embed`/`--heads`/`--hidden`/`--blocks`/`--seed` prints one line
 such as `note: --embed 64 ignored, using 32 from the checkpoint`. A checkpoint
-records no corpus hash, so resuming on a different corpus is not detected; the
-run prints a note saying the corpus is not verified.
+written with a corpus records `sha256:<hex>` of the corpus file (text or token
+file) as `ferrum.ckpt.corpus_id`; resuming on a file with another hash is refused
+with an error naming both ids (exit 1) and leaves the checkpoint untouched. A
+checkpoint without the key (written by an older build) resumes without the check.
 If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
 `--tokenizer` so the vocabulary is guaranteed identical. A checkpoint also records

@@ -82,6 +82,11 @@ pub struct TransformerConfig {
     /// on anyway (the GUI's "I know, try anyway"); the operating system may kill the process
     /// if the run really does not fit. The CLI never sets it. Default `false`.
     pub skip_memory_check: bool,
+    /// Opaque identity of the training corpus (the CLI and GUI pass `sha256:<hex>` of the
+    /// file). Stored in the checkpoint as `ferrum.ckpt.corpus_id`; a `resume` is refused when
+    /// both the checkpoint and this run have one and they differ. `None` (default) = not
+    /// recorded and not checked.
+    pub corpus_id: Option<String>,
 }
 
 impl Default for TransformerConfig {
@@ -113,6 +118,7 @@ impl Default for TransformerConfig {
             metrics_csv: String::new(),
             stop: StopCondition::default(),
             skip_memory_check: false,
+            corpus_id: None,
         }
     }
 }

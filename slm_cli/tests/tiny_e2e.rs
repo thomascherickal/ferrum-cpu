@@ -289,6 +289,33 @@ fn resume_from_an_epoch_checkpoint_finishes_the_run() {
 }
 
 #[test]
+fn resume_on_other_corpus_exits_1() {
+    let e = Env::new("other_corpus");
+    let ck = e.s("ck.fckp");
+    e.train(
+        "part.gguf",
+        &["--vocab", "300", "--epochs", "1", "--checkpoint", &ck],
+    );
+    // The same text plus one character is another corpus.
+    let mut text = std::fs::read_to_string(e.p("prep/train.txt")).unwrap();
+    text.push('x');
+    std::fs::write(e.p("other.txt"), text).unwrap();
+    let before = std::fs::read(e.p("ck.fckp")).unwrap();
+    let (other, model) = (e.s("other.txt"), e.s("o.gguf"));
+    let mut a = vec!["train", &other, &model];
+    a.extend(ARCH);
+    a.extend(["--vocab", "300", "--epochs", "3", "--resume", &ck]);
+    let o = Command::new(BIN).args(&a).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert!(err.contains("corpus") && err.contains("sha256:"), "{err}");
+    assert!(!e.p("o.gguf").exists());
+    assert_eq!(std::fs::read(e.p("ck.fckp")).unwrap(), before);
+    // The corpus it was started with resumes.
+    e.train("ok.gguf", &["--vocab", "300", "--resume", &ck]);
+}
+
+#[test]
 fn a_stop_file_or_time_budget_stops_cleanly_and_resume_finishes_the_run() {
     let e = Env::new("stop");
     // One optimizer step per epoch, so a stop after step 1 is an epoch boundary.
