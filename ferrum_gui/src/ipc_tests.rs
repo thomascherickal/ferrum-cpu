@@ -1136,3 +1136,54 @@ fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_thro
     assert!(held.cancelled() && !dir.join("again.tok.gguf").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The command names registered in `generate_handler![...]` (the last path segment of each).
+pub(crate) fn handler_commands(lib_rs: &str) -> Vec<String> {
+    let list = lib_rs
+        .split("generate_handler![")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("a generate_handler![...] list");
+    list.split(',')
+        .filter_map(|entry| entry.trim().rsplit("::").next())
+        .filter(|name| !name.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The commands whose name never appears as a quoted string in `tests` (how every IPC call
+/// names its command).
+fn commands_without_a_test<'a>(commands: &'a [String], tests: &str) -> Vec<&'a str> {
+    commands
+        .iter()
+        .map(String::as_str)
+        .filter(|c| !tests.contains(&format!("\"{c}\"")))
+        .collect()
+}
+
+/// The command matrix: a command added to the registry without an IPC test fails here.
+#[test]
+fn every_command_has_an_ipc_test() {
+    let commands = handler_commands(include_str!("lib.rs"));
+    assert!(commands.len() > 20, "parsed {commands:?}");
+    let tests = [include_str!("ipc_tests.rs"), include_str!("ipc_errors.rs")].concat();
+    assert_eq!(
+        commands_without_a_test(&commands, &tests),
+        Vec::<&str>::new()
+    );
+}
+
+/// The guard itself: it reads the real list shape and names exactly the commands left out.
+#[test]
+fn the_command_matrix_guard_finds_a_missing_test() {
+    let lib = "builder.invoke_handler(tauri::generate_handler![\n  commands::alpha_cmd,\n  \
+               beta::beta_cmd,\n  gamma_cmd,\n ])\n .other([x])";
+    let commands = handler_commands(lib);
+    assert_eq!(commands, ["alpha_cmd", "beta_cmd", "gamma_cmd"]);
+    let tests = r#"call(&w, "alpha_cmd", json!({})); call(&w, "gamma_cmd_two", json!({}));"#;
+    assert_eq!(
+        commands_without_a_test(&commands, tests),
+        ["beta_cmd", "gamma_cmd"]
+    );
+    assert!(commands_without_a_test(&commands, r#""alpha_cmd" "beta_cmd" "gamma_cmd""#).is_empty());
+}

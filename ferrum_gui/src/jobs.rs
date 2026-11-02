@@ -165,6 +165,30 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_says_what_is_already_running() {
+        let jobs = Jobs::default();
+        let kinds = [
+            (Job::Train, "a training job"),
+            (Job::Finetune, "a fine-tuning job"),
+            (Job::Export, "an export job"),
+            (Job::Generate, "a generation job"),
+            (Job::Evaluate, "an evaluation job"),
+            (Job::Run, "a GGUF run"),
+            (Job::Prepare, "a dataset preparation"),
+            (Job::RuntimeExport, "an Ollama / LM Studio export"),
+            (Job::Tokenize, "a tokenizing job"),
+            (Job::Serve, "a model server"),
+        ];
+        let _held: Vec<_> = kinds.iter().map(|(k, _)| jobs.start(*k).unwrap()).collect();
+        for (kind, noun) in kinds {
+            assert_eq!(
+                jobs.start(kind).err().unwrap(),
+                format!("{noun} is already running")
+            );
+        }
+    }
+
+    #[test]
     fn kinds_use_the_names_the_ui_sends() {
         for (name, kind) in [
             ("train", Job::Train),

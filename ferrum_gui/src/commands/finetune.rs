@@ -1,6 +1,6 @@
 //! The Fine-tune tab: AdamW-fine-tune an imported GGUF into a `.flck` checkpoint.
 
-use super::guard::{available_memory_bytes, gguf_resident_bytes};
+use super::guard::{available_memory_bytes, gguf_resident_bytes, ram_guard};
 use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
@@ -99,17 +99,15 @@ fn finetune_inner<R: Runtime>(
     })?;
     let est = gguf_resident_bytes(&g, None); // f32
     let train_est = est.saturating_mul(4); // weights + grad + Adam m/v
-    if let Some(avail) = available_memory_bytes() {
-        if (train_est as f64) > 0.9 * avail as f64 && !p.force {
-            cleanup();
-            return Err(format!(
-                "estimated training memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 fine-tune a smaller model or enable 'train anyway'.",
-                train_est as f64 / 1e9,
-                avail as f64 / 1e9
-            ));
-        }
-    }
+    ram_guard(
+        "training memory",
+        "",
+        train_est,
+        available_memory_bytes(),
+        p.force,
+        "fine-tune a smaller model or enable 'train anyway'",
+    )
+    .inspect_err(|_| cleanup())?;
     let tok = GgufTokenizer::from_gguf(&g).map_err(|_| {
         cleanup();
         "this GGUF has no tokenizer; text fine-tuning needs one".to_string()
@@ -145,10 +143,8 @@ fn finetune_inner<R: Runtime>(
     }
 
     // 3. Build + configure the trainer.
-    let mut tr = LlamaTrainer::new(model).map_err(|e| {
-        cleanup();
-        format!("cannot build trainer: {e}")
-    })?;
+    // ponytail: `load_llama_prec(None)` above yields f32 weights, the one thing `new` refuses.
+    let mut tr = LlamaTrainer::new(model).expect("f32 weights");
     tr.set_optimizer(Adam::new(p.lr));
     tr.set_weight_decay(p.weight_decay.max(0.0));
     tr.set_dropout(p.dropout);

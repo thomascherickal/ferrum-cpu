@@ -156,15 +156,19 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn rejects_fifo() {
-        let d = tmp("fifo");
-        let fifo = d.join("pipe");
-        let _ = std::fs::remove_file(&fifo);
-        let ok = std::process::Command::new("mkfifo").arg(&fifo).status();
-        if ok.map(|s| s.success()).unwrap_or(false) {
-            let e = checked_path("p", fifo.to_str().unwrap(), true).unwrap_err();
-            assert!(e.contains("not a regular file"), "{e}");
-        }
+    fn rejects_sockets_and_names_an_unreachable_path() {
+        // A listening Unix socket is a file that is neither regular nor a directory.
+        let d = tmp("socket");
+        let sock = d.join("s");
+        let _listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        let e = checked_path("p", sock.to_str().unwrap(), true).unwrap_err();
+        assert!(e.contains("not a regular file"), "{e}");
+        // A path below a regular file cannot be looked at: "not a directory" is not NotFound.
+        let file = d.join("f");
+        std::fs::write(&file, "x").unwrap();
+        let below = file.join("child");
+        let e = checked_path("p", below.to_str().unwrap(), true).unwrap_err();
+        assert!(e.contains("cannot access"), "{e}");
     }
 
     #[test]

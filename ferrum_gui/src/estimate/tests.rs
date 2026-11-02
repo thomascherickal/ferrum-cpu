@@ -817,3 +817,66 @@ fn serve_start_needs_a_model_then_scales_with_its_size_and_holds_twice_the_file(
     assert!(estimate(JobKind::Serve, &with(4_000_000_000), &h, None).fits_in_ram);
     assert!(!estimate(JobKind::Serve, &with(20_000_000_000), &h, None).fits_in_ram);
 }
+
+#[test]
+fn a_run_with_a_checkpoint_is_f32_and_a_tied_head_is_streamed_too() {
+    let h = hw(8, Some(14_000));
+    let run = |quant: &str, resume: &str, head: bool| {
+        let mut g = gguf(1_000_000_000, 65_000_000);
+        g.has_output_head = head;
+        estimate(
+            JobKind::GgufRun,
+            &JobParams {
+                gguf: Some(g),
+                quant: quant.into(),
+                resume_path: resume.into(),
+                max_new: 32,
+                ..JobParams::default()
+            },
+            &h,
+            None,
+        )
+    };
+    // A checkpoint overlays f32 weights, so the requested quantisation no longer applies.
+    assert_eq!(
+        secs(&run("int4", "tuned.flck", true)),
+        secs(&run("f32", "", true))
+    );
+    assert!(secs(&run("int4", "tuned.flck", true)) > secs(&run("int4", "", true)));
+    // Without an output head the embedding is read every token as well: slower.
+    assert!(secs(&run("int8", "", false)) > secs(&run("int8", "", true)));
+}
+
+#[test]
+fn a_finetune_estimate_assumes_a_corpus_until_one_exists_and_uses_the_seq_len_without_a_context() {
+    let h = hw(8, Some(30_000));
+    let mut g = gguf(135_000_000, 28_300_000);
+    g.context_len = 0;
+    let p = JobParams {
+        gguf: Some(g),
+        corpus_bytes: None,
+        epochs: 1,
+        batch_size: 8,
+        seq_len: 64,
+        threads: 3,
+        ..JobParams::default()
+    };
+    let e = estimate(JobKind::GgufFinetune, &p, &h, None);
+    assert!(
+        e.notes.iter().any(|n| n.contains("assuming 100 KB")),
+        "{:?}",
+        e.notes
+    );
+    // The same job with the corpus size filled in has no such note and is not slower.
+    let known = estimate(
+        JobKind::GgufFinetune,
+        &JobParams {
+            corpus_bytes: Some(100_000),
+            ..p
+        },
+        &h,
+        None,
+    );
+    assert!(!known.notes.iter().any(|n| n.contains("assuming 100 KB")));
+    assert_eq!(secs(&known), secs(&e));
+}

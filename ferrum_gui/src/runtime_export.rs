@@ -125,6 +125,14 @@ fn base(p: &RuntimeParams) -> RuntimeResult {
     }
 }
 
+/// Show which tool was found, or why none was.
+fn record_tool(r: &mut RuntimeResult, tool: Result<std::path::PathBuf, String>) {
+    match tool {
+        Ok(t) => r.tool = Some(t.to_string_lossy().into_owned()),
+        Err(e) => r.tool_error = Some(e),
+    }
+}
+
 /// What would run, without running it. Reads the model header and looks the tool up.
 pub(crate) fn do_preview(p: &RuntimeParams) -> Result<RuntimeResult, String> {
     let (model, bin, name) = checked(p)?;
@@ -135,10 +143,7 @@ pub(crate) fn do_preview(p: &RuntimeParams) -> Result<RuntimeResult, String> {
     let mut r = base(p);
     r.modelfile = pv.modelfile;
     r.commands = pv.commands;
-    match pv.tool {
-        Ok(t) => r.tool = Some(t.to_string_lossy().into_owned()),
-        Err(e) => r.tool_error = Some(e),
-    }
+    record_tool(&mut r, pv.tool);
     r.summary = "nothing was run".into();
     Ok(r)
 }

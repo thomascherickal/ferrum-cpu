@@ -143,6 +143,30 @@ fn display_url(addr: SocketAddr) -> String {
     format!("http://{}", SocketAddr::new(ip, addr.port()))
 }
 
+/// The last `serve-log` line of a server that ended.
+fn stopped_line<E: std::fmt::Display>(result: Result<(), E>) -> String {
+    match result {
+        Ok(()) => "ferrum-serve: stopped".to_string(),
+        Err(e) => format!("ferrum-serve: stopped with an error: {e}"),
+    }
+}
+
+/// Wait up to `wait` for the server task to end; cut it off when a request keeps it busy.
+fn wait_for_end(task: &JoinHandle<()>, wait: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + wait;
+    while !task.inner().is_finished() {
+        if Instant::now() > deadline {
+            task.abort();
+            return Err(format!(
+                "the server did not stop within {} s (a request was still running); it was cut off",
+                wait.as_secs()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 /// Load the model, start the server and answer with its URL. Fails at once when one is running.
 #[tauri::command]
 pub async fn serve_start<R: Runtime>(
@@ -179,10 +203,7 @@ pub async fn serve_start<R: Runtime>(
                 let _ = stopped.await;
             })
             .await;
-        match result {
-            Ok(()) => log("ferrum-serve: stopped".to_string()),
-            Err(e) => log(format!("ferrum-serve: stopped with an error: {e}")),
-        }
+        log(stopped_line(result));
     });
     let running = Running {
         url,
@@ -207,21 +228,7 @@ pub async fn serve_stop(state: State<'_, AppState>) -> Result<ServeStatus, CmdEr
     let requests = r.requests.load(Ordering::Relaxed);
     let Running { stop, task, .. } = r;
     let _ = stop.send(());
-    blocking(move || {
-        let deadline = Instant::now() + STOP_WAIT;
-        while !task.inner().is_finished() {
-            if Instant::now() > deadline {
-                task.abort();
-                return Err(format!(
-                    "the server did not stop within {} s (a request was still running); it was cut off",
-                    STOP_WAIT.as_secs()
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        Ok(())
-    })
-    .await?;
+    blocking(move || wait_for_end(&task, STOP_WAIT)).await?;
     Ok(ServeStatus {
         running: false,
         url: None,

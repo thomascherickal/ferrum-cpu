@@ -7,7 +7,9 @@
 //! `eval-gguf` make. (`slm_cli`'s report formatting lives in that binary
 //! crate, so the JSON is built here with the same keys.)
 
-use crate::commands::{available_memory_bytes, file_name, gguf_resident_bytes, parse_quant};
+use crate::commands::{
+    available_memory_bytes, file_name, gguf_resident_bytes, parse_quant, ram_guard,
+};
 use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::checked_path;
@@ -228,16 +230,14 @@ fn score_llama(
             std::fs::metadata(ckpt).map_or(0, |m| usize::try_from(m.len()).unwrap_or(usize::MAX));
         est = est.saturating_add(len).saturating_add(est / 2);
     }
-    if let Some(avail) = available_memory_bytes() {
-        if (est as f64) > 0.9 * avail as f64 && !p.force {
-            return Err(format!(
-                "estimated resident memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 choose a smaller precision or tick 'load anyway'.",
-                est as f64 / 1e9,
-                avail as f64 / 1e9
-            ));
-        }
-    }
+    ram_guard(
+        "resident memory",
+        "",
+        est,
+        available_memory_bytes(),
+        p.force,
+        "choose a smaller precision or tick 'load anyway'",
+    )?;
     let mut model = g
         .load_llama_prec(prec)
         .map_err(|e| format!("cannot load model: {e}"))?;
@@ -503,6 +503,24 @@ mod tests {
         p.quant = "f32".into();
         p.resume = Some(dir.join("none.flck").to_string_lossy().into_owned());
         assert!(evaluate_now(&p).unwrap_err().contains("does not exist"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_text_of_one_token_cannot_be_scored() {
+        let dir = scratch("short");
+        let src = dir.join("base.gguf");
+        let tiny = crate::test_support::Tiny {
+            add_bos: Some(false),
+            ..Default::default()
+        };
+        std::fs::write(&src, tiny.build()).unwrap();
+        let mut p = params(&src.to_string_lossy());
+        p.text = Some("h".into());
+        assert_eq!(
+            evaluate_now(&p).unwrap_err(),
+            "the held-out text is too short: scoring needs at least two tokens"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -3,6 +3,7 @@ use crate::ipc_tests::{app, call, collect, msg, tmp, wait_for};
 use ferrum_core::{GenerativeSLM, Rng, TransformerConfig};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
+use tauri::Manager;
 
 fn form(model: &str) -> ServeParams {
     serde_json::from_value(json!({
@@ -329,4 +330,50 @@ fn start_errors_reach_the_ui_as_structured_errors_and_leave_the_slot_free() {
     assert_eq!(st["running"], true);
     call(&w, "serve_stop", json!({})).unwrap();
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_last_log_line_says_how_the_server_ended() {
+    assert_eq!(stopped_line(Ok::<(), String>(())), "ferrum-serve: stopped");
+    assert_eq!(
+        stopped_line(Err("address in use")),
+        "ferrum-serve: stopped with an error: address in use"
+    );
+}
+
+#[test]
+fn a_server_kept_busy_by_a_request_is_cut_off_after_the_wait() {
+    // A task that never ends stands in for a request that does not finish.
+    let stuck = tauri::async_runtime::spawn(std::future::pending::<()>());
+    let e = wait_for_end(&stuck, Duration::from_secs(1)).unwrap_err();
+    assert_eq!(
+        e,
+        "the server did not stop within 1 s (a request was still running); it was cut off"
+    );
+    let done = tauri::async_runtime::spawn(async {});
+    assert!(wait_for_end(&done, Duration::from_secs(5)).is_ok());
+}
+
+#[test]
+fn a_server_that_ended_by_itself_is_forgotten_by_the_next_status() {
+    let (app, w) = app();
+    let state = app.state::<crate::AppState>();
+    let (stop, _stopped) = tokio::sync::oneshot::channel::<()>();
+    let task = tauri::async_runtime::spawn(async {});
+    while !task.inner().is_finished() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    *state.serve.slot() = Some(Running {
+        url: "http://127.0.0.1:1".into(),
+        auth: false,
+        requests: Arc::new(AtomicU64::new(3)),
+        stop,
+        task,
+    });
+    let s = call(&w, "serve_status", json!({})).unwrap();
+    assert_eq!(
+        s,
+        json!({"running": false, "url": null, "requests": 0, "auth": false})
+    );
+    assert!(state.serve.slot().is_none());
 }

@@ -1,7 +1,7 @@
 //! Inspect saved models and run imported GGUFs (Llama/Qwen checkpoints).
 
 use super::generate::{one_f32, sampling_from};
-use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant};
+use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant, ram_guard};
 use super::time_seed;
 use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
@@ -207,6 +207,15 @@ pub async fn run_gguf(
 /// The error of a run that was cancelled before it produced anything.
 const CANCELLED_EARLY: &str = "cancelled before any text was produced";
 
+/// Stop a run that was cancelled before it produced anything.
+fn not_cancelled(job: &JobGuard) -> Result<(), String> {
+    if job.cancelled() {
+        Err(CANCELLED_EARLY.into())
+    } else {
+        Ok(())
+    }
+}
+
 fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, String> {
     let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
     checked_path("model path", &p.model_path, true)?;
@@ -224,27 +233,21 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
 
     // Memory guard before the (potentially large) load.
     let est = gguf_resident_bytes(&g, prec);
-    if let Some(avail) = available_memory_bytes() {
-        if (est as f64) > 0.9 * avail as f64 && !p.force {
-            return Err(format!(
-                "estimated resident memory ({:.2} GB) exceeds 90% of available ({:.2} GB) — \
-                 choose a smaller quant or enable 'load anyway'.",
-                est as f64 / 1e9,
-                avail as f64 / 1e9
-            ));
-        }
-    }
+    ram_guard(
+        "resident memory",
+        "",
+        est,
+        available_memory_bytes(),
+        p.force,
+        "choose a smaller quant or enable 'load anyway'",
+    )?;
 
     let tok = GgufTokenizer::from_gguf(&g).ok();
-    if job.cancelled() {
-        return Err(CANCELLED_EARLY.into());
-    }
+    not_cancelled(&job)?;
     let mut model = g
         .load_llama_prec(prec)
         .map_err(|e| format!("cannot load model: {e}"))?;
-    if job.cancelled() {
-        return Err(CANCELLED_EARLY.into());
-    }
+    not_cancelled(&job)?;
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {

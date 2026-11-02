@@ -136,19 +136,30 @@ pub fn cpu_catalog() -> Vec<DatasetEntry> {
 
 // ── URL builders ──────────────────────────────────────────────────────────────
 
+/// Where the files come from. The commands use [`HOSTS`]; tests point it at a local server.
+struct Hosts<'a> {
+    hf: &'a str,
+    kaggle: &'a str,
+}
+
+const HOSTS: Hosts = Hosts {
+    hf: "https://huggingface.co",
+    kaggle: "https://www.kaggle.com",
+};
+
 /// Public HuggingFace dataset file URL (`resolve` endpoint).
-pub fn hf_resolve_url(repo: &str, file: &str, revision: &str) -> String {
+pub fn hf_resolve_url(base: &str, repo: &str, file: &str, revision: &str) -> String {
     let rev = if revision.is_empty() {
         "main"
     } else {
         revision
     };
-    format!("https://huggingface.co/datasets/{repo}/resolve/{rev}/{file}")
+    format!("{base}/datasets/{repo}/resolve/{rev}/{file}")
 }
 
 /// Kaggle single-file download URL (requires Basic auth).
-pub fn kaggle_file_url(owner_slug: &str, file: &str) -> String {
-    format!("https://www.kaggle.com/api/v1/datasets/download/{owner_slug}/{file}")
+pub fn kaggle_file_url(base: &str, owner_slug: &str, file: &str) -> String {
+    format!("{base}/api/v1/datasets/download/{owner_slug}/{file}")
 }
 
 // ── Kaggle credentials ────────────────────────────────────────────────────────
@@ -174,17 +185,17 @@ pub fn parse_kaggle_json(s: &str) -> Option<KaggleCreds> {
 /// Resolve Kaggle credentials from the environment, then from
 /// `~/.kaggle/kaggle.json`.
 pub fn kaggle_creds() -> Option<KaggleCreds> {
-    if let (Ok(username), Ok(key)) = (
-        std::env::var("KAGGLE_USERNAME"),
-        std::env::var("KAGGLE_KEY"),
-    ) {
+    kaggle_creds_from(|name| std::env::var(name).ok())
+}
+
+/// [`kaggle_creds`] over any environment lookup, so tests need not touch the real one.
+fn kaggle_creds_from(env: impl Fn(&str) -> Option<String>) -> Option<KaggleCreds> {
+    if let (Some(username), Some(key)) = (env("KAGGLE_USERNAME"), env("KAGGLE_KEY")) {
         if !username.is_empty() && !key.is_empty() {
             return Some(KaggleCreds { username, key });
         }
     }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()?;
+    let home = env("HOME").or_else(|| env("USERPROFILE"))?;
     let path = Path::new(&home).join(".kaggle").join("kaggle.json");
     let s = std::fs::read_to_string(path).ok()?;
     parse_kaggle_json(&s)
@@ -322,46 +333,74 @@ pub fn list_datasets() -> Vec<DatasetEntry> {
     cpu_catalog()
 }
 
+const NEEDS_KAGGLE_CREDS: &str = "Kaggle needs credentials: set KAGGLE_USERNAME and KAGGLE_KEY, \
+     or place kaggle.json in ~/.kaggle/";
+
+fn download_dataset_from(
+    hosts: &Hosts,
+    kaggle: Option<KaggleCreds>,
+    hf_token: Option<String>,
+    id: &str,
+    dest_dir: &str,
+) -> Result<DownloadResult, String> {
+    checked_dir("download folder", dest_dir)?;
+    let entry = catalog()
+        .into_iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| format!("unknown dataset id '{id}'"))?;
+    let dest = dest_path(dest_dir, &entry.file, &entry.id);
+    // The catalog holds only these two sources (a test checks it).
+    let (url, basic, bearer, source) = if entry.source == "kaggle" {
+        (
+            kaggle_file_url(hosts.kaggle, &entry.repo, &entry.file),
+            Some(kaggle.ok_or(NEEDS_KAGGLE_CREDS)?),
+            None,
+            "kaggle",
+        )
+    } else {
+        (
+            hf_resolve_url(hosts.hf, &entry.repo, &entry.file, "main"),
+            None,
+            hf_token,
+            "huggingface",
+        )
+    };
+    let bytes = download_to_file(&url, basic.as_ref(), bearer.as_deref(), &dest)?;
+    Ok(DownloadResult {
+        path: dest.display().to_string(),
+        bytes,
+        source: source.into(),
+    })
+}
+
 /// Download a curated catalog entry by `id` into `dest_dir`.
 #[tauri::command]
 pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadResult, CmdError> {
     crate::error::blocking(move || {
-        checked_dir("download folder", &dest_dir)?;
-        let entry = catalog()
-            .into_iter()
-            .find(|d| d.id == id)
-            .ok_or_else(|| format!("unknown dataset id '{id}'"))?;
-        let dest = dest_path(&dest_dir, &entry.file, &entry.id);
-        let (url, basic, bearer, source) = match entry.source.as_str() {
-            "huggingface" => (
-                hf_resolve_url(&entry.repo, &entry.file, "main"),
-                None,
-                std::env::var("HF_TOKEN").ok(),
-                "huggingface",
-            ),
-            "kaggle" => {
-                let creds = kaggle_creds().ok_or_else(|| {
-                    "Kaggle needs credentials: set KAGGLE_USERNAME and KAGGLE_KEY, or place \
-                     kaggle.json in ~/.kaggle/"
-                        .to_string()
-                })?;
-                (
-                    kaggle_file_url(&entry.repo, &entry.file),
-                    Some(creds),
-                    None,
-                    "kaggle",
-                )
-            }
-            other => return Err(format!("unknown dataset source '{other}'")),
-        };
-        let bytes = download_to_file(&url, basic.as_ref(), bearer.as_deref(), &dest)?;
-        Ok(DownloadResult {
-            path: dest.display().to_string(),
-            bytes,
-            source: source.into(),
-        })
+        let hf_token = std::env::var("HF_TOKEN").ok();
+        download_dataset_from(&HOSTS, kaggle_creds(), hf_token, &id, &dest_dir)
     })
     .await
+}
+
+fn download_hf_from(
+    hosts: &Hosts,
+    env_token: Option<String>,
+    (repo, file, revision, dest_dir, hf_token): (&str, &str, Option<&str>, &str, Option<String>),
+) -> Result<DownloadResult, String> {
+    checked_dir("download folder", dest_dir)?;
+    if repo.trim().is_empty() || file.trim().is_empty() {
+        return Err("provide a HuggingFace repo (owner/name) and file".into());
+    }
+    let url = hf_resolve_url(hosts.hf, repo, file, revision.unwrap_or("main"));
+    let dest = dest_path(dest_dir, file, "dataset.bin");
+    let token = hf_token.or(env_token);
+    let bytes = download_to_file(&url, None, token.as_deref(), &dest)?;
+    Ok(DownloadResult {
+        path: dest.display().to_string(),
+        bytes,
+        source: "huggingface".into(),
+    })
 }
 
 /// Download any HuggingFace dataset file (`repo` = `owner/name`), not just the
@@ -375,21 +414,33 @@ pub async fn download_hf_file(
     hf_token: Option<String>,
 ) -> Result<DownloadResult, CmdError> {
     crate::error::blocking(move || {
-        checked_dir("download folder", &dest_dir)?;
-        if repo.trim().is_empty() || file.trim().is_empty() {
-            return Err("provide a HuggingFace repo (owner/name) and file".into());
-        }
-        let url = hf_resolve_url(&repo, &file, revision.as_deref().unwrap_or("main"));
-        let dest = dest_path(&dest_dir, &file, "dataset.bin");
-        let token = hf_token.or_else(|| std::env::var("HF_TOKEN").ok());
-        let bytes = download_to_file(&url, None, token.as_deref(), &dest)?;
-        Ok(DownloadResult {
-            path: dest.display().to_string(),
-            bytes,
-            source: "huggingface".into(),
-        })
+        let env_token = std::env::var("HF_TOKEN").ok();
+        let args = (&*repo, &*file, revision.as_deref(), &*dest_dir, hf_token);
+        download_hf_from(&HOSTS, env_token, args)
     })
     .await
+}
+
+fn download_kaggle_from(
+    hosts: &Hosts,
+    kaggle: Option<KaggleCreds>,
+    owner_slug: &str,
+    file: &str,
+    dest_dir: &str,
+) -> Result<DownloadResult, String> {
+    checked_dir("download folder", dest_dir)?;
+    if owner_slug.trim().is_empty() || file.trim().is_empty() {
+        return Err("provide a Kaggle owner/slug and file".into());
+    }
+    let creds = kaggle.ok_or(NEEDS_KAGGLE_CREDS)?;
+    let url = kaggle_file_url(hosts.kaggle, owner_slug, file);
+    let dest = dest_path(dest_dir, file, "dataset.bin");
+    let bytes = download_to_file(&url, Some(&creds), None, &dest)?;
+    Ok(DownloadResult {
+        path: dest.display().to_string(),
+        bytes,
+        source: "kaggle".into(),
+    })
 }
 
 /// Download any Kaggle dataset file (`owner_slug` = `owner/dataset`).
@@ -400,23 +451,7 @@ pub async fn download_kaggle_file(
     dest_dir: String,
 ) -> Result<DownloadResult, CmdError> {
     crate::error::blocking(move || {
-        checked_dir("download folder", &dest_dir)?;
-        if owner_slug.trim().is_empty() || file.trim().is_empty() {
-            return Err("provide a Kaggle owner/slug and file".into());
-        }
-        let creds = kaggle_creds().ok_or_else(|| {
-            "Kaggle needs credentials: set KAGGLE_USERNAME and KAGGLE_KEY, or place kaggle.json \
-             in ~/.kaggle/"
-                .to_string()
-        })?;
-        let url = kaggle_file_url(&owner_slug, &file);
-        let dest = dest_path(&dest_dir, &file, "dataset.bin");
-        let bytes = download_to_file(&url, Some(&creds), None, &dest)?;
-        Ok(DownloadResult {
-            path: dest.display().to_string(),
-            bytes,
-            source: "kaggle".into(),
-        })
+        download_kaggle_from(&HOSTS, kaggle_creds(), &owner_slug, &file, &dest_dir)
     })
     .await
 }
@@ -484,17 +519,17 @@ mod tests {
     #[test]
     fn hf_url_is_well_formed() {
         assert_eq!(
-            hf_resolve_url("roneneldan/TinyStories", "TinyStories-valid.txt", "main"),
+            hf_resolve_url(HOSTS.hf, "roneneldan/TinyStories", "TinyStories-valid.txt", "main"),
             "https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStories-valid.txt"
         );
         // Empty revision defaults to main.
-        assert!(hf_resolve_url("a/b", "f.txt", "").ends_with("/resolve/main/f.txt"));
+        assert!(hf_resolve_url(HOSTS.hf, "a/b", "f.txt", "").ends_with("/resolve/main/f.txt"));
     }
 
     #[test]
     fn kaggle_url_is_well_formed() {
         assert_eq!(
-            kaggle_file_url("kingburrito666/shakespeare-plays", "Shakespeare_data.csv"),
+            kaggle_file_url(HOSTS.kaggle, "kingburrito666/shakespeare-plays", "Shakespeare_data.csv"),
             "https://www.kaggle.com/api/v1/datasets/download/kingburrito666/shakespeare-plays/Shakespeare_data.csv"
         );
     }
@@ -612,5 +647,193 @@ mod tests {
     fn download_dataset_unknown_id_errors_fast() {
         // The synchronous validation path (no network) is what we assert on.
         assert!(catalog().iter().all(|d| d.id != "does-not-exist"));
+    }
+
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    #[test]
+    fn kaggle_credentials_come_from_the_environment_then_kaggle_json() {
+        let creds = |u: &str, k: &str| {
+            Some(KaggleCreds {
+                username: u.into(),
+                key: k.into(),
+            })
+        };
+        let env = [("KAGGLE_USERNAME", "alice"), ("KAGGLE_KEY", "k1")];
+        assert_eq!(kaggle_creds_from(lookup(&env)), creds("alice", "k1"));
+        // Without them (or with an empty one) the file in ~/.kaggle is read, via HOME or USERPROFILE.
+        let d = scratch("kaggle_home");
+        std::fs::create_dir_all(d.join(".kaggle")).unwrap();
+        std::fs::write(
+            d.join(".kaggle/kaggle.json"),
+            r#"{"username":"bob","key":"k2"}"#,
+        )
+        .unwrap();
+        let home = d.to_str().unwrap();
+        assert_eq!(
+            kaggle_creds_from(lookup(&[("HOME", home)])),
+            creds("bob", "k2")
+        );
+        let empty = [
+            ("KAGGLE_USERNAME", ""),
+            ("KAGGLE_KEY", "k"),
+            ("USERPROFILE", home),
+        ];
+        assert_eq!(kaggle_creds_from(lookup(&empty)), creds("bob", "k2"));
+        // No variables, no home, or no file: none.
+        assert_eq!(kaggle_creds_from(lookup(&[])), None);
+        assert_eq!(
+            kaggle_creds_from(lookup(&[("HOME", "/nonexistent-home")])),
+            None
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_download_sends_its_credentials_and_lands_in_the_folder() {
+        use crate::test_support::http_server;
+        let d = scratch("dl");
+        let (url, rx) = http_server("200 OK", b"corpus".to_vec(), 3);
+        let kaggle = KaggleCreds {
+            username: "user".into(),
+            key: "pass".into(),
+        };
+        // Basic auth, creating the missing parent folders.
+        let dest = d.join("deep/er/a.txt");
+        assert_eq!(
+            download_to_file(&url, Some(&kaggle), None, &dest).unwrap(),
+            6
+        );
+        assert_eq!(std::fs::read(&dest).unwrap(), b"corpus");
+        let sent = rx.recv().unwrap().to_lowercase();
+        assert!(sent.contains("authorization: basic dxnlcjpwyxnz"), "{sent}");
+        // A bearer token is sent; an empty one is not.
+        download_to_file(&url, None, Some("tok"), &d.join("b.txt")).unwrap();
+        assert!(rx
+            .recv()
+            .unwrap()
+            .to_lowercase()
+            .contains("authorization: bearer tok"));
+        download_to_file(&url, None, Some(""), &d.join("c.txt")).unwrap();
+        assert!(!rx.recv().unwrap().to_lowercase().contains("authorization"));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_download_that_cannot_start_or_is_refused_leaves_nothing() {
+        use crate::test_support::http_server;
+        let d = scratch("dl_fail");
+        let (url, _rx) = http_server("404 Not Found", b"gone".to_vec(), 1);
+        let dest = d.join("x.txt");
+        let e = download_to_file(&url, None, None, &dest).unwrap_err();
+        assert!(e.starts_with("download failed:"), "{e}");
+        assert!(!dest.exists());
+        // A parent that is a file cannot be made into a folder.
+        std::fs::write(d.join("file"), "x").unwrap();
+        let e = download_to_file(&url, None, None, &d.join("file/sub/y.txt")).unwrap_err();
+        assert!(e.starts_with("cannot create"), "{e}");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn the_curated_download_picks_the_source_and_needs_kaggle_credentials_only_for_kaggle() {
+        use crate::test_support::http_server;
+        let d = scratch("curated");
+        let dir = d.to_str().unwrap();
+        let (base, rx) = http_server("200 OK", b"story".to_vec(), 3);
+        let hosts = Hosts {
+            hf: &base,
+            kaggle: &base,
+        };
+        let e = download_dataset_from(&hosts, None, None, "nope", dir).unwrap_err();
+        assert_eq!(e, "unknown dataset id 'nope'");
+        let hf = download_dataset_from(&hosts, None, Some("tok".into()), "tinystories-valid", dir)
+            .unwrap();
+        assert_eq!((hf.source.as_str(), hf.bytes), ("huggingface", 5));
+        assert!(hf.path.ends_with("TinyStories-valid.txt"));
+        let sent = rx.recv().unwrap();
+        assert!(
+            sent.contains("/datasets/roneneldan/TinyStories/resolve/main/TinyStories-valid.txt"),
+            "{sent}"
+        );
+        assert!(
+            sent.to_lowercase().contains("authorization: bearer tok"),
+            "{sent}"
+        );
+        let e = download_dataset_from(&hosts, None, None, "shakespeare-plays", dir).unwrap_err();
+        assert!(e.starts_with("Kaggle needs credentials"), "{e}");
+        let creds = KaggleCreds {
+            username: "u".into(),
+            key: "k".into(),
+        };
+        let k = download_dataset_from(&hosts, Some(creds), None, "shakespeare-plays", dir).unwrap();
+        assert_eq!(k.source, "kaggle");
+        let sent = rx.recv().unwrap();
+        assert!(
+            sent.contains(
+                "/api/v1/datasets/download/kingburrito666/shakespeare-plays/Shakespeare_data.csv"
+            ),
+            "{sent}"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn the_generic_downloads_check_their_form_then_fetch_the_named_file() {
+        use crate::test_support::http_server;
+        let d = scratch("generic");
+        let dir = d.to_str().unwrap();
+        let (base, rx) = http_server("200 OK", b"rows".to_vec(), 3);
+        let hosts = Hosts {
+            hf: &base,
+            kaggle: &base,
+        };
+        let e = download_hf_from(&hosts, None, (" ", "f", None, dir, None)).unwrap_err();
+        assert!(e.contains("provide a HuggingFace repo"), "{e}");
+        // The explicit token wins over the environment's; a revision picks the branch.
+        let hf = download_hf_from(
+            &hosts,
+            Some("env".into()),
+            ("o/n", "sub/f.txt", Some("v2"), dir, Some("mine".into())),
+        )
+        .unwrap();
+        assert_eq!((hf.source.as_str(), hf.bytes), ("huggingface", 4));
+        assert!(hf.path.ends_with("f.txt"));
+        let sent = rx.recv().unwrap();
+        assert!(
+            sent.contains("/datasets/o/n/resolve/v2/sub/f.txt"),
+            "{sent}"
+        );
+        assert!(sent.to_lowercase().contains("bearer mine"), "{sent}");
+        download_hf_from(
+            &hosts,
+            Some("env".into()),
+            ("o/n", "f.txt", None, dir, None),
+        )
+        .unwrap();
+        assert!(rx.recv().unwrap().to_lowercase().contains("bearer env"));
+
+        let e = download_kaggle_from(&hosts, None, "", "f", dir).unwrap_err();
+        assert!(e.contains("provide a Kaggle owner/slug"), "{e}");
+        let e = download_kaggle_from(&hosts, None, "o/n", "f.csv", dir).unwrap_err();
+        assert!(e.starts_with("Kaggle needs credentials"), "{e}");
+        let creds = KaggleCreds {
+            username: "u".into(),
+            key: "k".into(),
+        };
+        let k = download_kaggle_from(&hosts, Some(creds), "o/n", "f.csv", dir).unwrap();
+        assert_eq!((k.source.as_str(), k.bytes), ("kaggle", 4));
+        assert!(rx
+            .recv()
+            .unwrap()
+            .contains("/api/v1/datasets/download/o/n/f.csv"));
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

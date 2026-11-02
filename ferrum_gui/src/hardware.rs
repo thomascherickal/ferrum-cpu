@@ -194,9 +194,9 @@ pub fn run_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Opti
         match child.try_wait() {
             Ok(Some(status)) => {
                 let mut out = String::new();
-                if let Some(mut so) = child.stdout.take() {
-                    std::io::Read::read_to_string(&mut so, &mut out).ok()?;
-                }
+                // ponytail: stdout is `Stdio::piped()` above, so it is always there.
+                let mut so = child.stdout.take().expect("piped stdout");
+                std::io::Read::read_to_string(&mut so, &mut out).ok()?;
                 return status.success().then_some(out);
             }
             Ok(None) if start.elapsed() < timeout => std::thread::sleep(Duration::from_millis(10)),
@@ -350,6 +350,8 @@ mod tests {
         assert_eq!(parse_hex_id("zz"), None);
         assert_eq!(parse_hex_id(""), None);
         assert_eq!(vendor_name(0x10de), "NVIDIA");
+        assert_eq!(vendor_name(0x1af4), "Virtual (virtio)");
+        assert_eq!(vendor_name(0x15ad), "Virtual (VMware)");
         assert!(vendor_name(0xbeef).contains("0xbeef"));
         assert_eq!(parse_vram_mb("8589934592\n"), Some(8192));
         assert_eq!(parse_vram_mb("n/a"), None);
@@ -448,12 +450,16 @@ mod tests {
         assert!(hw.logical_cores >= 1);
         assert!(hw.ferrum_threads >= 1);
         assert!(!hw.cpu_model.is_empty());
-        if cfg!(target_os = "linux") {
-            let total = hw.ram_total_mb.expect("RAM total on Linux");
-            let avail = hw.ram_available_mb.expect("RAM available on Linux");
-            assert!(total >= 64 && avail <= total, "{total} {avail}");
-        }
         assert!(hw.gpus.iter().all(|g| !g.used_by_ferrum));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detect_reports_ram_on_linux() {
+        let hw = detect();
+        let total = hw.ram_total_mb.expect("RAM total on Linux");
+        let avail = hw.ram_available_mb.expect("RAM available on Linux");
+        assert!(total >= 64 && avail <= total, "{total} {avail}");
     }
 
     #[test]

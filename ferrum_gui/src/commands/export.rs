@@ -1,7 +1,7 @@
 //! The Export tab: write a loaded, optionally fine-tuned, llama/qwen2 model
 //! back out as a runnable GGUF at a chosen quantisation.
 
-use super::guard::{available_memory_bytes, gguf_resident_bytes};
+use super::guard::{available_memory_bytes, gguf_resident_bytes, ram_guard};
 use crate::error::CmdError;
 use crate::jobs::Job;
 use crate::paths::checked_path;
@@ -104,21 +104,18 @@ pub(crate) fn do_export(
     } else {
         write_peak
     };
-    if let Some(avail) = available_memory_bytes() {
-        if (est as f64) > 0.9 * avail as f64 && !p.force {
-            return Err(format!(
-                "estimated peak memory ({:.2} GB{}) exceeds 90% of available ({:.2} GB) — \
-                 pick a smaller output type or tick 'Export anyway'.",
-                est as f64 / 1e9,
-                if resume.is_some() {
-                    ": checkpoint apply needs weights + grads + Adam moments"
-                } else {
-                    ": f32 model + output buffer"
-                },
-                avail as f64 / 1e9
-            ));
-        }
-    }
+    ram_guard(
+        "peak memory",
+        if resume.is_some() {
+            ": checkpoint apply needs weights + grads + Adam moments"
+        } else {
+            ": f32 model + output buffer"
+        },
+        est,
+        available_memory_bytes(),
+        p.force,
+        "pick a smaller output type or tick 'Export anyway'",
+    )?;
 
     check()?;
     let t0 = std::time::Instant::now();
@@ -192,6 +189,18 @@ pub async fn export_gguf<R: Runtime>(
 mod tests {
     use super::*;
     use ferrum_core::GgufQuant;
+
+    #[test]
+    fn tensor_types_are_named_as_llama_cpp_names_them() {
+        let names: Vec<String> = [0, 1, 2, 3, 6, 7, 8, 9, 12, 13, 14, 99]
+            .into_iter()
+            .map(ggml_type_name)
+            .collect();
+        assert_eq!(
+            names.join(" "),
+            "F32 F16 Q4_0 Q4_1 Q5_0 Q5_1 Q8_0 Q8_1 Q4_K Q5_K Q6_K type99"
+        );
+    }
 
     #[test]
     fn a_cancelled_export_writes_nothing_and_leaves_no_temp_file() {

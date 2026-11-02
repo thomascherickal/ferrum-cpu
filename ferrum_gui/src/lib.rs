@@ -32,15 +32,16 @@ mod jobs;
 mod paths;
 mod preflight;
 mod prepare;
+mod run;
 mod runtime_export;
 mod serve;
 #[cfg(test)]
 mod test_support;
 mod tokenize;
 
+pub use run::run;
 use std::sync::Mutex;
 use sysinfo::System;
-use tauri::Emitter;
 
 /// Process-wide state shared across commands.
 pub struct AppState {
@@ -97,21 +98,7 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
         ])
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    configure(tauri::Builder::default())
-        .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            // Mirror every ferrum_core `--verbose` line into the GUI terminal.
-            let handle = app.handle().clone();
-            ferrum_core::set_log_sink(move |line| {
-                let _ = handle.emit("engine-log", line.to_string());
-            });
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running Ferrum SLM Studio");
-}
-
+#[cfg(test)]
+mod ipc_errors;
 #[cfg(test)]
 mod ipc_tests;

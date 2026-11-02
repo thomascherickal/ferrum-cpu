@@ -192,6 +192,61 @@ mod tests {
     }
 
     #[test]
+    fn fetch_text_returns_the_body_up_to_the_cap_and_refuses_failures() {
+        use crate::test_support::http_server;
+        let (url, _rx) = http_server("200 OK", "héllo wörld".as_bytes().to_vec(), 1);
+        assert_eq!(fetch_text(&url, 1024).unwrap(), "héllo wörld");
+        // The cap cuts the body (lossily when it splits a character); a cap of 0 still reads a byte.
+        let (url, _rx) = http_server("200 OK", "héllo".as_bytes().to_vec(), 2);
+        assert_eq!(fetch_text(&url, 2).unwrap(), "h\u{fffd}");
+        assert_eq!(fetch_text(&url, 0).unwrap(), "h");
+        let (url, _rx) = http_server("200 OK", Vec::new(), 1);
+        assert_eq!(
+            fetch_text(&url, 8).unwrap_err(),
+            "downloaded resource was empty"
+        );
+        let (url, _rx) = http_server("404 Not Found", b"no".to_vec(), 1);
+        assert!(fetch_text(&url, 8)
+            .unwrap_err()
+            .starts_with("download failed:"));
+        // The command applies the 8 MiB default and reports the same errors as the core.
+        let (url, _rx) = http_server("200 OK", b"text".to_vec(), 1);
+        let got = tauri::async_runtime::block_on(download_text(url, None)).unwrap();
+        assert_eq!(got, "text");
+    }
+
+    #[test]
+    fn save_corpus_reports_a_folder_or_file_it_cannot_make() {
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_savefail_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let blocker = dir.join("file");
+        std::fs::write(&blocker, "x").unwrap();
+        // A parent that is a regular file cannot become a folder.
+        let e = save_corpus(
+            "x".into(),
+            blocker.join("sub/out.txt").to_str().unwrap().into(),
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("cannot create") || e.contains("cannot access"),
+            "{e}"
+        );
+        // A read-only folder refuses the file itself.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let ro = dir.join("ro");
+            std::fs::create_dir(&ro).unwrap();
+            std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let e =
+                save_corpus("x".into(), ro.join("out.txt").to_str().unwrap().into()).unwrap_err();
+            assert!(e.contains("cannot write"), "{e}");
+            std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn file_commands_refuse_bad_paths() {
         let dir = std::env::temp_dir().join(format!("ferrum_gui_cmdpaths_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

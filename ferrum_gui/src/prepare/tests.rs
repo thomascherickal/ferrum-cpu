@@ -298,3 +298,15 @@ fn the_folder_walk_skips_hidden_files_and_the_output_folder() {
     assert_eq!(again.train.documents, r.train.documents);
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn a_form_with_only_inputs_and_an_output_folder_gets_the_cli_defaults() {
+    let p: PrepareParams =
+        serde_json::from_str(r#"{"inputs": ["a.txt"], "outDir": "out"}"#).unwrap();
+    assert_eq!(
+        (p.val_frac, p.test_frac, p.seed, p.min_chars),
+        (0.05, 0.05, 42, 1)
+    );
+    assert_eq!((p.max_chars, p.doc_sep.as_str()), (0, DOC_SEP));
+    assert!(!(p.dedup || p.nfkc || p.lowercase || p.strip_gutenberg || p.lossy));
+}

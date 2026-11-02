@@ -332,3 +332,37 @@ fn cancel_before_the_tool_starts_and_form_validation() {
     assert!(!marker.exists());
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn a_preview_without_a_tool_path_looks_the_tool_up_and_reports_what_it_found() {
+    let d = tmp("lookup");
+    let model = header_gguf(&d, "m.gguf", "gpt2", 8);
+    for target in [Target::Ollama, Target::Lmstudio] {
+        let p = RuntimeParams {
+            target,
+            bin: String::new(),
+            ..ollama(&model, &d)
+        };
+        // Whether the tool is installed here is not the test's business: exactly one of the
+        // two answers is given.
+        let r = do_preview(&p).unwrap();
+        assert!(r.tool.is_some() != r.tool_error.is_some(), "{r:?}");
+    }
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[test]
+fn the_tool_found_or_the_reason_for_none_is_recorded() {
+    let mut r = base(&ollama(Path::new("m.gguf"), Path::new("t")));
+    record_tool(&mut r, Ok(PathBuf::from("/usr/bin/ollama")));
+    assert_eq!(
+        (r.tool.as_deref(), r.tool_error.as_deref()),
+        (Some("/usr/bin/ollama"), None)
+    );
+    let mut r = base(&ollama(Path::new("m.gguf"), Path::new("t")));
+    record_tool(&mut r, Err("cannot find 'ollama'".into()));
+    assert_eq!(
+        (r.tool.as_deref(), r.tool_error.as_deref()),
+        (None, Some("cannot find 'ollama'"))
+    );
+}

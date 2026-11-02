@@ -257,13 +257,7 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
 
     // Debug builds run the benchmark loops unoptimized (~60x too slow), so only a
     // release-build measurement may scale the GUI's time estimates.
-    if !cfg!(debug_assertions) {
-        *state.bench.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(crate::estimate::Throughput {
-                gemm_single_gflops: gemm_single,
-                mem_bw_gbps: bw / 1e9,
-            });
-    }
+    record_bench(&state.bench, gemm_single, bw, !cfg!(debug_assertions));
 
     Ok(assemble_report(
         cpu,
@@ -274,6 +268,21 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
         bw,
         gemm_single,
     ))
+}
+
+/// Keep a measurement for the time estimates, if `trusted` (an optimized build measured it).
+fn record_bench(
+    slot: &std::sync::Mutex<Option<crate::estimate::Throughput>>,
+    gemm_single: f64,
+    bw_bytes_per_s: f64,
+    trusted: bool,
+) {
+    if trusted {
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(crate::estimate::Throughput {
+            gemm_single_gflops: gemm_single,
+            mem_bw_gbps: bw_bytes_per_s / 1e9,
+        });
+    }
 }
 
 // ── Live micro-benchmark ─────────────────────────────────────────────────────
@@ -369,6 +378,23 @@ fn gflops(flops: f64, secs: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_benchmark_scales_the_estimates_only_when_trusted() {
+        let slot = std::sync::Mutex::new(None);
+        record_bench(&slot, 12.0, 8e9, false);
+        assert!(slot.lock().unwrap().is_none());
+        record_bench(&slot, 12.0, 8e9, true);
+        let t = slot.lock().unwrap().unwrap();
+        assert_eq!((t.gemm_single_gflops, t.mem_bw_gbps), (12.0, 8.0));
+    }
+
+    #[test]
+    fn the_load_cap_is_infinite_when_memory_or_precision_is_unknown() {
+        assert_eq!(load_cap_params(0, 4.0), f64::INFINITY);
+        assert_eq!(load_cap_params(1 << 30, 0.0), f64::INFINITY);
+        assert!(load_cap_params(1 << 30, 4.0).is_finite());
+    }
 
     #[test]
     fn infer_bound_orders_by_precision() {
