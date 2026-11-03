@@ -76,6 +76,7 @@ pub(crate) const RUN_GGUF_FLAGS: Spec = &[
     ("top-k", Kind::Usize),
     ("top-p", Kind::F32),
     ("rep", Kind::F32),
+    ("stop", Kind::StrList),
     ("ids", Kind::Str),
     ("raw", Kind::Bool),
     ("force", Kind::Bool),

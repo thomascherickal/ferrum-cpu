@@ -44,6 +44,7 @@
           force: $("ggForce").checked,
           resume: resume === "" ? null : resume,
           raw: !$("ggChatFmt").checked,
+          stop: $("ggStop").value.split("\n").map((l) => l.replace(/\r$/, "")).filter((l) => l !== ""),
         };
         if (!params.prompt.trim() && !params.ids) throw new Error("Enter a prompt (or token IDs)");
       } catch (e) { setErr("errGguf", e); return; }

@@ -1,12 +1,13 @@
 //! Inspect saved models and run imported GGUFs (Llama/Qwen checkpoints).
 
-use super::generate::{one_f32, sampling_from};
+use super::generate::{one_f32, parse_stops, sampling_from};
 use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant, ram_guard};
 use super::time_seed;
 use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
+use ferrum_core::llm_stop::StopMatcher;
 use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, LlamaTrainer, QKind, Rng};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -179,6 +180,10 @@ pub struct GgufRunParams {
     /// Disable automatic chat-template formatting for instruct GGUFs.
     #[serde(default)]
     pub raw: bool,
+    /// Stop strings, one per entry (as the Generate tab: `\n` `\t` `\\` unescaped, empty
+    /// entries dropped); the text ends before the earliest one. Needs a tokenizer.
+    #[serde(default)]
+    pub stop: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -243,6 +248,10 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     )?;
 
     let tok = GgufTokenizer::from_gguf(&g).ok();
+    let text_stops = parse_stops(&p.stop);
+    if tok.is_none() && !text_stops.is_empty() {
+        return Err("stop strings need a tokenizer; this GGUF has none (enter token IDs without stop strings)".into());
+    }
     not_cancelled(&job)?;
     let mut model = g
         .load_llama_prec(prec)
@@ -310,17 +319,32 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     }
     let t0 = std::time::Instant::now();
     let stopped = std::cell::Cell::new(false);
+    // With no stop strings the matcher never fires: `generate_cancellable` bit for bit.
+    let mut matcher = tok
+        .as_ref()
+        .map(|t| StopMatcher::new(t, prompt_ids.last().copied().unwrap_or(0), &text_stops));
     let out = model
-        .generate_cancellable(&prompt_ids, p.max_new, &params, &stops, &mut rng, &|| {
-            let c = job.cancelled();
-            stopped.set(stopped.get() || c);
-            c
-        })
+        .generate_until_cancellable(
+            &prompt_ids,
+            p.max_new,
+            &params,
+            &stops,
+            &mut rng,
+            &|| {
+                let c = job.cancelled();
+                stopped.set(stopped.get() || c);
+                c
+            },
+            &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
+        )
         .map_err(|e| format!("generation failed: {e}"))?;
     let seconds = t0.elapsed().as_secs_f32();
 
     let text = match &tok {
-        Some(t) => format!("{}{}", p.prompt, t.decode(&out)),
+        Some(t) => match matcher.as_ref().and_then(|m| m.cut()) {
+            Some(cut) => format!("{}{cut}", p.prompt),
+            None => format!("{}{}", p.prompt, t.decode(&out)),
+        },
         None => out
             .iter()
             .map(usize::to_string)

@@ -1357,10 +1357,11 @@ train_transformer run-gguf <model.gguf> [prompt] [options]
 | Flag | Default | Meaning |
 |---|---|---|
 | `--quant int4\|int8\|f32` | int4 | In-memory precision: int4 = least RAM, int8 = fastest decode, f32 = no second quantization |
-| `--max N` | — | Maximum new tokens |
+| `--max N` | 64 | Maximum new tokens (this is the token limit; there is no separate `--max-tokens`) |
 | `--temp F` | 0.8 | Temperature |
 | `--top-k N` / `--top-p F` / `--rep F` | 0 / 1.0 / 1.0 | Sampling knobs (defaults = off) |
 | `--gen-seed N` | — | Generation seed |
+| `--stop STR` | — | Stop string, repeatable. Generation ends at the earliest occurrence in the generated text and the stop string is not printed; a stop that spans two tokens matches. Taken literally (no escapes, like `generate --stop`), so use your shell's quoting for a newline. Needs a tokenizer in the file. The end-of-text token and a chat template's end marker still stop the run |
 | `--raw` | — | Disable automatic chat-template formatting |
 | `--ids "1 2 3"` | — | Raw prompt token IDs (only if the file has no tokenizer) |
 | `--resume ckpt.flck` | — | Overlay fine-tuned weights (forces f32) |
@@ -1371,6 +1372,21 @@ train_transformer run-gguf <model.gguf> [prompt] [options]
   `Loading weights`), the `[N tokens in ...]` speed line and a stop reason such as
   `stopped: context full at 63 tokens` (the run hit the model's context window
   before `--max`) go to stderr. A non-numeric `--ids` token is an error naming it.
+- **Stop strings.** `ferrum_core::llm_stop::StopMatcher` is the one implementation behind
+  `run-gguf --stop`, the GUI GGUF tab and the server's `stop` on an imported model, with
+  the same rules as for Ferrum models (earliest match wins, stop text excluded). Run on
+  2026-11-03 with SmolLM2-135M Q8_0, `--raw --temp 0 --max 24 --quant int8`:
+
+  ```text
+  $ train_transformer run-gguf smollm2-135m-q8_0.gguf "The capital of France is" --raw --temp 0 --max 24 --quant int8 --stop .
+  The capital of France is Paris
+  $ ... --stop , --stop and
+  The capital of France is Paris. Paris is the largest city in France
+  ```
+
+  Without `--stop` the same command prints `The capital of France is Paris. Paris is the
+  largest city in France and is known for its historical landmarks, culture, and fashion.`
+  (24 tokens). With no `--stop` the text is identical to before the flag existed.
 - **Chat templates.** For instruct models, Ferrum detects the template from
   `tokenizer.chat_template` (ChatML, Llama-3, Llama-2 `[INST]`, Zephyr) or
   falls back by architecture. It wraps your prompt and stops at the
@@ -1945,7 +1961,7 @@ those.
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
 | **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
-| **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, optional fine-tune overlay (no stop strings: the library and `run-gguf` stop on token ids only) |
+| **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, stop strings (one per line, `\n` `\t` `\\` unescaped, needs a tokenizer), optional fine-tune overlay |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary. A second block runs a Ferrum `gpt2` model in **Ollama** or **LM Studio** (the code of `export-ollama` / `export-lmstudio`): *Show Modelfile and commands*, *Export to Ollama*, *Import into LM Studio*, *Write Modelfile only*; see *Running in Ollama and LM Studio* below |
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |

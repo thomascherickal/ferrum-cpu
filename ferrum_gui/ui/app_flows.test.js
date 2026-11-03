@@ -472,7 +472,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     captured.run_gguf = a.of("run_gguf")[0].args.params;
     assert.deepStrictEqual(a.of("run_gguf")[0].args.params, {
       modelPath: "/g.gguf", prompt: "hello", quant: "int4", maxNew: 64, temp: 0.8, topK: 40, topP: 1, repPenalty: 1,
-      genSeed: 5, ids: null, force: false, resume: null, raw: true,
+      genSeed: 5, ids: null, force: false, resume: null, raw: true, stop: [],
     });
     assert.strictEqual(a.$("ggOut").textContent, "hi there");
     assert.ok(a.$("ggStatus").textContent.startsWith("done — 4 tokens in 2.0s"), a.$("ggStatus").textContent);
@@ -480,6 +480,11 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     a.set("ggPrompt", ""); a.set("ggIds", "1 2 3");
     await a.click("ggRun");
     assert.strictEqual(a.of("run_gguf")[1].args.params.ids, "1 2 3");
+    // Stop strings: one per line, CR and empty lines dropped, escapes left for the backend.
+    a.set("ggStop", "\\n\r\n\nEND\n");
+    await a.click("ggRun");
+    assert.deepStrictEqual(a.of("run_gguf")[2].args.params.stop, ["\\n", "END"]);
+    a.set("ggStop", "");
     a.set("ggMax", "0");
     const n = a.of("run_gguf").length;
     await a.click("ggRun");

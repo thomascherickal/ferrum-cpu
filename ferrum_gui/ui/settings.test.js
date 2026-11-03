@@ -55,7 +55,7 @@ assert.strictEqual(S.dirOf("c.txt"), "");
   // token-like field has to be named here (and in settings.js) on purpose.
   const textareas = Array.from(doc.querySelectorAll("textarea")).map((e) => e.id).sort();
   const contentOrSecret = ["dsRaw", "dsPreview", "evText", "rxModelfile"];
-  const typedSettings = ["dpInputs", "genSeed", "genStop", "ggPrompt"];
+  const typedSettings = ["dpInputs", "genSeed", "genStop", "ggPrompt", "ggStop"];
   assert.deepStrictEqual(textareas, [...contentOrSecret, ...typedSettings].sort());
   for (const id of contentOrSecret) assert.ok(S.isNever(id));
   for (const id of ids) assert.ok(!/(token|secret|password|apikey|key)$/i.test(id), id + " looks like a secret");

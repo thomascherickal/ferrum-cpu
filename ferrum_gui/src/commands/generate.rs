@@ -72,7 +72,7 @@ pub(super) fn sampling_from(
 }
 
 /// Stop strings as typed (one per line): empty lines dropped, `\n` `\t` `\\` unescaped.
-fn parse_stops(raw: &[String]) -> Vec<String> {
+pub(super) fn parse_stops(raw: &[String]) -> Vec<String> {
     raw.iter()
         .filter(|s| !s.is_empty())
         .map(|s| {

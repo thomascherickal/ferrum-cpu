@@ -435,6 +435,9 @@
         <label>Repetition penalty (1.0 = off) <input type="number" id="ggRep" value="1.0" min="0" step="0.05" /></label>
         <label>Gen seed (blank=random) <input type="number" id="ggSeed" placeholder="random" /></label>
       </div>
+      <label>Stop strings (one per line)
+        <textarea id="ggStop" rows="2" placeholder="e.g. a full stop and space, or \n for a new line"></textarea>
+      </label>
       <label>Token IDs (only if the file has no tokenizer)
         <input type="text" id="ggIds" placeholder="e.g. 1 234 56" />
       </label>

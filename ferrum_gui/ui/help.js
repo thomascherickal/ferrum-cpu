@@ -528,6 +528,12 @@
       how: "Values around 1.1 to 1.2 reduce loops such as 'the the the'. Large values make the text avoid ordinary repetition and become strange.",
       beginner: "A nudge against saying the same thing again and again, a common habit of language models.",
     },
+    ggStop: {
+      title: "Stop strings (one per line)",
+      what: "Text that ends generation as soon as the model writes it. The stop text itself is not part of the output. Empty lines are ignored. The end-of-text token and the chat template's end marker still stop the run as before.",
+      how: "Type one stop string per line. Write \\n for a new line, \\t for a tab and \\\\ for a backslash, because a real new line would start the next stop string. The file needs a tokenizer; with only token IDs a stop string cannot be matched and the run is refused. The earliest match in the text wins.",
+      beginner: "Handy to cut the text at the end of a sentence or a paragraph instead of letting the model ramble on.",
+    },
     ggSeed: {
       title: "Gen seed (blank = random)",
       what: "Fixes the random choices of the sampler. Empty means a different result each time.",

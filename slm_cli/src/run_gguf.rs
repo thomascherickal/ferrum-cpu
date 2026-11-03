@@ -12,7 +12,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     if args.positional.is_empty() {
         return Err("usage: train_transformer run-gguf <model.gguf> [prompt] \
                     [--quant int4|int8|f32] [--max N] [--temp F] \
-                    [--top-k N] [--top-p F] [--rep F] [--ids \"1 2 3\"] [--raw]"
+                    [--top-k N] [--top-p F] [--rep F] [--stop STR]... [--ids \"1 2 3\"] [--raw]"
             .into());
     }
     require_resume_file(args.value("resume"), ".flck")?;
@@ -29,6 +29,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
                 .collect::<Result<_, String>>()
         })
         .transpose()?;
+    let text_stops = args.get_all("stop");
     let path = &args.positional[0];
     let prompt_text = args.positional[1..].join(" ");
 
@@ -92,6 +93,13 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
     match &tok {
         Some(t) => eprintln!("  tokenizer = {:?}  (vocab {})", t.model(), t.vocab_size()),
         None => eprintln!("  tokenizer = none in file — supply --ids \"<token ids>\""),
+    }
+
+    if tok.is_none() && !text_stops.is_empty() {
+        return Err(
+            "--stop needs a tokenizer; this GGUF has none (stop on token ids is not offered)"
+                .into(),
+        );
     }
 
     eprintln!("Loading weights…");
@@ -179,12 +187,30 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
         prompt_ids.len()
     );
     let t1 = Instant::now();
-    let out_ids = model.generate(&prompt_ids, max_new, &params, &stops, &mut rng)?;
+    // With no --stop the matcher never fires, so this is `generate` bit for bit.
+    let mut matcher = tok.as_ref().map(|t| {
+        ferrum_core::llm_stop::StopMatcher::new(
+            t,
+            prompt_ids.last().copied().unwrap_or(0),
+            &text_stops,
+        )
+    });
+    let out_ids = model.generate_until(
+        &prompt_ids,
+        max_new,
+        &params,
+        &stops,
+        &mut rng,
+        &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
+    )?;
     let dt = t1.elapsed().as_secs_f32();
 
     // stdout carries only the generated text, so `run-gguf ... > out.txt` is clean.
     match &tok {
-        Some(t) => println!("{prompt_text}{}", t.decode(&out_ids)),
+        Some(t) => match matcher.as_ref().and_then(|m| m.cut()) {
+            Some(cut) => println!("{prompt_text}{cut}"),
+            None => println!("{prompt_text}{}", t.decode(&out_ids)),
+        },
         None => {
             let ids: Vec<String> = out_ids.iter().map(usize::to_string).collect();
             println!("token ids: {}", ids.join(" "));

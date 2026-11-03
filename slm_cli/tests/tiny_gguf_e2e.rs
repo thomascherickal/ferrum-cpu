@@ -490,3 +490,40 @@ fn a_closed_stdout_ends_a_printing_command_quietly_with_exit_zero() {
     );
     assert_eq!(o.status.code(), Some(0), "{err}");
 }
+
+/// `run-gguf --stop`: the first stop string ends the text before itself, a stop that never
+/// appears changes nothing (bit for bit), `--stop` repeats, and a file without a tokenizer
+/// refuses it.
+#[test]
+fn run_gguf_stop_strings_cut_the_text_and_absent_ones_change_nothing() {
+    let t = Tmp::new("stop");
+    std::fs::write(t.s("m.gguf"), tiny_llama_gguf_with_tokens(&letter_vocab())).unwrap();
+    let m = t.s("m.gguf");
+    let run = |extra: &[&str]| {
+        let mut a = vec!["run-gguf", &m, "ab", "--raw", "--temp", "0", "--max", "10"];
+        a.extend_from_slice(extra);
+        generated(&a)
+    };
+    let full = run(&[]);
+    assert_eq!(
+        run(&["--stop", "zzzz"]),
+        full,
+        "an absent stop changes nothing"
+    );
+    let cont = &full["ab".len()..];
+    assert!(cont.chars().count() >= 3, "{full:?}");
+    let ch: String = cont.chars().nth(2).unwrap().to_string();
+    let cut = cont.find(&ch).unwrap();
+    assert_eq!(run(&["--stop", &ch]), format!("ab{}", &cont[..cut]));
+    // Repeated flags: the earliest match wins whatever the order.
+    let first: String = cont.chars().next().unwrap().to_string();
+    let want = format!("ab{}", &cont[..cont.find(&first).unwrap()]);
+    assert_eq!(run(&["--stop", &ch, "--stop", &first]), want);
+    assert_eq!(run(&["--stop", &first, "--stop", &ch]), want);
+
+    // No tokenizer: a text stop cannot be matched, and the error says so before loading.
+    std::fs::write(t.s("n.gguf"), common::tiny_llama_gguf(None, &[])).unwrap();
+    let o = tt(&["run-gguf", &t.s("n.gguf"), "--ids", "1 2", "--stop", "a"]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--stop needs a tokenizer"));
+}

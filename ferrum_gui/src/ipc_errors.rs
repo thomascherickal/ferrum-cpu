@@ -418,6 +418,56 @@ fn run_params(model: &std::path::Path, extra: Value) -> Value {
 }
 
 #[test]
+fn gguf_run_stop_strings_cut_the_text_and_need_a_tokenizer() {
+    let (_app, w) = app();
+    let dir = tmp("gguf_stop");
+    let model = dir.join("m.gguf");
+    std::fs::write(&model, Tiny::default().build()).unwrap();
+    let run = |extra: Value| {
+        let r = call(&w, "run_gguf", run_params(&model, extra)).unwrap();
+        r["text"].as_str().unwrap().to_string()
+    };
+    let more = json!({"maxNew": 12});
+    let full = run(more.clone());
+    let cont = &full["hi".len()..];
+    assert!(cont.chars().count() >= 3, "{full:?}");
+    // No stop, an empty line and a stop that never appears are all the same run.
+    assert_eq!(run(json!({"maxNew": 12, "stop": []})), full);
+    assert_eq!(run(json!({"maxNew": 12, "stop": ["", "zzzz"]})), full);
+    let ch: String = cont.chars().nth(2).unwrap().to_string();
+    let want = format!("hi{}", &cont[..cont.find(&ch).unwrap()]);
+    assert_eq!(run(json!({"maxNew": 12, "stop": [ch.clone()]})), want);
+    // The earliest match wins whatever the order of the lines.
+    let first: String = cont.chars().next().unwrap().to_string();
+    let want = format!("hi{}", &cont[..cont.find(&first).unwrap()]);
+    assert_eq!(
+        run(json!({"maxNew": 12, "stop": [ch.clone(), first.clone()]})),
+        want
+    );
+    assert_eq!(run(json!({"maxNew": 12, "stop": [first, ch]})), want);
+
+    // Without a tokenizer a stop string cannot be matched: refused before loading.
+    let bare = dir.join("bare.gguf");
+    std::fs::write(
+        &bare,
+        Tiny {
+            tok_count: Some(0),
+            ..Tiny::default()
+        }
+        .build(),
+    )
+    .unwrap();
+    let e = call(
+        &w,
+        "run_gguf",
+        run_params(&bare, json!({"ids": "1 2", "stop": ["a"]})),
+    )
+    .unwrap_err();
+    assert!(msg(&e).contains("stop strings need a tokenizer"), "{e}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn gguf_info_and_run_cover_files_without_a_tokenizer_and_instruct_templates() {
     let (_app, w) = app();
     let dir = tmp("gguf_run");
