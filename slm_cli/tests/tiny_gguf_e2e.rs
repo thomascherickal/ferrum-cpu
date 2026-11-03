@@ -471,12 +471,22 @@ fn write_over_budget_llama(path: &str) -> bool {
     let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
     let len = bytes.len() as u64 + ELEMENTS / 32 * 34;
     // A ~73 GB sparse file needs a filesystem with sparse-file support and no file-size limit.
-    let sparse = f.set_len(len).is_ok()
-        && std::os::unix::fs::MetadataExt::blocks(&f.metadata().unwrap()) * 512 < (1 << 20);
+    // Windows (NTFS) would allocate it for real, so there the test is skipped without trying.
+    let sparse = cfg!(unix) && f.set_len(len).is_ok() && is_sparse(&f);
     if !sparse {
         let _ = std::fs::remove_file(path);
     }
     sparse
+}
+
+/// Fewer than 1 MiB of disk blocks actually allocated.
+#[cfg(unix)]
+fn is_sparse(f: &std::fs::File) -> bool {
+    std::os::unix::fs::MetadataExt::blocks(&f.metadata().unwrap()) * 512 < (1 << 20)
+}
+#[cfg(not(unix))]
+fn is_sparse(_: &std::fs::File) -> bool {
+    false
 }
 
 /// A GGUF with an unsupported architecture, no tokenizer, and one tensor of ggml type `ty`.

@@ -3,7 +3,7 @@
 //! SIGINT shutdown.
 mod common;
 
-use common::{http, sigint_and_wait, spawn, BIN};
+use common::{assert_graceful, http, sigint_and_wait, spawn, BIN};
 use ferrum_core::{GenerativeSLM, Rng, SamplingParams, TransformerConfig};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -176,7 +176,7 @@ fn tiny_model_over_http_matches_the_library_and_shuts_down_cleanly() {
     assert_eq!(http(&addr, "GET", "/health", "").0, 200);
 
     let status = sigint_and_wait(&mut child);
-    assert!(status.success(), "{status:?}");
+    assert_graceful(status);
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn limit_flags_reach_the_running_server() {
     assert_eq!(http(&addr, "POST", "/v1/generate", &big).0, 413);
     assert_eq!(http(&addr, "GET", "/health", "").0, 200);
 
-    assert!(sigint_and_wait(&mut child).success());
+    assert_graceful(sigint_and_wait(&mut child));
 }
 
 #[test]

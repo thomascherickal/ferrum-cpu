@@ -519,6 +519,7 @@ pub fn cmd_export_lmstudio(
 mod tests {
     use super::*;
     use ferrum_core::{GgufBuilder, MetaValue};
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     /// A fresh temp dir that is removed on drop (also when the test panics).
@@ -561,6 +562,7 @@ mod tests {
     }
 
     /// An executable shell script named `name` in `dir`.
+    #[cfg(unix)]
     fn fake(dir: &Path, name: &str, body: &str) -> PathBuf {
         let p = dir.join(name);
         std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -697,6 +699,7 @@ mod tests {
 
     // ---- find_tool ----
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn find_tool_order() {
         let d = tmp("find");
@@ -759,6 +762,7 @@ mod tests {
         assert!(e.contains("default location: not set"), "{e}");
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn find_tool_reads_the_real_env_and_path() {
         // No set_var/remove_var: mutating the process environment races with other tests'
@@ -853,6 +857,7 @@ mod tests {
 
     // ---- export_ollama ----
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_ollama_runs_create_with_a_modelfile() {
         let d = tmp("ol_ok");
@@ -873,6 +878,7 @@ mod tests {
         assert!(seen.contains("num_ctx 64"), "{seen}");
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_ollama_down_says_ollama_serve() {
         let d = tmp("ol_down");
@@ -885,6 +891,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_ollama_other_failure_has_no_serve_hint() {
         let d = tmp("ol_fail");
@@ -897,6 +904,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_ollama_refuses_before_running_any_tool() {
         let d = tmp("ol_refuse");
@@ -908,6 +916,7 @@ mod tests {
         assert!(!marker.exists());
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn run_tool_retries_while_the_script_is_still_open_for_writing() {
         let d = tmp("txtbsy");
@@ -949,6 +958,7 @@ mod tests {
         assert_eq!(c, r#"/bin/ollama create "my name" "a\"b" """#);
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn ollama_preview_shows_the_modelfile_and_command_and_runs_nothing() {
         let d = tmp("ol_prev");
@@ -981,6 +991,7 @@ mod tests {
             .contains("Manual 9.5"));
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn lmstudio_preview_lists_both_commands_and_validates_the_repo() {
         let d = tmp("lm_prev");
@@ -1015,6 +1026,7 @@ mod tests {
         assert!(e.contains("o"), "{e}");
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn runs_report_what_was_given_to_the_tool() {
         let d = tmp("runs");
@@ -1035,6 +1047,7 @@ mod tests {
         assert_eq!(r.commands.len(), 2);
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn cancel_stops_before_the_tool_starts_and_between_lmstudio_steps() {
         let d = tmp("cancel");
@@ -1069,8 +1082,10 @@ mod tests {
 
     // ---- export_lmstudio ----
 
+    #[cfg(unix)]
     const LS: &str = r#"[{"modelKey":"ferrum/m","path":"ferrum/m/m.gguf"}]"#;
 
+    #[cfg(unix)]
     fn lms(dir: &Path, import: &str, ls: &str) -> PathBuf {
         std::fs::write(dir.join("ls.json"), LS).unwrap();
         fake(
@@ -1083,6 +1098,7 @@ mod tests {
         )
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_lmstudio_imports_and_resolves_key() {
         let d = tmp("lm_ok");
@@ -1097,6 +1113,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_lmstudio_already_imported_is_success() {
         let d = tmp("lm_again");
@@ -1114,6 +1131,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_lmstudio_failures() {
         let d = tmp("lm_fail");
@@ -1139,10 +1157,12 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     const ZERO: std::time::Duration = std::time::Duration::ZERO;
 
     /// Regression: with the LM Studio desktop app open, `lms ls --json` lags the import, so the
     /// export used to fail with "no entry whose path ends with ...". It now polls the listing.
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_lmstudio_waits_for_a_lagging_listing() {
         let d = tmp("lm_lag");
@@ -1177,6 +1197,7 @@ mod tests {
         assert!(e.contains("cannot run"), "{e}");
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn export_lmstudio_validates_repo_and_model() {
         let d = tmp("lm_val");
@@ -1199,6 +1220,7 @@ mod tests {
         a.iter().map(|x| x.to_string()).collect()
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn cmd_export_ollama_paths() {
         let d = tmp("cmd_ol");
@@ -1222,6 +1244,7 @@ mod tests {
         assert!(e.contains("not runnable"), "{e}");
     }
 
+    #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows
     #[test]
     fn cmd_export_lmstudio_paths() {
         let d = tmp("cmd_lm");

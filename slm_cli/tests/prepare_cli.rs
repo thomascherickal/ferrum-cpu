@@ -564,6 +564,7 @@ fn io_errors_name_the_path_and_the_operation() {
     std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+#[cfg(target_os = "linux")] // scripts/fetch.sh needs bash, curl and sha256sum; Linux only
 fn fetch(url: &str, sha: &str, out: &Path) -> std::process::Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/fetch.sh");
     Command::new("bash")
@@ -573,6 +574,7 @@ fn fetch(url: &str, sha: &str, out: &Path) -> std::process::Output {
         .unwrap()
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn fetch_sh_leaves_nothing_behind_on_failure_and_keeps_good_download() {
     if Command::new("curl").arg("--version").output().is_err() {
@@ -602,6 +604,7 @@ fn fetch_sh_leaves_nothing_behind_on_failure_and_keeps_good_download() {
     assert!(!part.exists());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn fetch_sh_removes_partial_file_when_curl_dies_midway() {
     // Fake curl: writes a partial body to the -o target, then fails.

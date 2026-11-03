@@ -1,6 +1,9 @@
 //! `scripts/bench_slm.sh` must accept a corpus path relative to the caller's directory (it
 //! used to `cd` to the repo root first, so only repo-relative or absolute paths worked).
 
+// These drive scripts/bench_slm.sh through bash and POSIX tools: developer tooling, Linux only.
+#![cfg(target_os = "linux")]
+
 use std::path::Path;
 use std::process::Command;
 

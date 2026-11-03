@@ -371,13 +371,33 @@ fn mutated_files_and_states_never_panic_or_exhaust_memory() {
     }
     let exe = std::env::current_exe().unwrap();
     let log = std::env::temp_dir().join(format!("ferrum_fuzz_{}.log", std::process::id()));
-    // `ulimit -v` caps the child's address space (KiB); glibc arenas stay small with one thread.
-    let out = std::process::Command::new("sh")
-        .args([
+    // On Linux `ulimit -v` caps the child's address space (KiB); glibc arenas stay small with one
+    // thread. Other platforms have no usable `ulimit -v` (macOS refuses it, Windows has no sh),
+    // so there the child runs uncapped and only the panic/crash check applies.
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("sh");
+        c.args([
             "-c",
             "ulimit -v 1048576; exec \"$0\" --exact mutated_files_and_states_never_panic_or_exhaust_memory --test-threads 1 --nocapture",
-        ])
-        .arg(&exe)
+        ]);
+        c
+    };
+    #[cfg(not(target_os = "linux"))]
+    let mut cmd = {
+        let mut c = std::process::Command::new(&exe);
+        c.args([
+            "--exact",
+            "mutated_files_and_states_never_panic_or_exhaust_memory",
+            "--test-threads",
+            "1",
+            "--nocapture",
+        ]);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    cmd.arg(&exe);
+    let out = cmd
         .env(CHILD_ENV, "1")
         .env("FERRUM_FUZZ_LOG", &log)
         .env("MALLOC_ARENA_MAX", "1")

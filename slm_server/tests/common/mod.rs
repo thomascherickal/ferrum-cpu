@@ -85,13 +85,19 @@ pub fn http_with(
     (status, head.to_string(), body.to_string())
 }
 
-/// SIGINT the server and wait (up to 20 s) for it to exit.
+/// SIGINT the server and wait (up to 20 s) for it to exit. Windows has no SIGINT to send, so
+/// there the child is killed instead and [`assert_graceful`] does not judge its status.
 pub fn sigint_and_wait(child: &mut Child) -> ExitStatus {
-    let kill = Command::new("kill")
-        .args(["-INT", &child.id().to_string()])
-        .status()
-        .unwrap();
-    assert!(kill.success());
+    #[cfg(unix)]
+    {
+        let kill = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(kill.success());
+    }
+    #[cfg(not(unix))]
+    child.kill().unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         if let Some(s) = child.try_wait().unwrap() {
@@ -135,4 +141,13 @@ pub fn disconnect_mid_generate_then_serve(addr: &str) {
         "follow-up took {:?}",
         t.elapsed()
     );
+}
+
+/// The server exited cleanly after SIGINT. Checked on Unix only: the Windows fallback kills the
+/// child, so its status says nothing about graceful shutdown.
+pub fn assert_graceful(status: ExitStatus) {
+    #[cfg(unix)]
+    assert!(status.success(), "{status:?}");
+    #[cfg(not(unix))]
+    let _ = status;
 }

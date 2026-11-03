@@ -259,6 +259,7 @@ fn require_runtimes_turns_skip_into_failure() {
 
 // ---- scripts/verify_runtimes.sh ----
 
+#[cfg(target_os = "linux")] // drives scripts/verify_runtimes.sh via bash + /usr/bin tools; Linux only
 fn script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/verify_runtimes.sh")
 }
@@ -266,6 +267,7 @@ fn script() -> PathBuf {
 /// Run the script with a clean, hermetic environment: `HOME` is an empty dir and `PATH` holds
 /// only symlinks to the handful of utilities the script needs (so no real Ollama / LM Studio /
 /// llama.cpp is found unless the test provides one). Returns (exit code, stdout + stderr).
+#[cfg(target_os = "linux")]
 fn run_script(work: &Path, args: &[&Path], envs: &[(&str, &str)]) -> (i32, String) {
     let bin = work.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -298,6 +300,7 @@ fn run_script(work: &Path, args: &[&Path], envs: &[(&str, &str)]) -> (i32, Strin
 }
 
 /// A fake llama.cpp dir whose `llama-completion` echoes the prompt plus ` mat`.
+#[cfg(target_os = "linux")]
 fn fake_llama(work: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let d = work.join("llama");
@@ -312,6 +315,7 @@ fn fake_llama(work: &Path) -> PathBuf {
     d
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn verify_script_usage_and_missing_tool_semantics() {
     let work = tmp("script");
@@ -337,6 +341,7 @@ fn verify_script_usage_and_missing_tool_semantics() {
     let _ = std::fs::remove_dir_all(&work);
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn verify_script_skips_or_fails_missing_ollama_and_lm_studio() {
     let work = tmp("script_tools");
@@ -376,6 +381,7 @@ fn verify_script_skips_or_fails_missing_ollama_and_lm_studio() {
 /// Ollama and LM Studio produce what llama.cpp produces for a Ferrum F32 GGUF (plan G5). Needs
 /// the real tools, so it runs only with `FERRUM_VERIFY_RUNTIMES=1`; the script itself honours
 /// `FERRUM_REQUIRE_RUNTIMES` and `FERRUM_SKIP_LMSTUDIO`.
+#[cfg(target_os = "linux")]
 #[test]
 fn ollama_and_lm_studio_run_ferrum_gguf() {
     if std::env::var("FERRUM_VERIFY_RUNTIMES").ok().as_deref() != Some("1") {

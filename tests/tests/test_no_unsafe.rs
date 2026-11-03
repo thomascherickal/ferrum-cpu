@@ -310,7 +310,12 @@ fn crate_roots_lists_lib_main_build_and_dirs() {
     }
     let names: Vec<String> = crate_roots(&tmp)
         .iter()
-        .map(|p| p.strip_prefix(&tmp).unwrap().to_string_lossy().into_owned())
+        .map(|p| {
+            p.strip_prefix(&tmp)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
     assert_eq!(
         names,

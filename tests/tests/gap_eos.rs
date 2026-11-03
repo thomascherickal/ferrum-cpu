@@ -75,7 +75,8 @@ fn gguf_roundtrip_keeps_eos_and_generation_identical() {
 
 #[test]
 fn llama_cpp_stops_at_eos_and_never_prints_the_literal() {
-    let bin = std::path::PathBuf::from(std::env::var("HOME").unwrap())
+    // HOME is unset on Windows: no llama.cpp install to find there, so skip like an absent binary.
+    let bin = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
         .join(".local/opt/llama.cpp-b11521/llama-completion");
     if !Path::new(&bin).exists() {
         eprintln!("llama-completion absent; skipping");

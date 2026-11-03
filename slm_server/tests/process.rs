@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{http, http_with, sigint_and_wait, spawn, spawn_env, BIN};
+use common::{assert_graceful, http, http_with, sigint_and_wait, spawn, spawn_env, BIN};
 use ferrum_core::{GenerativeSLM, Rng, TransformerConfig};
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -100,7 +100,7 @@ fn serves_over_tcp_and_stops_gracefully_on_sigint() {
 
     let status = sigint_and_wait(&mut child);
     std::fs::remove_file(model).ok();
-    assert!(status.success(), "{status:?}");
+    assert_graceful(status);
 }
 
 /// Next stderr line (the auth line follows the listening line).
@@ -161,7 +161,7 @@ fn bearer_token_from_the_environment_gates_every_route_but_health() {
     check_token_gate(&addr, "s3cret-env");
     let status = sigint_and_wait(&mut child);
     std::fs::remove_file(model).ok();
-    assert!(status.success(), "{status:?}");
+    assert_graceful(status);
 }
 
 #[test]

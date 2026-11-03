@@ -1,6 +1,9 @@
 //! `scripts/coverage.sh` guards: unknown flags, no concurrent cargo (OOM on a 15 GB machine),
 //! and always `--release` with the low-memory build variables. `cargo` and `pgrep` are fakes.
 
+// These drive scripts/coverage.sh through bash and POSIX tools: developer tooling, Linux only.
+#![cfg(target_os = "linux")]
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

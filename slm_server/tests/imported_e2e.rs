@@ -6,7 +6,7 @@
 mod common;
 
 use common::llama::{tiny_llama, tiny_llama_bos_eos, BOS, EOS};
-use common::{http, sigint_and_wait, spawn, BIN};
+use common::{assert_graceful, http, sigint_and_wait, spawn, BIN};
 use ferrum_core::{
     Gguf, GgufBuilder, GgufTokenizer, LlamaModel, MetaValue, QKind, Rng, SamplingParams,
 };
@@ -241,7 +241,7 @@ fn tiny_llama_over_http_matches_the_library() {
     );
     assert_eq!(got[0], r.generate(&long, 4, &greedy(), 0));
     assert_eq!(got[1], r.generate("ab", 3, &greedy(), 0));
-    assert!(sigint_and_wait(&mut child).success());
+    assert_graceful(sigint_and_wait(&mut child));
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn bos_follows_add_bos_token_and_an_empty_context_without_one_is_a_422() {
                 "{v}"
             );
         }
-        assert!(sigint_and_wait(&mut child).success());
+        assert_graceful(sigint_and_wait(&mut child));
     }
 }
 
@@ -310,7 +310,7 @@ fn default_int8_is_reported_and_matches_the_library_at_int8() {
     );
     same_scores(&got, &[r.rolling("abc")]);
     assert_eq!(got[0]["n_tokens"], 2);
-    assert!(sigint_and_wait(&mut child).success());
+    assert_graceful(sigint_and_wait(&mut child));
 }
 
 #[test]
@@ -383,5 +383,5 @@ fn smollm2_135m_over_http_matches_the_library_when_present() {
         "smollm2: generate {generated} / rolling {rolling} / loglikelihood {}",
         got[0]
     );
-    assert!(sigint_and_wait(&mut child).success());
+    assert_graceful(sigint_and_wait(&mut child));
 }

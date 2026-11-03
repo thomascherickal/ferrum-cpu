@@ -247,11 +247,14 @@ impl Drop for TmpDir {
 
 fn spaced_link(tag: &str, target: &Path) -> (TmpDir, PathBuf) {
     let dir = std::env::temp_dir().join(format!("ferrum e1 {tag} {}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir); // a stale dir from a crashed run would make symlink fail with EEXIST
+    let _ = std::fs::remove_dir_all(&dir); // a stale dir from a crashed run would make the link fail with EEXIST
     std::fs::create_dir_all(&dir).unwrap();
     let guard = TmpDir(dir.clone());
     let link = dir.join("gpt2 q8.gguf");
-    std::os::unix::fs::symlink(target, &link).unwrap();
+    // A hard link (or, across filesystems, a copy) works everywhere; a symlink needs privileges on Windows.
+    std::fs::hard_link(target, &link)
+        .or_else(|_| std::fs::copy(target, &link).map(|_| ()))
+        .unwrap();
     (guard, link)
 }
 
