@@ -2158,7 +2158,7 @@ icons generated from the logo `docs/assets/logo.png` (PNGs, `icon.ico`, `icon.ic
 `.github/workflows/release.yml` builds the Linux bundles, an **AppImage** and a **deb**, with
 `cargo tauri build --bundles appimage,deb` and a `tauri-cli` pinned to the same minor as the
 `tauri` crate (`TAURI_CLI_VERSION`, cached). Start it by hand with
-`gh workflow run release.yml --ref master` (the bundles are uploaded to the run as the artifact
+`gh workflow run release.yml --ref main` (the bundles are uploaded to the run as the artifact
 `ferrum-slm-studio-linux`), or push a tag `vX.Y.Z` that equals `version` in `tauri.conf.json`:
 the same bundles are then attached to a **draft** GitHub release (nothing is published until you
 publish the draft). The bundles are not signed and there is no updater: Windows SmartScreen and

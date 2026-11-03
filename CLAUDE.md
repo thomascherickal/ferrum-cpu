@@ -43,9 +43,9 @@ skills. When the user states a new rule, add it here.
 6. **No invented output.** Every number and command output in the docs comes
    from a real run on this machine. Say plainly what was not run.
 7. **Push after every green suite, merge when a feature is done.** After each
-   full-suite run with no failures, push the branch (or `master`); push at
+   full-suite run with no failures, push the branch (or `main`); push at
    least once a day. As soon as a feature is complete, fast-forward merge it to
-   `master` and push. No PRs, no merge commits. "Finish completely" also means
+   `main` and push. No PRs, no merge commits. "Finish completely" also means
    resolving the remaining Minor review findings in one polish commit first.
 8. **`ferrum_gui` is outside the workspace.** Build and test it from its crate
    dir; use `node --check` for the UI JavaScript.
@@ -95,6 +95,11 @@ skills. When the user states a new rule, add it here.
     instead of written at 98 %. At the start of every session, if
     `.superpowers/HANDOFF.md` exists, read it first, continue from its next
     steps, and mark it consumed.
+
+18. **The default branch is `main`, never `master`.** The repository's default
+    branch was renamed from `master` to `main` on 2026-11-03. Use `main` for
+    every merge, push, checkout, diff base and CI/release reference; do not
+    recreate or mention `master` as the integration branch in new work.
 
 ## Hard constraints
 
