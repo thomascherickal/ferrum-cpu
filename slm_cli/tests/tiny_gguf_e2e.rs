@@ -318,8 +318,9 @@ fn runtime_exports_refuse_llama_and_write_a_modelfile_for_gpt2() {
 /// A stand-in for a model far bigger than any RAM, written as a sparse file: llama metadata, a
 /// vocabulary, and one Q8_0 tensor of 2^36 elements (256 GiB as f32). The file only has to be as
 /// long as the tensor claims, and a sparse file costs no disk. Commands that size a model from
-/// its tensor directory refuse it before reading any weights.
-fn write_over_budget_llama(path: &str) {
+/// its tensor directory refuse it before reading any weights. Returns `false` (and removes the
+/// file) when the temp filesystem cannot make a sparse file that large, so the caller can skip.
+fn write_over_budget_llama(path: &str) -> bool {
     const ELEMENTS: u64 = 1 << 36;
     const Q8_0: u32 = 8;
     let mut b = GgufBuilder::new();
@@ -343,7 +344,14 @@ fn write_over_budget_llama(path: &str) {
     let bytes = b.into_bytes();
     std::fs::write(path, &bytes).unwrap();
     let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
-    f.set_len(bytes.len() as u64 + ELEMENTS / 32 * 34).unwrap();
+    let len = bytes.len() as u64 + ELEMENTS / 32 * 34;
+    // A ~73 GB sparse file needs a filesystem with sparse-file support and no file-size limit.
+    let sparse = f.set_len(len).is_ok()
+        && std::os::unix::fs::MetadataExt::blocks(&f.metadata().unwrap()) * 512 < (1 << 20);
+    if !sparse {
+        let _ = std::fs::remove_file(path);
+    }
+    sparse
 }
 
 /// A GGUF with an unsupported architecture, no tokenizer, and one tensor of ggml type `ty`.
@@ -357,7 +365,10 @@ fn bare_gguf(arch: &str, ty: u32) -> Vec<u8> {
 #[test]
 fn every_loading_command_refuses_a_model_over_the_ram_budget() {
     let t = Tmp::new("budget");
-    write_over_budget_llama(&t.s("big.gguf"));
+    if !write_over_budget_llama(&t.s("big.gguf")) {
+        eprintln!("SKIPPED: the temp filesystem cannot create a 73 GB sparse file");
+        return;
+    }
     std::fs::write(t.s("c.txt"), "abc abc abc abc abc abc abc abc").unwrap();
     let (big, corpus) = (t.s("big.gguf"), t.s("c.txt"));
     let (out, ck) = (t.s("out.gguf"), t.s("out.flck"));

@@ -1231,11 +1231,9 @@ fn download_progress_events_carry_the_id_bytes_and_total() {
     p.update(5, None);
     p.finish(9);
     // Mock-runtime events are delivered on the listener thread; wait for both.
-    for _ in 0..200 {
-        if got.lock().unwrap().len() == 2 {
-            break;
-        }
-        std::thread::yield_now();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while got.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
     let ev: Vec<Value> = got
         .lock()

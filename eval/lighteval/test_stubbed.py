@@ -174,6 +174,8 @@ class UsageTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as e:
                 runpy.run_path(os.path.join(HERE, "make_task_data.py"), run_name="__main__")
         self.assertIn("usage", str(e.exception))
+        # sys.exit(<message>) is a failing exit status; 0 or None would be success.
+        self.assertNotIn(e.exception.code, (0, None))
 
 
 if __name__ == "__main__":

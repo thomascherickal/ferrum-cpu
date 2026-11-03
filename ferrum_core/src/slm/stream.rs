@@ -577,7 +577,8 @@ mod tests {
             .len();
         assert!(
             feeds() <= 2 * tokens + 16,
-            "too many feeds for {tokens} tokens"
+            "too many feeds: {} for {tokens} tokens",
+            feeds()
         );
     }
 
@@ -612,6 +613,21 @@ mod tests {
         let out = slm.generate("abcabcab", n, 0.8, &mut Rng::new(1)).unwrap();
         assert_eq!(out.chars().count(), 8 + n);
         assert!(feeds() <= 2 * n + 16, "feeds={}", feeds());
+    }
+
+    #[test]
+    fn char_generation_reprimes_correctly_around_the_exact_window_size() {
+        // A seed one short of, exactly at, and one past the context (8): the re-prime check is
+        // `len > cap`, so the off-by-one edge is where a wrong comparison would show.
+        let slm = tiny_char_slm();
+        for seed in ["abcabca", "abcabcab", "abcabcabc"] {
+            FEEDS.with(|f| f.set(0));
+            let out = slm.generate(seed, 40, 0.8, &mut Rng::new(3)).unwrap();
+            assert!(out.starts_with(seed), "{out:?}");
+            assert_eq!(out.chars().count(), seed.len() + 40);
+            // The initial prime (at most the window) plus <= 2 feeds per token.
+            assert!(feeds() <= 8 + 2 * 40 + 16, "{seed:?}: feeds={}", feeds());
+        }
     }
 
     #[test]
@@ -747,6 +763,57 @@ mod tests {
             z_slm.generate_with("ab", 0, &p, &mut Rng::new(1)).unwrap(),
             "ab"
         );
+    }
+
+    #[test]
+    fn a_cancel_with_half_a_character_pending_drops_it_on_the_cached_bpe_path() {
+        // "a" + the lead byte of "é" merge into one token, so a fragment can complete while
+        // a half character stays pending; cancelling then must drop it, not flush U+FFFD.
+        let cfg = TransformerConfig {
+            context_len: 8,
+            embed_dim: 16,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 32,
+            epochs: 2,
+            vocab_size: 258,
+            ..TransformerConfig::default()
+        };
+        let slm = GenerativeSLM::train_transformer_config(
+            &"a\u{e9}".repeat(300),
+            &cfg,
+            &mut Rng::new(5),
+            |_, _| {},
+        )
+        .unwrap();
+        let tok = ByteBpeTokenizer::from_state(&slm.meta.tokenizer_state).unwrap();
+        assert!(
+            (256..tok.vocab_size()).any(|i| tok
+                .token_bytes(i)
+                .is_some_and(|b| b.len() > 1 && b.ends_with(&[0xC3]))),
+            "the tokenizer must hold a token ending in a lead byte"
+        );
+        // The cancelled text must be a prefix of the uncancelled text from the same seed: a
+        // placeholder flushed for the dropped half character would break that prefix.
+        let sampling = SamplingParams::with_temperature(3.0);
+        let mut cut = 0;
+        for seed in 0..40u64 {
+            let (p, flag) = cancellable(sampling.clone());
+            let out = slm
+                .generate_stream_with("", 100, &p, &mut Rng::new(seed), |frag| {
+                    // Cancel on an "a": half of those come from the merged "a"+lead-byte token.
+                    if frag == "a" {
+                        flag.store(true, Ordering::Relaxed)
+                    }
+                })
+                .unwrap();
+            let full = slm
+                .generate_with("", 100, &sampling, &mut Rng::new(seed))
+                .unwrap();
+            assert!(full.starts_with(&out), "seed {seed}: {out:?} vs {full:?}");
+            cut += usize::from(out != full);
+        }
+        assert!(cut > 0);
     }
 
     #[test]

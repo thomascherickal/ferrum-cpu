@@ -239,11 +239,14 @@ function page(storage) {
     assert.ok(b.calls.some((c) => c.cmd === "save_corpus" && JSON.parse(c.args.text).x === 1));
 
     // Reset settings: link wipes the memory, the form and the table.
-    $b("resetSettings").dispatch("click"); await settle(4);
+    // The test sandbox cuts every timer to 5 ms, so a toast is gone after the next loop turns
+    // under load: read it right after the synchronous click, before settling.
+    $b("resetSettings").dispatch("click");
+    assert.ok(Array.from($b("toasts").children).some((t) => /Settings reset/.test(t.textContent)));
+    await settle(4);
     assert.strictEqual($b("trEpochs").value, "100");
     assert.strictEqual($b("evTable").querySelector("tbody").children.length, 0);
     assert.ok(!(S.KEY in m.data));
-    assert.ok(Array.from($b("toasts").children).some((t) => /Settings reset/.test(t.textContent)));
     // Clear table forgets the stored runs too.
     const mc = memory({ [S.KEY]: JSON.stringify({ version: 1, evalRuns: [EVAL] }) });
     const c = loadApp({ backend, storage: mc });

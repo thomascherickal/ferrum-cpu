@@ -253,14 +253,13 @@ fn finetune_refuses_bad_input_and_resumes_from_its_own_checkpoint() {
     fails(bad, "cannot resume from");
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
         let locked = dir.join("locked.flck");
         write("locked.flck", b"x");
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
-        let mut p = ft_params(&dir, "base.gguf", "corpus.txt", "d.flck");
-        p["params"]["resume"] = json!(locked);
-        fails(p, "cannot read checkpoint");
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+        if let Some(_restore) = crate::test_support::restrict(&locked, 0o000, 0o600) {
+            let mut p = ft_params(&dir, "base.gguf", "corpus.txt", "d.flck");
+            p["params"]["resume"] = json!(locked);
+            fails(p, "cannot read checkpoint");
+        }
     }
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -89,7 +89,7 @@ impl TransformerNet {
 
             // x_attn = x + out_proj(concat)
             let (g_o_w, g_o_b, d_concat) = linear_bwd(&bc.concat, &blk.o_w.data, &d_xattn)?;
-            let attn_grads = attn_bwd(
+            let (dq, dk, dv) = attn_bwd(
                 &d_concat,
                 &bc.q,
                 &bc.k,
@@ -98,8 +98,7 @@ impl TransformerNet {
                 batch,
                 t,
                 self.num_heads,
-            );
-            let (dq, dk, dv) = attn_grads?;
+            )?;
             let (g_q_w, g_q_b, d_n1a) = linear_bwd(&bc.norm1, &blk.q_w.data, &dq)?;
             let (g_k_w, g_k_b, d_n1b) = linear_bwd(&bc.norm1, &blk.k_w.data, &dk)?;
             let (g_v_w, g_v_b, d_n1c) = linear_bwd(&bc.norm1, &blk.v_w.data, &dv)?;

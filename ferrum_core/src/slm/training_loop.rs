@@ -28,7 +28,9 @@ pub(super) fn prepare_net(
             if was != now {
                 return Err(InferError::DimMismatch(format!(
                     "the checkpoint was trained on corpus {was}, this run's corpus is {now}; \
-                     resume on the corpus it was started with"
+                     resume on the corpus it was started with (a text corpus and the token \
+                     file made from it have different ids, so neither resumes the other's \
+                     checkpoint)"
                 )));
             }
         }
@@ -109,7 +111,7 @@ fn resume_point(
     let Some(start) = net.epoch_start else {
         let partial = step % steps_per_epoch;
         if partial > 0 {
-            eprintln!("{}", reshuffle_note(step));
+            crate::verbose::log_line(&reshuffle_note(step)); // also reaches a GUI log sink
         }
         return Ok(((step / steps_per_epoch) as usize, partial, None));
     };

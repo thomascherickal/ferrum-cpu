@@ -53,6 +53,33 @@ fn subcommands() -> Vec<String> {
         .collect()
 }
 
+/// Whether `tests` passes `name` to the binary as a subcommand: the first element of an argument
+/// array (`["name"`, `&["name"`, `vec!["name"`) or `.arg("name")`. A quoted mention elsewhere (an
+/// assertion, a later argument) does not count.
+fn invokes(tests: &str, name: &str) -> bool {
+    tests.contains(&format!("[\"{name}\"")) || tests.contains(&format!(".arg(\"{name}\")"))
+}
+
+#[test]
+fn the_invocation_matcher_wants_a_subcommand_position_and_whole_names() {
+    for hit in [
+        "tt(&[\"eval\", m])",
+        "vec![\"eval\"]",
+        "Command::new(B).arg(\"eval\")",
+    ] {
+        assert!(invokes(hit, "eval"), "{hit}");
+    }
+    for miss in [
+        "assert!(out.contains(\"eval\"))",
+        "tt(&[\"run\", \"eval\"])",
+        "tt(&[\"eval-gguf\", m])",
+        "tt(&[\"evaluate\"])",
+        "// eval",
+    ] {
+        assert!(!invokes(miss, "eval"), "{miss}");
+    }
+}
+
 #[test]
 fn every_subcommand_has_a_binary_test() {
     let names = subcommands();
@@ -60,7 +87,7 @@ fn every_subcommand_has_a_binary_test() {
     let tests = cli_tests();
     for name in &names {
         assert!(
-            tests.contains(&format!("\"{name}\"")),
+            invokes(&tests, name),
             "no slm_cli/tests/*.rs passes \"{name}\" to the binary; add a test that runs it"
         );
     }

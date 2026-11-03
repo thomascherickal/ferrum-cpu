@@ -36,12 +36,16 @@ pub struct SamplingParams {
 
 impl PartialEq for SamplingParams {
     fn eq(&self, o: &Self) -> bool {
-        (
-            self.temperature,
-            self.top_k,
-            self.top_p,
-            self.repetition_penalty,
-        ) == (o.temperature, o.top_k, o.top_p, o.repetition_penalty)
+        // Destructured, so a new field is a compile error here until it is compared or ignored.
+        let Self {
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            cancel: _,
+        } = self;
+        (temperature, top_k, top_p, repetition_penalty)
+            == (&o.temperature, &o.top_k, &o.top_p, &o.repetition_penalty)
     }
 }
 

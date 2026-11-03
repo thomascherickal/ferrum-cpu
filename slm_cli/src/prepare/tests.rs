@@ -276,6 +276,33 @@ fn a_failing_manifest_rename_leaves_no_manifest() {
     });
     assert!(r.is_err());
     assert!(d.join("test.txt").exists() && !d.join("manifest.json").exists());
+    // The splits renamed before the failure hold the new data.
+    for n in ["train.txt", "val.txt", "test.txt"] {
+        assert_eq!(
+            std::fs::read_to_string(d.join(n)).unwrap(),
+            format!("new {n}")
+        );
+    }
+}
+
+#[test]
+fn a_commit_failure_inside_prepare_removes_every_part_file_and_keeps_old_outputs() {
+    let d = tmpdir("commit_fails");
+    let input = d.join("in.txt");
+    std::fs::write(&input, "alpha one\n<|endoftext|>beta two\n").unwrap();
+    let out = d.join("out");
+    std::fs::create_dir_all(out.join("manifest.json")).unwrap(); // remove_file cannot delete it
+    std::fs::write(out.join("train.txt"), "old train").unwrap();
+    let o = opts(vec![input.to_string_lossy().into()], &out);
+    let err = prepare(&o, &mut |_| {}).unwrap_err();
+    assert!(err.starts_with("cannot remove"), "{err}");
+    for n in OUTPUTS {
+        assert!(!part(&out, n).exists(), "{n}.part left behind");
+    }
+    assert_eq!(
+        std::fs::read_to_string(out.join("train.txt")).unwrap(),
+        "old train"
+    );
 }
 
 #[test]

@@ -275,8 +275,11 @@ fn resume_from_an_epoch_checkpoint_finishes_the_run() {
     let n: u64 = info_field(&full_ck, "Step").parse().unwrap();
     let stop = n / 2 + 3;
     let mid = e.s("mid.fckp");
-    let budget = (stop * 16 * 16).to_string(); // batch 16 x context 16 tokens per step
-                                               // Three equal epochs: N / 3 steps each, and the stop is not a multiple of that.
+    // Batch 16 x context 16 tokens per step.
+    let budget = (stop * 16 * 16).to_string();
+    // Stride 1 makes the three epochs equal (N / 3 steps each, so N divides by 3); a stop that
+    // is not a multiple of N / 3 then falls strictly inside an epoch.
+    assert_eq!(n % 3, 0, "three equal epochs: {n} steps");
     assert_ne!(stop % (n / 3), 0, "the stop must fall inside an epoch");
     e.train(
         "mid.gguf",

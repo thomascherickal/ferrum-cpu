@@ -115,7 +115,9 @@ impl GenerativeSLM {
     /// when the generation is over. The fragments concatenate to exactly the final text, and stop
     /// text is never returned. `rng` must be the same generator on every call. Once the params'
     /// `cancel` flag is set it returns `None` before drawing another token, and the generation is
-    /// the text returned so far ([`Generation::cancelled`]).
+    /// the text returned so far ([`Generation::cancelled`]). A cancel wins over the final flush:
+    /// if the flag is set before the call that would return the held-back tail, the tail is
+    /// dropped and the call returns `None`.
     pub fn stream_next(&self, stream: &mut GenStream, rng: &mut Rng) -> Result<Option<String>> {
         let st = stream;
         if st.done {

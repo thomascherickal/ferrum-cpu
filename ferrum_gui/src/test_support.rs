@@ -238,3 +238,40 @@ pub fn http_server(
     });
     (base, rx)
 }
+
+/// Whether the tests run as root, for which permission bits deny nothing.
+#[cfg(unix)]
+pub fn running_as_root() -> bool {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            let uid = s.lines().find(|l| l.starts_with("Uid:"))?;
+            Some(uid.split_whitespace().nth(2) == Some("0"))
+        })
+        .unwrap_or(false)
+}
+
+/// Sets `path` to `mode` and puts `restore` back when dropped, even on a panic, so a failed
+/// assertion cannot leave an undeletable scratch directory behind. `None` (nothing changed) when
+/// running as root, where the mode would deny nothing: the caller skips its check.
+#[cfg(unix)]
+pub fn restrict(path: &std::path::Path, mode: u32, restore: u32) -> Option<Restore> {
+    use std::os::unix::fs::PermissionsExt;
+    if running_as_root() {
+        eprintln!("SKIPPED: running as root, permission bits deny nothing");
+        return None;
+    }
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    Some(Restore(path.to_path_buf(), restore))
+}
+
+#[cfg(unix)]
+pub struct Restore(std::path::PathBuf, u32);
+
+#[cfg(unix)]
+impl Drop for Restore {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(self.1));
+    }
+}

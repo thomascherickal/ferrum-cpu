@@ -272,8 +272,9 @@ mod tests {
         let (rtx, rrx) = oneshot::channel();
         tx.send(Job::Score(vec![("abc".into(), " abc".into())], rtx))
             .unwrap();
-        assert!(rrx.blocking_recv().unwrap().is_ok());
-        assert!(alive.strong_count() > 0);
+        // One result per request, and the liveness flag is still held by the thread.
+        assert_eq!(rrx.blocking_recv().unwrap().unwrap().len(), 1);
+        assert_eq!(alive.strong_count(), 1);
     }
 
     #[test]

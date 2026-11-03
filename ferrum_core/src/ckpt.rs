@@ -106,6 +106,13 @@ fn missing(key: &str) -> InferError {
     ))
 }
 
+/// The error for an optional key that is present with another type.
+fn wrong_type(key: &str) -> InferError {
+    bad(format!(
+        "checkpoint key 'ferrum.ckpt.{key}' has the wrong type"
+    ))
+}
+
 pub(crate) fn get_usize(g: &Gguf, name: &str) -> Result<usize> {
     g.meta(&format!("ferrum.ckpt.{name}"))
         .and_then(MetaValue::as_usize)
@@ -125,7 +132,7 @@ pub(crate) fn get_u64s<'a>(g: &'a Gguf, name: &str) -> Result<Option<&'a [u64]>>
     match g.meta(&format!("ferrum.ckpt.{name}")) {
         None => Ok(None),
         Some(MetaValue::Nums(NumArray::U64(v))) => Ok(Some(v)),
-        Some(_) => Err(missing(name)),
+        Some(_) => Err(wrong_type(name)),
     }
 }
 
@@ -134,7 +141,7 @@ pub(crate) fn get_str(g: &Gguf, name: &str) -> Result<Option<String>> {
     match g.meta(&format!("ferrum.ckpt.{name}")) {
         None => Ok(None),
         Some(MetaValue::String(v)) => Ok(Some(v.clone())),
-        Some(_) => Err(missing(name)),
+        Some(_) => Err(wrong_type(name)),
     }
 }
 
@@ -284,7 +291,9 @@ mod tests {
         let g = open(&b.into_bytes(), b"OLDM", ARCH).unwrap();
         assert_eq!(get_u64s(&g, "xs").unwrap(), Some(&[u64::MAX, 0, 7][..]));
         assert_eq!(get_u64s(&g, "absent").unwrap(), None);
-        assert!(get_u64s(&g, "dim").is_err()); // a U32 scalar, not a u64 array
+        // A U32 scalar, not a u64 array: present, so "wrong type", not "missing".
+        let e = get_u64s(&g, "dim").unwrap_err();
+        assert!(e.to_string().contains("has the wrong type"), "{e}");
     }
 
     #[test]

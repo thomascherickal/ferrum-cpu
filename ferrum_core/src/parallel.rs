@@ -288,13 +288,14 @@ where
     std::thread::scope(|scope| {
         // ponytail: a failed spawn just means fewer helpers; the caller's own
         // `drain()` below finishes whatever they did not take.
-        (0..helpers)
-            .take_while(|_| {
-                std::thread::Builder::new()
-                    .spawn_scoped(scope, drain)
-                    .is_ok()
-            })
-            .for_each(drop);
+        for _ in 0..helpers {
+            if std::thread::Builder::new()
+                .spawn_scoped(scope, drain)
+                .is_err()
+            {
+                break;
+            }
+        }
         drain();
     });
     out

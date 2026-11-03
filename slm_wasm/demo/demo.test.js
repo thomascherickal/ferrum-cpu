@@ -66,10 +66,14 @@ function page(search, fetchImpl) {
   const ctx = {
     document: { getElementById: el }, Worker: function () { return worker; },
     URLSearchParams, location: { search }, performance, fetch: fetchImpl, Number, Math, JSON, Error, Promise,
+    // Globals a browser page has; a demo.js that starts using them must not hit a ReferenceError.
+    console, setTimeout, clearTimeout,
   };
   vm.runInNewContext(js, ctx, { filename: path.join(__dirname, "demo.js") });
   return { el, worker };
 }
+// A macrotask: every promise callback queued by the page (fetch, then, arrayBuffer) is a
+// microtask and has run before it, so the ?model= results below do not depend on timing.
 const flush = () => new Promise((r) => setImmediate(r));
 (async () => {
   let { el, worker } = page("");

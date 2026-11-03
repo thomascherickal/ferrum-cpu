@@ -7,7 +7,8 @@ use crate::slm::GenerativeSLM;
 /// Why [`GenerativeSLM::generate_tokens`] stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopReason {
-    /// `max_tokens` tokens were generated.
+    /// `max_tokens` tokens were generated, or the run was cancelled through
+    /// [`SamplingParams::cancel`] (then [`Generation::cancelled`] is `true`).
     MaxTokens,
     /// A stop string appeared (it is excluded from the text).
     Stop,

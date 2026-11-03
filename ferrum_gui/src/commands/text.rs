@@ -418,14 +418,13 @@ mod tests {
         // A read-only folder refuses the file itself.
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
             let ro = dir.join("ro");
             std::fs::create_dir(&ro).unwrap();
-            std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o500)).unwrap();
-            let e =
-                save_corpus("x".into(), ro.join("out.txt").to_str().unwrap().into()).unwrap_err();
-            assert!(e.contains("cannot write"), "{e}");
-            std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o700)).unwrap();
+            if let Some(_restore) = crate::test_support::restrict(&ro, 0o500, 0o700) {
+                let e = save_corpus("x".into(), ro.join("out.txt").to_str().unwrap().into())
+                    .unwrap_err();
+                assert!(e.contains("cannot write"), "{e}");
+            }
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

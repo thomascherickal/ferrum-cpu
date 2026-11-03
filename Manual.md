@@ -773,6 +773,9 @@ written with a corpus records `sha256:<hex>` of the corpus file (text or token
 file) as `ferrum.ckpt.corpus_id`; resuming on a file with another hash is refused
 with an error naming both ids (exit 1) and leaves the checkpoint untouched. A
 checkpoint without the key (written by an older build) resumes without the check.
+The id belongs to the file, not to its text: a checkpoint trained from a text corpus
+is refused on the token file made from that text (and the reverse), because the two
+files hash differently; resume on the file the run started with.
 If its vocabulary or context does not match the run (for example, a different
 tokenizer), training refuses rather than silently mixing them. Use
 `--tokenizer` so the vocabulary is guaranteed identical. A checkpoint also records
@@ -1203,7 +1206,8 @@ stream equals the continuation.
 from any thread (or from the text callback) and every decode loop
 (`generate*`, `generate_tokens[_with]`, `stream_next`, and
 `LlamaModel::generate[_cancellable]`) stops before its next token and returns
-`Ok` with the text it has already streamed; a half-finished UTF-8 character or a
+`Ok` with the text it has already streamed (`LlamaModel` has no text: it returns
+the token ids generated so far); a half-finished UTF-8 character or a
 held-back stop-string prefix is dropped. `Generation.cancelled` says so, and
 `stream_next` returns `None`. A cancelled run draws no further random numbers,
 and with the flag unset (or `None`, the default) output is bit-identical to a
@@ -2240,8 +2244,12 @@ characters is cut with an ellipsis and a *Show full message* button; error
 toasts are cut at 240. Long calls show a small spinner next to the status line:
 Inspect and Run on the GGUF tab, Export, Fine-tune, Evaluate, Generate and the
 Capable check (which stops with `prefers-reduced-motion`, the status text
-carries the meaning). Progress events for downloads and *Clean* were not added;
-those still show only a start and an end.
+carries the meaning). Downloads and *Clean* report progress (`download-progress`, `clean-progress`); the
+*Source URL* box does not. With *Strip Project Gutenberg boilerplate* ticked, *Clean*
+counts the bytes left after the strip while the bar's total is the raw text, so the bar
+stops short and jumps to 100 % when the command finishes. The progress bar and the
+other GUI additions were tested against the stub DOM and the mock runtime, not
+click-tested in a window.
 
 `ui/errors.test.js` covers the reading, truncation, details text, both copy
 paths, and the whole display through the real page; `src/error.rs` and the
