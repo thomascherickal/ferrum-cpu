@@ -1,6 +1,6 @@
 //! What `/v1/info` reports about the loaded model.
 
-use ferrum_core::GenerativeSLM;
+use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, LlamaModel, QKind, TokModel};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -37,10 +37,65 @@ pub fn info_for(model: &GenerativeSLM, bytes: &[u8]) -> Info {
     }
 }
 
+/// Describe an imported model: its parameter count (every tensor of the file), context and
+/// vocabulary, the in-memory precision it computes at (`int4` / `int8` / `f32`, the
+/// `--quant` it was loaded with), and its tokenizer family (`bpe` / `spm`).
+pub(crate) fn info_for_imported(
+    g: &Gguf,
+    model: &LlamaModel,
+    tok: &GgufTokenizer,
+    prec: Option<QKind>,
+    model_sha256: String,
+) -> Info {
+    Info {
+        params: g.tensors.iter().map(|t| t.num_elements()).sum(),
+        context_len: model.cfg.context_len,
+        vocab: model.cfg.vocab_size,
+        quant: match prec {
+            Some(QKind::Int4) => "int4",
+            Some(QKind::Int8) => "int8",
+            None => "f32",
+        }
+        .into(),
+        tokenizer: match tok.model() {
+            TokModel::Bpe => "bpe",
+            TokModel::Spm => "spm",
+        }
+        .into(),
+        model_sha256,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::model;
+    use crate::test_util::{llama, model};
+
+    #[test]
+    fn info_for_an_imported_model() {
+        let g = Gguf::parse(llama::tiny_llama(&[])).unwrap();
+        let tok = GgufTokenizer::from_gguf(&g).unwrap();
+        for (prec, name) in [
+            (Some(QKind::Int4), "int4"),
+            (Some(QKind::Int8), "int8"),
+            (None, "f32"),
+        ] {
+            let m = g.load_llama_prec(prec).unwrap();
+            let i = info_for_imported(&g, &m, &tok, prec, "ab".into());
+            assert_eq!(
+                (
+                    i.context_len,
+                    i.vocab,
+                    i.quant.as_str(),
+                    i.tokenizer.as_str()
+                ),
+                (16, 32, name, "bpe")
+            );
+            // 32x8 embedding and head, 2 x (2 norms of 8, 4 attention 8x8, 3 FFN 8x16), a norm.
+            assert_eq!(i.params, 2 * 256 + 2 * (16 + 256 + 384) + 8);
+            assert_eq!(i.model_sha256, "ab");
+        }
+    }
 
     #[test]
     fn sha256_known_vectors() {

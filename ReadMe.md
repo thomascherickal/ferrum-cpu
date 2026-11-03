@@ -31,7 +31,7 @@ for small models. It is not a runtime for frontier LLMs.
 | **Byte-level BPE with a GPT-2 pre-tokenizer** | Any UTF-8 text round-trips. llama.cpp tokenizes prompts exactly as Ferrum does. `<|endoftext|>` is always a reserved special token. |
 | **A real data pipeline** | `train_transformer prepare` cleans, dedups, and splits a corpus and writes a hash manifest. DVC reproduces fetch, prepare, train, and eval from `params.yaml`. |
 | **Corpora larger than RAM** | `train_transformer tokenize` writes a pre-tokenized GGUF token file (2 bytes per token); `train tokens.gguf` streams windows from disk and gives the same model, bit for bit, as training on the text ([Manual §6.11](Manual.md#611-corpora-larger-than-ram-tokenize-and-token-files)). |
-| **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
+| **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP for Ferrum models and imported Llama/Qwen GGUFs, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
 | **Llama/Qwen GGUF in and out** | Import Llama/Qwen checkpoints, run them, fine-tune them with AdamW, and export them back to GGUF. |
 
 One limit to know. Ferrum's tabular models (the ferrum-ml MLP classifiers) and

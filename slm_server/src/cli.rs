@@ -1,13 +1,17 @@
 //! Command-line parsing and the serve loop behind `ferrum-serve`.
 
 use crate::{bind, Limits};
+use ferrum_core::QKind;
 use std::future::Future;
 use std::str::FromStr;
 
 pub const USAGE: &str =
     "usage: ferrum-serve --model <model.gguf> [--host 127.0.0.1] [--port 8080] \
 [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] \
-[--repetition-penalty 1.0] [--token <t>] [--allow-unauthenticated] [--help] [--version]
+[--repetition-penalty 1.0] [--quant int4|int8|f32] [--force] [--token <t>] \
+[--allow-unauthenticated] [--help] [--version]
+--quant and --force apply to imported llama/qwen2 GGUFs only (default int4; --force skips the \
+RAM guard); Ferrum's own models load as saved
 bearer token: env FERRUM_TOKEN (preferred; a --token value shows in `ps`) or --token; \
 a non-loopback --host needs one unless --allow-unauthenticated is given";
 
@@ -20,8 +24,10 @@ const KNOWN: &[&str] = &[
     "--max-body",
     "--max-tokens",
     "--repetition-penalty",
+    "--quant",
     "--token",
     "--allow-unauthenticated",
+    "--force",
 ];
 
 /// Hosts that only accept connections from this machine.
@@ -40,6 +46,27 @@ pub struct Config {
     /// Bearer token (`--token`, else `$FERRUM_TOKEN`); `None` means no authentication.
     pub token: Option<String>,
     pub allow_unauthenticated: bool,
+    /// In-memory precision of an imported GGUF (`--quant`, default int4; `None` = f32).
+    /// Ferrum's own models ignore it.
+    pub quant: Option<QKind>,
+    /// Load an imported GGUF even when the RAM guard refuses it (`--force`).
+    pub force: bool,
+}
+
+impl Default for Config {
+    /// `ferrum-serve`'s defaults, with no model.
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+            host: "127.0.0.1".into(),
+            port: 8080,
+            limits: Limits::default(),
+            token: None,
+            allow_unauthenticated: false,
+            quant: Some(QKind::Int4),
+            force: false,
+        }
+    }
 }
 
 fn parse_value<T: FromStr>(name: &str, v: &str) -> Result<T, String> {
@@ -57,12 +84,16 @@ pub enum Parsed {
 /// Parse `--flag value` pairs (program name already stripped). A flag given
 /// twice takes its last value. `--help`/`-h` anywhere in flag position wins.
 pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
-    let mut model = String::new();
-    let mut host = "127.0.0.1".to_string();
-    let mut port = 8080u16;
-    let mut limits = Limits::default();
-    let mut token = None;
-    let mut allow_unauthenticated = false;
+    let Config {
+        mut model,
+        mut host,
+        mut port,
+        mut limits,
+        mut token,
+        mut allow_unauthenticated,
+        mut quant,
+        mut force,
+    } = Config::default();
     let mut it = args.iter();
     while let Some(name) = it.next() {
         if name == "--help" || name == "-h" {
@@ -73,6 +104,10 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
         }
         if name == "--allow-unauthenticated" {
             allow_unauthenticated = true;
+            continue;
+        }
+        if name == "--force" {
+            force = true;
             continue;
         }
         if !name.starts_with("--") {
@@ -94,6 +129,10 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
             "--max-body" => limits.max_body = parse_value(name, v)?,
             "--repetition-penalty" => limits.repetition_penalty = parse_value(name, v)?,
             "--token" => token = Some(v.clone()),
+            "--quant" => {
+                quant = ferrum_core::memory::import_precision(v)
+                    .ok_or_else(|| format!("--quant must be int4|int8|f32 (got '{v}')"))?
+            }
             _ => limits.max_tokens = parse_value(name, v)?,
         }
     }
@@ -126,6 +165,8 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
         limits,
         token,
         allow_unauthenticated,
+        quant,
+        force,
     }))
 }
 
@@ -195,8 +236,46 @@ mod tests {
                 limits: Limits::default(),
                 token: None,
                 allow_unauthenticated: false,
+                quant: Some(QKind::Int4),
+                force: false,
             }
         );
+        assert_eq!(
+            c,
+            Config {
+                model: "m.gguf".into(),
+                ..Config::default()
+            }
+        );
+    }
+
+    #[test]
+    fn quant_and_force_flags() {
+        for (v, want) in [
+            ("int4", Some(QKind::Int4)),
+            ("q8", Some(QKind::Int8)),
+            ("f32", None),
+            ("none", None),
+        ] {
+            assert_eq!(
+                parse_args(&a(&["--model", "m", "--quant", v]))
+                    .unwrap()
+                    .quant,
+                want
+            );
+        }
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--quant", "fp8"])).unwrap_err(),
+            "--quant must be int4|int8|f32 (got 'fp8')"
+        );
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--quant"])).unwrap_err(),
+            "--quant needs a value"
+        );
+        // --force takes no value, wherever it appears.
+        let c = parse_args(&a(&["--force", "--model", "m"])).unwrap();
+        assert!(c.force);
+        assert!(!parse_args(&a(&["--model", "m"])).unwrap().force);
     }
 
     #[test]
@@ -451,9 +530,7 @@ mod tests {
             model,
             host: host.into(),
             port,
-            limits: Limits::default(),
-            token: None,
-            allow_unauthenticated: false,
+            ..Config::default()
         }
     }
 

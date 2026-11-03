@@ -131,6 +131,7 @@ fn validate(p: ServeParams) -> Result<Config, String> {
         },
         token,
         allow_unauthenticated: false,
+        ..Config::default()
     })
 }
 

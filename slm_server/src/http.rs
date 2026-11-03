@@ -1,15 +1,19 @@
 //! HTTP layer: routing, request validation, limits and error mapping. Model
 //! work is queued to the model thread (`model_thread`).
 
+use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
 use crate::info::Info;
 use crate::limits::{Limits, MAX_INFLIGHT, MAX_STOPS, MAX_STOP_BYTES};
-use crate::model_thread::{spawn_model_thread, GenRequest, Job, Reply, DEFAULT_MAX_TOKENS};
+use crate::load;
+use crate::model_thread::{spawn, spawn_model_thread, Job, Reply, Spawned};
 use axum::extract::{rejection::JsonRejection, DefaultBodyLimit, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use ferrum_core::memory::available_memory_bytes;
+use ferrum_core::QKind;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::{mpsc, Arc, Weak};
@@ -28,10 +32,28 @@ struct AppState {
     inflight: Arc<Semaphore>,
 }
 
-/// Load the model in `bytes` (a model file) and build the router, spawning the
+/// Load the Ferrum model in `bytes` (a model file) and build the router, spawning the
 /// model thread. Also returns the model's [`Info`].
 pub fn app(bytes: Vec<u8>, limits: Limits) -> Result<(Router, Info), String> {
-    let (jobs, info, alive) = spawn_model_thread(bytes)?;
+    Ok(router(spawn_model_thread(bytes)?, limits))
+}
+
+/// Load the model file at `path` and build the router. Ferrum's own models (`gpt2` /
+/// `ferrum` layouts) load exactly as [`app`] does and ignore `quant`; an imported
+/// `llama`/`qwen2` GGUF loads at in-memory precision `quant` (`None` = f32) after a RAM
+/// guard that refuses an estimate over 90 % of the available memory unless `force`; any
+/// other architecture is refused.
+pub fn app_from_file(
+    path: &str,
+    quant: Option<QKind>,
+    force: bool,
+    limits: Limits,
+) -> Result<(Router, Info), String> {
+    let file = load::open(path, quant, force, available_memory_bytes())?;
+    Ok(router(spawn(move || load::load(file))?, limits))
+}
+
+fn router((jobs, info, alive): Spawned, limits: Limits) -> (Router, Info) {
     let state = AppState {
         jobs,
         info: Arc::new(info.clone()),
@@ -63,7 +85,7 @@ pub fn app(bytes: Vec<u8>, limits: Limits) -> Result<(Router, Info), String> {
             ApiError(StatusCode::METHOD_NOT_ALLOWED, "method not allowed".into())
         })
         .with_state(state);
-    Ok((router, info))
+    (router, info)
 }
 
 /// Admit a POST only while fewer than [`MAX_INFLIGHT`] are in flight.

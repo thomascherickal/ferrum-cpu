@@ -1596,13 +1596,60 @@ Rules for both commands:
 ```text
 ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
              [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
-             [--repetition-penalty 1.0] [--token <t>] [--allow-unauthenticated]
+             [--repetition-penalty 1.0] [--quant int4|int8|f32] [--force]
+             [--token <t>] [--allow-unauthenticated]
 ```
 
 The server binds to loopback by default and prints the model and address when
 it is ready, then one line saying whether authentication is on. Unknown flags are errors; `ferrum-serve --version` prints the version. It holds one loaded model on **one
 dedicated model thread** and handles **one request at a time**, because
 `GenerativeSLM` is not `Send` or `Sync`. Each matmul still uses every core.
+
+**Which models.** The kind is read from the file's `general.architecture`:
+
+| Architecture | Served as | `--quant` / `--force` |
+|---|---|---|
+| `gpt2`, `ferrum` (Ferrum's own models) | `GenerativeSLM`, exactly as before | ignored: the model computes at the precision it was saved with |
+| `llama`, `qwen2` (imported, e.g. SmolLM2, Qwen2.5) | `LlamaModel` with the GGUF's own tokenizer | `--quant` picks the in-memory precision (default `int4`, like `run-gguf`; `int8`, `f32`; `q4`/`q8`/`none` also work), `--force` skips the RAM guard |
+| anything else | refused at startup, exit 1: `cannot serve <path>: architecture 'phi3' is not supported (Ferrum's own gpt2 / ferrum models, or imported llama / qwen2 GGUFs)` | |
+
+An imported GGUF without tokenizer metadata is refused at startup (`the GGUF has no
+tokenizer, and the server reads text`). Before an imported model's weights are read the
+server estimates its resident size the way `run-gguf` does and refuses to start when that
+exceeds 90 % of the available memory (`estimated resident memory (… GB) exceeds 90% of
+available (… GB) — try a smaller --quant, or pass --force to attempt it anyway.`); the
+available memory comes from Linux's `/proc/meminfo`, so on other systems the guard is off.
+`/v1/info` reports an imported model's parameter count (every tensor in the file), context
+length and vocabulary, `quant` as the precision it computes at (`int4`, `int8` or `f32`, the
+`--quant` it was loaded with; for a Ferrum model it stays the saved file's quantization), and
+`tokenizer` as `bpe` or `spm`. The browser bindings (`slm_wasm`, [§11.3](#113-in-the-browser-webassembly))
+load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](docs/serving-imported-models.md).
+
+**Imported models: tokens and windows.**
+
+- **Scoring** (`/v1/loglikelihood`, `/v1/loglikelihood_rolling`) puts the GGUF's BOS token
+  (`tokenizer.ggml.bos_token_id`) in front whenever the file defines one, even when its
+  `add_bos_token` is false (SmolLM2), so the first real token is scored given BOS, as
+  lm-evaluation-harness and llama.cpp's perplexity do. Without a BOS the first token of a
+  rolling text has nothing to condition on and is not scored (`n_tokens` is one less), and a
+  loglikelihood request with an empty `context` is a `422`. `eval-gguf` prepends BOS only
+  when `add_bos_token` asks for it, so on such a file its numbers differ from the server's.
+- `/v1/loglikelihood` splits like a Ferrum model: trailing whitespace of the context moves
+  onto the continuation, and the context plus continuation is encoded together when that
+  extends the context's tokens (else the continuation is encoded on its own).
+- Texts longer than the model's context are scored in **windows of the context length**:
+  the first starts at token 0, each later one `context / 2` tokens before its first unscored
+  token, so every token is scored once with at least half a window of history (the rule of
+  `score_rolling` and `eval-gguf`). The log-softmax is exact (no probability floor). A full
+  window holds `context × vocab` f32 logits at once (8,192 × 49,152 ≈ 1.6 GB for SmolLM2),
+  so `--max-chars` is also the memory bound for long texts.
+- **Generation** is a raw completion (no chat template; `run-gguf --raw`): the prompt gets
+  BOS only when `add_bos_token` asks for it (as `run-gguf` does), generation stops at the
+  EOS token (not in the text, not counted) or at the first stop string (cut from the text;
+  the token that completed it is counted), and every sampling field means what it means for
+  a Ferrum model. Unlike a Ferrum model, whose prompt keeps its most recent tokens, a prompt
+  that fills the context window is a `422`, and `max_tokens` is capped at what remains of
+  the window.
 
 | Route | Request | Response |
 |---|---|---|
@@ -1638,13 +1685,13 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/generate \
 | Characters per text (`--max-chars`) | 65,536 | `400` |
 | `max_tokens` per generate request (`--max-tokens`) | 4,096 | `400` |
 | Stop strings per generate request | 16 of at most 1,024 bytes | `400` |
-
-Each of the four limit flags must be at least 1; `0` is refused at startup
-(`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
 | POST requests in flight | 32 | `503`, before the body is read |
 | Missing or wrong bearer token (only when a token is set; `GET /health` is exempt) | | `401` |
 | Malformed JSON, a missing field, an unknown field (the error names it), or an empty stop string | | `400` |
-| Model error (for example an unknown character in a character-level model) | | `422` |
+| Model error (for example an unknown character in a character-level model, or a prompt that fills an imported model's context) | | `422` |
+
+Each of the four limit flags must be at least 1; `0` is refused at startup
+(`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
 
 Errors have the form `{"error": "..."}`. An empty `requests` array returns `200`
 with `{"results": []}`. A model error, or a panic in the model thread, does not
@@ -2305,7 +2352,8 @@ ssh user@host /opt/ferrum/train_transformer generate /opt/ferrum/model.gguf "pro
 
 To embed inference in your own service, depend on `ferrum_core` and call
 `GenerativeSLM::load` and `generate`, with no model server, or run
-`ferrum-serve` ([§9.7](#97-serving-ferrum-serve)) for an HTTP interface. Set
+`ferrum-serve` ([§9.7](#97-serving-ferrum-serve)) for an HTTP interface (it serves
+imported Llama/Qwen GGUFs too). Set
 `FERRUM_NUM_THREADS` to bound CPU use per process.
 
 ### 11.2 Embedded and constrained targets
@@ -2325,7 +2373,9 @@ bash scripts/build_wasm.sh        # → slm_wasm/pkg/{slm_wasm.js, slm_wasm_bg.w
 ```
 
 Serve `pkg/` and your `model.gguf` from any static host. There is no backend,
-and the visitor's input never leaves their machine.
+and the visitor's input never leaves their machine. The bindings load Ferrum's own
+models only; an imported Llama/Qwen GGUF runs natively (`run-gguf`, `ferrum-serve`,
+[§9.7](#97-serving-ferrum-serve)), not in the browser.
 
 ```js
 import init, { Slm } from "./pkg/slm_wasm.js";

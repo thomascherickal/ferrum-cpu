@@ -1,11 +1,12 @@
 //! The thread that owns the model (`GenerativeSLM` is not `Send`/`Sync`): jobs
 //! come in over a channel, replies go out through oneshot channels, and a panic
-//! while answering one job fails that job only.
+//! while answering one job fails that job only. What the model is lives in
+//! [`crate::backend`]; this module only runs it.
 
-use crate::info::{info_for, Info};
-use ferrum_core::{GenerativeSLM, Rng, SamplingParams};
-use serde::Deserialize;
-use serde_json::{json, Value};
+use crate::backend::{Backend, GenRequest};
+use crate::info::Info;
+use crate::load::{load, ModelFile};
+use serde_json::Value;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{mpsc, Arc, Weak};
 use tokio::sync::oneshot;
@@ -55,51 +56,17 @@ fn guarded(f: impl FnOnce() -> Result<Vec<Value>, String>) -> Result<Vec<Value>,
 }
 
 /// Answer one job on the model thread.
-fn handle(model: &GenerativeSLM, job: Job) {
+fn handle(model: &Backend, job: Job) {
     let (reply, result) = match job {
         Job::Score(reqs, reply) => (
             reply,
-            guarded(|| {
-                collect(&reqs, |(c, k)| {
-                    model.score(c, k).map(
-                        |s| json!({"logprob": s.logprob, "n_tokens": s.n_tokens, "greedy": s.greedy}),
-                    )
-                })
-            }),
+            guarded(|| collect(&reqs, |(c, k)| model.score(c, k))),
         ),
         Job::Rolling(texts, reply) => (
             reply,
-            guarded(|| {
-                collect(&texts, |t| {
-                    model
-                        .score_rolling(t)
-                        .map(|s| json!({"logprob": s.logprob, "n_tokens": s.n_tokens}))
-                })
-            }),
+            guarded(|| collect(&texts, |t| model.score_rolling(t))),
         ),
-        Job::Generate(reqs, reply) => (
-            reply,
-            guarded(|| {
-                collect(&reqs, |g| {
-                    let params = SamplingParams {
-                        temperature: g.temperature,
-                        top_k: g.top_k,
-                        top_p: g.top_p,
-                        repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
-                        ..SamplingParams::default()
-                    };
-                    model
-                        .generate_tokens(
-                            &g.prompt,
-                            g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
-                            &g.stop,
-                            &params,
-                            &mut Rng::new(g.seed),
-                        )
-                        .map(|o| json!({"text": o.text, "n_tokens": o.n_tokens}))
-                })
-            }),
-        ),
+        Job::Generate(reqs, reply) => (reply, guarded(|| collect(&reqs, |g| model.generate(g)))),
         #[cfg(test)]
         Job::Panic(reply) => (reply, guarded(|| panic!("boom"))),
         #[cfg(test)]
@@ -110,26 +77,39 @@ fn handle(model: &GenerativeSLM, job: Job) {
                     assert!(!fail, "kernel boom");
                     b[..(r1 - r0) * 4].fill(1.0);
                 });
-                Ok(vec![json!(out.iter().sum::<f32>())])
+                Ok(vec![serde_json::json!(out.iter().sum::<f32>())])
             }),
         ),
     };
     let _ = reply.send(result);
 }
 
-/// Load the model from `bytes` on a dedicated thread and answer jobs there
-/// until every sender is dropped. The thread must build the model itself:
-/// `GenerativeSLM` is not `Send`. Returns the job channel and the model's info.
+/// The job channel, the model's info, and a liveness flag (dead once the thread exits).
 pub(crate) type Spawned = (mpsc::Sender<Job>, Info, Weak<()>);
 
+/// Load Ferrum model-file `bytes` on a dedicated thread (see [`spawn`]).
 pub(crate) fn spawn_model_thread(bytes: Vec<u8>) -> Result<Spawned, String> {
-    spawn_with(bytes, GenerativeSLM::from_bytes)
+    spawn(move || load(ModelFile::Ferrum(bytes)))
 }
 
 /// [`spawn_model_thread`] with the loader injected (a test seam for load failures and panics).
+#[cfg(test)]
 fn spawn_with(
     bytes: Vec<u8>,
-    load: impl FnOnce(&[u8]) -> ferrum_core::Result<GenerativeSLM> + Send + 'static,
+    load: impl FnOnce(&[u8]) -> ferrum_core::Result<ferrum_core::GenerativeSLM> + Send + 'static,
+) -> Result<Spawned, String> {
+    spawn(move || {
+        let m = load(&bytes).map_err(|e| e.to_string())?;
+        let info = crate::info::info_for(&m, &bytes);
+        Ok((Backend::Ferrum(m), info))
+    })
+}
+
+/// Run `load` on a dedicated thread and answer jobs there until every sender is dropped.
+/// The thread must build the model itself: `GenerativeSLM` is not `Send`. A loader that
+/// fails or panics is a startup error.
+pub(crate) fn spawn(
+    load: impl FnOnce() -> Result<(Backend, Info), String> + Send + 'static,
 ) -> Result<Spawned, String> {
     // ponytail: unbounded job queue; fine for a loopback server with one serial
     // client (LightEval). Use a bounded channel + 503 if exposed to many clients.
@@ -141,15 +121,16 @@ fn spawn_with(
         .name("ferrum-model".into())
         .spawn(move || {
             let _alive = alive;
-            let model = match load(&bytes) {
-                Ok(m) => m,
+            let model = match load() {
+                Ok((m, info)) => {
+                    let _ = ready_tx.send(Ok(info));
+                    m
+                }
                 Err(e) => {
-                    let _ = ready_tx.send(Err(e.to_string()));
+                    let _ = ready_tx.send(Err(e));
                     return;
                 }
             };
-            let _ = ready_tx.send(Ok(info_for(&model, &bytes)));
-            drop(bytes);
             for job in rx {
                 handle(&model, job);
             }
@@ -161,38 +142,11 @@ fn spawn_with(
     Ok((tx, info, weak))
 }
 
-/// `max_tokens` when a generate request omits it (capped by the server's `--max-tokens`).
-pub(crate) const DEFAULT_MAX_TOKENS: usize = 64;
-fn default_top_p() -> f32 {
-    1.0
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GenRequest {
-    pub(crate) prompt: String,
-    /// `None` until the HTTP layer fills in the default, capped by the server limit.
-    #[serde(default)]
-    pub(crate) max_tokens: Option<usize>,
-    #[serde(default)]
-    pub(crate) stop: Vec<String>,
-    #[serde(default)]
-    pub(crate) temperature: f32,
-    #[serde(default)]
-    pub(crate) top_k: usize,
-    #[serde(default = "default_top_p")]
-    pub(crate) top_p: f32,
-    #[serde(default)]
-    pub(crate) seed: u64,
-    /// `None` until the HTTP layer fills in the server default.
-    #[serde(default)]
-    pub(crate) repetition_penalty: Option<f32>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_util::model;
+    use serde_json::json;
 
     #[test]
     fn spawn_model_thread_rejects_bad_bytes_and_serves_good() {
@@ -237,11 +191,6 @@ mod tests {
         })
         .unwrap_err();
         assert!(!err.is_empty());
-    }
-
-    #[test]
-    fn default_helpers() {
-        assert_eq!((DEFAULT_MAX_TOKENS, default_top_p()), (64, 1.0));
     }
 
     #[test]

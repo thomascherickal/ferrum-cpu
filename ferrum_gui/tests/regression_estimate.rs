@@ -363,6 +363,7 @@ fn serve_start_estimate_matches_the_measured_load_and_bind() {
             limits: slm_server::Limits::default(),
             token: None,
             allow_unauthenticated: false,
+            ..Default::default()
         },
         None,
     ))

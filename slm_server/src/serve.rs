@@ -4,7 +4,7 @@
 //! starts serving.
 
 use crate::cli::{is_loopback, Config};
-use crate::{app, with_bearer_token, Info};
+use crate::{app_from_file, with_bearer_token, Info};
 use axum::extract::{Request, State};
 use axum::middleware::{from_fn_with_state, Next};
 use axum::response::Response;
@@ -60,8 +60,7 @@ pub async fn bind(cfg: Config, request_log: Option<RequestLog>) -> Result<Bound,
             cfg.host
         ));
     }
-    let bytes = std::fs::read(&cfg.model).map_err(|e| format!("cannot read {}: {e}", cfg.model))?;
-    let (router, info) = app(bytes, cfg.limits.clone())?;
+    let (router, info) = app_from_file(&cfg.model, cfg.quant, cfg.force, cfg.limits.clone())?;
     let router = match &cfg.token {
         Some(t) => with_bearer_token(router, t),
         None => router,
@@ -116,7 +115,6 @@ impl Bound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Limits;
     use std::io::{Read, Write};
     use std::sync::Mutex;
 
@@ -130,11 +128,9 @@ mod tests {
     fn cfg(model: String, token: Option<&str>) -> Config {
         Config {
             model,
-            host: "127.0.0.1".into(),
             port: 0,
-            limits: Limits::default(),
             token: token.map(String::from),
-            allow_unauthenticated: false,
+            ..Config::default()
         }
     }
 
