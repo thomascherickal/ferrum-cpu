@@ -92,14 +92,23 @@ skills. When the user states a new rule, add it here.
     rule of 2026-11-03; `GEMINI.md` and `AGENTS.md` are symlinks to this file,
     so the rule applies to all three.)
 
-17. **Hand-off file.** After every agent result (and at every task boundary)
-    refresh `.superpowers/HANDOFF.md` (git-ignored): the goal, what is done
-    and pushed, the running or paused agents, uncommitted files, the next
-    steps in order, and every open question for the user. The usage skill
-    cannot read the real 5-hour percentage, so the file is kept current
-    instead of written at 98 %. At the start of every session, if
-    `.superpowers/HANDOFF.md` exists, read it first, continue from its next
-    steps, and mark it consumed.
+17. **Hand-off file, and the 98 % trigger.** After every agent result (and at
+    every task boundary) refresh `.superpowers/HANDOFF.md` (git-ignored): the
+    goal, what is done and pushed, the running or paused agents, uncommitted
+    files, the next steps in order, every open question for the user, and which
+    brief a fresh agent needs if the running one dies. At every task boundary,
+    before dispatching the next agent, read the real 5-hour usage: first
+    `.superpowers/usage.json` (`five_hour_used_percentage`, written by the
+    user's status-line script when it is set up to; ignore it when
+    `written_at` is more than 10 minutes old), else the percentage the user
+    reports from the status line (`5h:N%`). A model cannot see the status line
+    or the limit itself. At **98 % or more**: do not dispatch another agent,
+    rewrite `.superpowers/HANDOFF.md` completely (the file is the only thing the
+    next session gets), commit and push finished work, say so in one line, and
+    stop. At the start of every session, if `.superpowers/HANDOFF.md` exists,
+    read it first, continue from its next steps, and mark it consumed. When the
+    limit kills a running agent, never resume it: launch a fresh one with
+    explicit state (rule 2).
 
 18. **The default branch is `main`, never `master`.** The repository's default
     branch was renamed from `master` to `main` on 2026-11-03. Use `main` for
