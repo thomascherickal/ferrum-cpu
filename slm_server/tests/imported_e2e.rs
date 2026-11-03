@@ -130,6 +130,14 @@ fn same_scores(got: &[Value], want: &[Value]) {
     }
 }
 
+#[test]
+fn a_client_disconnect_mid_generation_leaves_the_imported_server_serving() {
+    let f = File::new("cancel", &tiny_llama_bos_eos());
+    let (mut child, _err, addr) = spawn(&f.0, &["--quant", "f32"]);
+    common::disconnect_mid_generate_then_serve(&addr);
+    sigint_and_wait(&mut child);
+}
+
 fn greedy() -> SamplingParams {
     SamplingParams {
         temperature: 0.0,

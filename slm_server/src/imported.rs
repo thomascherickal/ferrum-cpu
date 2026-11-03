@@ -9,6 +9,7 @@
 
 use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
 use ferrum_core::{GgufTokenizer, InferError, LlamaModel, LlamaScore, Result, Rng, SamplingParams};
+use std::sync::atomic::Ordering;
 
 /// Largest scoring window, in tokens: what `eval-gguf` uses, and it bounds the
 /// `window x vocab` f32 logits one forward pass holds.
@@ -170,6 +171,9 @@ impl Imported {
             &eos,
             &mut Rng::new(g.seed),
             &mut |out| {
+                if g.cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed)) {
+                    return true;
+                }
                 if g.stop.is_empty() {
                     return false;
                 }
@@ -198,6 +202,8 @@ mod tests {
     use super::*;
     use crate::test_util::{imported, llama};
     use ferrum_core::MetaValue;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     fn req(prompt: &str, max: usize, stop: &[&str]) -> GenRequest {
         GenRequest {
@@ -209,6 +215,7 @@ mod tests {
             top_p: 1.0,
             seed: 0,
             repetition_penalty: None,
+            cancel: None,
         }
     }
 
@@ -449,5 +456,15 @@ mod tests {
             ("tokenizer.ggml.model", MetaValue::String("llama".into())),
         ]));
         assert_eq!(m.continuation_text(0, &[1, 2]), m.tok.decode(&[1, 2]));
+    }
+
+    #[test]
+    fn a_set_cancel_flag_ends_the_generation_after_one_token() {
+        let m = imported(&llama::tiny_llama_bos_eos());
+        let full = m.generate(&req("ab", 6, &[])).unwrap();
+        assert!(full.n_tokens > 1);
+        let mut r = req("ab", 6, &[]);
+        r.cancel = Some(Arc::new(AtomicBool::new(true)));
+        assert_eq!(m.generate(&r).unwrap().n_tokens, 1);
     }
 }

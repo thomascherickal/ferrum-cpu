@@ -6,12 +6,24 @@ use crate::imported::Imported;
 use ferrum_core::{GenerativeSLM, Result, Rng, SamplingParams};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 // One value per server, built once on the model thread and never moved after that.
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Backend {
     Ferrum(GenerativeSLM),
     Imported(Imported),
+    /// Test stand-in for a slow model: counts generate starts and ticks.
+    #[cfg(test)]
+    Stub(Arc<StubStats>),
+}
+
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct StubStats {
+    pub(crate) started: std::sync::atomic::AtomicUsize,
+    pub(crate) ticks: std::sync::atomic::AtomicUsize,
 }
 
 /// `max_tokens` when a generate request omits it (capped by the server's `--max-tokens`).
@@ -40,12 +52,25 @@ pub(crate) struct GenRequest {
     /// `None` until the HTTP layer fills in the server default.
     #[serde(default)]
     pub(crate) repetition_penalty: Option<f32>,
+    /// Set by the HTTP layer when the client disconnects; never read from the body.
+    #[serde(skip)]
+    pub(crate) cancel: Option<Arc<AtomicBool>>,
+}
+
+impl GenRequest {
+    fn cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|f| f.load(Ordering::Relaxed))
+    }
 }
 
 impl Backend {
     /// `/v1/loglikelihood`: `{logprob, n_tokens, greedy}`.
     pub(crate) fn score(&self, context: &str, continuation: &str) -> Result<Value> {
         let (logprob, n_tokens, greedy) = match self {
+            #[cfg(test)]
+            Backend::Stub(_) => unreachable!("the stub only generates"),
             Backend::Ferrum(m) => {
                 let s = m.score(context, continuation)?;
                 (s.logprob, s.n_tokens, s.greedy)
@@ -61,6 +86,8 @@ impl Backend {
     /// `/v1/loglikelihood_rolling`: `{logprob, n_tokens}`.
     pub(crate) fn score_rolling(&self, text: &str) -> Result<Value> {
         let (logprob, n_tokens) = match self {
+            #[cfg(test)]
+            Backend::Stub(_) => unreachable!("the stub only generates"),
             Backend::Ferrum(m) => {
                 let s = m.score_rolling(text)?;
                 (s.logprob, s.n_tokens)
@@ -74,15 +101,32 @@ impl Backend {
     }
 
     /// `/v1/generate`: `{text, n_tokens}`.
+    /// A request whose client already left is skipped (the reply is discarded); one that
+    /// disconnects mid-run ends at its next token. Scoring has no such check.
     pub(crate) fn generate(&self, g: &GenRequest) -> Result<Value> {
+        if g.cancelled() {
+            return Ok(Value::Null);
+        }
         let (text, n_tokens) = match self {
+            #[cfg(test)]
+            Backend::Stub(st) => {
+                st.started.fetch_add(1, Ordering::SeqCst);
+                for _ in 0..g.max_tokens.unwrap_or(1) {
+                    if g.cancelled() {
+                        break;
+                    }
+                    st.ticks.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                (String::new(), 0)
+            }
             Backend::Ferrum(m) => {
                 let params = SamplingParams {
                     temperature: g.temperature,
                     top_k: g.top_k,
                     top_p: g.top_p,
                     repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
-                    ..SamplingParams::default()
+                    cancel: g.cancel.clone(),
                 };
                 let o = m.generate_tokens(
                     &g.prompt,
@@ -127,6 +171,19 @@ mod tests {
             assert!(r["logprob"].as_f64().unwrap() < 0.0 && r["n_tokens"].as_u64() > Some(0));
             let g = b.generate(&req).unwrap();
             assert!(g["text"].is_string() && g["n_tokens"].as_u64() <= Some(2));
+        }
+    }
+
+    #[test]
+    fn a_request_cancelled_before_it_starts_is_skipped_on_both_kinds() {
+        let mut req: GenRequest =
+            serde_json::from_value(json!({"prompt": "ab", "max_tokens": 4})).unwrap();
+        req.cancel = Some(Arc::new(AtomicBool::new(true)));
+        for b in [
+            Backend::Ferrum(model(0)),
+            Backend::Imported(imported(&llama::tiny_llama_bos_eos())),
+        ] {
+            assert_eq!(b.generate(&req).unwrap(), Value::Null);
         }
     }
 }

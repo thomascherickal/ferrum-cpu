@@ -1752,9 +1752,15 @@ the startup line then says `auth OFF (--allow-unauthenticated: ...)`. On
 loopback with no token the server stays open, and says `auth OFF (loopback
 only)`. The routes are Ferrum's own; there are no OpenAI-compatible routes.
 
-A `/v1/generate` request runs to its `max_tokens` even if the client hangs up.
-The library's cancel flag (`SamplingParams.cancel`) could end it on a
-disconnect; the server does not wire that up yet.
+When the client hangs up while a `/v1/generate` request is running, the server
+sets the request's cancel flag (`SamplingParams.cancel`, for a Ferrum model and
+an imported GGUF alike) and the generation ends at its next token, which frees
+the single model thread for the next request. A request still waiting in the
+queue when its client leaves is skipped when its turn comes. The cancelled
+answer is discarded (nobody is listening), and a request that completes is
+unchanged. The scoring routes (`/v1/loglikelihood`, `/v1/loglikelihood_rolling`)
+have no decode loop to interrupt: once started they run to completion. A cancel
+cannot act inside one token's forward pass or while a prompt is being read.
 
 ### 9.8 Evaluating with LightEval
 

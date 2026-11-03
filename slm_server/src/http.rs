@@ -2,6 +2,7 @@
 //! work is queued to the model thread (`model_thread`).
 
 use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
+use crate::cancel::CancelOnDrop;
 use crate::info::Info;
 use crate::limits::{Limits, MAX_INFLIGHT, MAX_STOPS, MAX_STOP_BYTES};
 use crate::load;
@@ -278,7 +279,15 @@ async fn generate(
             .get_or_insert(DEFAULT_MAX_TOKENS.min(s.max_tokens));
         r.repetition_penalty.get_or_insert(s.repetition_penalty);
     }
-    submit(&s, |tx| Job::Generate(b.requests, tx)).await
+    // Dropped with the handler future when the client disconnects: sets the flag every
+    // request of the batch carries, so the model thread skips or ends them.
+    let (guard, flag) = CancelOnDrop::new();
+    for r in &mut b.requests {
+        r.cancel = Some(flag.clone());
+    }
+    let out = submit(&s, |tx| Job::Generate(b.requests, tx)).await;
+    guard.disarm();
+    out
 }
 
 #[cfg(test)]
@@ -486,6 +495,7 @@ mod tests {
             top_p,
             seed: 0,
             repetition_penalty: None,
+            cancel: None,
         }
     }
 
@@ -608,5 +618,111 @@ mod tests {
         }
         assert_eq!(st1.inflight.available_permits(), 1);
         assert_eq!(st.inflight.available_permits(), 0);
+    }
+
+    // ---- cancel on disconnect, against a stub model that is slow until cancelled ----
+
+    use crate::backend::{Backend, StubStats};
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    fn stub_router() -> (Router, Arc<StubStats>) {
+        let stats = Arc::new(StubStats::default());
+        let st = stats.clone();
+        let spawned = spawn(move || Ok((Backend::Stub(st), info_for(&model(0), b"")))).unwrap();
+        (router(spawned, Limits::default()).0, stats)
+    }
+
+    fn wait_for(what: &str, cond: impl Fn() -> bool) {
+        let t = Instant::now();
+        while !cond() {
+            assert!(t.elapsed() < Duration::from_secs(20), "timed out: {what}");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn post_gen(addr: std::net::SocketAddr, max_tokens: usize) -> std::net::TcpStream {
+        let body = json!({"requests": [{"prompt": "a", "max_tokens": max_tokens}]}).to_string();
+        let mut c = std::net::TcpStream::connect(addr).unwrap();
+        write!(
+            c,
+            "POST /v1/generate HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+        c
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_dropped_connection_ends_the_generation_and_the_next_request_runs() {
+        let (r, stats) = stub_router();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, r).await });
+        let long = 400; // 400 ticks of 5 ms = 2 s if nothing cancels it
+        let c = post_gen(addr, long);
+        wait_for("generation started", || {
+            stats.ticks.load(Ordering::SeqCst) > 0
+        });
+        drop(c);
+        // The model thread frees up: a one-token request is answered, long before 2 s.
+        let t = Instant::now();
+        let mut c2 = post_gen(addr, 1);
+        let mut buf = [0u8; 12];
+        c2.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"HTTP/1.1 200");
+        assert!(
+            t.elapsed() < Duration::from_millis(1500),
+            "{:?}",
+            t.elapsed()
+        );
+        assert!(
+            stats.ticks.load(Ordering::SeqCst) < long,
+            "ran to completion"
+        );
+        assert_eq!(stats.started.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_completed_request_is_not_cancelled() {
+        let (r, stats) = stub_router();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, r).await });
+        let mut c = post_gen(addr, 5);
+        let mut buf = [0u8; 12];
+        c.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"HTTP/1.1 200");
+        assert_eq!(stats.ticks.load(Ordering::SeqCst), 5);
+    }
+
+    #[test]
+    fn a_job_cancelled_while_queued_is_skipped_when_dequeued() {
+        let stats = Arc::new(StubStats::default());
+        let st = stats.clone();
+        let (jobs, _info, _alive) =
+            spawn(move || Ok((Backend::Stub(st), info_for(&model(0), b"")))).unwrap();
+        let req = |max, flag: &Arc<AtomicBool>| GenRequest {
+            cancel: Some(flag.clone()),
+            max_tokens: Some(max),
+            ..serde_json::from_value(json!({"prompt": "a"})).unwrap()
+        };
+        let (fa, fb) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let (ta, ra) = oneshot::channel();
+        let (tb, rb) = oneshot::channel();
+        jobs.send(Job::Generate(vec![req(400, &fa)], ta)).unwrap();
+        wait_for("A running", || stats.ticks.load(Ordering::SeqCst) > 0);
+        jobs.send(Job::Generate(vec![req(400, &fb)], tb)).unwrap();
+        // B's client leaves while it waits; then A's does too.
+        fb.store(true, Ordering::Relaxed);
+        fa.store(true, Ordering::Relaxed);
+        ra.blocking_recv().unwrap().unwrap();
+        rb.blocking_recv().unwrap().unwrap();
+        assert_eq!(stats.started.load(Ordering::SeqCst), 1, "B never started");
+        assert!(stats.ticks.load(Ordering::SeqCst) < 400);
     }
 }

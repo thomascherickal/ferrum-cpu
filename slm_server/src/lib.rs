@@ -6,6 +6,7 @@
 
 mod auth;
 mod backend;
+mod cancel;
 pub mod cli;
 mod http;
 mod imported;

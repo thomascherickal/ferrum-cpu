@@ -62,6 +62,14 @@ fn post(addr: &str, path: &str, body: &Value) -> (u16, Value) {
     (s, json_of(&b))
 }
 
+#[test]
+fn a_client_disconnect_mid_generation_leaves_the_server_serving() {
+    let mf = ModelFile::new("cancel");
+    let (mut child, _err, addr) = spawn(&mf.path, &[]);
+    common::disconnect_mid_generate_then_serve(&addr);
+    sigint_and_wait(&mut child);
+}
+
 fn greedy() -> SamplingParams {
     SamplingParams {
         temperature: 0.0,

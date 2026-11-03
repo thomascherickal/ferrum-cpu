@@ -104,3 +104,35 @@ pub fn sigint_and_wait(child: &mut Child) -> ExitStatus {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// Send a `/v1/generate` request with a large `max_tokens`, close the socket without reading the
+/// answer, then check that a follow-up request on a new connection is answered promptly and
+/// exactly as it was before the disconnect (the cancelled run left nothing behind).
+pub fn disconnect_mid_generate_then_serve(addr: &str) {
+    let want = |a: &str| {
+        http(
+            a,
+            "POST",
+            "/v1/generate",
+            r#"{"requests":[{"prompt":"the cat","max_tokens":8}]}"#,
+        )
+    };
+    let before = want(addr);
+    assert_eq!(before.0, 200, "{before:?}");
+    let body = r#"{"requests":[{"prompt":"the cat","max_tokens":4096}]}"#;
+    let mut c = TcpStream::connect(addr).unwrap();
+    write!(
+        c,
+        "POST /v1/generate HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    drop(c);
+    let t = Instant::now();
+    assert_eq!(want(addr), before);
+    assert!(
+        t.elapsed() < Duration::from_secs(10),
+        "follow-up took {:?}",
+        t.elapsed()
+    );
+}
