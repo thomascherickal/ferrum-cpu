@@ -52,7 +52,8 @@ skills. When the user states a new rule, add it here.
 9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
    counts, known issues, roadmap, section 7) in the feature's commit. Only the
    docs listed under Conventions exist (plus `docs/coverage-results.md`, rule
-   10, and the tutorials of rule 14); add no others.
+   10, the tutorials of rule 14, and reports the user asks for by name:
+   `docs/ferrum-capabilities.md`, `docs/gap-report.md`); add no others.
 10. **Coverage runs once a day, at noon, no more.** This limits LOCAL runs of
     `scripts/coverage.sh`; the CI `coverage` job runs on every push as the
     gate. Run it locally (alone, never beside tests) only in the noon slot (about 12:00, local
@@ -158,7 +159,7 @@ Do not break these; they are the product's selling points.
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) and `test_cli_matrix.rs` (every subcommand has a binary test, every server route an HTTP e2e test) |
-| `docs/` | `ferrum-capabilities.md` (capability estimates by RAM tier and processor), `resume-cancel-and-prepare.md` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
+| `docs/` | `ferrum-capabilities.md` (capability estimates by RAM tier and processor), `gap-report.md` (functionality gaps and the front-end parity matrix), `resume-cancel-and-prepare.md` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
 This repo's directory is `ferrum-cpu` inside the workspace folder `ferrum`
