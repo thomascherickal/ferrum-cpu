@@ -194,7 +194,7 @@ pub fn run_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Opti
         match child.try_wait() {
             Ok(Some(status)) => {
                 let mut out = String::new();
-                // ponytail: stdout is `Stdio::piped()` above, so it is always there.
+                // stdout is `Stdio::piped()` above, so it is always there.
                 let mut so = child.stdout.take().expect("piped stdout");
                 std::io::Read::read_to_string(&mut so, &mut out).ok()?;
                 return status.success().then_some(out);

@@ -106,6 +106,15 @@ impl Env {
 
     /// `train <input> <model>` with the tiny architecture and the shared tokenizer.
     fn train(&self, input: &str, model: &str, extra: &[&str]) -> (bool, String) {
+        let o = self.train_output(input, model, extra);
+        (
+            o.status.success(),
+            String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr),
+        )
+    }
+
+    /// The raw output of [`Env::train`], for tests that check the exit code.
+    fn train_output(&self, input: &str, model: &str, extra: &[&str]) -> std::process::Output {
         let (i, m, t) = (self.s(input), self.s(model), self.s("tok.gguf"));
         let mut a = vec![
             "train",
@@ -120,7 +129,10 @@ impl Env {
         ];
         a.extend(ARCH);
         a.extend(extra);
-        tt(&a)
+        Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+            .args(&a)
+            .output()
+            .unwrap()
     }
 
     /// Train both ways with the same flags and return the two model hashes.
@@ -195,6 +207,39 @@ fn resuming_a_token_file_run_matches_the_text_run() {
         hashes.push(sha(&e.s(&model)));
     }
     assert_eq!(hashes[0], hashes[1]);
+}
+
+#[test]
+fn a_checkpoint_does_not_resume_across_text_and_token_file() {
+    let e = Env::new("cross");
+    for (from, to) in [("c.txt", "c.tok.gguf"), ("c.tok.gguf", "c.txt")] {
+        let ck = e.s(&format!("{from}.fckp"));
+        // A model name per direction: `train` skips training when the model file exists.
+        let half = format!("{from}.half.gguf");
+        let (ok, out) = e.train(from, &half, &["--epochs", "1", "--checkpoint", &ck]);
+        assert!(ok, "{out}");
+        let o = e.train_output(
+            to,
+            &format!("{to}.r.gguf"),
+            &["--epochs", "2", "--resume", &ck],
+        );
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.status.code(), Some(1), "{err}");
+        let (was, now) = (sha(&e.s(from)), sha(&e.s(to)));
+        assert!(
+            err.contains(&format!("trained on corpus sha256:{was}")),
+            "{err}"
+        );
+        assert!(
+            err.contains(&format!("this run's corpus is sha256:{now}")),
+            "{err}"
+        );
+        assert!(
+            err.contains("a text corpus and the token file made from it have different ids"),
+            "{err}"
+        );
+        assert!(!Path::new(&e.s(&format!("{to}.r.gguf"))).exists());
+    }
 }
 
 #[test]

@@ -532,8 +532,8 @@ mod tests {
         };
         // Enough rounds that every worker has run (and survived) a panicking job.
         for _ in 0..(2 * num_threads() + 2) {
-            let m = boom(&|| run(512, 4, |_, _, _| panic!("{}", "kernel boom")));
-            let m1 = boom(&|| run_1d(4096, 1, |_, _, _| panic!("{}", "kernel boom")));
+            let m = boom(&|| run(512, 4, |_, _, _| panic!("kernel boom")));
+            let m1 = boom(&|| run_1d(4096, 1, |_, _, _| panic!("kernel boom")));
             // Serial (one thread) the panic is the kernel's own; pooled it is the pool's report.
             let want = ["kernel boom", WORKER_PANICKED][(num_threads() > 1) as usize];
             assert!(m.unwrap().contains(want));
