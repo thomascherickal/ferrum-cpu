@@ -881,7 +881,7 @@ FERRUM_NUM_THREADS=8 train_transformer generate models/slm.gguf "Once upon a tim
 
 **Goal.** Run the model from three other tools, check they agree with Ferrum, then serve it over HTTP and call every route.
 
-**You need.** `models/slm.gguf` from Sample 1. The tools are optional; skip any you do not have. The commands were verified with llama.cpp b11521, Ollama v0.40.2, and LM Studio 0.4.18. Parts A to D and F were re-run on 2026-11-03 after the directory move, with llama.cpp b11521, Ollama v0.40.2 and LM Studio v0.4.26 (the installed version; 0.4.18 is the one the commands were first verified with). `export-lmstudio` was not run (Part E).
+**You need.** `models/slm.gguf` from Sample 1. The tools are optional; skip any you do not have. The commands were verified with llama.cpp b11521, Ollama v0.40.2, and LM Studio 0.4.18. Parts A to D and F were re-run on 2026-11-03 after the directory move, with llama.cpp b11521, Ollama v0.40.2 and LM Studio v0.4.26 (the installed version; 0.4.18 is the one the commands were first verified with). `export-lmstudio` was not run in this pass (Part E); the 2026-10-25 development ledger records its test passing, with no output kept, and it was not re-run on 2026-11-03.
 
 Set the tool locations (the defaults of a standard install):
 
@@ -1031,7 +1031,7 @@ One day, they were playing, and the park to play with the tir and befish. They p
 Sue was very happy and laughed. They thanked the ball for the ball and had a lot. They played on the ball and played with the ball together. They played together, and had fun together every day.
 ```
 
-`export-lmstudio` was not run (the manual commands of Part D were). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
+`export-lmstudio` was not run for this sample (the manual commands of Part D were); the 2026-10-25 development ledger records its test `export_lmstudio_then_generate` passing under `FERRUM_REQUIRE_RUNTIMES=1`, no output of that run is kept, and it was not re-run on 2026-11-03. Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
 
 ```bash
 train_transformer train data/prepared/val.txt samples/char.gguf --vocab 0 --context 16 --embed 32 \

@@ -5,8 +5,11 @@
 //! `FERRUM_REQUIRE_RUNTIMES=1 cargo test -p slm_cli --release --test runtime_export_cli -- --nocapture`
 //! (tests that touch a runtime share one lock, so default parallel threads are fine).
 //!
-//! ponytail: the model under test is llama.cpp's GPT-2 124M Q8_0 GGUF until Ferrum's
-//! own GPT-2 GGUF writer (G1) merges; the 0.1M Ferrum-trained model fixture then replaces it.
+//! ponytail: the model under test is llama.cpp's GPT-2 124M Q8_0 GGUF, an untracked file
+//! outside this repository (`../../.ferrum-dev/gpt2gguf/gpt2-q8_0.gguf` from `slm_cli/`).
+//! Ferrum's own GPT-2 GGUF writer exists, but the fixture was never swapped for a tiny
+//! Ferrum-trained model, so the test skips on a machine without that file. Upgrade path:
+//! train a tiny `--vocab 300` model in the test and drop the file requirement.
 //! Override the model file with `FERRUM_TEST_GGUF=/path/to/gpt2.gguf`.
 
 mod common;
@@ -43,7 +46,11 @@ fn gpt2_or_skip() -> Option<PathBuf> {
     let found = if p.is_file() {
         Ok(p)
     } else {
-        Err(format!("missing test model {}", p.display()))
+        Err(format!(
+            "missing test model {}: put llama.cpp's GPT-2 124M Q8_0 GGUF there or point \
+             FERRUM_TEST_GGUF at a gpt2 GGUF file",
+            p.display()
+        ))
     };
     require_or_skip(found)
 }
