@@ -10,9 +10,9 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
 | High (feature in one front end, missing in another, user-visible) | 0 open (H1, H2, H3 closed) |
-| Medium (declared ceiling with no plan) | 12 open (M2 closed) |
+| Medium (declared ceiling with no plan) | 11 open (M2, M7 closed) |
 | Low (polish) | 14 (13 open, L2 closed) |
-| **Total** | **29** (24 open) |
+| **Total** | **29** (23 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -36,7 +36,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 | M4 | Medium | Arm, Windows (incl. Windows-on-Arm / Snapdragon) and macOS (incl. Apple silicon) builds are in no CI job or test; release workflow builds Linux only. (Session gap 11: confirmed.) | `rg 'aarch64\|arm\|windows\|macos' .github/workflows/*.yml` finds nothing; every job is `runs-on: ubuntu-*` (`ci.yml:16,35,62,79,104,151,165,207,291`, `release.yml:25`). Status G13 records "no Windows or macOS bundle was built" but not Arm. | partly (Status §5 G13 row: Windows/macOS GUI bundles; Arm not mentioned) | Add a `cargo check --workspace` matrix on `aarch64-unknown-linux-gnu` (cross) and a macOS/Windows runner; add a Status row. |
 | M5 | Medium | The DVC pipeline cannot run here and is untested; `dvc.lock` may be stale. Root cause found: the `.venv/bin/dvc` script has a shebang to `/home/thomas/Projects/Ferrum/ferrum-cpu/.venv/bin/python3` (capital `F`, the pre-rename path), so it fails with "required file not found". The venv's Python imports dvc fine. `dvc.lock` was last refreshed in `3c5a91d` (2026-10-26); 33 commits since then touched `ferrum_core/src` or `slm_cli/src`, which are `dvc.yaml` deps. (Session gap 2: confirmed, cause identified.) | `head -1 .venv/bin/dvc`; `.venv/bin/dvc --version` -> "cannot execute: required file not found"; `.venv/bin/python3 -c 'import dvc'` prints the module path; `git log 3c5a91d..HEAD -- ferrum_core/src slm_cli/src \| wc -l` = 33. `dvc repro` was not run (it would write XDG caches). | partly: Status §5 rows say "`dvc repro prepare` was NOT run"; the broken shebang and the lock staleness are not stated | Recreate `.venv` (or `pip install --force-reinstall dvc` to rewrite the shebang), then `dvc status`/`dvc repro` with the XDG_* variables inside the repo; refresh `dvc.lock`. Narrowing `dvc.yaml` deps (old task A2) would stop the lock going stale on every source edit. |
 | M6 | Medium | The only end-to-end test of `export-ollama`/`export-lmstudio` against real tools (`slm_cli/tests/runtime_export_cli.rs`) needs a model file outside the repository (`../.ferrum-dev/gpt2gguf/gpt2-q8_0.gguf`, untracked) and is skipped on plain CI; the CI `runtimes` job runs only `test_runtime_compat`. Its `ponytail:` comment still says "until Ferrum's own GPT-2 GGUF writer (G1) merges", which happened long ago. Status says the `runtimes` job "has not run on GitHub yet". | `runtime_export_cli.rs:8-10,19,28-32`; `ci.yml:341-342`; `Status.md` §5 (Only the verified tool versions are tested). | partly (runtimes job: Status §5) | Swap the fixture for a Ferrum-trained tiny GPT-2 GGUF (the comment's own plan), add the test to the `runtimes` job, fix the comment. |
-| M7 | Medium | Five `ponytail:` ceilings are mentioned in neither Status nor Manual: unbounded server job queue, tokenizer state cap (64 B/state byte + 64 MiB), O(n²) re-decode in the no-block BPE fallback, a vocab x dim scratch per tied-head backward call, and the Prepare tab's folder walk on every form change. (All other markers are listed below.) | See the ponytail table below: `slm_server/src/model_thread.rs:134`, `ferrum_core/src/tokenizer/state.rs:37`, `ferrum_core/src/slm/stream.rs:378`, `ferrum_core/src/llm_train/passes.rs:113`, `ferrum_gui/src/estimate_cmd.rs:76`. | no | One Status §5 line listing them, or accept as internal (the server one matters if the server is ever exposed to many clients: bounded in practice by `MAX_INFLIGHT = 32`, `limits.rs:6`). |
+| M7 | Medium | **CLOSED** (the five ceilings are in Status §5 and Manual §2.5/§9.7). Five `ponytail:` ceilings are mentioned in neither Status nor Manual: unbounded server job queue, tokenizer state cap (64 B/state byte + 64 MiB), O(n²) re-decode in the no-block BPE fallback, a vocab x dim scratch per tied-head backward call, and the Prepare tab's folder walk on every form change. (All other markers are listed below.) | See the ponytail table below: `slm_server/src/model_thread.rs:134`, `ferrum_core/src/tokenizer/state.rs:37`, `ferrum_core/src/slm/stream.rs:378`, `ferrum_core/src/llm_train/passes.rs:113`, `ferrum_gui/src/estimate_cmd.rs:76`. | no | One Status §5 line listing them, or accept as internal (the server one matters if the server is ever exposed to many clients: bounded in practice by `MAX_INFLIGHT = 32`, `limits.rs:6`). |
 | M8 | Medium | No SIGINT/Ctrl-C checkpoint; stop file and `--max-seconds` are the graceful paths; the `ctrlc` dependency decision is still open. (Session gap 9: confirmed.) | `Manual.md:794-795`; `Status.md` §5 (🟢 "An interrupt does not save on exit") and §6.2 ("A checkpoint-on-interrupt handler"). | yes: Status §5, §6.2 | Decide on `ctrlc` or close the item as "won't do". |
 | M9 | Medium | No concurrent serving: one model thread, one request at a time, because `GenerativeSLM` is not `Send`/`Sync`. (Session gap 10: confirmed.) | `Manual.md:1603-1605`; `Status.md` §5 (server row); `slm_server/src/model_thread.rs`. | yes: Status §5 | None unless multi-client use is wanted. |
 | M10 | Medium | No stop strings for imported GGUFs: CLI `run-gguf` has no `--stop`/`--max-tokens`, the GUI GGUF tab has no stop box; Ferrum models have them in CLI, GUI, server and wasm. | `RUN_GGUF_FLAGS` (`args.rs:71-83`) has none; `Manual.md:1855` ("no stop strings: the library and `run-gguf` stop on token ids only"); `Status.md` §5 G7 row. | yes: Status §5 (G7) | Add a stop-string path to `LlamaModel::generate` (old task N4). |
@@ -81,7 +81,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 
 | File:line | Ceiling declared | Mentioned in Status/Manual? |
 |---|---|---|
-| `slm_server/src/model_thread.rs:134` | unbounded job queue; bounded channel + 503 if exposed to many clients | no (M7) |
+| `slm_server/src/model_thread.rs:134` | unbounded job queue; bounded channel + 503 if exposed to many clients | yes, Status §5 (M7) |
 | `slm_server/src/limits.rs:6` | `MAX_INFLIGHT = 32` fixed; make it a `Limits` field | value yes (`Manual.md:1632`), the fixed-ness no |
 | `slm_cli/src/prepare/mod.rs:153` | split files not rolled back after a failed rename | yes (Status §5) |
 | `slm_cli/src/prepare/mod.rs:229` | cancel polled between documents; one huge document is read to its end | yes (Status §5 G3) |
@@ -91,12 +91,12 @@ No Critical finding: every Manual flag table, default, server route and server f
 | `slm_cli/src/main.rs:179` | only `info` is left after `spec_for` | n/a (invariant) |
 | `slm_cli/tests/runtime_export_cli.rs:8` | test model is llama.cpp's GPT-2 124M | no, and stale (M6) |
 | `slm_wasm/src/text.rs:83,89`; `ferrum_core/src/llm.rs:393`; `ferrum_core/src/slm/token_stream.rs:159`; `ferrum_gui/src/commands/finetune.rs:146`; `ferrum_core/src/parallel.rs:289` | cannot fail / a failed spawn just means fewer helpers | n/a (invariants) |
-| `ferrum_core/src/slm/stream.rs:378` | O(n²) re-decode in the no-transformer-block BPE fallback (legacy family) | no (M7) |
-| `ferrum_core/src/llm_train/passes.rs:113` | vocab x dim scratch per tied-head backward call | no (M7) |
+| `ferrum_core/src/slm/stream.rs:378` | O(n²) re-decode in the no-transformer-block BPE fallback (legacy family) | yes, Status §5 (M7) |
+| `ferrum_core/src/llm_train/passes.rs:113` | vocab x dim scratch per tied-head backward call | yes, Status §5 (M7) |
 | `ferrum_core/src/loader/decode.rs:99` | Q8_0/Q4_0 expanded to f32 (4x/8x RAM) until a packed kernel exists | yes (Status §5; plan 3.3) |
-| `ferrum_core/src/tokenizer/state.rs:37` | vocab built from state capped at 64 B/state byte + 64 MiB | no (M7) |
+| `ferrum_core/src/tokenizer/state.rs:37` | vocab built from state capped at 64 B/state byte + 64 MiB | yes, Status §5 (M7) |
 | `ferrum_core/src/tokenizer/train.rs:138` | EOS always reserved | yes (Status §5 EOS row) |
-| `ferrum_gui/src/estimate_cmd.rs:76` | Prepare estimate walks folders on every form change | no (M7) |
+| `ferrum_gui/src/estimate_cmd.rs:76` | Prepare estimate walks folders on every form change | yes, Status §5 (M7) |
 
 ## Requirements: specs and 2026-10-09 plans
 

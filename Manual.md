@@ -307,6 +307,16 @@ no API key, and no data leaving their machine ([§11.3](#113-in-the-browser-weba
 - The AI ecosystem still lives mostly in Python, so ready-made Rust resources
   are fewer. (Ferrum's LightEval module and DVC pipeline use Python tools from
   outside the engine.)
+- A few deliberate simplifications carry a known ceiling (each is marked `ponytail:`
+  in the code; the server job queue is in [§9.7](#97-serving-ferrum-serve)):
+  loading a tokenizer file caps the vocabulary it builds at 64 bytes per byte of the
+  stored merge state plus 64 MiB, so a tokenizer whose tokens really exceed that (one
+  trained on a single giant word) is refused until a lazier vocabulary representation
+  exists; the legacy family without transformer blocks re-decodes the
+  whole stream on every step (O(n²)), so long generations from it slow down; training
+  an imported tied-head Llama/Qwen model allocates a vocabulary-by-width scratch
+  buffer on every backward call; and the GUI's Prepare estimate walks the input
+  folders on every (debounced) form change, so a huge tree makes its tooltip slow.
 
 ---
 
@@ -1709,6 +1719,12 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/generate \
 
 Each of the four limit flags must be at least 1; `0` is refused at startup
 (`--max-batch must be at least 1 (got 0)`) instead of rejecting every request.
+
+The queue of jobs for the model thread is unbounded (`ponytail:` in
+`slm_server/src/model_thread.rs`); what bounds it in practice is the 32-request
+in-flight limit above. That is fine for a loopback server with one serial client
+(LightEval); if the server is exposed to many clients, the upgrade is a bounded
+channel that answers `503`.
 
 Errors have the form `{"error": "..."}`. An empty `requests` array returns `200`
 with `{"results": []}`. A model error, or a panic in the model thread, does not
