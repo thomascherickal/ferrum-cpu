@@ -10,9 +10,9 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
 | High (feature in one front end, missing in another, user-visible) | 0 open (H1, H2, H3 closed) |
-| Medium (declared ceiling with no plan) | 7 open (M1, M2, M3, M4, M7, M10 closed; M5, M6 partly) |
+| Medium (declared ceiling with no plan) | 6 open (M1, M2, M3, M4, M7, M10 closed; M13 closed, yarn refused; M5, M6 partly) |
 | Low (polish) | 14 (13 open, L2 closed) |
-| **Total** | **29** (19 open) |
+| **Total** | **29** (18 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -42,7 +42,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 | M10 | Medium | **CLOSED in `a7d5619`** (`run-gguf --stop`, repeatable; GUI GGUF tab stop box; one `ferrum_core::llm_stop::StopMatcher` shared with the server, moved in `224d1ba`; `--max` was already the token limit, no `--max-tokens` added). No stop strings for imported GGUFs: CLI `run-gguf` has no `--stop`/`--max-tokens`, the GUI GGUF tab has no stop box; Ferrum models have them in CLI, GUI, server and wasm. | `RUN_GGUF_FLAGS` (`args.rs:71-83`) has none; `Manual.md:1855` ("no stop strings: the library and `run-gguf` stop on token ids only"); `Status.md` §5 G7 row. | yes: Status §5 (G7) | Add a stop-string path to `LlamaModel::generate` (old task N4). |
 | M11 | Medium | Plan `2026-11-02` Phase 3, items 3.1-3.15, are planned and not built by decision: gradient accumulation, metrics columns, packed Q8_0 matmul, safe-SIMD decode, `LlamaModel::init`, LoRA, SFT, distillation, `qwen3`, streamed GGUF export, exact SPM encode, IQ* quants, per-block import quantization, size-aware defaults remainder, full-size DVC profile. Not re-analysed. | `docs/superpowers/plans/2026-11-02-complete-ferrum-cpu.md:302-322`; Status §6.2. | yes: plan Phase 3, Status §6.2 | None here. |
 | M12 | Medium | No DVC remote: `data/` and `models/` exist only where `dvc repro` ran. | `.dvc/config` (no remote section); Status §5 last rows. | yes: Status §5 | Pick a remote or document the policy. |
-| M13 | Medium | No RoPE scaling on GGUF import (Llama 3.x long context, YaRN); RoPE type hard-wired (`Norm`, `Neox` for qwen2). | Status §5 ("no RoPE scaling"). | yes: Status §5 | Add to §6.2 if wanted. |
+| M13 | Medium | **Closed (partly) in `eea9364`:** `rope_freqs.weight` factors (Llama 3.1/3.2) and `linear` scaling are applied in inference and fine-tuning and written back on export. Residue: `yarn` and `longrope` (and any other type, or a non-1 `attn_factor`) are refused at load with a named error, not implemented; the RoPE type follows the architecture (`Norm` llama, `Neox` qwen2, as llama.cpp). No real Llama 3.x file was run. | Status §5, §7.0.14; Manual §9. | yes: Status §5 | YaRN only if a reference run can verify it. |
 
 ### Low
 
@@ -172,7 +172,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 | Deferred-minors list (all items FIX/ALREADY FIXED) | deferred-minors | commits listed in that file; none re-opened |
 | Python tests not in CI (CI2); `--locked`/doc/MSRV (CI3); `ferrum_gui/Cargo.lock` committed (CI4) | task-catalog | `git ls-files ferrum_gui/Cargo.lock` lists it; `ci.yml`; `40dd36d` |
 
-Still open from those reports: matmul crate decision, packed Q8_0, RoPE scaling, DVC remote, GUI click test, SIGINT save (all tracked above).
+Still open from those reports: matmul crate decision, packed Q8_0, YaRN RoPE scaling (linear and rope_freqs closed, M13), DVC remote, GUI click test, SIGINT save (all tracked above).
 
 ## Not verified
 
