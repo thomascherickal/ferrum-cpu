@@ -6,7 +6,7 @@ use std::io::Write;
 const HEADER: &str = "step,epoch,loss,lr,grad_norm,tokens_per_sec,elapsed\n";
 
 pub(super) struct CsvLog {
-    file: std::fs::File,
+    file: Box<dyn Write>,
     last_secs: f64,
 }
 
@@ -36,10 +36,15 @@ impl CsvLog {
         if file.metadata()?.len() == 0 {
             file.write_all(HEADER.as_bytes())?;
         }
-        Ok(Self {
+        Ok(Self::to(Box::new(file)))
+    }
+
+    /// A log that writes its rows (no header) to `file`.
+    pub fn to(file: Box<dyn Write>) -> Self {
+        Self {
             file,
             last_secs: 0.0,
-        })
+        }
     }
 
     pub fn write(&mut self, r: &Row) -> Result<()> {

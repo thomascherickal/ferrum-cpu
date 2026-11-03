@@ -154,6 +154,20 @@ pub(super) fn run_training<S: TokenSource>(
     rng: &mut Rng,
     on_epoch: &mut dyn FnMut(&TransformerNet, usize, f32) -> Result<bool>,
 ) -> Result<()> {
+    run_training_with(net, tokens, cfg, threads, rng, on_epoch, CsvLog::open)
+}
+
+/// [`run_training`] with the `metrics_csv` log opened by `open_csv(path, append)`, so a test
+/// can hand it a writer that fails.
+fn run_training_with<S: TokenSource>(
+    net: &mut TransformerNet,
+    tokens: &mut S,
+    cfg: &TransformerConfig,
+    threads: usize,
+    rng: &mut Rng,
+    on_epoch: &mut dyn FnMut(&TransformerNet, usize, f32) -> Result<bool>,
+    open_csv: impl FnOnce(&str, bool) -> Result<CsvLog>,
+) -> Result<()> {
     let t = net.context_len();
     let batch = cfg.batch_size.max(1);
     let windows = tokens.len().saturating_sub(t + 1) / net.window_stride() + 1;
@@ -187,7 +201,7 @@ pub(super) fn run_training<S: TokenSource>(
     let halted = std::cell::Cell::new(false);
     let epoch = std::cell::Cell::new(0usize);
     let mut csv = (!cfg.metrics_csv.is_empty())
-        .then(|| CsvLog::open(&cfg.metrics_csv, cfg.resume))
+        .then(|| open_csv(&cfg.metrics_csv, cfg.resume))
         .transpose()?;
     // The gradient norm costs a pass over the gradients: only measure it when it is shown.
     net.set_track_grad_norm(log_every > 0 || csv.is_some());
@@ -332,6 +346,42 @@ mod tests {
     fn saved_id(ckpt: &str) -> Option<String> {
         let (net, _) = TransformerNet::load_checkpoint(&std::fs::read(ckpt).unwrap()).unwrap();
         net.corpus_id
+    }
+
+    /// A `metrics_csv` sink whose writes fail, like a full disk.
+    struct FullDisk;
+    impl std::io::Write for FullDisk {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("disk full"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_failing_metrics_row_write_ends_the_run() {
+        let cfg = TransformerConfig {
+            metrics_csv: "unused.csv".into(),
+            max_tokens: 4 * 8,
+            ..resume_cfg("")
+        };
+        let tc = crate::slm::corpus::tokenize_for_lm_cfg(RESUME_CORPUS, &cfg).unwrap();
+        let mut rng = Rng::new(1);
+        let mut net = super::prepare_net(&cfg, tc.vocab_size, &mut rng).unwrap();
+        let err = super::run_training_with(
+            &mut net,
+            &mut tc.tokens.as_slice(),
+            &cfg,
+            1,
+            &mut rng,
+            &mut |_, _, _| Ok(true),
+            |_, _| Ok(super::CsvLog::to(Box::new(FullDisk))),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "i/o error: disk full");
+        assert_eq!(net.step_count(), 1, "the step ran, its row did not land");
+        std::io::Write::flush(&mut FullDisk).unwrap(); // only writes fail
     }
 
     #[test]
