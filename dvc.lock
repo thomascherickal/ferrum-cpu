@@ -34,14 +34,14 @@ stages:
       size: 22502601
     - path: ferrum_core/src
       hash: md5
-      md5: 1159e0130a3acd7bd415ebbb963a57bb.dir
-      size: 1144038
-      nfiles: 96
+      md5: 7aab1fe775112456508ae3636b712e8f.dir
+      size: 1400426
+      nfiles: 115
     - path: slm_cli/src
       hash: md5
-      md5: 4703ab7358b7b106e40d2e69166a2d53.dir
-      size: 176073
-      nfiles: 16
+      md5: 42799586a8d6de5bc0d52d0f04b8babc.dir
+      size: 255827
+      nfiles: 30
     params:
       params.yaml:
         prepare:
