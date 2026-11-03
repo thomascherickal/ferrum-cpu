@@ -505,6 +505,8 @@ describes a complete set. A crash or a failed rename between the renames can
 leave a mix of old and new split files, but then there is no manifest: treat an
 output folder without one as unfinished and run `prepare` again.
 
+Tutorial: [docs/resume-cancel-and-prepare.md](docs/resume-cancel-and-prepare.md).
+
 If the hashes in two manifests match, the inputs and outputs are byte-identical.
 DVC tracks `manifest.json` in git (not in the DVC cache), so a change in the
 data shows up in a `git diff`.
@@ -791,6 +793,8 @@ uninterrupted one; it prints `note: the checkpoint (step N) predates
 ferrum.ckpt.epoch_rng; ...` to say so.
 A hard interrupt (Ctrl-C, power cut) does not save on exit; the checkpoint on
 disk is the last periodic one.
+
+Walk-through with a real run: [docs/resume-cancel-and-prepare.md](docs/resume-cancel-and-prepare.md).
 
 **Stopping on purpose.** `--max-seconds 3600` stops after the optimizer step
 that crosses the budget (fractions are fine). The same happens when the file
@@ -1216,7 +1220,7 @@ held-back stop-string prefix is dropped. `Generation.cancelled` says so, and
 `stream_next` returns `None`. A cancelled run draws no further random numbers,
 and with the flag unset (or `None`, the default) output is bit-identical to a
 run without it. It is a plain flag, not a clock, so it also works in the wasm
-build:
+build (tutorial: [docs/resume-cancel-and-prepare.md](docs/resume-cancel-and-prepare.md)):
 
 ```rust
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
