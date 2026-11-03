@@ -9,10 +9,10 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 | Severity | Count |
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
-| High (feature in one front end, missing in another, user-visible) | 2 open (H2 closed) |
+| High (feature in one front end, missing in another, user-visible) | 1 open (H1, H2 closed) |
 | Medium (declared ceiling with no plan) | 13 |
 | Low (polish) | 13 |
-| **Total** | **29** (28 open) |
+| **Total** | **29** (27 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -22,7 +22,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 
 | ID | Severity | Gap | Evidence | Tracked in Status §5/§6 or plan Phase 3? | Suggested next step |
 |---|---|---|---|---|---|
-| H1 | High | The GUI Train tab cannot choose the saved precision: every model is saved int8. The CLI offers `--quant f32\|int8\|int4`, `--preset`, `--metrics-csv`, `--max-seconds`, `--sample`, `--debug`; none exists in the GUI. Manual §10.3 does not say this. | `ferrum_gui/src/commands/train.rs:295` calls `slm.save()`, which is int8 (`ferrum_core/src/slm/persist.rs:44-48`); `TrainParams` (train.rs:13-65) and `ui/train_tab.js` have no quant field (`rg -i quant ferrum_gui/ui/train_tab.js` is empty); CLI `args.rs:42-45`, `slm_cli/src/train.rs:35,271`. Same gap was in the old `e2e-report.md` §4 and is not closed. | no | Add a precision select (f32/int8/int4) using `to_bytes_*` as `slm_cli/src/train.rs:271` does; state the other missing flags in Manual §10.3. |
+| H1 | High | **CLOSED in `aa69624`** (Train tab Save precision select; the other five flags documented as CLI-only in Manual §10.3). The GUI Train tab cannot choose the saved precision: every model is saved int8. The CLI offers `--quant f32\|int8\|int4`, `--preset`, `--metrics-csv`, `--max-seconds`, `--sample`, `--debug`; none exists in the GUI. Manual §10.3 does not say this. | `ferrum_gui/src/commands/train.rs:295` calls `slm.save()`, which is int8 (`ferrum_core/src/slm/persist.rs:44-48`); `TrainParams` (train.rs:13-65) and `ui/train_tab.js` have no quant field (`rg -i quant ferrum_gui/ui/train_tab.js` is empty); CLI `args.rs:42-45`, `slm_cli/src/train.rs:35,271`. Same gap was in the old `e2e-report.md` §4 and is not closed. | no | Add a precision select (f32/int8/int4) using `to_bytes_*` as `slm_cli/src/train.rs:271` does; state the other missing flags in Manual §10.3. |
 | H2 | High | **CLOSED in `0dc544e`** (optional `repetition_penalty`, server flag `--repetition-penalty`). `ferrum-serve` ignores repetition penalty: `/v1/generate` has no such field and the model thread hard-codes 1.0, while CLI `generate --repetition-penalty`, GUI Generate/GGUF and wasm `Slm.generate` all expose it. | `slm_server/src/model_thread.rs:88` (`repetition_penalty: 1.0`); request fields in Manual §9.7 table are `prompt,max_tokens,stop,temperature,top_k,top_p,seed` only; `ferrum_core/src/slm/sampling.rs:32` has the field. | no | Add an optional `repetition_penalty` to `GenRequest` (validated like the GUI: finite, > 0), default 1.0; document it in §9.7. |
 | H3 | High | `ferrum-serve` and the wasm `Slm` load only Ferrum's own models (`GenerativeSLM`); an imported Llama/Qwen GGUF can be run (CLI `run-gguf`, GUI GGUF tab), scored (`eval-gguf`, Evaluate tab) and fine-tuned, but not served. Manual §9.7 does not state that the server is Ferrum-model-only. | `slm_server/src/model_thread.rs:126` (`spawn_with(bytes, GenerativeSLM::from_bytes)`); `slm_wasm/src/text.rs:75` (`from_bytes`); no `LlamaModel` reference in `slm_server/src` or `slm_wasm/src`. | no | Either state the limit in Manual §9.7/§11.3, or add a `LlamaModel` backend for `/v1/loglikelihood*` and `/v1/generate`. |
 
@@ -121,7 +121,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 
 | Feature | CLI | GUI | Server | wasm `Slm` | wasm `TokenModel` |
 |---|---|---|---|---|---|
-| train (from scratch) | yes (`train.rs`) | partial: no `--quant/--preset/--metrics-csv/--max-seconds/--sample/--debug` (`commands/train.rs`, H1) | no | no | no |
+| train (from scratch) | yes (`train.rs`) | partial: Save precision select (H1, `aa69624`); no `--preset/--metrics-csv/--max-seconds/--sample/--debug` (CLI-only, Manual §10.3) | no | no | no |
 | resume (train) | yes (`--resume`) | yes (`resume` checkbox, `train_tab.js:95`) | n/a | n/a | n/a |
 | resume (finetune / apply `.flck`) | yes (`finetune-gguf`, `run-gguf`, `export-gguf`, `eval-gguf --resume`) | yes (`resume` in finetune/run/export/evaluate params) | no | no | no |
 | exact mid-epoch resume | yes (train only, Manual §6.6; not finetune, M3) | yes (same engine) | n/a | n/a | n/a |
@@ -129,7 +129,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 | corpus identity (`corpus_id`) | yes (train: `train.rs:48`); no finetune (M3) | yes (train: `commands/train.rs:127`); no finetune | n/a | n/a | n/a |
 | progress events | text lines (`-v`, epoch lines) | yes: `train-progress`, `finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`, `download-progress`, `clean-progress`, `serve-log`; none for `download_text` (L8) | no | partial: pull `next_chunk`, `tokens_generated` | no |
 | stop sequences | yes `generate --stop` (repeatable); no `run-gguf` | yes Generate tab; no GGUF tab (M10) | yes (`stop`, 16 x 1024 B) | yes | no |
-| precision / quantization | yes: `train --quant/--no-qat`, `run-gguf/eval-gguf/export-gguf --quant` | partial: QAT checkbox and int8 save only for Train (H1); precision for GGUF run, Evaluate, Export, f32 Fine-tune | no (serves the file as is; `/v1/info` reports `quant`) | reads f32/int8/int4 files | reads f32/int8/int4 files |
+| precision / quantization | yes: `train --quant/--no-qat`, `run-gguf/eval-gguf/export-gguf --quant` | partial: Train has a QAT checkbox and a Save precision select; no precision for GGUF run, Evaluate, Export, f32 Fine-tune | no (serves the file as is; `/v1/info` reports `quant`) | reads f32/int8/int4 files | reads f32/int8/int4 files |
 | eval (Ferrum model) | yes `eval [--json]` | yes Evaluate tab (bpb, JSON save) | yes `/v1/loglikelihood*` | partial: `score()` only | no |
 | eval-gguf (imported) | yes | yes (same Evaluate tab) | no (H3) | no | no |
 | run-gguf (imported) | yes | yes GGUF tab | no (H3) | no | no |
