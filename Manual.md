@@ -1495,11 +1495,11 @@ Use `raw: true`. A Ferrum model has no chat template.
 **LM Studio**
 
 ```bash
-lms import -y -l --user-repo ferrum-test/slm models/slm.gguf
+lms import -y -l --user-repo ferrum-test/slm "$PWD/models/slm.gguf"
 lms ls --json                       # find the entry whose path matches; its modelKey is KEY
 lms load KEY --gpu off --identifier ferrum-tiny -y
 lms server start -p 1234
-curl -s http://127.0.0.1:1234/v1/completions \
+curl -s -H 'Content-Type: application/json' http://127.0.0.1:1234/v1/completions \
   -d '{"model":"ferrum-tiny","prompt":"Once upon a time","max_tokens":17,"temperature":0,"repeat_penalty":1.0}'
 ```
 

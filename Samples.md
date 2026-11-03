@@ -879,7 +879,7 @@ FERRUM_NUM_THREADS=8 train_transformer generate models/slm.gguf "Once upon a tim
 
 **Goal.** Run the model from three other tools, check they agree with Ferrum, then serve it over HTTP and call every route.
 
-**You need.** `models/slm.gguf` from Sample 1. The tools are optional; skip any you do not have. The commands were verified with llama.cpp b11521, Ollama v0.40.2, and LM Studio 0.4.18. In this run llama.cpp and Ollama were executed; **LM Studio was not** (see Part D).
+**You need.** `models/slm.gguf` from Sample 1. The tools are optional; skip any you do not have. The commands were verified with llama.cpp b11521, Ollama v0.40.2, and LM Studio 0.4.18. Parts A to D and F were re-run on 2026-11-03 after the directory move, with llama.cpp b11521, Ollama v0.40.2 and LM Studio v0.4.26 (the installed version; 0.4.18 is the one the commands were first verified with). `export-lmstudio` was not run (Part E).
 
 Set the tool locations (the defaults of a standard install):
 
@@ -910,7 +910,6 @@ Once upon a time, there was a little girl named Lily. She loved to play with her
 ```text
 Once upon a time, there was a little girl named Lily. She loved to play with her friends
 
-
 [424, 434, 258, 396]
 ```
 
@@ -933,7 +932,7 @@ curl -s http://127.0.0.1:11545/api/generate \
 FROM "/home/thomas/Projects/ferrum/ferrum-cpu/models/slm.gguf"
 TEMPLATE "{{ .Prompt }}"
 PARAMETER num_predict 16
-gathering model components gathering model components gathering model components 
+gathering model components 
 copying file sha256:63249ca483b9c94a9dec49e8ee0674977d2a8941cfa067cff905b135c082892f 100% 
 parsing GGUF 
 using existing layer sha256:63249ca483b9c94a9dec49e8ee0674977d2a8941cfa067cff905b135c082892f 
@@ -941,27 +940,63 @@ creating new layer sha256:b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f93
 creating new layer sha256:fd7db000477862386258ffa820f1ac8e1ada4ab5330031bb0d67527bc192b0e7 
 writing manifest 
 success 
-{"model":"ferrum-tiny","created_at":"2026-10-26T05:37:52.694940613Z","response":", there was a little girl named Lily. She loved to play with her friends","done":true,"done_reason":"length","total_duration":1439947173,"load_duration":1396701646,"prompt_eval_count":4,"prompt_eval_cached_count":0,"prompt_eval_duration":1088000,"eval_count":16,"eval_duration":40093000}
+{"model":"ferrum-tiny","created_at":"2026-11-03T04:40:12.846473356Z","response":", there was a little girl named Lily. She loved to play with her friends","done":true,"done_reason":"length","total_duration":752252576,"load_duration":743141088,"prompt_eval_count":4,"prompt_eval_cached_count":0,"prompt_eval_duration":903000,"eval_count":16,"eval_duration":7124000}
 ```
 
-The `response` field is Part A's continuation. (Ollama's progress bar writes terminal control codes; they are removed from the block.)
+The `response` field is Part A's continuation. (The create output is from an empty model directory; on a directory that already holds the layers it prints `using existing layer` for all three.) (Ollama's progress bar writes terminal control codes; they are removed from the block.)
 
 Leave the Ollama server running for Part E. It is stopped there.
 
-**Part D. LM Studio.** *Not run in this pass.* The LM Studio install on the documentation machine is a personal one, and `lms import` writes into it, so the commands were not executed here and no output is pasted. They were verified when they were pinned (LM Studio 0.4.18, identical 16-token greedy output to llama.cpp), and `scripts/verify_runtimes.sh` re-checks them against a real install.
+**Part D. LM Studio.** Re-run on 2026-11-03 with LM Studio v0.4.26. `lms import` writes into the LM Studio model folder (`~/.lmstudio/models/ferrum-test/slm`), so remove that folder afterwards. Pass an absolute path: with a relative one `lms import -l` creates a symlink that points at `models/slm.gguf` relative to its own folder, which dangles, and `lms ls` then does not list the model.
 
 ```bash
-"$LMS" import -y -l --user-repo ferrum-test/slm models/slm.gguf
+"$LMS" import -y -l --user-repo ferrum-test/slm "$PWD/models/slm.gguf"
 KEY=$("$LMS" ls --json | python3 -I -c 'import json,sys; print([m["modelKey"] for m in json.load(sys.stdin) if "ferrum-test" in m.get("path","")][0])')
 "$LMS" load "$KEY" --gpu off --identifier ferrum-tiny -y
 "$LMS" server start -p 1234
-curl -s http://127.0.0.1:1234/v1/completions \
+curl -s -H 'Content-Type: application/json' http://127.0.0.1:1234/v1/completions \
   -d '{"model":"ferrum-tiny","prompt":"Once upon a time","max_tokens":17,"temperature":0,"repeat_penalty":1.0}'
 "$LMS" server stop
 "$LMS" unload ferrum-tiny
+rm -r ~/.lmstudio/models/ferrum-test
 ```
 
-`max_tokens` 17 shows 16 visible tokens. `repeat_penalty` 1.0 matters because LM Studio's default (1.1) changes the text. `lms ls --json` entries carry `modelKey` and `path`; that is what the `python3` line reads, and what `export-lmstudio` reads.
+```text
+Symbolic link created at /home/thomas/.lmstudio/models/ferrum-test/slm/slm.gguf
+Model loaded successfully in 476.00ms.
+(605.78 KiB)
+To use the model in the API/SDK, use the identifier "ferrum-tiny".
+Success! Server is now running on port 1234
+{
+  "id": "cmpl-1qux2tz80xmw8dbg3t2jlf",
+  "object": "text_completion",
+  "created": 1793680885,
+  "model": "ferrum-tiny",
+  "choices": [
+    {
+      "index": 0,
+      "text": ", there was a little girl named Lily. She loved to play with her friends.",
+      "logprobs": null,
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4,
+    "completion_tokens": 17,
+    "total_tokens": 21
+  },
+  "stats": {
+    "total_draft_tokens_count": 0,
+    "accepted_draft_tokens_count": 0,
+    "rejected_draft_tokens_count": 0,
+    "ignored_draft_tokens_count": 0
+  }
+}
+Stopped the server on port 1234.
+Model "ferrum-tiny" unloaded.
+```
+
+`max_tokens` 17 gives the 16 tokens of Parts A to C plus a final `.`; LM Studio's first 16 tokens equal them. Newer LM Studio versions reject a POST without the `Content-Type` header. `repeat_penalty` 1.0 matters because LM Studio's default (1.1) changes the text. `lms ls --json` entries carry `modelKey` and `path`; that is what the `python3` line reads, and what `export-lmstudio` reads.
 
 **Part E. One-command exports.** Both commands accept only Ferrum's own `gpt2` models: they refuse a GGUF that llama.cpp cannot run (a character-level or tabular model), and an imported llama GGUF (write its Modelfile by hand, Manual §9.5), before they start any tool. They find the tools as described in [Manual §9.5](Manual.md#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio), or take `--bin`. The Ollama export talks to the server from Part C, because `OLLAMA_HOST` is still exported.
 
@@ -983,7 +1018,7 @@ PARAMETER num_ctx 128
 exported to Ollama as 'ferrum-export'  (try: ollama run ferrum-export)
 ```
 
-`ollama run` has no token limit here (the Modelfile sets none), so the model writes until it emits end-of-text. With `--nowordwrap` the text is printed as it streams (the second run, after restarting the server on the same model directory, is shown):
+`ollama run` has no token limit here (the Modelfile sets none), so the model writes until it emits end-of-text. With `--nowordwrap` the text is printed as it streams (the second run, after restarting the server on the same model directory, is shown; the model samples at temperature 0.8, so the text differs on every run. On 2026-11-03 the same commands gave the same `ollama list` ids and sizes and different text, not pasted):
 
 ```text
 NAME                    ID              SIZE      MODIFIED           
@@ -994,7 +1029,7 @@ One day, they were playing, and the park to play with the tir and befish. They p
 Sue was very happy and laughed. They thanked the ball for the ball and had a lot. They played on the ball and played with the ball together. They played together, and had fun together every day.
 ```
 
-`export-lmstudio` was not run (see Part D). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
+`export-lmstudio` was not run (the manual commands of Part D were). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
 
 ```bash
 train_transformer train data/prepared/val.txt samples/char.gguf --vocab 0 --context 16 --embed 32 \
@@ -1048,7 +1083,7 @@ kill $!
 HTTP/1.1 400 Bad Request
 content-type: application/json
 content-length: 44
-date: Mon, 26 Oct 2026 05:39:52 GMT
+date: Tue, 03 Nov 2026 04:40:45 GMT
 
 {"error":"batch of 65 exceeds max_batch 64"}
 ```
