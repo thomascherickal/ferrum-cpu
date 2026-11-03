@@ -29,8 +29,11 @@ skills. When the user states a new rule, add it here.
    Tasks cut off when an agent stops are not dropped: relaunch them and finish
    them before starting new work.
 3. **Stay inside the project.** Never touch anything outside the project
-   directory (no `~/.cache`, `~/.ollama`). Scratch files go in the session
-   scratchpad; samples that need an external tool use a private dir.
+   directory (no `~/.cache`). Exception, standing permission from the user
+   (2026-11-03): `~/.ollama` and `~/.lmstudio` may be used by the Ollama and LM
+   Studio runs (export commands, `verify_runtimes.sh`, Samples); touch only the
+   models Ferrum itself creates there and remove only those. Scratch files go
+   in the session scratchpad.
 4. **Low-memory machine (15 GB).** Build with
    `CARGO_BUILD_JOBS=3 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`,
    run one cargo command at a time, and do not run `llvm-cov` together with
