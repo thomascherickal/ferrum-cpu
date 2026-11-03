@@ -70,57 +70,11 @@ pub fn tokenize_files(
         eos_id: Some(eos as u32),
         tokenizer_sha256,
     };
-    let sizes: Vec<u64> = files
-        .iter()
-        .map(|p| std::fs::metadata(p).map_or(0, |m| m.len()))
-        .collect();
-    let bytes_total: u64 = sizes.iter().sum();
     let mut bytes_in = 0u64;
     let stats = write_token_file(out, &meta, |sink| {
-        let mut first = true;
-        let mut ids: Vec<u32> = Vec::new();
-        let (mut tokens, mut docs_seen) = (0u64, 0u64);
-        for (i, path) in files.iter().enumerate() {
-            let (mut hasher, mut total) = (Sha256::default(), 0u64);
-            let report = |bytes_done: u64, tokens: u64| TokenizeProgress {
-                file: i + 1,
-                files: files.len(),
-                path: path.to_string_lossy().into_owned(),
-                bytes_done,
-                bytes_total,
-                tokens,
-            };
-            progress(report(bytes_in, tokens));
-            for_each_raw_doc(path, sep, &mut hasher, &mut total, |raw, offset| {
-                // ponytail: polled between documents, so one huge document is read to its end first.
-                if stop.should_stop().is_some() {
-                    return Err(CANCELLED.to_string());
-                }
-                let text = std::str::from_utf8(raw).map_err(|e| {
-                    format!(
-                        "{}: invalid UTF-8 at byte {} (`prepare --lossy` repairs it)",
-                        path.display(),
-                        offset + e.valid_up_to() as u64
-                    )
-                })?;
-                ids.clear();
-                if !first {
-                    ids.push(eos as u32);
-                }
-                first = false;
-                // ponytail: ids are below the vocabulary size, which `write_token_file` caps at
-                // i32::MAX, so the cast cannot truncate.
-                ids.extend(tok.encode_docs(text).into_iter().map(|id| id as u32));
-                tokens += ids.len() as u64;
-                docs_seen += 1;
-                if docs_seen % PROGRESS_EVERY == 0 {
-                    progress(report(bytes_in + offset, tokens));
-                }
-                sink.push(&ids).map_err(|e| e.to_string())
-            })
-            .map_err(InferError::Format)?;
-            bytes_in += total;
-        }
+        bytes_in = encode_files(files, tok, eos, sep, stop, progress, &mut |ids| {
+            sink.push(ids)
+        })?;
         if sink.is_empty() {
             return Err(InferError::Format(
                 "the corpus is empty: no tokens to write".into(),
@@ -138,6 +92,70 @@ pub fn tokenize_files(
         }
     })?;
     Ok((stats.tokens, stats.documents, bytes_in, stats.bytes))
+}
+
+/// The ids of `files` (see [`tokenize_files`]), handed to `push` one document at a time; the
+/// seam lets a test stand in for the token file. Returns the bytes read.
+fn encode_files(
+    files: &[PathBuf],
+    tok: &ByteBpeTokenizer,
+    eos: usize,
+    sep: &str,
+    stop: &StopCondition,
+    progress: &mut dyn FnMut(TokenizeProgress),
+    push: &mut dyn FnMut(&[u32]) -> ferrum_core::Result<()>,
+) -> ferrum_core::Result<u64> {
+    let sizes: Vec<u64> = files
+        .iter()
+        .map(|p| std::fs::metadata(p).map_or(0, |m| m.len()))
+        .collect();
+    let bytes_total: u64 = sizes.iter().sum();
+    let mut bytes_in = 0u64;
+    let mut first = true;
+    let mut ids: Vec<u32> = Vec::new();
+    let (mut tokens, mut docs_seen) = (0u64, 0u64);
+    for (i, path) in files.iter().enumerate() {
+        let (mut hasher, mut total) = (Sha256::default(), 0u64);
+        let report = |bytes_done: u64, tokens: u64| TokenizeProgress {
+            file: i + 1,
+            files: files.len(),
+            path: path.to_string_lossy().into_owned(),
+            bytes_done,
+            bytes_total,
+            tokens,
+        };
+        progress(report(bytes_in, tokens));
+        for_each_raw_doc(path, sep, &mut hasher, &mut total, |raw, offset| {
+            // ponytail: polled between documents, so one huge document is read to its end first.
+            if stop.should_stop().is_some() {
+                return Err(CANCELLED.to_string());
+            }
+            let text = std::str::from_utf8(raw).map_err(|e| {
+                format!(
+                    "{}: invalid UTF-8 at byte {} (`prepare --lossy` repairs it)",
+                    path.display(),
+                    offset + e.valid_up_to() as u64
+                )
+            })?;
+            ids.clear();
+            if !first {
+                ids.push(eos as u32);
+            }
+            first = false;
+            // ponytail: ids are below the vocabulary size, which `write_token_file` caps at
+            // i32::MAX, so the cast cannot truncate.
+            ids.extend(tok.encode_docs(text).into_iter().map(|id| id as u32));
+            tokens += ids.len() as u64;
+            docs_seen += 1;
+            if docs_seen % PROGRESS_EVERY == 0 {
+                progress(report(bytes_in + offset, tokens));
+            }
+            push(&ids).map_err(|e| e.to_string())
+        })
+        .map_err(InferError::Format)?;
+        bytes_in += total;
+    }
+    Ok(bytes_in)
 }
 
 /// The `tokenize` command: check the paths, read the tokenizer, stream the corpus into `out`.
@@ -248,6 +266,22 @@ mod tests {
         assert_eq!(seen.len(), 2);
         assert_eq!((seen[0].file, seen[0].bytes_done), (1, 0));
         assert!(seen[1].bytes_done > 0 && seen[1].bytes_done < seen[1].bytes_total);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_failing_write_ends_the_run_with_its_error() {
+        let d = tmp("failwrite");
+        let docs = docs(2);
+        let text = d.join("c.txt");
+        std::fs::write(&text, docs.join(DOC_SEP)).unwrap();
+        let (_, tok) = tokenizer(&d, &docs.join(DOC_SEP));
+        let eos = tok.eos_id().unwrap();
+        let stop = StopCondition::none();
+        let mut full = |_: &[u32]| Err(InferError::Io("disk full".into()));
+        let r = encode_files(&[text], &tok, eos, DOC_SEP, &stop, &mut |_| {}, &mut full);
+        let err = r.unwrap_err().to_string();
+        assert_eq!(err, "model format error: i/o error: disk full");
         let _ = std::fs::remove_dir_all(d);
     }
 
