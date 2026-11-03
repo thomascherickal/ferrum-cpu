@@ -30,6 +30,39 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --locked
 
+  # Portability: the same build and test as the native job on macOS (Apple silicon), Windows and
+  # Linux aarch64. Not a required gate (the Linux x86_64 jobs are); `fail-fast: false` so one
+  # platform's failure does not hide the others. Windows-on-Arm is EXPERIMENTAL (`continue-on-error`):
+  # its hosted runner label exists only for public repositories. `ferrum_gui` (Tauri) is not built
+  # here: its system dependencies differ per platform.
+  portable:
+    name: Portable (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, experimental: false }
+          - { os: windows-latest, experimental: false }
+          - { os: ubuntu-24.04-arm, experimental: false }
+          - { os: windows-11-arm, experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-cargo-portable-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build workspace
+        run: cargo build --workspace --locked
+      - name: Run tests
+        run: cargo test --workspace --locked
+
   lint:
     name: Lint (clippy, rustfmt, JS)
     runs-on: ubuntu-latest

@@ -2247,6 +2247,8 @@ test* step of `.github/workflows/ci.yml`; it checks that the window titled
 that the page loaded; it needs a D-Bus session, see Status). macOS and Windows are what Tauri supports; they were
 not built here (the icons for their bundles exist, but no job builds or runs them, see Status).
 
+**Platforms.** CI's required jobs run on Linux x86_64. The `portable` job (`.github/workflows/ci.yml`) additionally builds and tests the workspace on macOS (Apple silicon), Windows and Linux aarch64, plus Windows-on-Arm as an experimental entry; it was added without being able to run it, so check its latest run before relying on any of those platforms (Status §5). Untested everywhere: the `ferrum_gui` app and its Windows and macOS bundles (not built by the `portable` job or by `release.yml`), and Android and iOS. Off Linux the pre-load RAM guard is inactive (it reads `/proc/meminfo`), and the Ollama / LM Studio exports may need `--bin` to find the tool.
+
 **Packaging.** `tauri.conf.json` has `bundle.active` with every target for the host OS and the
 icons generated from the logo `docs/assets/logo.png` (PNGs, `icon.ico`, `icon.icns`).
 `.github/workflows/release.yml` builds the Linux bundles, an **AppImage** and a **deb**, with
