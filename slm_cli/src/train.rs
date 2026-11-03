@@ -283,11 +283,8 @@ pub(crate) fn train_and_save_input(
     // Verify the file roundtrips.
     let reloaded = GenerativeSLM::load(model_path)?;
     println!("Reload check: OK ({} layers).", reloaded.model.len());
-    if let Some((cause, step)) = stopped {
-        cfg.stop.clear_stop_file();
-        let ck = Some(cfg.checkpoint_path.as_str()).filter(|p| !p.is_empty());
-        crate::stop::announce(cause, step, ck);
-    }
+    let ck = Some(cfg.checkpoint_path.as_str()).filter(|p| !p.is_empty());
+    crate::stop::report(&cfg.stop, stopped, ck);
     Ok(reloaded)
 }
 

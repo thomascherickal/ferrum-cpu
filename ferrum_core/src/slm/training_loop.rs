@@ -817,6 +817,46 @@ mod tests {
     }
 
     #[test]
+    fn a_cancel_flag_set_before_the_run_stops_mid_epoch_and_resumes_exactly() {
+        use crate::stop::{StopCause, StopCondition};
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        let corpus = RESUME_CORPUS.repeat(5);
+        let full_ck = scratch_ckpt("flag_full");
+        assert_eq!(
+            epoch_ends(&corpus, &drift_cfg(&full_ck)),
+            vec![5, 10, 16, 21]
+        );
+        // Already set when the loop starts (a Ctrl-C during setup): one step, inside the
+        // first 5-step epoch, then the checkpoint.
+        let ck = scratch_ckpt("flag_part");
+        let stop = StopCondition::none().with_cancel(Arc::new(AtomicBool::new(true)));
+        let cfg = TransformerConfig {
+            stop: stop.clone(),
+            ..drift_cfg(&ck)
+        };
+        assert_eq!(epoch_ends(&corpus, &cfg), vec![1]);
+        assert_eq!(stop.stopped(), Some((StopCause::Cancelled, 1)));
+        let (net, _) = TransformerNet::load_checkpoint(&std::fs::read(&ck).unwrap()).unwrap();
+        assert_eq!(net.step_count(), 1);
+        let resumed = TransformerConfig {
+            resume: true,
+            ..drift_cfg(&ck)
+        };
+        assert_eq!(epoch_ends(&corpus, &resumed), vec![5, 10, 16, 21]);
+        assert!(std::fs::read(&ck).unwrap() == std::fs::read(&full_ck).unwrap());
+
+        // No checkpoint path: the run still stops after one step and writes nothing.
+        let none = StopCondition::none().with_cancel(Arc::new(AtomicBool::new(true)));
+        let cfg = TransformerConfig {
+            stop: none.clone(),
+            ..drift_cfg("")
+        };
+        assert_eq!(epoch_ends(&corpus, &cfg), vec![1]);
+        assert_eq!(none.stopped(), Some((StopCause::Cancelled, 1)));
+    }
+
+    #[test]
     fn a_stop_during_the_last_step_does_not_count_as_a_stop() {
         use crate::stop::StopCondition;
         let corpus = RESUME_CORPUS.repeat(40);

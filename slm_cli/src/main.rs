@@ -77,6 +77,7 @@ mod export;
 mod finetune;
 mod generate;
 mod info;
+mod interrupt;
 mod memory;
 mod preset;
 mod resume;

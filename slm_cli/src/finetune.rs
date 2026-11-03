@@ -239,10 +239,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
          run it with:  train_transformer run-gguf {gguf_path} \"<prompt>\" --resume {out_path}",
         bytes.len() as f64 / 1e6
     );
-    if let Some((cause, step)) = stopped {
-        stop.clear_stop_file();
-        crate::stop::announce(cause, step, Some(out_path));
-    }
+    crate::stop::report(&stop, stopped, Some(out_path));
 
     // 8. Optional sample generation from the fine-tuned model.
     if args.has("sample") {

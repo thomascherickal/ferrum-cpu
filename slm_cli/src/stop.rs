@@ -1,8 +1,11 @@
-//! Graceful stop for `train` and `finetune-gguf`: `--max-seconds N` and the stop file
-//! `<output>.stop`, both folded into one [`StopCondition`].
+//! Graceful stop for `train` and `finetune-gguf`: `--max-seconds N`, the stop file
+//! `<output>.stop` and the interrupt flag ([`crate::interrupt`]), all folded into one
+//! [`StopCondition`]; [`report`] is the one place a stopped run is reported.
 
 use crate::args::Args;
 use ferrum_core::{StopCause, StopCondition};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// `--max-seconds` as a budget: a finite number > 0 that fits a `Duration` (fractions allowed).
@@ -21,12 +24,25 @@ fn max_seconds(args: &Args) -> Result<Option<Duration>, String> {
     ))
 }
 
-/// The run's stop condition: the `--max-seconds` deadline (started now) plus the stop file
-/// `<anchor>.stop`, where `anchor` is the output path the run writes.
+/// The run's stop condition: the `--max-seconds` deadline (started now), the stop file
+/// `<anchor>.stop`, where `anchor` is the output path the run writes, and the installed
+/// interrupt flag, if any.
 pub(crate) fn condition(args: &Args, anchor: &str) -> Result<StopCondition, String> {
+    condition_with(args, anchor, crate::interrupt::installed())
+}
+
+/// [`condition`] with the interrupt flag given (`None`: no interrupt source).
+fn condition_with(
+    args: &Args,
+    anchor: &str,
+    interrupt: Option<Arc<AtomicBool>>,
+) -> Result<StopCondition, String> {
     let mut c = StopCondition::none().with_stop_file(format!("{anchor}.stop"));
     if let Some(d) = max_seconds(args)? {
         c = c.with_deadline(d);
+    }
+    if let Some(f) = interrupt {
+        c = c.with_cancel(f);
     }
     Ok(c)
 }
@@ -42,15 +58,24 @@ fn announcement(cause: StopCause, step: u64, ckpt: Option<&str>) -> String {
     }
 }
 
-/// Print the one-line stop report.
-pub(crate) fn announce(cause: StopCause, step: u64, ckpt: Option<&str>) {
+/// After a run: if it `stopped` early, remove the stop file and print the one-line stop
+/// report. Returns the cause, `None` for a run that completed.
+pub(crate) fn report(
+    cond: &StopCondition,
+    stopped: Option<(StopCause, u64)>,
+    ckpt: Option<&str>,
+) -> Option<StopCause> {
+    let (cause, step) = stopped?;
+    cond.clear_stop_file();
     println!("{}", announcement(cause, step, ckpt));
+    Some(cause)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::args::{spec_for, Args};
+    use std::sync::atomic::Ordering;
 
     fn args(extra: &[&str]) -> Args {
         let raw: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
@@ -88,5 +113,57 @@ mod tests {
         let none = announcement(StopCause::TimeBudget, 3, None);
         assert!(none.starts_with("stopped early at step 3: time budget reached; no checkpoint"));
         assert!(none.ends_with("(pass --checkpoint to make a stopped run resumable)"));
+    }
+
+    #[test]
+    fn the_interrupt_flag_is_one_more_source_and_wins_a_tie() {
+        let dir = std::env::temp_dir().join(format!("ferrum_cli_stop_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let anchor = dir.join("m.gguf").to_str().unwrap().to_string();
+        let flag = Arc::new(AtomicBool::new(false));
+        let c = condition_with(
+            &args(&["--max-seconds", "3600"]),
+            &anchor,
+            Some(flag.clone()),
+        )
+        .unwrap();
+        assert_eq!(c.should_stop(), None);
+        flag.store(true, Ordering::Relaxed);
+        assert_eq!(c.should_stop(), Some(StopCause::Cancelled));
+        // With every source firing at once the fixed order decides: flag, file, deadline.
+        std::fs::write(format!("{anchor}.stop"), b"").unwrap();
+        let all = condition_with(
+            &args(&["--max-seconds", "1e-9"]),
+            &anchor,
+            Some(flag.clone()),
+        )
+        .unwrap();
+        assert_eq!(all.should_stop(), Some(StopCause::Cancelled));
+        flag.store(false, Ordering::Relaxed);
+        assert_eq!(all.should_stop(), Some(StopCause::StopFile));
+        all.clear_stop_file();
+        assert_eq!(all.should_stop(), Some(StopCause::TimeBudget));
+        // Without a flag (no handler installed) only the file and the deadline count.
+        let plain = condition_with(&args(&[]), &anchor, None).unwrap();
+        assert_eq!(plain.should_stop(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn report_is_silent_for_a_finished_run_and_consumes_the_stop_file() {
+        let dir = std::env::temp_dir().join(format!("ferrum_cli_report_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let anchor = dir.join("m.gguf").to_str().unwrap().to_string();
+        let c = condition(&args(&[]), &anchor).unwrap();
+        std::fs::write(format!("{anchor}.stop"), b"").unwrap();
+        assert_eq!(report(&c, None, Some("m.ckpt")), None);
+        assert!(
+            c.stop_file().unwrap().exists(),
+            "a finished run leaves the file alone"
+        );
+        let got = report(&c, Some((StopCause::StopFile, 4)), Some("m.ckpt"));
+        assert_eq!(got, Some(StopCause::StopFile));
+        assert!(!c.stop_file().unwrap().exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

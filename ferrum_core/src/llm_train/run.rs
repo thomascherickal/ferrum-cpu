@@ -270,6 +270,42 @@ mod tests {
     }
 
     #[test]
+    fn a_cancel_flag_polled_like_finetune_gguf_stops_mid_epoch_and_resumes_exactly() {
+        use crate::stop::{StopCause, StopCondition};
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        let r = run();
+        let mut full = trainer(&r);
+        let mut rng = Rng::new(5);
+        drive(&mut full, &r, 3, 1, &mut rng, u64::MAX);
+        let full = full.save_checkpoint(&rng);
+
+        // The flag is already set (a Ctrl-C before the first step): the poll that
+        // `finetune-gguf` runs after every step stops after step 1 of the 9-step epoch.
+        let stop = StopCondition::none().with_cancel(Arc::new(AtomicBool::new(true)));
+        let mut a = trainer(&r);
+        let mut rng = Rng::new(5);
+        let tokens = corpus();
+        let base = a.begin_run(&r, tokens.len()).unwrap();
+        let total = base + 27;
+        a.set_lr_schedule(Some(LrSchedule::warmup_cosine(r.lr, r.warmup, total)));
+        let mut cause = None;
+        let (_, halted) = a
+            .finetune_epoch_until(&tokens, r.seq, r.batch, &mut rng, 1, &mut |s| {
+                cause = (s < total).then(|| stop.should_stop()).flatten();
+                cause.is_some()
+            })
+            .unwrap();
+        assert!(halted);
+        assert_eq!((cause, a.step_count()), (Some(StopCause::Cancelled), 1));
+        let bytes = a.save_checkpoint(&rng);
+        let mut b = trainer(&r);
+        let mut rng = b.load_checkpoint_into(&bytes).unwrap();
+        drive(&mut b, &r, 3, 1, &mut rng, u64::MAX);
+        assert!(b.save_checkpoint(&rng) == full, "checkpoints differ");
+    }
+
+    #[test]
     fn the_run_keys_roundtrip_and_a_fresh_run_never_notes() {
         let r = run();
         let mut t = trainer(&r);
