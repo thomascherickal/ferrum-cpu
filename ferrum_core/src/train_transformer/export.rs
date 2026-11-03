@@ -34,6 +34,7 @@ impl TransformerNet {
             metrics: Default::default(),
             epoch_start: self.epoch_start,
             corpus_id: self.corpus_id.clone(),
+            run_settings: self.run_settings,
         }
     }
 

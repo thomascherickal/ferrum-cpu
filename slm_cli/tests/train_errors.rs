@@ -193,3 +193,72 @@ fn resume_reports_the_values_actually_used() {
     let (ok, out) = tt(&a);
     assert!(ok && !out.contains("ignored"), "{out}");
 }
+
+/// M2: `--resume` with another `--batch` or `--stride` than the checkpoint was trained with
+/// exits 1 naming the setting, both values and the fix; a changed `--lr` only prints a note.
+#[test]
+fn resume_refuses_a_changed_batch_or_stride_and_notes_a_changed_lr() {
+    let d = tmp("resume_settings");
+    let c = corpus(&d);
+    let p = |n: &str| d.join(n).to_str().unwrap().to_string();
+    let ck = p("c.fckp");
+    let a_model = p("a.gguf");
+    let first = [
+        &["train", c.as_str(), &a_model][..],
+        &arch("16"),
+        &[
+            "--epochs",
+            "1",
+            "--batch",
+            "2",
+            "--stride",
+            "4",
+            "--checkpoint",
+            &ck,
+        ],
+    ]
+    .concat();
+    let (ok, out) = tt(&first);
+    assert!(ok, "{out}");
+    let resume = |model: &str, extra: &[&str]| {
+        let model = p(model);
+        let args = [
+            &["train", c.as_str(), &model][..],
+            &arch("16"),
+            &["--epochs", "2", "--resume", &ck],
+            extra,
+        ]
+        .concat();
+        let o = std::process::Command::new(env!("CARGO_BIN_EXE_train_transformer"))
+            .args(&args)
+            .output()
+            .unwrap();
+        (
+            o.status.code(),
+            String::from_utf8_lossy(&o.stdout).to_string(),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    };
+    let (code, _, err) = resume("b.gguf", &["--batch", "3", "--stride", "4"]);
+    assert_eq!(code, Some(1), "{err}");
+    assert!(
+        err.contains("--batch is 3") && err.contains("trained with batch 2"),
+        "{err}"
+    );
+    let (code, _, err) = resume("c.gguf", &["--batch", "2", "--stride", "8"]);
+    assert_eq!(code, Some(1), "{err}");
+    assert!(
+        err.contains("--stride is 8") && err.contains("trained with stride 4"),
+        "{err}"
+    );
+    assert!(!Path::new(&p("b.gguf")).exists() && !Path::new(&p("c.gguf")).exists());
+    let (code, out, err) = resume(
+        "d.gguf",
+        &["--batch", "2", "--stride", "4", "--lr", "0.002"],
+    );
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        out.contains("note: training settings changed") && out.contains("lr "),
+        "{out}"
+    );
+}

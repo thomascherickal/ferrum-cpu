@@ -381,6 +381,33 @@ fn train_resume_other_corpus_is_refused() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[test]
+fn train_resume_with_another_batch_or_stride_is_refused_and_a_new_lr_only_noted() {
+    let (_app, w) = app();
+    let dir = tmp("train_other_settings");
+    std::fs::write(dir.join("a.txt"), "abc abd abe ".repeat(60)).unwrap();
+    let ckpt = dir.join("r.fckp");
+    let mut p = train_params(&dir, "a.txt");
+    p["params"]["checkpointPath"] = json!(ckpt);
+    call(&w, "train_slm", p.clone()).unwrap();
+    let before = std::fs::read(&ckpt).unwrap();
+    p["params"]["resume"] = json!(true);
+    p["params"]["epochs"] = json!(2);
+    let mut other = p.clone();
+    other["params"]["batchSize"] = json!(2);
+    let e = msg(&call(&w, "train_slm", other).unwrap_err()).to_string();
+    assert!(e.contains("--batch is 2") && e.contains("batch 4"), "{e}");
+    let mut other = p.clone();
+    other["params"]["windowStride"] = json!(3);
+    let e = msg(&call(&w, "train_slm", other).unwrap_err()).to_string();
+    assert!(e.contains("--stride is 3"), "{e}");
+    assert_eq!(std::fs::read(&ckpt).unwrap(), before);
+    // A new learning rate resumes (the CLI prints a note; the GUI log shows the same line).
+    p["params"]["lr"] = json!(0.005);
+    call(&w, "train_slm", p).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn run_params(model: &std::path::Path, extra: Value) -> Value {
     let mut p = json!({"params": {"modelPath": model, "prompt": "hi", "quant": "f32", "maxNew": 3,
         "temp": 0, "genSeed": 1, "ids": null, "force": false, "resume": null, "raw": true}});

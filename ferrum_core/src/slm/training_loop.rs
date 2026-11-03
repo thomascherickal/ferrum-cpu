@@ -5,6 +5,7 @@ use crate::rng::Rng;
 use crate::slm::config::TransformerConfig;
 use crate::slm::memory::{available_memory_bytes, memory_gate};
 use crate::slm::metrics_log::{format_eta, CsvLog, Row};
+use crate::train_transformer::checkpoint::RunSettings;
 use crate::train_transformer::{steps_over, EpochStart, TokenSource, TransformerNet};
 
 /// A fresh (or checkpoint-resumed) training net configured from `cfg`.
@@ -34,6 +35,16 @@ pub(super) fn prepare_net(
                 )));
             }
         }
+        if let Some(was) = &net.run_settings {
+            if let Some(note) = was.compare(&RunSettings::of(cfg))? {
+                crate::verbose::log_line(&note); // also reaches a GUI log sink
+            }
+        } else {
+            crate::verbose::log_line(
+                "note: the checkpoint predates its recorded training settings; batch, stride \
+                 and learning-rate settings could not be compared",
+            );
+        }
         *rng = ckpt_rng;
         vprintln!(
             "[slm::train] resumed {} at step {}",
@@ -54,6 +65,7 @@ pub(super) fn prepare_net(
     };
     // A run without an id keeps the checkpoint's; one with an id (re)records it.
     net.corpus_id = cfg.corpus_id.clone().or(net.corpus_id.take());
+    net.run_settings = Some(RunSettings::of(cfg));
     net.set_qat(cfg.qat);
     net.set_weight_decay(cfg.weight_decay);
     net.set_dropout(cfg.dropout);
@@ -382,6 +394,93 @@ mod tests {
         assert_eq!(err.to_string(), "i/o error: disk full");
         assert_eq!(net.step_count(), 1, "the step ran, its row did not land");
         std::io::Write::flush(&mut FullDisk).unwrap(); // only writes fail
+    }
+
+    /// Resume `ckpt` with `edit` applied to the config the checkpoint was written under.
+    fn resume_edited(
+        ckpt: &str,
+        edit: impl Fn(&mut TransformerConfig),
+    ) -> crate::error::Result<GenerativeSLM> {
+        let mut cfg = TransformerConfig {
+            resume: true,
+            max_tokens: 8 * 4 * 8,
+            ..resume_cfg(ckpt)
+        };
+        edit(&mut cfg);
+        GenerativeSLM::train_transformer_config(
+            &RESUME_CORPUS.repeat(40),
+            &cfg,
+            &mut Rng::new(1),
+            |_, _| {},
+        )
+    }
+
+    #[test]
+    fn resume_refuses_a_changed_batch_or_stride_and_accepts_the_same() {
+        let ckpt = short_run("settings_refuse", None);
+        let before = std::fs::read(&ckpt).unwrap();
+        let was = resume_cfg(&ckpt);
+        let err = resume_edited(&ckpt, |c| c.batch_size = was.batch_size + 1)
+            .err()
+            .unwrap()
+            .to_string();
+        let (a, b) = (was.batch_size, was.batch_size + 1);
+        assert!(
+            err.contains("--batch is ")
+                && err.contains(&format!("batch {a}"))
+                && err.contains(&b.to_string()),
+            "{err}"
+        );
+        let err = resume_edited(&ckpt, |c| c.window_stride = 3)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            err.contains("--stride is 3") && err.contains("stride"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read(&ckpt).unwrap(),
+            before,
+            "a refusal writes nothing"
+        );
+        resume_edited(&ckpt, |_| {}).unwrap();
+    }
+
+    #[test]
+    fn resume_with_changed_learning_rate_settings_proceeds() {
+        let ckpt = short_run("settings_note", None);
+        resume_edited(&ckpt, |c| {
+            c.lr *= 0.5;
+            c.cosine_lr = true;
+            c.warmup_steps = 2;
+            c.grad_clip = 1.0;
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_checkpoint_without_recorded_settings_resumes_unchanged() {
+        let ckpt = short_run("settings_old", None);
+        let strip = |b: &[u8]| {
+            crate::ckpt::rewrite(
+                b,
+                |m| {
+                    for k in ["batch_size", "window_stride", "lr_settings"] {
+                        assert!(m.remove(&format!("ferrum.ckpt.{k}")).is_some());
+                    }
+                },
+                None,
+            )
+        };
+        let old = strip(&std::fs::read(&ckpt).unwrap());
+        let (net, _) = TransformerNet::load_checkpoint(&old).unwrap();
+        assert!(net.run_settings.is_none());
+        std::fs::write(&ckpt, &old).unwrap();
+        // Any batch/stride resumes (nothing to compare), and the run records them again.
+        resume_edited(&ckpt, |c| c.batch_size += 1).unwrap();
+        let (net, _) = TransformerNet::load_checkpoint(&std::fs::read(&ckpt).unwrap()).unwrap();
+        assert!(net.run_settings.is_some());
     }
 
     #[test]

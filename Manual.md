@@ -791,6 +791,17 @@ build before this key existed still resumes, but the rest of its partly finished
 epoch is reshuffled, so that run ends close to, not bit-identical with, an
 uninterrupted one; it prints `note: the checkpoint (step N) predates
 ferrum.ckpt.epoch_rng; ...` to say so.
+A checkpoint also records the `--batch` and the effective `--stride` it was trained with
+(`ferrum.ckpt.batch_size`, `ferrum.ckpt.window_stride`), because a resume with another
+value is a different run (the window order and the step count change). Such a resume is
+refused (exit 1; in the GUI a Train error) with `--batch is B but the checkpoint was
+trained with batch A ...` (or `--stride`), and the checkpoint is untouched. `--lr`,
+`--cosine`, `--warmup`, `--clip`, `--weight_decay` and `--dropout` (recorded in
+`ferrum.ckpt.lr_settings`) may change: the run proceeds and prints `note: training
+settings changed since the checkpoint was written (lr 0.01 -> 0.005, ...)`, since it
+no longer matches an uninterrupted run. A checkpoint written before these keys
+existed resumes as before and prints `note: the checkpoint predates its recorded
+training settings; ... could not be compared`.
 A hard interrupt (Ctrl-C, power cut) does not save on exit; the checkpoint on
 disk is the last periodic one.
 

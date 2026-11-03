@@ -47,6 +47,156 @@ impl EpochStart {
     }
 }
 
+/// The training settings a checkpoint was written under (`ferrum.ckpt.batch_size`,
+/// `ferrum.ckpt.window_stride`, `ferrum.ckpt.lr_settings`), so a `--resume` can tell when they
+/// changed. A different batch or stride changes the window order and the step count, so a
+/// resume refuses it; the learning-rate settings may change and are only noted.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RunSettings {
+    pub(crate) batch: u64,
+    /// Effective stride (`--stride 0` already resolved to the context length).
+    pub(crate) stride: u64,
+    pub(crate) lr: f32,
+    pub(crate) cosine: bool,
+    pub(crate) warmup: u64,
+    pub(crate) clip: f32,
+    pub(crate) weight_decay: f32,
+    pub(crate) dropout: f32,
+}
+
+impl RunSettings {
+    pub(crate) fn of(cfg: &crate::slm::TransformerConfig) -> Self {
+        Self {
+            batch: cfg.batch_size.max(1) as u64,
+            stride: if cfg.window_stride == 0 {
+                cfg.context_len
+            } else {
+                cfg.window_stride
+            } as u64,
+            lr: cfg.lr,
+            cosine: cfg.cosine_lr,
+            warmup: cfg.warmup_steps,
+            clip: cfg.grad_clip,
+            weight_decay: cfg.weight_decay,
+            dropout: cfg.dropout,
+        }
+    }
+
+    fn write(&self, b: &mut crate::gguf_write::GgufBuilder) {
+        ckpt::put_u64s(b, "batch_size", &[self.batch]);
+        ckpt::put_u64s(b, "window_stride", &[self.stride]);
+        ckpt::put_u64s(
+            b,
+            "lr_settings",
+            &[
+                self.lr.to_bits() as u64,
+                self.cosine as u64,
+                self.warmup,
+                self.clip.to_bits() as u64,
+                self.weight_decay.to_bits() as u64,
+                self.dropout.to_bits() as u64,
+            ],
+        );
+    }
+
+    /// `None` for a checkpoint older than the keys; an error for a malformed one.
+    fn read(g: &crate::gguf::Gguf) -> Result<Option<Self>> {
+        let one = |k: &str| -> Result<Option<u64>> {
+            match ckpt::get_u64s(g, k)? {
+                None => Ok(None),
+                Some(&[v]) => Ok(Some(v)),
+                Some(_) => Err(InferError::Format(format!(
+                    "checkpoint key 'ferrum.ckpt.{k}' is not one number"
+                ))),
+            }
+        };
+        let (Some(batch), Some(stride)) = (one("batch_size")?, one("window_stride")?) else {
+            return Ok(None);
+        };
+        let Some(&[lr, cosine, warmup, clip, wd, dropout]) = ckpt::get_u64s(g, "lr_settings")?
+        else {
+            return Ok(None);
+        };
+        let f = |bits: u64| f32::from_bits(bits as u32);
+        Ok(Some(Self {
+            batch,
+            stride,
+            lr: f(lr),
+            cosine: cosine != 0,
+            warmup,
+            clip: f(clip),
+            weight_decay: f(wd),
+            dropout: f(dropout),
+        }))
+    }
+
+    /// Compare a checkpoint's settings (`self`) with this run's. `Err` names a changed batch
+    /// or stride; `Ok` lists the changed learning-rate settings, one `note:` line.
+    pub(crate) fn compare(&self, now: &Self) -> Result<Option<String>> {
+        for (name, was, is) in [
+            ("batch", self.batch, now.batch),
+            ("stride", self.stride, now.stride),
+        ] {
+            if was != is {
+                return Err(InferError::DimMismatch(format!(
+                    "--{name} is {is} but the checkpoint was trained with {name} {was}; a \
+                     resume with another {name} is a different run (window order and step \
+                     count change). Resume with --{name} {was}, or start a new run"
+                )));
+            }
+        }
+        let mut changed = Vec::new();
+        let mut diff = |name: &str, was: String, is: String, same: bool| {
+            if !same {
+                changed.push(format!("{name} {was} -> {is}"));
+            }
+        };
+        diff(
+            "lr",
+            self.lr.to_string(),
+            now.lr.to_string(),
+            self.lr.to_bits() == now.lr.to_bits(),
+        );
+        diff(
+            "cosine",
+            self.cosine.to_string(),
+            now.cosine.to_string(),
+            self.cosine == now.cosine,
+        );
+        diff(
+            "warmup",
+            self.warmup.to_string(),
+            now.warmup.to_string(),
+            self.warmup == now.warmup,
+        );
+        diff(
+            "clip",
+            self.clip.to_string(),
+            now.clip.to_string(),
+            self.clip.to_bits() == now.clip.to_bits(),
+        );
+        diff(
+            "weight_decay",
+            self.weight_decay.to_string(),
+            now.weight_decay.to_string(),
+            self.weight_decay.to_bits() == now.weight_decay.to_bits(),
+        );
+        diff(
+            "dropout",
+            self.dropout.to_string(),
+            now.dropout.to_string(),
+            self.dropout.to_bits() == now.dropout.to_bits(),
+        );
+        Ok((!changed.is_empty()).then(|| {
+            format!(
+                "note: training settings changed since the checkpoint was written ({}); the \
+                 resumed run will not match an uninterrupted one",
+                changed.join(", ")
+            )
+        }))
+    }
+}
+
 impl TransformerNet {
     /// Read just the header of [`TransformerNet::save_checkpoint`] bytes (no weights are decoded),
     /// e.g. to tell the user which architecture a `--resume` will really use.
@@ -102,6 +252,9 @@ impl TransformerNet {
         ckpt::put_u64(&mut b, "rng", rng.state());
         if let Some(id) = &self.corpus_id {
             ckpt::put_str(&mut b, "corpus_id", id);
+        }
+        if let Some(r) = &self.run_settings {
+            r.write(&mut b);
         }
         if let Some(e) = self.epoch_start {
             ckpt::put_u64s(&mut b, "epoch_rng", &[e.rng, e.step, e.epoch]);
@@ -175,6 +328,7 @@ impl TransformerNet {
         let rng_state = ckpt::get_u64(&g, "rng")?;
         net.epoch_start = EpochStart::read(&g, net.step_t)?;
         net.corpus_id = ckpt::get_str(&g, "corpus_id")?;
+        net.run_settings = RunSettings::read(&g)?;
         for (i, p) in net.params_mut_all().into_iter().enumerate() {
             // m and v share the parameter's shape, so each is the same length.
             let len = p.data.data.len();
@@ -274,6 +428,90 @@ mod tests {
         assert!(bad(u64s(vec![1, 2])).contains("[rng, step, epoch]"));
         assert!(bad(u64s(vec![1, step + 1, 1])).contains("[rng, step, epoch]"));
         assert!(bad(u64s(vec![1, step, 0])).contains("[rng, step, epoch]"));
+    }
+
+    #[test]
+    fn checkpoint_roundtrips_run_settings() {
+        use super::RunSettings;
+        let (mut net, rng) = trained_net(false, false);
+        let (plain, _) = TransformerNet::load_checkpoint(&net.save_checkpoint(&rng)).unwrap();
+        assert_eq!(plain.run_settings, None);
+        let s = RunSettings {
+            batch: 4,
+            stride: 16,
+            lr: 0.003,
+            cosine: true,
+            warmup: 20,
+            clip: 1.0,
+            weight_decay: 0.01,
+            dropout: 0.1,
+        };
+        net.run_settings = Some(s);
+        let (back, _) = TransformerNet::load_checkpoint(&net.save_checkpoint(&rng)).unwrap();
+        assert_eq!(back.run_settings, Some(s));
+        // A key of the wrong shape is an error, not a silent skip.
+        let bad = crate::ckpt::rewrite(
+            &net.save_checkpoint(&rng),
+            |m| {
+                m.insert(
+                    "ferrum.ckpt.batch_size".into(),
+                    MetaValue::Nums(NumArray::U64(vec![1, 2])),
+                );
+            },
+            None,
+        );
+        let err = TransformerNet::load_checkpoint(&bad)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(err.contains("batch_size"), "{err}");
+    }
+
+    #[test]
+    fn run_settings_compare_words_and_orders_the_findings() {
+        use super::RunSettings;
+        let s = RunSettings {
+            batch: 4,
+            stride: 16,
+            lr: 0.01,
+            cosine: false,
+            warmup: 0,
+            clip: 0.0,
+            weight_decay: 0.0,
+            dropout: 0.0,
+        };
+        assert_eq!(s.compare(&s).unwrap(), None);
+        let err = |n: RunSettings| s.compare(&n).unwrap_err().to_string();
+        let e = err(RunSettings { batch: 8, ..s });
+        assert!(e.contains("--batch is 8") && e.contains("batch 4"), "{e}");
+        let e = err(RunSettings { stride: 1, ..s });
+        assert!(
+            e.contains("--stride is 1") && e.contains("stride 16"),
+            "{e}"
+        );
+        let note = s
+            .compare(&RunSettings {
+                lr: 0.02,
+                cosine: true,
+                warmup: 5,
+                clip: 1.0,
+                weight_decay: 0.1,
+                dropout: 0.2,
+                ..s
+            })
+            .unwrap()
+            .unwrap();
+        for part in [
+            "lr 0.01 -> 0.02",
+            "cosine false -> true",
+            "warmup 0 -> 5",
+            "clip 0 -> 1",
+            "weight_decay 0 -> 0.1",
+            "dropout 0 -> 0.2",
+        ] {
+            assert!(note.contains(part), "{part} in {note}");
+        }
+        assert!(note.starts_with("note:"), "{note}");
     }
 
     #[test]

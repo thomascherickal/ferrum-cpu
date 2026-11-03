@@ -7,7 +7,7 @@
 
 mod backward;
 mod block;
-mod checkpoint;
+pub(crate) mod checkpoint;
 mod epoch;
 mod export;
 mod forward;
@@ -100,6 +100,9 @@ pub struct TransformerNet {
     pub(crate) epoch_start: Option<checkpoint::EpochStart>,
     /// Identity of the corpus the run trains on (`ferrum.ckpt.corpus_id`), if the caller gave one.
     pub(crate) corpus_id: Option<String>,
+    /// The batch, stride and learning-rate settings of the run (`ferrum.ckpt.batch_size` etc.),
+    /// set by the config-driven trainer; `None` for a checkpoint older than the keys.
+    pub(crate) run_settings: Option<checkpoint::RunSettings>,
 }
 
 impl TransformerNet {
@@ -156,6 +159,7 @@ impl TransformerNet {
             metrics: Default::default(),
             epoch_start: None,
             corpus_id: None,
+            run_settings: None,
         })
     }
 
