@@ -1610,7 +1610,7 @@ dedicated model thread** and handles **one request at a time**, because
 | Architecture | Served as | `--quant` / `--force` |
 |---|---|---|
 | `gpt2`, `ferrum` (Ferrum's own models) | `GenerativeSLM`, exactly as before | ignored: the model computes at the precision it was saved with |
-| `llama`, `qwen2` (imported, e.g. SmolLM2, Qwen2.5) | `LlamaModel` with the GGUF's own tokenizer | `--quant` picks the in-memory precision (default `int4`, like `run-gguf`; `int8`, `f32`; `q4`/`q8`/`none` also work), `--force` skips the RAM guard |
+| `llama`, `qwen2` (imported, e.g. SmolLM2, Qwen2.5) | `LlamaModel` with the GGUF's own tokenizer | `--quant` picks the in-memory precision (default `int8`; `int4`, `f32`; `q4`/`q8`/`none` also work), `--force` skips the RAM guard |
 | anything else | refused at startup, exit 1: `cannot serve <path>: architecture 'phi3' is not supported (Ferrum's own gpt2 / ferrum models, or imported llama / qwen2 GGUFs)` | |
 
 An imported GGUF without tokenizer metadata is refused at startup (`the GGUF has no
@@ -1627,30 +1627,35 @@ load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](d
 
 **Imported models: tokens and windows.**
 
-- **Scoring** (`/v1/loglikelihood`, `/v1/loglikelihood_rolling`) puts the GGUF's BOS token
-  (`tokenizer.ggml.bos_token_id`) in front whenever the file defines one, even when its
-  `add_bos_token` is false (SmolLM2), so the first real token is scored given BOS.
-  Without a BOS the first token of a rolling text has nothing to condition on and is not
-  scored (`n_tokens` is one less), and a loglikelihood request with an empty `context` is a
-  `422`. `eval-gguf` prepends BOS only
-  when `add_bos_token` asks for it, so on such a file its numbers differ from the server's.
+- **Scoring** (`/v1/loglikelihood`, `/v1/loglikelihood_rolling`) follows `add_bos_token`
+  exactly like generation, `run-gguf` and `eval-gguf`: the BOS token is put in front only
+  when the file asks for it (`tokenizer.ggml.add_bos_token`) and defines a BOS id
+  (`tokenizer.ggml.bos_token_id`). With a BOS the first real token is scored given BOS.
+  Without one, the first token of a rolling text has nothing to condition on and is not
+  scored (`n_tokens` is one less), and a loglikelihood request whose context is empty (and
+  that has no BOS to put there) is a `422`: `context is empty and the model prepends no BOS
+  token`. There is no EOS fallback.
 - `/v1/loglikelihood` splits like a Ferrum model: trailing whitespace of the context moves
   onto the continuation, and the context plus continuation is encoded together when that
   extends the context's tokens (else the continuation is encoded on its own).
-- Texts longer than the model's context are scored in **windows of the context length**:
-  the first starts at token 0, each later one `context / 2` tokens before its first unscored
-  token, so every token is scored once with at least half a window of history (the rule of
-  `score_rolling` and `eval-gguf`). The log-softmax is exact (no probability floor). A full
-  window holds `context × vocab` f32 logits at once (8,192 × 49,152 ≈ 1.6 GB for SmolLM2,
-  computed from that shape, not measured), so `--max-chars` is also the memory bound for
-  long texts.
+- Texts longer than the **scoring window** are scored in overlapping windows. The window is
+  the model's context length capped at **512 tokens** (the `eval-gguf` default), so a
+  window holds at most `512 × vocab` f32 logits (512 × 49,152 ≈ 100 MB for SmolLM2, computed
+  from that shape, not measured). The first window starts at token 0, each later one
+  `window / 2` tokens before its first unscored token, so every token is scored once with at
+  least half a window of the most recent history (the rule of `score_rolling`). A context
+  longer than the window therefore needs no cutting: the continuation is always scored given
+  the most recent tokens. The log-softmax is exact (no probability floor).
 - **Generation** is a raw completion (no chat template; `run-gguf --raw`): the prompt gets
-  BOS only when `add_bos_token` asks for it (as `run-gguf` does), generation stops at the
+  BOS only when `add_bos_token` asks for it, generation stops at the
   EOS token (not in the text, not counted) or at the first stop string (cut from the text;
   the token that completed it is counted), and every sampling field means what it means for
-  a Ferrum model. Unlike a Ferrum model, whose prompt keeps its most recent tokens, a prompt
-  that fills the context window is a `422`, and `max_tokens` is capped at what remains of
-  the window.
+  a Ferrum model. A prompt too long for the context window is **cut from the left**, never
+  refused (one long prompt does not fail its batch): the BOS (if any) and the most recent
+  tokens are kept, leaving room for `max_tokens` (`context - max_tokens` tokens, at least
+  one). A `max_tokens` of a whole window or more cannot be honoured, because an imported
+  model has no sliding window (a Ferrum model slides): the prompt then keeps the window less
+  one token, and generation ends where the window does.
 
 | Route | Request | Response |
 |---|---|---|

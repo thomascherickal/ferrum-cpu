@@ -52,10 +52,22 @@ impl Reference {
         }
     }
 
-    /// Generation as documented: `prefix_bos` + the prompt, EOS stops and is dropped.
+    /// Generation as documented: `prefix_bos` + the prompt, cut from the left (BOS kept) to
+    /// leave room for `max` tokens; EOS stops and is dropped.
     fn generate(&self, prompt: &str, max: usize, params: &SamplingParams, seed: u64) -> Value {
         let mut ids: Vec<usize> = self.tok.prefix_bos().into_iter().collect();
+        let n_bos = ids.len();
         ids.extend(self.tok.encode(prompt));
+        let ctx = self.model.cfg.context_len;
+        let budget = if max >= ctx {
+            ctx - 1
+        } else {
+            (ctx - max).clamp(1, ctx - 1)
+        };
+        let keep = budget.saturating_sub(n_bos).max(1);
+        if ids.len() > n_bos + keep {
+            ids.drain(n_bos..ids.len() - keep);
+        }
         let eos: Vec<usize> = self.tok.eos().into_iter().collect();
         let mut out = self
             .model
@@ -67,9 +79,9 @@ impl Reference {
         json!({"text": self.tok.decode(&out), "n_tokens": out.len()})
     }
 
-    /// Scoring as documented: `bos()` (when defined) + the text.
+    /// Scoring as documented: `prefix_bos()` (as for generation) + the text.
     fn ids(&self, text: &str) -> Vec<usize> {
-        let mut ids: Vec<usize> = self.tok.bos().into_iter().collect();
+        let mut ids: Vec<usize> = self.tok.prefix_bos().into_iter().collect();
         ids.extend(self.tok.encode(text));
         ids
     }
@@ -211,24 +223,71 @@ fn tiny_llama_over_http_matches_the_library() {
         [r.loglikelihood("ab", "cd"), r.loglikelihood("", "abc")]
     );
 
-    // A prompt that fills the context is a model error, not a crash.
-    let (s, v) = post(
+    // A prompt longer than the context is cut from the left, not refused, and the rest of
+    // the batch is untouched.
+    let long = "abcdefghijklmnopqrstuvwxyz".repeat(2);
+    let got = results(
         &addr,
         "/v1/generate",
-        &json!({"requests": [{"prompt": "a".repeat(20)}]}),
+        json!({"requests": [{"prompt": long, "max_tokens": 4}, {"prompt": "ab", "max_tokens": 3}]}),
     );
-    assert_eq!(s, 422, "{v}");
+    assert_eq!(got[0], r.generate(&long, 4, &greedy(), 0));
+    assert_eq!(got[1], r.generate("ab", 3, &greedy(), 0));
     assert!(sigint_and_wait(&mut child).success());
 }
 
 #[test]
-fn default_int4_is_reported_and_matches_the_library_at_int4() {
-    let f = File::new("int4", &tiny_llama(&[]));
-    let r = Reference::new(&f.0, Some(QKind::Int4));
+fn bos_follows_add_bos_token_and_an_empty_context_without_one_is_a_422() {
+    let id = ("tokenizer.ggml.bos_token_id", MetaValue::U32(BOS));
+    for add in [true, false] {
+        let f = File::new(
+            if add { "bos-on" } else { "bos-off" },
+            &tiny_llama(&[
+                id.clone(),
+                ("tokenizer.ggml.add_bos_token", MetaValue::Bool(add)),
+            ]),
+        );
+        let r = Reference::new(&f.0, None);
+        assert_eq!(r.tok.prefix_bos().is_some(), add);
+        let (mut child, _err, addr) = spawn(&f.0, &["--quant", "f32"]);
+        let got = results(
+            &addr,
+            "/v1/loglikelihood_rolling",
+            json!({"texts": ["abc"]}),
+        );
+        same_scores(&got, &[r.rolling("abc")]);
+        assert_eq!(got[0]["n_tokens"], if add { 3 } else { 2 });
+        let (s, v) = post(
+            &addr,
+            "/v1/loglikelihood",
+            &json!({"requests": [{"context": "", "continuation": "abc"}]}),
+        );
+        if add {
+            assert_eq!(s, 200, "{v}");
+            same_scores(
+                &v["results"].as_array().unwrap().clone(),
+                &[r.loglikelihood("", "abc")],
+            );
+        } else {
+            assert_eq!(s, 422, "{v}");
+            assert!(
+                v.to_string()
+                    .contains("context is empty and the model prepends no BOS token"),
+                "{v}"
+            );
+        }
+        assert!(sigint_and_wait(&mut child).success());
+    }
+}
+
+#[test]
+fn default_int8_is_reported_and_matches_the_library_at_int8() {
+    let f = File::new("int8", &tiny_llama(&[]));
+    let r = Reference::new(&f.0, Some(QKind::Int8));
     let (mut child, _err, addr) = spawn(&f.0, &["--force"]);
     let (_, info) = http(&addr, "GET", "/v1/info", "");
     let info: Value = serde_json::from_str(&info).unwrap();
-    assert_eq!(info["quant"], "int4");
+    assert_eq!(info["quant"], "int8");
     let got = results(
         &addr,
         "/v1/generate",
@@ -278,7 +337,7 @@ fn unservable_files_and_bad_flags_are_refused_at_startup() {
 }
 
 /// The real SmolLM2-135M (Q8_0, `add_bos_token = false` but a BOS id): greedy generation and
-/// both loglikelihoods equal the library at the default int4.
+/// both loglikelihoods equal the library at the default int8.
 #[test]
 fn smollm2_135m_over_http_matches_the_library_when_present() {
     let path = Path::new(DEV).join("models/smollm2-135m-q8_0.gguf");
@@ -289,7 +348,7 @@ fn smollm2_135m_over_http_matches_the_library_when_present() {
         );
         return;
     }
-    let r = Reference::new(&path, Some(QKind::Int4));
+    let r = Reference::new(&path, Some(QKind::Int8));
     assert!(r.tok.prefix_bos().is_none() && r.tok.bos().is_some());
     let (mut child, _err, addr) = spawn(&path, &[]);
     let got = results(

@@ -12,7 +12,7 @@ way the server sent it.
 ## 1. Start the server
 
 ```bash
-ferrum-serve --model smollm2-135m-q8_0.gguf --quant int8 --port 8093
+ferrum-serve --model smollm2-135m-q8_0.gguf --port 8093
 ```
 
 ```text
@@ -21,9 +21,9 @@ ferrum-serve: auth OFF (loopback only)
 ```
 
 The server finds the model kind in `general.architecture`. `--quant` sets the
-precision the weights are held at in memory: `int4` (the default, the same as
-`run-gguf`), `int8` or `f32`. The file is already 8-bit, and int4 costs it a lot of
-quality (see Status §5), so this run uses `int8`. Before it reads any weights the
+precision the weights are held at in memory: `int8` (the default), `int4` or `f32`.
+The file is already 8-bit, so `int8` costs it little, while `int4` costs it a lot of
+quality (see Status §5). Before it reads any weights the
 server estimates the resident size. If that is more than 90 % of the available memory
 it refuses to start. `--force` starts it anyway. Ferrum's own models ignore both flags.
 
@@ -35,7 +35,7 @@ curl -s http://127.0.0.1:8093/v1/info
 {"params":134515008,"context_len":8192,"vocab":49152,"quant":"int8","tokenizer":"bpe","model_sha256":"5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83"}
 ```
 
-`quant` is the precision the model computes at, the `--quant` it was loaded with.
+`quant` is the precision the model computes at: here the default, `int8`.
 
 ## 2. Generate
 
@@ -52,7 +52,8 @@ This is a raw completion, with no chat template. The stop string `.` is cut from
 text, but the token that completed it is counted, which makes `n_tokens` 2. EOS also
 stops generation, and it is neither in the text nor counted. `temperature`, `top_k`,
 `top_p`, `seed` and `repetition_penalty` work as they do for a Ferrum model. A prompt
-that fills the 8,192-token context gets a `422`.
+too long for the 8,192-token context is cut from the left (its most recent tokens are
+kept, leaving room for `max_tokens`), so it never fails the batch.
 
 ## 3. Score
 
@@ -63,7 +64,7 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/loglikeliho
 ```
 
 ```json
-{"results":[{"greedy":false,"logprob":-1.6240879556881536,"n_tokens":1},{"greedy":false,"logprob":-9.642947818969404,"n_tokens":1}]}
+{"results":[{"greedy":true,"logprob":-0.5385536647130459,"n_tokens":1},{"greedy":false,"logprob":-9.166077086954257,"n_tokens":1}]}
 ```
 
 ```bash
@@ -72,18 +73,31 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/loglikeliho
 ```
 
 ```json
-{"results":[{"logprob":-39.40575684989872,"n_tokens":7}]}
+{"results":[{"logprob":-18.072027314095283,"n_tokens":6}]}
 ```
 
-Scoring puts the file's BOS token first whenever the file defines one. SmolLM2 defines
-one but sets `add_bos_token = false`. Because of that, all 7 tokens of the sentence are
-scored, the first one given BOS. Generation follows `add_bos_token`, so the prompt
-above got no BOS. The two routes therefore see different inputs: ` Paris` was
-generated greedily from the prompt without BOS, and it scores `greedy: false` with BOS
-in front. Texts longer than the context are scored in windows of the context length.
-Each window starts half a window before its first unscored token.
+Scoring follows `add_bos_token` exactly as generation does: the file's BOS token goes
+first only when the file asks for it and defines one. SmolLM2 defines a BOS id but sets
+`add_bos_token = false`, so no BOS is added. The first token of the sentence therefore has
+nothing to condition on and is not scored, which is why 6 of the 7 tokens count. A
+loglikelihood request with an empty `context` has the same problem, and the server
+answers it with a `422` instead of guessing:
+
+```bash
+curl -s -w ' [%{http_code}]' -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/loglikelihood \
+  -d '{"requests":[{"context":"","continuation":"Paris"}]}'
+```
+
+```text
+{"error":"dimension mismatch: context is empty and the model prepends no BOS token"} [422]
+```
+
+Texts longer than the scoring window are scored in overlapping windows. The window is the
+model's context length, capped at 512 tokens like `eval-gguf`. Each window starts half
+a window before its first unscored token, so the continuation always sees the most
+recent tokens.
 
 Stop the server with Ctrl-C. The GUI's Serve tab runs the same server. It has no
-`--quant` control yet, so according to the code it loads imported files at int4. That
-was read from the code and not tried in this walk-through. The browser bindings
+`--quant` control, so it loads imported files at the default, int8. That was read from
+the code and not tried in the app. The browser bindings
 (`slm_wasm`) load Ferrum's own models only.

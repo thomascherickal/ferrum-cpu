@@ -1,14 +1,43 @@
 //! The imported-model backend: a Llama/Qwen [`LlamaModel`] with the GGUF's own tokenizer,
 //! answering the same three primitives as a Ferrum model with the same JSON shapes.
 //!
-//! Conventions (Manual §9.7): scoring conditions on the GGUF's BOS token when it defines one
-//! (`tokenizer.ggml.bos_token_id`), so the first real token is scored too; generation is a raw
-//! completion (no chat template) with the BOS that `run-gguf` prepends (`prefix_bos`, which
-//! honours `add_bos_token`); texts longer than the context are scored in windows of the
-//! model's context length.
+//! Conventions (Manual §9.7): scoring and generation both prepend the BOS token exactly when
+//! the file says so (`prefix_bos`: `add_bos_token` and a BOS id), like `run-gguf` and
+//! `eval-gguf`; generation is a raw completion (no chat template) whose prompt is cut from the
+//! left to leave room for `max_tokens`; texts longer than the scoring window (the context,
+//! at most 512 tokens like `eval-gguf`) are scored in overlapping windows.
 
 use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
 use ferrum_core::{GgufTokenizer, InferError, LlamaModel, LlamaScore, Result, Rng, SamplingParams};
+
+/// Largest scoring window, in tokens: what `eval-gguf` uses, and it bounds the
+/// `window x vocab` f32 logits one forward pass holds.
+pub(crate) const MAX_SCORE_WINDOW: usize = 512;
+
+/// The scoring window of a model with context `ctx_len`.
+fn score_window(ctx_len: usize) -> usize {
+    ctx_len.min(MAX_SCORE_WINDOW)
+}
+
+/// Cut `ids` (the first `n_bos` of which are the BOS prefix) from the left so that the prompt
+/// and `max_new` generated tokens fit the `ctx`-token window: the BOS and the most recent
+/// tokens are kept, and nothing is ever refused for length. A `max_new` of a whole window or
+/// more cannot be honoured (this model has no sliding window); the prompt then keeps the whole
+/// window less one slot, as the Ferrum path keeps a full window, and the generation ends where
+/// the window does.
+fn truncate_prompt(mut ids: Vec<usize>, n_bos: usize, ctx: usize, max_new: usize) -> Vec<usize> {
+    let last = ctx.saturating_sub(1).max(1);
+    let budget = if max_new >= ctx {
+        last
+    } else {
+        (ctx - max_new).clamp(1, last)
+    };
+    let keep = budget.saturating_sub(n_bos).max(1);
+    if ids.len() > n_bos + keep {
+        ids.drain(n_bos..ids.len() - keep);
+    }
+    ids
+}
 
 pub(crate) struct Imported {
     pub(crate) model: LlamaModel,
@@ -38,13 +67,15 @@ fn earliest_stop(text: &str, from: usize, stops: &[String]) -> Option<usize> {
 }
 
 impl Imported {
-    /// What scoring conditions on: the BOS token when the GGUF defines one.
+    /// The BOS token when the file says to prepend one (`add_bos_token` and a BOS id): the
+    /// same rule as generation and `eval-gguf`.
     fn scoring_prefix(&self) -> Vec<usize> {
-        self.tok.bos().into_iter().collect()
+        self.tok.prefix_bos().into_iter().collect()
     }
 
     fn score_ids(&self, ids: &[usize], from: usize) -> Result<(LlamaScore, bool)> {
-        self.model.score_from(ids, from, self.model.cfg.context_len)
+        self.model
+            .score_from(ids, from, score_window(self.model.cfg.context_len))
     }
 
     /// Loglikelihood of `continuation` after `context`, split like `GenerativeSLM::score`:
@@ -69,8 +100,7 @@ impl Imported {
         ctx_ids.extend(self.tok.encode(context));
         if ctx_ids.is_empty() {
             return Err(InferError::DimMismatch(
-                "an empty context has nothing to condition on: this GGUF defines no BOS token"
-                    .into(),
+                "context is empty and the model prepends no BOS token".into(),
             ));
         }
         let mut joint = self.scoring_prefix();
@@ -85,8 +115,10 @@ impl Imported {
         self.score_ids(&ids, ctx_ids.len())
     }
 
-    /// Loglikelihood of all of `text`. With a BOS every token is scored; without one the
-    /// first token has nothing to condition on and is not scored.
+    /// Loglikelihood of all of `text`. With a BOS every token is scored; without one (the file
+    /// does not prepend any) the first token has nothing to condition on and is not scored.
+    /// A context longer than the window needs no cutting: the windows slide so every scored
+    /// token keeps at least half a window of the most recent history.
     pub(crate) fn score_rolling(&self, text: &str) -> Result<LlamaScore> {
         let mut ids = self.scoring_prefix();
         ids.extend(self.tok.encode(text));
@@ -107,11 +139,15 @@ impl Imported {
     }
 
     /// Raw completion of `g.prompt`: up to `max_tokens` tokens, stopping at EOS or at the
-    /// first stop string (excluded from the text). A prompt that fills the context window is
-    /// an error, and generation ends when the window is full.
+    /// first stop string (excluded from the text). A prompt too long for the context window
+    /// together with `max_tokens` is cut from the left ([`truncate_prompt`]), and generation
+    /// ends when the window is full.
     pub(crate) fn generate(&self, g: &GenRequest) -> Result<Generated> {
         let mut prompt: Vec<usize> = self.tok.prefix_bos().into_iter().collect();
+        let n_bos = prompt.len();
         prompt.extend(self.tok.encode(&g.prompt));
+        let max_new = g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
+        let prompt = truncate_prompt(prompt, n_bos, self.model.cfg.context_len, max_new);
         let params = SamplingParams {
             temperature: g.temperature,
             top_k: g.top_k,
@@ -129,7 +165,7 @@ impl Imported {
         // at most 4096); keep a running decode if long generations get slow.
         let mut out = self.model.generate_until(
             &prompt,
-            g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+            max_new,
             &params,
             &eos,
             &mut Rng::new(g.seed),
@@ -204,13 +240,96 @@ mod tests {
     }
 
     #[test]
-    fn bos_is_prepended_for_scoring_even_when_add_bos_token_is_false() {
-        let m = imported(&llama::tiny_llama(&[
-            ("tokenizer.ggml.bos_token_id", MetaValue::U32(llama::BOS)),
-            ("tokenizer.ggml.add_bos_token", MetaValue::Bool(false)),
-        ]));
-        assert_eq!(m.tok.prefix_bos(), None);
-        assert_eq!(m.score_rolling("ab").unwrap().n_tokens, 2);
+    fn scoring_bos_follows_add_bos_token() {
+        let with = |add: bool| {
+            imported(&llama::tiny_llama(&[
+                ("tokenizer.ggml.bos_token_id", MetaValue::U32(llama::BOS)),
+                ("tokenizer.ggml.add_bos_token", MetaValue::Bool(add)),
+            ]))
+        };
+        let (on, off) = (with(true), with(false));
+        let ids = on.tok.encode("ab");
+        let (a, b) = (
+            on.score_rolling("ab").unwrap(),
+            off.score_rolling("ab").unwrap(),
+        );
+        // add_bos_token=true: BOS conditions the first token, which is scored.
+        let mut bos_ids = vec![llama::BOS as usize];
+        bos_ids.extend(&ids);
+        assert_eq!(a, on.model.score_rolling(&bos_ids, 16).unwrap());
+        assert_eq!(a.n_tokens, 2);
+        // add_bos_token=false: no BOS despite the id, so the first token is not scored.
+        assert_eq!(b, off.model.score_rolling(&ids, 16).unwrap());
+        assert_eq!(b.n_tokens, 1);
+        assert_ne!(a.logprob, b.logprob);
+        // The same rule for a continuation: an empty context needs the BOS.
+        assert_eq!(on.score("", "ab").unwrap().0.n_tokens, 2);
+        let e = off.score("", "ab").unwrap_err().to_string();
+        assert!(
+            e.contains("context is empty and the model prepends no BOS token"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn the_scoring_window_is_capped_at_512() {
+        assert_eq!(score_window(16), 16);
+        assert_eq!(score_window(512), 512);
+        assert_eq!(score_window(8192), 512);
+    }
+
+    #[test]
+    fn prompts_are_cut_from_the_left_to_leave_room_for_max_tokens() {
+        let ids: Vec<usize> = (100..120).collect();
+        // Fits: untouched.
+        assert_eq!(truncate_prompt(ids[..4].to_vec(), 0, 16, 8), ids[..4]);
+        // Cut to ctx - max_new most recent tokens.
+        assert_eq!(truncate_prompt(ids.clone(), 0, 16, 6), ids[10..]);
+        // The BOS stays in front and counts against the budget.
+        let mut want = vec![100];
+        want.extend(&ids[11..]);
+        assert_eq!(truncate_prompt(ids.clone(), 1, 16, 6), want);
+        // max_tokens that fills the window alone cannot be honoured: the window less one slot.
+        assert_eq!(truncate_prompt(ids.clone(), 0, 16, 99), ids[5..]);
+        let mut want = vec![100];
+        want.extend(&ids[6..]);
+        assert_eq!(truncate_prompt(ids.clone(), 1, 16, 16), want);
+        assert_eq!(truncate_prompt(ids.clone(), 0, 16, 15), ids[19..]);
+        assert_eq!(truncate_prompt(ids.clone(), 1, 16, 15), vec![100, 119]);
+        assert_eq!(truncate_prompt(ids.clone(), 0, 16, 0), ids[5..]);
+        assert!(truncate_prompt(vec![], 0, 16, 4).is_empty());
+    }
+
+    #[test]
+    fn a_long_prompt_generates_as_its_truncated_tail_and_never_fails() {
+        let m = imported(&llama::tiny_llama_bos_eos());
+        let long = "abcdefghijklmnopqrstuvwxyz".repeat(2);
+        let ids = m.tok.encode(&long);
+        assert!(ids.len() > 16);
+        let g = m.generate(&req(&long, 4, &[])).unwrap();
+        // 16 - 4 = 12 slots: BOS + the 11 most recent tokens.
+        let mut prompt = vec![llama::BOS as usize];
+        prompt.extend(&ids[ids.len() - 11..]);
+        let params = SamplingParams {
+            temperature: 0.0,
+            ..SamplingParams::default()
+        };
+        let mut want = m
+            .model
+            .generate(
+                &prompt,
+                4,
+                &params,
+                &[llama::EOS as usize],
+                &mut Rng::new(0),
+            )
+            .unwrap();
+        if want.last() == Some(&(llama::EOS as usize)) {
+            want.pop();
+        }
+        assert_eq!((g.n_tokens, g.text), (want.len(), m.tok.decode(&want)));
+        // max_tokens beyond the window still answers.
+        assert!(m.generate(&req(&long, 99, &[])).is_ok());
     }
 
     #[test]
@@ -230,7 +349,10 @@ mod tests {
         // Without a BOS an empty context is refused.
         let m = imported(&llama::tiny_llama(&[]));
         let e = m.score("", "ab").unwrap_err().to_string();
-        assert!(e.contains("defines no BOS token"), "{e}");
+        assert!(
+            e.contains("context is empty and the model prepends no BOS token"),
+            "{e}"
+        );
         assert_eq!(m.score("a", "b").unwrap().0.n_tokens, 1);
     }
 
@@ -287,9 +409,9 @@ mod tests {
         assert!(g.n_tokens <= 3 && g.n_tokens >= 1, "{g:?}");
         // A stop that never appears changes nothing.
         assert_eq!(m.generate(&req("ab", 10, &["zzzz"])).unwrap(), full);
-        // The context window (16) caps the generation; a prompt that fills it is an error.
+        // The context window (16) caps the generation; a long prompt is cut, not refused.
         assert_eq!(m.generate(&req("ab", 99, &[])).unwrap().n_tokens, 14);
-        assert!(m.generate(&req(&"a".repeat(16), 1, &[])).is_err());
+        assert!(m.generate(&req(&"a".repeat(16), 1, &[])).is_ok());
         assert!(
             m.generate(&req("", 1, &[])).is_err(),
             "an empty prompt without BOS"

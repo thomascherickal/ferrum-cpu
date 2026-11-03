@@ -10,7 +10,7 @@ pub const USAGE: &str =
 [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] \
 [--repetition-penalty 1.0] [--quant int4|int8|f32] [--force] [--token <t>] \
 [--allow-unauthenticated] [--help] [--version]
---quant and --force apply to imported llama/qwen2 GGUFs only (default int4; --force skips the \
+--quant and --force apply to imported llama/qwen2 GGUFs only (default int8; --force skips the \
 RAM guard); Ferrum's own models load as saved
 bearer token: env FERRUM_TOKEN (preferred; a --token value shows in `ps`) or --token; \
 a non-loopback --host needs one unless --allow-unauthenticated is given";
@@ -46,7 +46,7 @@ pub struct Config {
     /// Bearer token (`--token`, else `$FERRUM_TOKEN`); `None` means no authentication.
     pub token: Option<String>,
     pub allow_unauthenticated: bool,
-    /// In-memory precision of an imported GGUF (`--quant`, default int4; `None` = f32).
+    /// In-memory precision of an imported GGUF (`--quant`, default int8; `None` = f32).
     /// Ferrum's own models ignore it.
     pub quant: Option<QKind>,
     /// Load an imported GGUF even when the RAM guard refuses it (`--force`).
@@ -63,7 +63,7 @@ impl Default for Config {
             limits: Limits::default(),
             token: None,
             allow_unauthenticated: false,
-            quant: Some(QKind::Int4),
+            quant: Some(QKind::Int8),
             force: false,
         }
     }
@@ -236,7 +236,7 @@ mod tests {
                 limits: Limits::default(),
                 token: None,
                 allow_unauthenticated: false,
-                quant: Some(QKind::Int4),
+                quant: Some(QKind::Int8),
                 force: false,
             }
         );
