@@ -40,9 +40,14 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, na
     };
   }
   const intervals = [];
+  // Short timers (debounces) run for real, cut to 5 ms. Long ones (>= 1 s: toast lifetimes) are
+  // only recorded, like intervals, so a toast never vanishes under load before a test reads it;
+  // a test fires one with `timeouts[i].f()`.
+  const timeouts = [];
   const sandbox = {
     window: win, document: doc, console, crypto: globalThis.crypto, Promise, Math, Number, JSON, Array, String, Object, Error, parseInt, parseFloat, isNaN,
-    setTimeout: (f, ms) => setTimeout(f, Math.min(ms || 0, 5)), clearTimeout, setInterval: (f, ms) => { intervals.push({ f, ms }); return intervals.length; },
+    setTimeout: (f, ms) => ((ms || 0) >= 1000 ? -timeouts.push({ f, ms }) : setTimeout(f, Math.min(ms || 0, 5))),
+    clearTimeout, setInterval: (f, ms) => { intervals.push({ f, ms }); return intervals.length; },
     clearInterval() {},
   };
   Object.assign(sandbox, win);
@@ -52,7 +57,7 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, na
   sandbox.window = sandbox; // like a browser: window === the global object
   vm.createContext(sandbox);
   for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: path.join(__dirname, f) });
-  return { doc, win, calls, listeners, intervals, emit: (name, payload) => listeners[name]({ payload }), fireWindow: (t) => (winListeners[t] || []).forEach((f) => f({ type: t })) };
+  return { doc, win, calls, listeners, intervals, timeouts, emit: (name, payload) => listeners[name]({ payload }), fireWindow: (t) => (winListeners[t] || []).forEach((f) => f({ type: t })) };
 }
 
 const settle = async (n = 4) => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };

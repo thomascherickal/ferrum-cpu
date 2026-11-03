@@ -460,7 +460,14 @@ mod tests {
         // Best-of-N timing makes this load-independent; the floor (0.25 GB/s)
         // is still far above a broken result (0, or a bytes/secs mix-up) and
         // below any real machine, even a debug build on a loaded runner.
-        assert!(bw > 2.5e8 && bw < 2e12, "implausible bandwidth: {bw} B/s");
+        // Under cargo-llvm-cov (it sets CARGO_LLVM_COV for the test run) the
+        // instrumented copy loop measured 0.16-0.21 GB/s on CI, so there only
+        // a positive, finite result is required.
+        let floor = std::env::var_os("CARGO_LLVM_COV").map_or(2.5e8, |_| 0.0);
+        assert!(
+            bw.is_finite() && bw > floor && bw < 2e12,
+            "implausible bandwidth: {bw} B/s"
+        );
     }
 
     #[test]

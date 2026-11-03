@@ -120,6 +120,11 @@ assert.ok(E.details("bare").includes("hint: -"));
   // The toast is cut too.
   const errToasts = Array.from($("toasts").children).filter((t) => t.classList.contains("err"));
   assert.ok(errToasts.some((t) => t.textContent.length <= 241 && t.textContent.endsWith("…")));
+  // A toast leaves when its timer fires: 15 s for an error, 5 s for the rest.
+  assert.deepStrictEqual([...new Set(app.timeouts.map((t) => t.ms))].sort((x, y) => x - y), [5000, 15000]);
+  const before = $("toasts").children.length;
+  app.timeouts.forEach((t) => t.f());
+  assert.strictEqual($("toasts").children.length, before - app.timeouts.length);
 
   // Copy falls back when the clipboard API is missing, and says so when nothing works.
   const bare = loadApp({ backend, navigator: undefined });

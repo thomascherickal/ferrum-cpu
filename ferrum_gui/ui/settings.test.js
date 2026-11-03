@@ -239,8 +239,6 @@ function page(storage) {
     assert.ok(b.calls.some((c) => c.cmd === "save_corpus" && JSON.parse(c.args.text).x === 1));
 
     // Reset settings: link wipes the memory, the form and the table.
-    // The test sandbox cuts every timer to 5 ms, so a toast is gone after the next loop turns
-    // under load: read it right after the synchronous click, before settling.
     $b("resetSettings").dispatch("click");
     assert.ok(Array.from($b("toasts").children).some((t) => /Settings reset/.test(t.textContent)));
     await settle(4);
