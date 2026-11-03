@@ -93,8 +93,15 @@ fn prepare_is_deterministic() {
         );
     }
     // Manifests differ only in the --out argument.
-    let ma = read(&d.join("a/manifest.json")).replace(d.join("a").to_str().unwrap(), "OUT");
-    let mb = read(&d.join("b/manifest.json")).replace(d.join("b").to_str().unwrap(), "OUT");
+    // The manifest is JSON, so Windows paths appear with doubled backslashes: replace both forms.
+    let strip = |sub: &str| {
+        let p = d.join(sub);
+        let p = p.to_str().unwrap();
+        read(&d.join(sub).join("manifest.json"))
+            .replace(&p.replace('\\', "\\\\"), "OUT")
+            .replace(p, "OUT")
+    };
+    let (ma, mb) = (strip("a"), strip("b"));
     assert_eq!(ma, mb);
 }
 

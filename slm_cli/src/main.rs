@@ -101,6 +101,20 @@ use crate::run_gguf::*;
 use crate::train::*;
 use crate::usage::*;
 
+/// Whether a panic message is `println!` failing on a reader that went away: "Broken pipe"
+/// on Unix, "The pipe is being closed. (os error 232)" (or error 109/233) on Windows.
+fn is_closed_stdout(msg: &str) -> bool {
+    msg.starts_with("failed printing to stdout")
+        && [
+            "Broken pipe",
+            "(os error 232)",
+            "(os error 109)",
+            "(os error 233)",
+        ]
+        .iter()
+        .any(|m| msg.contains(m))
+}
+
 pub(crate) fn main() {
     // `train_transformer info m.gguf | head -1`: `println!` panics on a closed pipe. The
     // lazy fix for every print site at once: a panic whose message is that failure exits 0.
@@ -110,7 +124,7 @@ pub(crate) fn main() {
             .payload()
             .downcast_ref::<String>()
             .map_or("", |s| s.as_str());
-        if msg.starts_with("failed printing to stdout") && msg.contains("Broken pipe") {
+        if is_closed_stdout(msg) {
             std::process::exit(0);
         }
         default_hook(info);
@@ -178,5 +192,25 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         "tokenize" => cmd_tokenize(&args),
         // ponytail: `spec_for` accepted `cmd`, so after the arms above only `info` is left.
         _ => cmd_info(&args),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_closed_stdout;
+
+    #[test]
+    fn closed_stdout_messages_by_platform() {
+        for (msg, want) in [
+            ("failed printing to stdout: Broken pipe (os error 32)", true),
+            ("failed printing to stdout: The pipe is being closed. (os error 232)", true),
+            ("failed printing to stdout: The pipe has been ended. (os error 109)", true),
+            ("failed printing to stdout: No process is on the other end of the pipe. (os error 233)", true),
+            ("failed printing to stdout: No space left on device (os error 28)", false),
+            ("Broken pipe", false),
+            ("", false),
+        ] {
+            assert_eq!(is_closed_stdout(msg), want, "{msg}");
+        }
     }
 }

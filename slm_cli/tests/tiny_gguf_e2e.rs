@@ -445,6 +445,7 @@ fn runtime_exports_refuse_llama_and_write_a_modelfile_for_gpt2() {
 /// long as the tensor claims, and a sparse file costs no disk. Commands that size a model from
 /// its tensor directory refuse it before reading any weights. Returns `false` (and removes the
 /// file) when the temp filesystem cannot make a sparse file that large, so the caller can skip.
+#[cfg(target_os = "linux")]
 fn write_over_budget_llama(path: &str) -> bool {
     const ELEMENTS: u64 = 1 << 36;
     const Q8_0: u32 = 8;
@@ -497,6 +498,8 @@ fn bare_gguf(arch: &str, ty: u32) -> Vec<u8> {
     b.into_bytes()
 }
 
+// The RAM guard reads /proc/meminfo, so it is inactive off Linux (Status 7.0.13).
+#[cfg(target_os = "linux")]
 #[test]
 fn every_loading_command_refuses_a_model_over_the_ram_budget() {
     let t = Tmp::new("budget");

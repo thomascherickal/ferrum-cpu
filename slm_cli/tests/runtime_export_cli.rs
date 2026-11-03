@@ -525,5 +525,7 @@ fn require_runtimes_turns_skip_into_failure() {
     assert!(is_required(Some("1")));
     assert!(!is_required(Some("0")) && !is_required(Some("")) && !is_required(None));
     assert!(tool("FERRUM_NO_SUCH_ENV", "no-such-tool-xyz", "nowhere").is_err());
-    assert!(tool("FERRUM_NO_SUCH_ENV", "sh", "nowhere").is_ok());
+    // A tool every OS has on PATH (Windows has no `sh`).
+    let present = if cfg!(windows) { "cmd.exe" } else { "sh" };
+    assert!(tool("FERRUM_NO_SUCH_ENV", present, "nowhere").is_ok());
 }
