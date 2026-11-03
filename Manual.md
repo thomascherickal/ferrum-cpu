@@ -1901,12 +1901,35 @@ see what changed. Stages whose inputs did not change are skipped. The
 not need the LightEval environment; run it with
 `dvc repro eval/lighteval/dvc.yaml:lighteval`.
 
+Keep dvc's state inside the project (it otherwise writes under `~/.cache`,
+`~/.config` and `~/.local/share`) by exporting these first, from the repo root:
+
+```bash
+S=$PWD/.superpowers/scratch
+export XDG_CACHE_HOME=$S/xdg-cache XDG_CONFIG_HOME=$S/xdg-config XDG_DATA_HOME=$S/xdg-data \
+       DVC_SITE_CACHE_DIR=$S/dvc-site DVC_GLOBAL_CONFIG_DIR=$S/dvc-global \
+       DVC_NO_ANALYTICS=1 PIP_CACHE_DIR=$S/pip-cache
+```
+
+**After renaming or moving the project directory**, `.venv/bin/dvc` fails with
+"required file not found": a venv hard-codes its absolute path in every script's
+shebang (`head -1 .venv/bin/dvc`). The venv is scratch, so recreate it:
+
+```bash
+rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
+```
+
+`dvc status` shows what is stale. `prepare` and `train` depend on the whole
+`ferrum_core/src` and `slm_cli/src` directories, so any source edit makes them
+stale and `dvc.lock` falls behind until the stage is re-run
+(`dvc repro prepare` is cheap; `train` is not).
+
 Notes:
 
 - `data/` and `models/` are git-ignored and tracked by DVC. `dvc.lock` is
   committed. `.dvc/` is initialised with **no remote**; a remote is out of scope.
-- Training is deterministic for a fixed `--threads` (the pipeline leaves it at
-  auto), so `dvc repro --force train` gives the same `models/slm.gguf` sha256 on
+- Training is deterministic for a fixed `--threads` (the pipeline pins it with
+  `train.threads` in `params.yaml`), so `dvc repro --force train` gives the same `models/slm.gguf` sha256 on
   the same machine. On a machine with a different core count the data-parallel
   shard count changes, and so do the trained weights
   ([§6.8](#68-multi-threading-and-determinism)).
