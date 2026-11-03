@@ -93,8 +93,10 @@ jobs:
       - name: Run the Python tests
         run: python -m unittest discover -s eval/lighteval -p 'test_*.py'
 
-  # Line-coverage gate. Floors are the whole percent the daily noon run met (CLAUDE.md rules 10 and 15):
+  # Line-coverage gate, on every push. Floors are the whole percent the daily local noon run met
+  # (CLAUDE.md rules 10 and 15; rule 10 limits local runs only):
   # Rust 99.70, GUI 98.75, JS 98.06 (demo) / 100 (ui), Python 100 on 2026-11-03.
+  # Node is pinned to 24 to match the Node of that local measurement (v24.19.0).
   # ponytail: these are local numbers; re-check after the first CI run, because env-dependent lines
   # (.ferrum-dev, tool-gated runtimes, core count, /proc) may cover differently here.
   coverage:
@@ -127,7 +129,7 @@ jobs:
         run: scripts/coverage.sh --gui --fail-under 98
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: UI and demo JavaScript
         run: scripts/coverage.sh --js --fail-under 98
       - uses: actions/setup-python@v5
