@@ -3019,7 +3019,7 @@ without a GPU, a Python runtime, or a network connection**.
 | 3 | Domain autocomplete (shell history, logs, code, templates) | BPE captures flags, paths, and identifiers; deterministic suggestions; millisecond latency |
 | 4 | Privacy-preserving on-device modeling | Nothing leaves the machine; no telemetry; auditable code |
 | 5 | In-browser demos (WASM) | `slm_wasm` runs models client-side with no backend or API key |
-| 6 | Reproducible research and teaching | Readable forward and backward pass; bit-for-bit reproducible |
+| 6 | Reproducible research and teaching | Readable forward and backward pass; bit-for-bit reproducible on one platform (not across operating systems) |
 | 7 | Embedded and resource-constrained systems | Kilobyte-scale int8/int4 models; serial, predictable timing |
 | 8 | Air-gapped and field deployments | One file plus a static binary; nothing to fetch or update |
 | 9 | Cheap, horizontally scaled CPU inference | Embed `ferrum_core` in a Rust service with no model server |

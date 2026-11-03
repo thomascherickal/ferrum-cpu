@@ -134,16 +134,25 @@ Do not break these; they are the product's selling points.
 - **`#![forbid(unsafe_code)]`** in every crate root, including examples,
   benches, and build scripts. A repo-wide test (`test_no_unsafe`) scans for
   `unsafe`. No SIMD intrinsics. Never call a dependency's `unsafe fn` directly.
-- **Deterministic at any thread count.** Matmuls split across the persistent
-  worker pool in `parallel.rs`; results must stay bit-for-bit identical
-  regardless of `FERRUM_NUM_THREADS`, and generation and evaluation are
-  identical at any thread count. The one exception is the data-parallel
+- **Deterministic at any thread count, on one platform.** Matmuls split across
+  the persistent worker pool in `parallel.rs`; results must stay bit-for-bit
+  identical regardless of `FERRUM_NUM_THREADS`, and generation and evaluation
+  are identical at any thread count. The one exception is the data-parallel
   trainer: `train --threads 0` (auto) takes its shard count from
   `FERRUM_NUM_THREADS` or the core count, and a different shard count changes
   the trained weights. Training is reproducible for a fixed `--threads`, and
-  the DVC pipeline pins it (`train.threads` in `params.yaml`), so `dvc.lock`
-  reproduces on any machine.
-  `cargo test -p slm_cli --release --test determinism` enforces the rest.
+  the DVC pipeline pins it (`train.threads` in `params.yaml`). That is a
+  per-platform guarantee: CI found the f32 bits recorded on Linux (x86_64 and
+  aarch64 agree) did not match on macOS and Windows, so bit-identity across
+  operating systems is NOT claimed, and `dvc.lock` hashes were recorded on
+  Linux x86_64. `cargo test -p slm_cli --release --test determinism` enforces
+  the thread-count part.
+- **Platforms.** Linux x86_64 is the gated platform (every CI job). Linux
+  aarch64, macOS (Apple silicon), Windows and Windows-on-Arm run only the
+  `portable` job (build + test, not a required gate); what that job found is
+  recorded in `Status.md` §5 and §7.0.13. Some behaviour is Linux-only: the
+  RAM guard reads `/proc/meminfo`, and the Linux-recorded bit goldens do not
+  hold elsewhere. Do not claim a platform works until its CI job is green.
 - **WASM-portable.** `ferrum_core` and `slm_wasm` must compile and run for
   `wasm32-unknown-unknown` (no threads/fs assumptions on that path). CI builds
   `slm_wasm` for wasm32.

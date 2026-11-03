@@ -24,7 +24,7 @@ for small models. It is not a runtime for frontier LLMs.
 | Property | What it means |
 |---|---|
 | **Few dependencies, each with a reason** | `ferrum_core` has two (`unicode-general-category` and `unicode-normalization`, pure-Rust tables) and hand-writes its threading and matmul kernels. The CLI adds `sha2` and `serde_json`, the server `axum`/`tokio`/`serde`, the browser crate `wasm-bindgen`, and the GUI Tauri plus a few helper crates. A crate is admitted only if it is faster on a benchmark and keeps results deterministic and `wasm32` builds working. `rayon`, `ndarray`, and `faer` were measured and none is in the tree ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)). |
-| **CPU only, deterministic** | Every matmul splits across a worker pool. Training, generation, and evaluation give bit-for-bit identical results at any pool size (override with `FERRUM_NUM_THREADS`), and a test enforces this. One knob changes the trained weights: the number of data-parallel training workers, `--threads` (auto = the core count). Fix it to reproduce a run on another machine. |
+| **CPU only, deterministic** | Every matmul splits across a worker pool. Training, generation, and evaluation give bit-for-bit identical results at any pool size on one platform (override with `FERRUM_NUM_THREADS`), and a test enforces this. Across operating systems the last float bits can differ (the bits recorded on Linux did not match on macOS and Windows in CI). One knob changes the trained weights: the number of data-parallel training workers, `--threads` (auto = the core count). Fix it to reproduce a run on another machine of the same platform. |
 | **GGUF only** | Every file Ferrum writes is GGUF v3: models, training checkpoints, tokenizer files, and pre-tokenized corpora. The old FINF `.bin` format is removed. |
 | **Runs in llama.cpp, Ollama, and LM Studio** | A trained BPE SLM is a `gpt2`-architecture GGUF. The same file gives the same greedy continuation in Ferrum and in llama.cpp (a test checks this). Models can be as small as about 0.1M parameters. |
 | **Quantization-aware** | QAT simulates GGUF Q8_0 exactly, so an int8 file reloads bit-identical to the model you trained. int4 (Q4_0) export is a lossy option. |
@@ -89,7 +89,7 @@ to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
 | Requirement | Version | Notes |
 |---|---|---|
 | Rust + Cargo | 1.87 or newer, edition 2021 | Install via [rustup](https://rustup.rs). The dependency tree needs 1.85 (`sha2`), and the code uses `is_multiple_of`, stable since 1.87. Built and tested with 1.96.0; older toolchains are untested. |
-| OS | Linux, macOS, or Windows | Pure CPU code with no platform-specific paths |
+| OS | Linux (x86_64 gated in CI; aarch64 also tested), macOS or Windows (built and tested by a non-gating CI job whose first runs found failures, see [Status §5](Status.md#5-known-issues)) | Pure CPU code; the RAM guard (it refuses a run that would not fit) works on Linux only |
 | `curl` | any | Only for `scripts/fetch.sh` (Samples 1 and 2) |
 | GNU coreutils | Linux | The samples use `sha256sum`, `md5sum`, and `timeout`; they are written for Linux |
 | Python 3.10+ | optional | Only for DVC and LightEval (Samples 2 and 8) |
@@ -180,7 +180,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
 
 Edit `params.yaml` and run `dvc repro` again to rerun only the stages that
 changed. Training is deterministic, so the same inputs give the same
-`models/slm.gguf` on any machine: the pipeline pins the data-parallel shard count (`train.threads` in `params.yaml`; [Manual §6.8](Manual.md#68-multi-threading-and-determinism)).
+`models/slm.gguf` on any machine of the same platform (the lock hashes were recorded on Linux x86_64; other operating systems can differ in the last float bits): the pipeline pins the data-parallel shard count (`train.threads` in `params.yaml`; [Manual §6.8](Manual.md#68-multi-threading-and-determinism)).
 
 ### Use the library
 
