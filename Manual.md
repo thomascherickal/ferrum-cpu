@@ -1629,10 +1629,10 @@ load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](d
 
 - **Scoring** (`/v1/loglikelihood`, `/v1/loglikelihood_rolling`) puts the GGUF's BOS token
   (`tokenizer.ggml.bos_token_id`) in front whenever the file defines one, even when its
-  `add_bos_token` is false (SmolLM2), so the first real token is scored given BOS, as
-  lm-evaluation-harness and llama.cpp's perplexity do. Without a BOS the first token of a
-  rolling text has nothing to condition on and is not scored (`n_tokens` is one less), and a
-  loglikelihood request with an empty `context` is a `422`. `eval-gguf` prepends BOS only
+  `add_bos_token` is false (SmolLM2), so the first real token is scored given BOS.
+  Without a BOS the first token of a rolling text has nothing to condition on and is not
+  scored (`n_tokens` is one less), and a loglikelihood request with an empty `context` is a
+  `422`. `eval-gguf` prepends BOS only
   when `add_bos_token` asks for it, so on such a file its numbers differ from the server's.
 - `/v1/loglikelihood` splits like a Ferrum model: trailing whitespace of the context moves
   onto the continuation, and the context plus continuation is encoded together when that
@@ -1641,8 +1641,9 @@ load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](d
   the first starts at token 0, each later one `context / 2` tokens before its first unscored
   token, so every token is scored once with at least half a window of history (the rule of
   `score_rolling` and `eval-gguf`). The log-softmax is exact (no probability floor). A full
-  window holds `context × vocab` f32 logits at once (8,192 × 49,152 ≈ 1.6 GB for SmolLM2),
-  so `--max-chars` is also the memory bound for long texts.
+  window holds `context × vocab` f32 logits at once (8,192 × 49,152 ≈ 1.6 GB for SmolLM2,
+  computed from that shape, not measured), so `--max-chars` is also the memory bound for
+  long texts.
 - **Generation** is a raw completion (no chat template; `run-gguf --raw`): the prompt gets
   BOS only when `add_bos_token` asks for it (as `run-gguf` does), generation stops at the
   EOS token (not in the text, not counted) or at the first stop string (cut from the text;

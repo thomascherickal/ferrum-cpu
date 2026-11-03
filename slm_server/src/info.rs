@@ -95,6 +95,13 @@ mod tests {
             assert_eq!(i.params, 2 * 256 + 2 * (16 + 256 + 384) + 8);
             assert_eq!(i.model_sha256, "ab");
         }
+        let g = Gguf::parse(llama::tiny_llama_spm()).unwrap();
+        let tok = GgufTokenizer::from_gguf(&g).unwrap();
+        let m = g.load_llama_prec(None).unwrap();
+        assert_eq!(
+            info_for_imported(&g, &m, &tok, None, String::new()).tokenizer,
+            "spm"
+        );
     }
 
     #[test]

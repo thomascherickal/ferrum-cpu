@@ -78,11 +78,12 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/loglikeliho
 Scoring puts the file's BOS token first whenever the file defines one. SmolLM2 defines
 one but sets `add_bos_token = false`. Because of that, all 7 tokens of the sentence are
 scored, the first one given BOS. Generation follows `add_bos_token`, so the prompt
-above got no BOS. That explains how ` Paris` is generated greedily but scores
-`greedy: false`: given BOS, the model's top choice for that first token is something
-else. Texts longer than the context are scored in windows of the context length.
+above got no BOS. The two routes therefore see different inputs: ` Paris` was
+generated greedily from the prompt without BOS, and it scores `greedy: false` with BOS
+in front. Texts longer than the context are scored in windows of the context length.
 Each window starts half a window before its first unscored token.
 
-Stop the server with Ctrl-C. The GUI's Serve tab runs the same server, but it has no
-`--quant` control yet and loads imported files at int4. That was not tried in this
-walk-through. The browser bindings (`slm_wasm`) load Ferrum's own models only.
+Stop the server with Ctrl-C. The GUI's Serve tab runs the same server. It has no
+`--quant` control yet, so according to the code it loads imported files at int4. That
+was read from the code and not tried in this walk-through. The browser bindings
+(`slm_wasm`) load Ferrum's own models only.

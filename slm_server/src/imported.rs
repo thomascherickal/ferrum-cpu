@@ -302,5 +302,30 @@ mod tests {
         let space = m.tok.token_id("\u{120}").unwrap();
         let a = m.tok.token_id("a").unwrap();
         assert_eq!(m.continuation_text(a, &[space, a]), " a");
+        // SentencePiece drops the dummy-prefix space of a decode: decoded alone, a
+        // continuation that starts a new word would lose its space; after the anchor it keeps it.
+        let m = imported(&llama::tiny_llama_spm());
+        let (wa, b) = (
+            m.tok.token_id("\u{2581}a").unwrap(),
+            m.tok.token_id("b").unwrap(),
+        );
+        let a = m.tok.token_id("a").unwrap();
+        assert_eq!(m.tok.decode(&[wa, b]), "ab");
+        assert_eq!(m.continuation_text(a, &[wa, b]), " ab");
+        // An anchor whose decode is not a prefix (a lone byte of a UTF-8 sequence) falls back.
+        let m = imported(&llama::tiny_llama(&[
+            (
+                "tokenizer.ggml.tokens",
+                MetaValue::Array(
+                    ["<0xC3>", "<0xA9>", "a"]
+                        .iter()
+                        .map(|t| MetaValue::String(t.to_string()))
+                        .chain((3..32).map(|i| MetaValue::String(format!("<f{i}>"))))
+                        .collect(),
+                ),
+            ),
+            ("tokenizer.ggml.model", MetaValue::String("llama".into())),
+        ]));
+        assert_eq!(m.continuation_text(0, &[1, 2]), m.tok.decode(&[1, 2]));
     }
 }

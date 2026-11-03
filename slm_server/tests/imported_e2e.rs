@@ -178,16 +178,18 @@ fn tiny_llama_over_http_matches_the_library() {
     // A stop string cuts the text where it first appears.
     let free = r.generate("ab", 10, &greedy(), 0);
     let text = free["text"].as_str().unwrap();
-    if let Some(ch) = text.chars().nth(1) {
-        let cut = text.find(ch).unwrap();
-        let got = results(
-            &addr,
-            "/v1/generate",
-            json!({"requests": [{"prompt": "ab", "max_tokens": 10, "stop": [ch.to_string()]}]}),
-        );
-        assert_eq!(got[0]["text"], text[..cut]);
-        assert!(got[0]["n_tokens"].as_u64() <= free["n_tokens"].as_u64());
-    }
+    let ch = text
+        .chars()
+        .nth(1)
+        .expect("the tiny model generates at least two characters");
+    let cut = text.find(ch).unwrap();
+    let got = results(
+        &addr,
+        "/v1/generate",
+        json!({"requests": [{"prompt": "ab", "max_tokens": 10, "stop": [ch.to_string()]}]}),
+    );
+    assert_eq!(got[0]["text"], text[..cut]);
+    assert!(got[0]["n_tokens"].as_u64() < free["n_tokens"].as_u64());
 
     // Loglikelihoods, BOS first; the long text spans several context windows.
     let long = "abcdefghij".repeat(4);

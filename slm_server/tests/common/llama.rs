@@ -99,3 +99,19 @@ pub fn tiny_llama_bos_eos() -> Vec<u8> {
         ("tokenizer.ggml.add_bos_token", MetaValue::Bool(true)),
     ])
 }
+
+/// [`tiny_llama`] with a SentencePiece tokenizer (`tokenizer.ggml.model = "llama"`):
+/// `a`..`z`, `▁`, `▁a`, `<f0>`..`<f3>`.
+pub fn tiny_llama_spm() -> Vec<u8> {
+    let mut v: Vec<String> = ('a'..='z').map(|c| c.to_string()).collect();
+    v.push("\u{2581}".into());
+    v.push("\u{2581}a".into());
+    v.extend((0..4).map(|i| format!("<f{i}>")));
+    tiny_llama(&[
+        ("tokenizer.ggml.model", MetaValue::String("llama".into())),
+        (
+            "tokenizer.ggml.tokens",
+            MetaValue::Array(v.into_iter().map(MetaValue::String).collect()),
+        ),
+    ])
+}
