@@ -51,6 +51,10 @@
       <p class="hint">Download text from the internet (e.g. a Project Gutenberg
         <code>.txt</code>), clean it to match the SLM's requirements, and save a
         training corpus.</p>
+      <div class="row">
+        <div class="progress" role="progressbar" aria-label="Download and clean progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dsBar"></div></div>
+        <span id="dsProgress" class="muted" role="status">idle</span>
+      </div>
 
       <fieldset>
         <legend>Browse CPU-friendly datasets (HuggingFace / Kaggle)</legend>

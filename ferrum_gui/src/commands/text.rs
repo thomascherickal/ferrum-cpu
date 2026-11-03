@@ -2,10 +2,12 @@
 
 use crate::error::CmdError;
 use crate::paths::checked_path;
+use crate::progress::Throttle;
 use ferrum_core::{clean_corpus, corpus_stats, CleanOptions};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
+use tauri::{AppHandle, Emitter, Runtime};
 
 /// HTTP client with bounded connect/read timeouts so a hung or slow host can
 /// never block a download task indefinitely (G2).
@@ -63,7 +65,7 @@ pub struct CleanOpts {
     pub max_chars: Option<usize>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanResult {
     pub cleaned: String,
@@ -75,10 +77,91 @@ pub struct CleanResult {
     pub unique_chars: usize,
 }
 
-/// Clean raw text into a training-ready corpus and report statistics. Pure;
-/// does not touch disk.
+/// Bytes of raw text cleaned between two progress checks.
+const CLEAN_CHUNK: usize = 256 * 1024;
+
+/// [`clean_corpus`] in line-aligned chunks, calling `progress(bytes, documents)` after each
+/// (`bytes` = text consumed, counted after Gutenberg stripping; `documents` = non-empty lines). The result equals `clean_corpus(raw, options)`: Gutenberg
+/// stripping runs first and whitespace collapsing and the length cap run last, both over the
+/// whole text; the per-character steps in between are local, so chunks do not change them.
+fn clean_with_progress(
+    raw: &str,
+    options: &CleanOptions,
+    chunk_bytes: usize,
+    progress: &mut dyn FnMut(u64, u64),
+) -> String {
+    let flags = |gut, col, max| CleanOptions {
+        strip_gutenberg: gut,
+        lowercase: false,
+        collapse_whitespace: col,
+        normalize_punctuation: false,
+        strip_control_chars: false,
+        max_chars: max,
+    };
+    let stripped;
+    let body = if options.strip_gutenberg {
+        stripped = clean_corpus(raw, &flags(true, false, None));
+        stripped.as_str()
+    } else {
+        raw
+    };
+    let per_char = CleanOptions {
+        strip_gutenberg: false,
+        collapse_whitespace: false,
+        max_chars: None,
+        ..options.clone()
+    };
+    let mut out = String::with_capacity(body.len());
+    let (mut start, mut documents) = (0usize, 0u64);
+    while start < body.len() {
+        let mut end = (start + chunk_bytes).min(body.len());
+        while !body.is_char_boundary(end) {
+            end += 1;
+        }
+        // Cut after a newline (or at the end) so a chunk holds whole lines.
+        end = body[end..].find('\n').map_or(body.len(), |i| end + i + 1);
+        let chunk = &body[start..end];
+        documents += chunk.lines().filter(|l| !l.trim().is_empty()).count() as u64;
+        out.push_str(&clean_corpus(chunk, &per_char));
+        start = end;
+        progress(start as u64, documents);
+    }
+    if options.collapse_whitespace || options.max_chars.is_some() {
+        out = clean_corpus(
+            &out,
+            &flags(false, options.collapse_whitespace, options.max_chars),
+        );
+    }
+    out
+}
+
+/// Clean raw text into a training-ready corpus and report statistics. Does not touch
+/// disk. Progress streams as `clean-progress {bytes, documents}` events, at most one per
+/// 100 ms, and a final one with the totals.
 #[tauri::command]
-pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, CmdError> {
+pub async fn clean_text<R: Runtime>(
+    app: AppHandle<R>,
+    raw: String,
+    opts: CleanOpts,
+) -> Result<CleanResult, CmdError> {
+    crate::error::blocking(move || {
+        let mut th = Throttle::wall();
+        clean_text_with(&raw, opts, &mut th, &mut |bytes, documents| {
+            let _ = app.emit(
+                "clean-progress",
+                serde_json::json!({ "bytes": bytes, "documents": documents }),
+            );
+        })
+    })
+    .await
+}
+
+fn clean_text_with(
+    raw: &str,
+    opts: CleanOpts,
+    throttle: &mut Throttle,
+    emit: &mut dyn FnMut(u64, u64),
+) -> Result<CleanResult, String> {
     let options = CleanOptions {
         strip_gutenberg: opts.strip_gutenberg,
         lowercase: opts.lowercase,
@@ -87,7 +170,15 @@ pub fn clean_text(raw: String, opts: CleanOpts) -> Result<CleanResult, CmdError>
         strip_control_chars: opts.strip_control_chars,
         max_chars: opts.max_chars.filter(|&n| n > 0),
     };
-    let cleaned = clean_corpus(&raw, &options);
+    let mut last = (0, 0);
+    let cleaned = clean_with_progress(raw, &options, CLEAN_CHUNK, &mut |b, d| {
+        last = (b, d);
+        if throttle.ready() {
+            emit(b, d);
+        }
+    });
+    // The final event always goes out, with the totals.
+    emit(last.0, last.1);
     if cleaned.trim().is_empty() {
         return Err("nothing left after cleaning — check the source and options".into());
     }
@@ -135,6 +226,99 @@ pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn opts(all: bool, max: Option<usize>) -> CleanOpts {
+        CleanOpts {
+            strip_gutenberg: all,
+            lowercase: all,
+            collapse_whitespace: all,
+            normalize_punctuation: all,
+            strip_control_chars: all,
+            max_chars: max,
+        }
+    }
+
+    const SAMPLE: &str = "\u{feff}Intro\r\n*** START OF THE PROJECT GUTENBERG EBOOK X ***\r\n\
+        Hello\u{a0}\u{201c}World\u{201d}   \r\n\r\n\r\n\r\nSecond \u{2014} line\x01  \n\n\n\nThird…\n\
+        *** END OF THE PROJECT GUTENBERG EBOOK X ***\nTail";
+
+    #[test]
+    fn chunked_cleaning_equals_clean_corpus_for_every_chunk_size_and_option_mix() {
+        for all in [false, true] {
+            for max in [None, Some(40)] {
+                let o = opts(all, max);
+                let options = CleanOptions {
+                    strip_gutenberg: o.strip_gutenberg,
+                    lowercase: o.lowercase,
+                    collapse_whitespace: o.collapse_whitespace,
+                    normalize_punctuation: o.normalize_punctuation,
+                    strip_control_chars: o.strip_control_chars,
+                    max_chars: max,
+                };
+                for chunk in [1, 7, 40, 1 << 20] {
+                    let got = clean_with_progress(SAMPLE, &options, chunk, &mut |_, _| {});
+                    assert_eq!(got, clean_corpus(SAMPLE, &options), "{all} {max:?} {chunk}");
+                }
+            }
+        }
+        // Nothing to clean: no chunk, no progress, empty result.
+        let mut calls = 0;
+        let o = CleanOptions::default();
+        assert_eq!(clean_with_progress("", &o, 8, &mut |_, _| calls += 1), "");
+        assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn clean_emits_progress() {
+        let raw = "alpha\n\nbeta gamma\ndelta\n".repeat(50);
+        // A clock 30 ms later at every check: a throttled stream, then the final event.
+        let mut ms = 0;
+        let mut th = Throttle::new(|| {
+            ms += 30;
+            ms
+        });
+        let mut ev: Vec<(u64, u64)> = Vec::new();
+        let mut o = opts(false, None);
+        o.collapse_whitespace = true;
+        let r = clean_text_with(&raw, o, &mut th, &mut |b, d| ev.push((b, d))).unwrap();
+        assert!(r.words > 0);
+        // One event per chunk would be 1 here (the text is one 256 KiB chunk): the chunk's
+        // event and the final one carry the totals and the 150 non-empty lines.
+        let last = *ev.last().unwrap();
+        assert_eq!(last, (raw.len() as u64, 150));
+        assert!(ev.windows(2).all(|w| w[0].0 <= w[1].0), "{ev:?}");
+    }
+
+    #[test]
+    fn clean_progress_is_throttled_but_the_final_event_always_goes_out() {
+        // 4 lines, 1-byte chunks => many checks, all at the same instant.
+        let mut th = Throttle::new(|| 0);
+        let mut ev = Vec::new();
+        let options = CleanOptions::default();
+        let mut sink = |b, d| ev.push((b, d));
+        let mut last = (0, 0);
+        clean_with_progress("a\nb\nc\nd\n", &options, 1, &mut |b, d| {
+            last = (b, d);
+            if th.ready() {
+                sink(b, d);
+            }
+        });
+        sink(last.0, last.1);
+        // The burst passed one event (the first); the final one is extra and carries the totals.
+        assert_eq!(ev, [(2, 1), (8, 4)]);
+    }
+
+    #[test]
+    fn an_empty_result_is_still_an_error_after_the_final_event() {
+        let mut th = Throttle::new(|| 0);
+        let mut ev = Vec::new();
+        let e = clean_text_with("   \n", opts(false, None), &mut th, &mut |b, d| {
+            ev.push((b, d))
+        })
+        .unwrap_err();
+        assert!(e.contains("nothing left"), "{e}");
+        assert_eq!(ev.last(), Some(&(4, 0)));
+    }
 
     #[test]
     fn read_text_file_caps_the_read_and_refuses_endless_files() {

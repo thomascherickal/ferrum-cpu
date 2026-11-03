@@ -27,7 +27,7 @@ const env = {
   getLive: () => live, openDialog, settings, navigator: window.navigator,
 };
 
-window.FerrumDatasetsTab.create(env);
+const datasetsTab = window.FerrumDatasetsTab.create(env);
 const prepareTab = window.FerrumPrepareTab.create(env);
 const trainTab = window.FerrumTrainTab.create(env);
 const generateTab = window.FerrumGenerateTab.create(env);
@@ -55,6 +55,8 @@ async function wireEvents() {
   await listen("engine-log", (e) => shell.termLine(e.payload, "log"));
   await listen("train-progress", (e) => trainTab.onProgress(e.payload));
   await listen("finetune-progress", (e) => finetuneTab.onProgress(e.payload));
+  await listen("download-progress", (e) => datasetsTab.onDownloadProgress(e.payload));
+  await listen("clean-progress", (e) => datasetsTab.onCleanProgress(e.payload));
   await listen("prepare-progress", (e) => prepareTab.onProgress(e.payload));
   await listen("tokenize-progress", (e) => trainTab.onTokenizeProgress(e.payload));
   await listen("export-progress", (e) => exportTab.onProgress(e.payload));

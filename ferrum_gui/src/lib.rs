@@ -32,6 +32,7 @@ mod jobs;
 mod paths;
 mod preflight;
 mod prepare;
+mod progress;
 mod run;
 mod runtime_export;
 mod serve;

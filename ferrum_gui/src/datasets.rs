@@ -13,9 +13,11 @@
 use crate::commands::http_agent;
 use crate::error::CmdError;
 use crate::paths::checked_dir;
+use crate::progress::Throttle;
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter, Runtime};
 
 /// Upper bound (MB) on datasets we surface as "CPU-friendly". Bigger sets still
 /// download via the generic commands, but are kept out of the curated list so a
@@ -265,6 +267,65 @@ pub struct DownloadResult {
     pub source: String,
 }
 
+/// Download progress: `update` is throttled to one event per 100 ms, `finish` always goes
+/// out. The sink receives `(bytes so far, total if the server said)`.
+pub(crate) struct Progress<'a> {
+    throttle: Throttle<'a>,
+    sink: Box<dyn FnMut(u64, Option<u64>) + 'a>,
+}
+
+impl<'a> Progress<'a> {
+    pub(crate) fn new(throttle: Throttle<'a>, sink: impl FnMut(u64, Option<u64>) + 'a) -> Self {
+        Progress {
+            throttle,
+            sink: Box::new(sink),
+        }
+    }
+
+    /// Reports nothing.
+    #[cfg(test)]
+    pub(crate) fn silent() -> Progress<'static> {
+        Progress::new(Throttle::wall(), |_, _| {})
+    }
+
+    /// Emits `download-progress {id, bytes, total}` for `id` on the real clock.
+    pub(crate) fn events<R: Runtime>(app: AppHandle<R>, id: String) -> Progress<'static> {
+        Progress::new(Throttle::wall(), move |bytes, total| {
+            let _ = app.emit(
+                "download-progress",
+                serde_json::json!({ "id": id, "bytes": bytes, "total": total }),
+            );
+        })
+    }
+
+    pub(crate) fn update(&mut self, bytes: u64, total: Option<u64>) {
+        if self.throttle.ready() {
+            (self.sink)(bytes, total);
+        }
+    }
+
+    pub(crate) fn finish(&mut self, bytes: u64) {
+        (self.sink)(bytes, Some(bytes));
+    }
+}
+
+/// A reader that reports the running byte count after every read.
+struct Tap<'p, 'a, R> {
+    inner: R,
+    bytes: u64,
+    total: Option<u64>,
+    progress: &'p mut Progress<'a>,
+}
+
+impl<R: Read> Read for Tap<'_, '_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.bytes += n as u64;
+        self.progress.update(self.bytes, self.total);
+        Ok(n)
+    }
+}
+
 /// Stream `url` (with optional Basic / Bearer auth) to `dest`, capped at
 /// [`DOWNLOAD_CAP`] (over-cap is an error). Goes through `<dest>.part`. Validates
 /// the URL scheme and creates parent directories.
@@ -273,6 +334,7 @@ fn download_to_file(
     basic: Option<&KaggleCreds>,
     bearer: Option<&str>,
     dest: &Path,
+    progress: &mut Progress,
 ) -> Result<u64, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("URL must start with http:// or https://".to_string());
@@ -293,13 +355,26 @@ fn download_to_file(
         }
     }
     let resp = req.call().map_err(|e| format!("download failed: {e}"))?;
-    stream_to_dest(resp.into_reader(), dest, DOWNLOAD_CAP as u64)
+    let total = resp.header("Content-Length").and_then(|v| v.parse().ok());
+    stream_to_dest(
+        resp.into_reader(),
+        dest,
+        DOWNLOAD_CAP as u64,
+        total,
+        progress,
+    )
 }
 
 /// Copy `reader` into `<dest>.part`, then rename over `dest` once complete.
 /// More than `cap` bytes, an empty body, or any I/O error removes the `.part`
 /// file and leaves `dest` untouched. Memory use is the copy buffer only.
-fn stream_to_dest(reader: impl Read, dest: &Path, cap: u64) -> Result<u64, String> {
+fn stream_to_dest(
+    reader: impl Read,
+    dest: &Path,
+    cap: u64,
+    total: Option<u64>,
+    progress: &mut Progress,
+) -> Result<u64, String> {
     let mut part_name = dest.as_os_str().to_owned();
     part_name.push(".part");
     let part = PathBuf::from(part_name);
@@ -307,7 +382,13 @@ fn stream_to_dest(reader: impl Read, dest: &Path, cap: u64) -> Result<u64, Strin
         let mut file =
             std::fs::File::create(&part).map_err(|e| format!("cannot create {part:?}: {e}"))?;
         // Read one byte past the cap so a longer body is detected, not truncated.
-        let n = std::io::copy(&mut reader.take(cap + 1), &mut file)
+        let tap = Tap {
+            inner: reader,
+            bytes: 0,
+            total,
+            progress: &mut *progress,
+        };
+        let n = std::io::copy(&mut tap.take(cap + 1), &mut file)
             .map_err(|e| format!("write failed: {e}"))?;
         if n > cap {
             return Err(format!("download exceeds the {cap} byte limit"));
@@ -317,6 +398,7 @@ fn stream_to_dest(reader: impl Read, dest: &Path, cap: u64) -> Result<u64, Strin
         }
         file.sync_all().map_err(|e| format!("write failed: {e}"))?;
         std::fs::rename(&part, dest).map_err(|e| format!("cannot move into place: {e}"))?;
+        progress.finish(n);
         Ok(n)
     })();
     if result.is_err() {
@@ -342,6 +424,7 @@ fn download_dataset_from(
     hf_token: Option<String>,
     id: &str,
     dest_dir: &str,
+    progress: &mut Progress,
 ) -> Result<DownloadResult, String> {
     checked_dir("download folder", dest_dir)?;
     let entry = catalog()
@@ -365,7 +448,7 @@ fn download_dataset_from(
             "huggingface",
         )
     };
-    let bytes = download_to_file(&url, basic.as_ref(), bearer.as_deref(), &dest)?;
+    let bytes = download_to_file(&url, basic.as_ref(), bearer.as_deref(), &dest, progress)?;
     Ok(DownloadResult {
         path: dest.display().to_string(),
         bytes,
@@ -375,10 +458,22 @@ fn download_dataset_from(
 
 /// Download a curated catalog entry by `id` into `dest_dir`.
 #[tauri::command]
-pub async fn download_dataset(id: String, dest_dir: String) -> Result<DownloadResult, CmdError> {
+pub async fn download_dataset<R: Runtime>(
+    app: AppHandle<R>,
+    id: String,
+    dest_dir: String,
+) -> Result<DownloadResult, CmdError> {
     crate::error::blocking(move || {
         let hf_token = std::env::var("HF_TOKEN").ok();
-        download_dataset_from(&HOSTS, kaggle_creds(), hf_token, &id, &dest_dir)
+        let mut progress = Progress::events(app, id.clone());
+        download_dataset_from(
+            &HOSTS,
+            kaggle_creds(),
+            hf_token,
+            &id,
+            &dest_dir,
+            &mut progress,
+        )
     })
     .await
 }
@@ -387,6 +482,7 @@ fn download_hf_from(
     hosts: &Hosts,
     env_token: Option<String>,
     (repo, file, revision, dest_dir, hf_token): (&str, &str, Option<&str>, &str, Option<String>),
+    progress: &mut Progress,
 ) -> Result<DownloadResult, String> {
     checked_dir("download folder", dest_dir)?;
     if repo.trim().is_empty() || file.trim().is_empty() {
@@ -395,7 +491,7 @@ fn download_hf_from(
     let url = hf_resolve_url(hosts.hf, repo, file, revision.unwrap_or("main"));
     let dest = dest_path(dest_dir, file, "dataset.bin");
     let token = hf_token.or(env_token);
-    let bytes = download_to_file(&url, None, token.as_deref(), &dest)?;
+    let bytes = download_to_file(&url, None, token.as_deref(), &dest, progress)?;
     Ok(DownloadResult {
         path: dest.display().to_string(),
         bytes,
@@ -406,7 +502,8 @@ fn download_hf_from(
 /// Download any HuggingFace dataset file (`repo` = `owner/name`), not just the
 /// curated ones. `revision` defaults to `main`; `hf_token` is for gated repos.
 #[tauri::command]
-pub async fn download_hf_file(
+pub async fn download_hf_file<R: Runtime>(
+    app: AppHandle<R>,
     repo: String,
     file: String,
     revision: Option<String>,
@@ -416,7 +513,8 @@ pub async fn download_hf_file(
     crate::error::blocking(move || {
         let env_token = std::env::var("HF_TOKEN").ok();
         let args = (&*repo, &*file, revision.as_deref(), &*dest_dir, hf_token);
-        download_hf_from(&HOSTS, env_token, args)
+        let mut progress = Progress::events(app, format!("{repo}/{file}"));
+        download_hf_from(&HOSTS, env_token, args, &mut progress)
     })
     .await
 }
@@ -427,6 +525,7 @@ fn download_kaggle_from(
     owner_slug: &str,
     file: &str,
     dest_dir: &str,
+    progress: &mut Progress,
 ) -> Result<DownloadResult, String> {
     checked_dir("download folder", dest_dir)?;
     if owner_slug.trim().is_empty() || file.trim().is_empty() {
@@ -435,7 +534,7 @@ fn download_kaggle_from(
     let creds = kaggle.ok_or(NEEDS_KAGGLE_CREDS)?;
     let url = kaggle_file_url(hosts.kaggle, owner_slug, file);
     let dest = dest_path(dest_dir, file, "dataset.bin");
-    let bytes = download_to_file(&url, Some(&creds), None, &dest)?;
+    let bytes = download_to_file(&url, Some(&creds), None, &dest, progress)?;
     Ok(DownloadResult {
         path: dest.display().to_string(),
         bytes,
@@ -445,13 +544,22 @@ fn download_kaggle_from(
 
 /// Download any Kaggle dataset file (`owner_slug` = `owner/dataset`).
 #[tauri::command]
-pub async fn download_kaggle_file(
+pub async fn download_kaggle_file<R: Runtime>(
+    app: AppHandle<R>,
     owner_slug: String,
     file: String,
     dest_dir: String,
 ) -> Result<DownloadResult, CmdError> {
     crate::error::blocking(move || {
-        download_kaggle_from(&HOSTS, kaggle_creds(), &owner_slug, &file, &dest_dir)
+        let mut progress = Progress::events(app, format!("{owner_slug}/{file}"));
+        download_kaggle_from(
+            &HOSTS,
+            kaggle_creds(),
+            &owner_slug,
+            &file,
+            &dest_dir,
+            &mut progress,
+        )
     })
     .await
 }
@@ -463,11 +571,14 @@ mod tests {
     #[test]
     fn download_commands_refuse_bad_destination_folders() {
         use tauri::async_runtime::block_on;
+        let app = tauri::test::mock_app();
+        let h = app.handle();
         for bad in ["/dev/shm/x", "/proc/x", "", "a\0b"] {
             let d = bad.to_string();
-            let e = block_on(download_dataset("any".into(), d.clone())).unwrap_err();
+            let e = block_on(download_dataset(h.clone(), "any".into(), d.clone())).unwrap_err();
             assert!(e.contains("download folder"), "{bad:?}: {e}");
             let e = block_on(download_hf_file(
+                h.clone(),
                 "o/n".into(),
                 "f".into(),
                 None,
@@ -476,7 +587,8 @@ mod tests {
             ))
             .unwrap_err();
             assert!(e.contains("download folder"), "{bad:?}: {e}");
-            let e = block_on(download_kaggle_file("o/n".into(), "f".into(), d)).unwrap_err();
+            let e =
+                block_on(download_kaggle_file(h.clone(), "o/n".into(), "f".into(), d)).unwrap_err();
             assert!(e.contains("download folder"), "{bad:?}: {e}");
         }
     }
@@ -579,7 +691,14 @@ mod tests {
     #[test]
     fn download_rejects_non_http_urls_before_network() {
         let dest = std::env::temp_dir().join("ferrum_ds_test_noop.bin");
-        let err = download_to_file("ftp://example.com/x", None, None, &dest).unwrap_err();
+        let err = download_to_file(
+            "ftp://example.com/x",
+            None,
+            None,
+            &dest,
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(err.contains("http://"));
     }
 
@@ -608,11 +727,17 @@ mod tests {
     fn stream_complete_renames_and_leaves_no_part() {
         let d = scratch("ok");
         let dest = d.join("f.txt");
-        assert_eq!(stream_to_dest(&b"hello"[..], &dest, 10).unwrap(), 5);
+        assert_eq!(
+            stream_to_dest(&b"hello"[..], &dest, 10, None, &mut Progress::silent()).unwrap(),
+            5
+        );
         assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
         assert!(!d.join("f.txt.part").exists());
         // Exactly at the cap is fine.
-        assert_eq!(stream_to_dest(&b"0123456789"[..], &dest, 10).unwrap(), 10);
+        assert_eq!(
+            stream_to_dest(&b"0123456789"[..], &dest, 10, None, &mut Progress::silent()).unwrap(),
+            10
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -620,7 +745,14 @@ mod tests {
     fn stream_over_cap_errors_and_leaves_nothing() {
         let d = scratch("cap");
         let dest = d.join("f.txt");
-        let err = stream_to_dest(&b"0123456789A"[..], &dest, 10).unwrap_err();
+        let err = stream_to_dest(
+            &b"0123456789A"[..],
+            &dest,
+            10,
+            None,
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(err.contains("exceeds the 10 byte limit"), "{err}");
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
         std::fs::remove_dir_all(&d).unwrap();
@@ -630,14 +762,35 @@ mod tests {
     fn stream_midway_error_leaves_nothing_and_keeps_existing_dest() {
         let d = scratch("err");
         let dest = d.join("f.txt");
-        let err = stream_to_dest(FailingReader(100), &dest, 1000).unwrap_err();
+        let err = stream_to_dest(
+            FailingReader(100),
+            &dest,
+            1000,
+            None,
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(err.contains("connection reset"), "{err}");
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
 
         std::fs::write(&dest, b"old").unwrap();
-        assert!(stream_to_dest(FailingReader(100), &dest, 1000).is_err());
-        assert!(stream_to_dest(&b"0123456789A"[..], &dest, 10).is_err());
-        assert!(stream_to_dest(&b""[..], &dest, 10).is_err());
+        assert!(stream_to_dest(
+            FailingReader(100),
+            &dest,
+            1000,
+            None,
+            &mut Progress::silent()
+        )
+        .is_err());
+        assert!(stream_to_dest(
+            &b"0123456789A"[..],
+            &dest,
+            10,
+            None,
+            &mut Progress::silent()
+        )
+        .is_err());
+        assert!(stream_to_dest(&b""[..], &dest, 10, None, &mut Progress::silent()).is_err());
         assert_eq!(std::fs::read(&dest).unwrap(), b"old");
         assert!(!d.join("f.txt.part").exists());
         std::fs::remove_dir_all(&d).unwrap();
@@ -708,21 +861,123 @@ mod tests {
         // Basic auth, creating the missing parent folders.
         let dest = d.join("deep/er/a.txt");
         assert_eq!(
-            download_to_file(&url, Some(&kaggle), None, &dest).unwrap(),
+            download_to_file(&url, Some(&kaggle), None, &dest, &mut Progress::silent()).unwrap(),
             6
         );
         assert_eq!(std::fs::read(&dest).unwrap(), b"corpus");
         let sent = rx.recv().unwrap().to_lowercase();
         assert!(sent.contains("authorization: basic dxnlcjpwyxnz"), "{sent}");
         // A bearer token is sent; an empty one is not.
-        download_to_file(&url, None, Some("tok"), &d.join("b.txt")).unwrap();
+        download_to_file(
+            &url,
+            None,
+            Some("tok"),
+            &d.join("b.txt"),
+            &mut Progress::silent(),
+        )
+        .unwrap();
         assert!(rx
             .recv()
             .unwrap()
             .to_lowercase()
             .contains("authorization: bearer tok"));
-        download_to_file(&url, None, Some(""), &d.join("c.txt")).unwrap();
+        download_to_file(
+            &url,
+            None,
+            Some(""),
+            &d.join("c.txt"),
+            &mut Progress::silent(),
+        )
+        .unwrap();
         assert!(!rx.recv().unwrap().to_lowercase().contains("authorization"));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A reader that hands out `chunk` bytes per read, `reads` times.
+    struct Chunks {
+        chunk: usize,
+        reads: usize,
+    }
+    impl Read for Chunks {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.reads == 0 {
+                return Ok(0);
+            }
+            self.reads -= 1;
+            let n = self.chunk.min(buf.len());
+            buf[..n].fill(b'x');
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn download_emits_monotonic_progress_and_a_final_event() {
+        let d = scratch("prog");
+        let dest = d.join("a.txt");
+        let mut ms = 0u64;
+        let mut seen: Vec<(u64, Option<u64>)> = Vec::new();
+        // 20 reads of 1000 bytes; each progress check is 40 ms after the last.
+        let n = {
+            let throttle = Throttle::new(|| {
+                ms += 40;
+                ms
+            });
+            let mut p = Progress::new(throttle, |b, t| seen.push((b, t)));
+            stream_to_dest(
+                Chunks {
+                    chunk: 1000,
+                    reads: 20,
+                },
+                &dest,
+                1 << 20,
+                Some(20_000),
+                &mut p,
+            )
+            .unwrap()
+        };
+        assert_eq!(n, 20_000);
+        // Throttled: far fewer events than reads (checks at 40, 80, ... 800 ms: every third).
+        assert!(seen.len() < 20 / 2 + 2, "{seen:?}");
+        assert!(seen.windows(2).all(|w| w[0].0 < w[1].0), "{seen:?}");
+        // The in-flight events keep the server's total; the last one is the final total.
+        assert!(seen[..seen.len() - 1].iter().all(|e| e.1 == Some(20_000)));
+        assert_eq!(*seen.last().unwrap(), (20_000, Some(20_000)));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_failed_download_sends_no_final_event_and_an_unknown_size_reports_none() {
+        let d = scratch("prog_fail");
+        let mut seen: Vec<(u64, Option<u64>)> = Vec::new();
+        let mut p = Progress::new(Throttle::new(|| 0), |b, t| seen.push((b, t)));
+        let r = stream_to_dest(
+            Chunks {
+                chunk: 10,
+                reads: 3,
+            },
+            &d.join("x"),
+            5,
+            None,
+            &mut p,
+        );
+        assert!(r.unwrap_err().contains("exceeds"));
+        // The cap stops the copy after 6 bytes; the first check is always let through.
+        drop(p);
+        assert_eq!(seen, [(6, None)]);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_real_download_reports_the_servers_content_length() {
+        use crate::test_support::http_server;
+        let d = scratch("prog_http");
+        let (url, _rx) = http_server("200 OK", b"corpus".to_vec(), 1);
+        let mut seen: Vec<(u64, Option<u64>)> = Vec::new();
+        let mut p = Progress::new(Throttle::new(|| 0), |b, t| seen.push((b, t)));
+        download_to_file(&url, None, None, &d.join("a.txt"), &mut p).unwrap();
+        drop(p);
+        assert_eq!(seen.first(), Some(&(6, Some(6))), "{seen:?}");
+        assert_eq!(seen.last(), Some(&(6, Some(6))), "{seen:?}");
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -732,12 +987,19 @@ mod tests {
         let d = scratch("dl_fail");
         let (url, _rx) = http_server("404 Not Found", b"gone".to_vec(), 1);
         let dest = d.join("x.txt");
-        let e = download_to_file(&url, None, None, &dest).unwrap_err();
+        let e = download_to_file(&url, None, None, &dest, &mut Progress::silent()).unwrap_err();
         assert!(e.starts_with("download failed:"), "{e}");
         assert!(!dest.exists());
         // A parent that is a file cannot be made into a folder.
         std::fs::write(d.join("file"), "x").unwrap();
-        let e = download_to_file(&url, None, None, &d.join("file/sub/y.txt")).unwrap_err();
+        let e = download_to_file(
+            &url,
+            None,
+            None,
+            &d.join("file/sub/y.txt"),
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(e.starts_with("cannot create"), "{e}");
         std::fs::remove_dir_all(&d).unwrap();
     }
@@ -752,10 +1014,18 @@ mod tests {
             hf: &base,
             kaggle: &base,
         };
-        let e = download_dataset_from(&hosts, None, None, "nope", dir).unwrap_err();
+        let e = download_dataset_from(&hosts, None, None, "nope", dir, &mut Progress::silent())
+            .unwrap_err();
         assert_eq!(e, "unknown dataset id 'nope'");
-        let hf = download_dataset_from(&hosts, None, Some("tok".into()), "tinystories-valid", dir)
-            .unwrap();
+        let hf = download_dataset_from(
+            &hosts,
+            None,
+            Some("tok".into()),
+            "tinystories-valid",
+            dir,
+            &mut Progress::silent(),
+        )
+        .unwrap();
         assert_eq!((hf.source.as_str(), hf.bytes), ("huggingface", 5));
         assert!(hf.path.ends_with("TinyStories-valid.txt"));
         let sent = rx.recv().unwrap();
@@ -767,13 +1037,29 @@ mod tests {
             sent.to_lowercase().contains("authorization: bearer tok"),
             "{sent}"
         );
-        let e = download_dataset_from(&hosts, None, None, "shakespeare-plays", dir).unwrap_err();
+        let e = download_dataset_from(
+            &hosts,
+            None,
+            None,
+            "shakespeare-plays",
+            dir,
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(e.starts_with("Kaggle needs credentials"), "{e}");
         let creds = KaggleCreds {
             username: "u".into(),
             key: "k".into(),
         };
-        let k = download_dataset_from(&hosts, Some(creds), None, "shakespeare-plays", dir).unwrap();
+        let k = download_dataset_from(
+            &hosts,
+            Some(creds),
+            None,
+            "shakespeare-plays",
+            dir,
+            &mut Progress::silent(),
+        )
+        .unwrap();
         assert_eq!(k.source, "kaggle");
         let sent = rx.recv().unwrap();
         assert!(
@@ -795,13 +1081,20 @@ mod tests {
             hf: &base,
             kaggle: &base,
         };
-        let e = download_hf_from(&hosts, None, (" ", "f", None, dir, None)).unwrap_err();
+        let e = download_hf_from(
+            &hosts,
+            None,
+            (" ", "f", None, dir, None),
+            &mut Progress::silent(),
+        )
+        .unwrap_err();
         assert!(e.contains("provide a HuggingFace repo"), "{e}");
         // The explicit token wins over the environment's; a revision picks the branch.
         let hf = download_hf_from(
             &hosts,
             Some("env".into()),
             ("o/n", "sub/f.txt", Some("v2"), dir, Some("mine".into())),
+            &mut Progress::silent(),
         )
         .unwrap();
         assert_eq!((hf.source.as_str(), hf.bytes), ("huggingface", 4));
@@ -816,19 +1109,30 @@ mod tests {
             &hosts,
             Some("env".into()),
             ("o/n", "f.txt", None, dir, None),
+            &mut Progress::silent(),
         )
         .unwrap();
         assert!(rx.recv().unwrap().to_lowercase().contains("bearer env"));
 
-        let e = download_kaggle_from(&hosts, None, "", "f", dir).unwrap_err();
+        let e =
+            download_kaggle_from(&hosts, None, "", "f", dir, &mut Progress::silent()).unwrap_err();
         assert!(e.contains("provide a Kaggle owner/slug"), "{e}");
-        let e = download_kaggle_from(&hosts, None, "o/n", "f.csv", dir).unwrap_err();
+        let e = download_kaggle_from(&hosts, None, "o/n", "f.csv", dir, &mut Progress::silent())
+            .unwrap_err();
         assert!(e.starts_with("Kaggle needs credentials"), "{e}");
         let creds = KaggleCreds {
             username: "u".into(),
             key: "k".into(),
         };
-        let k = download_kaggle_from(&hosts, Some(creds), "o/n", "f.csv", dir).unwrap();
+        let k = download_kaggle_from(
+            &hosts,
+            Some(creds),
+            "o/n",
+            "f.csv",
+            dir,
+            &mut Progress::silent(),
+        )
+        .unwrap();
         assert_eq!((k.source.as_str(), k.bytes), ("kaggle", 4));
         assert!(rx
             .recv()

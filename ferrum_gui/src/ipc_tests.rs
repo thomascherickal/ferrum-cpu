@@ -140,7 +140,8 @@ fn preflight_train_takes_the_ui_argument_shape_and_answers_in_camel_case() {
 
 #[test]
 fn clean_text_and_file_commands_round_trip_through_ipc() {
-    let (_app, w) = app();
+    let (app, w) = app();
+    let progress = collect(&app, "clean-progress");
     let r = call(
         &w,
         "clean_text",
@@ -158,6 +159,10 @@ fn clean_text_and_file_commands_round_trip_through_ipc() {
         "{r}"
     );
     assert_eq!(r["words"], 3);
+    // The final event carries the totals (one non-empty line, then another after the gap).
+    let events = progress.lock().unwrap().clone();
+    let last: Value = serde_json::from_str(events.last().expect("a clean-progress event")).unwrap();
+    assert_eq!(last, json!({"bytes": 28, "documents": 2}), "{events:?}");
     // Errors come back as `{ code, message, hint }`; the message is the text the UI shows.
     let e = call(
         &w,
@@ -1216,4 +1221,33 @@ fn the_command_matrix_guard_finds_a_missing_test() {
         ["beta_cmd", "gamma_cmd"]
     );
     assert!(commands_without_a_test(&commands, r#""alpha_cmd" "beta_cmd" "gamma_cmd""#).is_empty());
+}
+
+#[test]
+fn download_progress_events_carry_the_id_bytes_and_total() {
+    let (app, _w) = app();
+    let got = collect(&app, "download-progress");
+    let mut p = crate::datasets::Progress::events(app.handle().clone(), "o/n/f.txt".into());
+    p.update(5, None);
+    p.finish(9);
+    // Mock-runtime events are delivered on the listener thread; wait for both.
+    for _ in 0..200 {
+        if got.lock().unwrap().len() == 2 {
+            break;
+        }
+        std::thread::yield_now();
+    }
+    let ev: Vec<Value> = got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        ev,
+        [
+            json!({"id": "o/n/f.txt", "bytes": 5, "total": null}),
+            json!({"id": "o/n/f.txt", "bytes": 9, "total": 9}),
+        ]
+    );
 }

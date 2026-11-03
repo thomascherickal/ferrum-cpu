@@ -185,6 +185,59 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("dsFile").value, "/d/k.csv");
   }
 
+  // download_progress_updates_bar: download-progress events move the one shared bar; the finished
+  // command settles it at 100 %; a failure puts it back to idle.
+  {
+    let a;
+    const mb = 1e6;
+    a = await start({
+      download_dataset: async () => {
+        assert.strictEqual(a.$("dsProgress").textContent, "starting...");
+        a.emit("download-progress", { id: "x", bytes: 1 * mb, total: 4 * mb });
+        assert.strictEqual(a.$("dsBar").style.width, "25%");
+        assert.strictEqual(a.$("dsProgress").textContent, "x: 1.0 MB of 4.0 MB");
+        a.emit("download-progress", { id: "x", bytes: 3 * mb, total: 4 * mb });
+        assert.strictEqual(a.$("dsBar").style.width, "75%");
+        a.emit("download-progress", { id: "x", bytes: 4 * mb, total: 4 * mb });
+        return { path: "/d/x.txt", bytes: 4 * mb, source: "huggingface" };
+      },
+      download_hf_file: async () => {
+        // No Content-Length: the status counts bytes and the bar stays where it was.
+        a.emit("download-progress", { id: "o/n/f", bytes: 2 * mb, total: null });
+        assert.strictEqual(a.$("dsProgress").textContent, "o/n/f: 2.0 MB");
+        assert.strictEqual(a.$("dsBar").style.width, "0%");
+        throw "download failed: boom";
+      },
+      list_datasets: async () => [{ id: "x", name: "X", source: "huggingface", approxMb: 5, format: "txt", description: "d" }],
+    });
+    a.set("dsDestDir", "/d");
+    a.$("dsCatalog").querySelector("button").dispatch("click"); await settle(6);
+    assert.strictEqual(a.$("dsBar").style.width, "100%");
+    assert.strictEqual(a.$("dsProgress").textContent, "downloaded 3.81 MB from huggingface");
+    a.set("dsHfRepo", "o/n"); a.set("dsHfFile", "f");
+    await a.click("dsHfDownload");
+    assert.strictEqual(a.$("dsProgress").textContent, "idle");
+    assert.ok(a.$("errDsCatalog").textContent.includes("boom"));
+  }
+
+  // clean_progress_updates_bar: clean-progress events fill the bar against the raw text's size.
+  {
+    let a;
+    a = await start({
+      clean_text: async () => {
+        a.emit("clean-progress", { bytes: 6, documents: 1 });
+        assert.strictEqual(a.$("dsBar").style.width, "50%");
+        assert.strictEqual(a.$("dsProgress").textContent, "cleaning: 0.0 MB - 1 documents");
+        a.emit("clean-progress", { bytes: 12, documents: 2 });
+        return { cleaned: "hello", preview: "hello", chars: 5, bytes: 5, lines: 1, words: 1, uniqueChars: 4 };
+      },
+    });
+    a.set("dsRaw", "twelve bytes");
+    await a.click("dsClean");
+    assert.strictEqual(a.$("dsBar").style.width, "100%");
+    assert.strictEqual(a.$("dsProgress").textContent, "cleaned 0.0 MB");
+  }
+
   // ── Generate (streaming reconciliation) ────────────────────────────────
   {
     let release;

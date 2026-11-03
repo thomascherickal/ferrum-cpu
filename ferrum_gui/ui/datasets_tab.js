@@ -4,9 +4,29 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, doc, invoke, toast, setErr, clearErr, int, reqStr, getLive } = env;
+    const { $, doc, invoke, toast, setErr, clearErr, setBar, int, reqStr, getLive } = env;
     const { esc, catalogMeta } = global.FerrumEscape;
     let cleanedCorpus = "";
+    let cleanTotal = 0; // bytes of the raw text being cleaned, to turn clean-progress into a fraction
+    const fmtMb = (b) => (b / 1e6).toFixed(1) + " MB";
+    function utf8Len(str) { // the backend counts bytes, not characters
+      let n = 0;
+      for (const ch of str) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; }
+      return n;
+    }
+
+    // One bar serves downloads and Clean; the backend's `download-progress` and `clean-progress`
+    // events (wired in app.js) move it, and the command finishing settles it.
+    function barStart(text) { setBar("dsBar", 0); $("dsProgress").textContent = text; }
+    function barEnd(ok, text) { if (ok) setBar("dsBar", 100); $("dsProgress").textContent = ok ? text : "idle"; }
+    function onDownloadProgress(p) {
+      if (p.total > 0) setBar("dsBar", Math.min(100, Math.round((p.bytes / p.total) * 100)));
+      $("dsProgress").textContent = `${p.id}: ${fmtMb(p.bytes)}` + (p.total > 0 ? ` of ${fmtMb(p.total)}` : "");
+    }
+    function onCleanProgress(p) {
+      if (cleanTotal > 0) setBar("dsBar", Math.min(100, Math.round((p.bytes / cleanTotal) * 100)));
+      $("dsProgress").textContent = `cleaning: ${fmtMb(p.bytes)} - ${Number(p.documents).toLocaleString("en-US")} documents`;
+    }
 
     $("dsDownload").addEventListener("click", async () => {
       clearErr("errDsSource");
@@ -43,6 +63,7 @@
     function afterDownload(res) {
       const mb = (res.bytes / (1024 * 1024)).toFixed(2);
       $("dsFile").value = res.path;
+      barEnd(true, `downloaded ${mb} MB from ${res.source}`);
       toast(`Downloaded ${mb} MB from ${res.source} → ${res.path}. Click “Load file”.`, "ok");
     }
 
@@ -63,10 +84,11 @@
         btn.addEventListener("click", async () => {
           clearErr("errDsCatalog");
           try {
-            btn.disabled = true; toast(`Downloading ${d.name}…`);
-            const res = await invoke("download_dataset", { id: d.id, destDir: destDir() });
+            const dir = destDir();
+            btn.disabled = true; toast(`Downloading ${d.name}…`); barStart("starting...");
+            const res = await invoke("download_dataset", { id: d.id, destDir: dir });
             afterDownload(res);
-          } catch (e) { setErr("errDsCatalog", e); }
+          } catch (e) { barEnd(false); setErr("errDsCatalog", e); }
           finally { btn.disabled = false; }
         });
         card.appendChild(meta);
@@ -89,10 +111,11 @@
         const repo = reqStr("dsHfRepo", "HuggingFace repo");
         const file = reqStr("dsHfFile", "File");
         const hfToken = $("dsHfToken").value.trim() || null;
-        $("dsHfDownload").disabled = true; toast("Downloading from HuggingFace…");
-        const res = await invoke("download_hf_file", { repo, file, revision: null, destDir: destDir(), hfToken });
+        const dir = destDir();
+        $("dsHfDownload").disabled = true; toast("Downloading from HuggingFace…"); barStart("starting...");
+        const res = await invoke("download_hf_file", { repo, file, revision: null, destDir: dir, hfToken });
         afterDownload(res);
-      } catch (e) { setErr("errDsCatalog", e); }
+      } catch (e) { barEnd(false); setErr("errDsCatalog", e); }
       finally { $("dsHfDownload").disabled = false; }
     });
 
@@ -101,10 +124,11 @@
       try {
         const ownerSlug = reqStr("dsKgRepo", "Kaggle owner/slug");
         const file = reqStr("dsKgFile", "File");
-        $("dsKgDownload").disabled = true; toast("Downloading from Kaggle…");
-        const res = await invoke("download_kaggle_file", { ownerSlug, file, destDir: destDir() });
+        const dir = destDir();
+        $("dsKgDownload").disabled = true; toast("Downloading from Kaggle…"); barStart("starting...");
+        const res = await invoke("download_kaggle_file", { ownerSlug, file, destDir: dir });
         afterDownload(res);
-      } catch (e) { setErr("errDsCatalog", e); }
+      } catch (e) { barEnd(false); setErr("errDsCatalog", e); }
       finally { $("dsKgDownload").disabled = false; }
     });
 
@@ -124,7 +148,10 @@
           stripControlChars: $("optControl").checked,
           maxChars: Math.max(0, int("optMaxChars") || 0),
         };
+        cleanTotal = utf8Len(raw);
+        barStart("starting...");
         const r = await invoke("clean_text", { raw, opts });
+        barEnd(true, `cleaned ${fmtMb(cleanTotal)}`);
         cleanedCorpus = r.cleaned;
         $("dsPreview").value = r.preview;
         $("dsStats").innerHTML =
@@ -132,7 +159,7 @@
           `lines <b>${esc(r.lines.toLocaleString())}</b> · bytes <b>${esc(r.bytes.toLocaleString())}</b> · ` +
           `char-vocab <b>${esc(r.uniqueChars)}</b>`;
         toast("Cleaned. char-level vocab = " + r.uniqueChars, "ok");
-      } catch (e) { setErr("errDsClean", e); }
+      } catch (e) { barEnd(false); setErr("errDsClean", e); }
     });
 
     $("dsSave").addEventListener("click", async () => {
@@ -146,6 +173,8 @@
         if (!$("trCorpus").value) $("trCorpus").value = path;
       } catch (e) { setErr("errDsSave", e); }
     });
+
+    return { onDownloadProgress, onCleanProgress };
   }
 
   const api = { create };
