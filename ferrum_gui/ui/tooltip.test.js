@@ -219,4 +219,28 @@ function setup() {
   assert.ok(!/(^|[;\s])(transform|filter|perspective)\s*:/.test(rule), "a transform would make it relative to its parent");
 }
 
+// data-tip content: one plain section, no title; the bubble and the description skip the title.
+{
+  const { MIN_WORDS, wordCount, contentFromTip } = require("./tooltip.js");
+  assert.strictEqual(MIN_WORDS, 30);
+  assert.strictEqual(wordCount("one  two\nthree\t four "), 4);
+  assert.strictEqual(wordCount(null), 0);
+  assert.strictEqual(contentFromTip(""), null);
+  assert.strictEqual(contentFromTip(null), null);
+  const c = contentFromTip("  Shows the training loss.  ");
+  assert.deepStrictEqual(c, { title: "", sections: [{ label: null, text: "Shows the training loss." }] });
+  assert.strictEqual(plainText(c), "Shows the training loss.");
+
+  const { doc, tips } = setup();
+  const h2 = doc.createElement("h2");
+  doc.body.appendChild(h2);
+  h2.rect = rect(10, 10, 300, 30);
+  tips.attach(h2, () => c);
+  assert.strictEqual(doc.getElementById(h2.getAttribute("aria-describedby")).textContent, "Shows the training loss.");
+  h2.dispatch("focus");
+  assert.strictEqual(tips.bubble.textContent, "Shows the training loss.");
+  assert.ok(!tips.bubble.querySelector(".tip-title"), "no empty title line");
+  tips.hide();
+}
+
 console.log("tooltip.test.js: all assertions passed");

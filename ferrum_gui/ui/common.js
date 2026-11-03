@@ -45,7 +45,14 @@
     ctx.fillText(min.toFixed(4), pad, h - 4);
   }
 
-  function create({ $, doc, navigator: nav }) {
+  // The tool-tips of the two buttons each error line gets (built at runtime, so not in index.html).
+  const ERR_TIPS = {
+    expand: "Shows the whole error message when it is longer than 300 characters and was cut short with an ellipsis. Press it again, it then reads Show less, to shorten the line back. It changes only this line, not the job or any file.",
+    copy: "Copies this error to the clipboard as plain text: its code, the full message, the hint and the time it happened, ready to paste into a bug report. If the clipboard is blocked, a notice asks you to select the message and copy it by hand.",
+  };
+
+  // `getLive()` answers live.js once it exists (it gives the error buttons their tool-tips).
+  function create({ $, doc, navigator: nav, getLive }) {
     const E = global.FerrumErrors;
     const env = { navigator: nav };
     // ── Toasts & errors ──
@@ -81,6 +88,10 @@
       };
       m.hint.setAttribute("aria-live", "polite");
       for (const b of [m.expand, m.copy]) b.setAttribute("type", "button");
+      m.expand.setAttribute("data-tip", ERR_TIPS.expand);
+      m.copy.setAttribute("data-tip", ERR_TIPS.copy);
+      const live = getLive ? getLive() : null;
+      if (live) { live.attach(m.expand); live.attach(m.copy); }
       m.expand.addEventListener("click", () => {
         m.state.open = !m.state.open;
         paint(el, m);
@@ -155,7 +166,7 @@
     return { toast, setErr, clearErr, busy, errText: E.text, isCancelled: E.isCancelled, setBar: (id, pct) => setBar($, id, pct), num, int, reqInt, reqNum, reqStr, samplerParams };
   }
 
-  const api = { create, fmtBytes, fmtParams, drawLoss, setBar };
+  const api = { create, fmtBytes, fmtParams, drawLoss, setBar, ERR_TIPS };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {

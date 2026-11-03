@@ -10,16 +10,16 @@
   <!-- ── Top bar ─────────────────────────────────────────────────────────── -->
   <header id="topbar">
     <div class="brand">
-      <img src="logo.png" alt="Ferrum" width="28" height="28" />
-      <span>Ferrum <b>SLM Studio</b></span>
+      <img data-tip="The Ferrum logo. Ferrum SLM Studio is the desktop front end of the Ferrum engine: it trains, runs, evaluates, fine-tunes, exports and serves small language models, and every job runs on this computer's CPU; no GPU is used." src="logo.png" alt="Ferrum" width="28" height="28" />
+      <span data-tip="The app name. Every tab calls the Ferrum engine library that the train_transformer and ferrum-serve command-line tools use too, and the models it writes are ordinary GGUF files that other tools can open.">Ferrum <b>SLM Studio</b></span>
     </div>
-    <div class="hwline muted" id="hwLine">Detecting your hardware...</div>
+    <div data-tip="Your hardware as the Studio detected it: CPU threads and cores, total and free RAM, and any GPU found. Ferrum is CPU-only, so a GPU is listed but never used. Free RAM is refreshed every 5 seconds; the full line also stands on the System tab." class="hwline muted" id="hwLine">Detecting your hardware...</div>
     <div class="mini-stats" id="miniStats">
-      <span class="mini" title="Total CPU load">CPU <b id="miniCpu">–</b></span>
-      <span class="mini" title="Memory used">MEM <b id="miniMem">–</b></span>
-      <span class="mini" title="Ferrum worker threads">THREADS <b id="miniThreads">–</b></span>
+      <span data-tip="Total CPU load of the whole machine in percent, counting every program, not only Ferrum. It is refreshed by the system monitor, every 1.5 seconds by default, and freezes when monitoring is switched off on the System tab." class="mini">CPU <b id="miniCpu">–</b></span>
+      <span data-tip="Share of this machine's memory in use, in percent, counting every program. Training, fine-tuning and serving a model raise it. It is refreshed by the system monitor and freezes when monitoring is switched off on the System tab." class="mini">MEM <b id="miniMem">–</b></span>
+      <span data-tip="Number of worker threads Ferrum's matrix kernels use, taken from the FERRUM_NUM_THREADS environment variable or, when that is not set, the detected core count. Generation and evaluation give identical results at any thread count; only speed changes." class="mini">THREADS <b id="miniThreads">–</b></span>
       <button id="resetSettings" class="linkbtn">Reset settings</button>
-      <span class="conn" id="connDot" role="img" aria-label="Backend not connected" title="Backend connection">○</span>
+      <span data-tip="Backend connection. A filled green dot means the window talks to the Ferrum backend and every job works; a hollow red ring means the page runs outside the Tauri app, so training, the shell and the system monitor are unavailable." class="conn" id="connDot" role="img" aria-label="Backend not connected">○</span>
     </div>
   </header>
 
@@ -40,24 +40,24 @@
   </div>
 
   <main id="content">
-    <div id="webBanner" class="banner hidden">
+    <div data-tip="This warning appears only when the page is opened outside the Tauri desktop app, for example in a plain browser. Forms and tool-tips still work, but every button that needs the backend reports an error. Start the app with cargo tauri dev." id="webBanner" class="banner hidden">
       ⚠ Running outside the Tauri runtime — backend features (training, the shell,
       system monitor) are unavailable. Launch with <code>cargo tauri dev</code>.
     </div>
 
     <!-- ── Datasets ──────────────────────────────────────────────────────── -->
     <section class="panel active" id="panel-datasets" role="tabpanel" aria-labelledby="tab-datasets">
-      <h2>Datasets — fetch &amp; clean a corpus</h2>
+      <h2 data-tip="The Datasets tab turns raw text into a training corpus: fetch it from a URL, HuggingFace or Kaggle, or load a local file, then clean it, check the statistics and save it as a plain text file for the Train tab.">Datasets — fetch &amp; clean a corpus</h2>
       <p class="hint">Download text from the internet (e.g. a Project Gutenberg
         <code>.txt</code>), clean it to match the SLM's requirements, and save a
         training corpus.</p>
       <div class="row">
-        <div class="progress" role="progressbar" aria-label="Download and clean progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dsBar"></div></div>
-        <span id="dsProgress" class="muted" role="status">idle</span>
+        <div data-tip="Progress, from 0 to 100 percent, of the current catalog, HuggingFace or Kaggle download or of a Clean run. It fills only when the total size is known; the plain Source URL download reports no progress and leaves the bar as it is." class="progress" role="progressbar" aria-label="Download and clean progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dsBar"></div></div>
+        <span data-tip="What the bar beside it is doing: idle, the megabytes downloaded so far out of the total, or the megabytes and documents cleaned. After a finished job it names the size and the source; after a failure it returns to idle." id="dsProgress" class="muted" role="status">idle</span>
       </div>
 
       <fieldset>
-        <legend>Browse CPU-friendly datasets (HuggingFace / Kaggle)</legend>
+        <legend data-tip="This box lists curated text datasets small enough to train on a CPU and fetches single files from HuggingFace or Kaggle into the download folder. Every finished download is put into the local file field below, ready for Load file.">Browse CPU-friendly datasets (HuggingFace / Kaggle)</legend>
         <p class="hint">Curated text datasets small enough to train/run on CPU.
           Kaggle entries need credentials — set <code>KAGGLE_USERNAME</code> /
           <code>KAGGLE_KEY</code> or place <code>kaggle.json</code> in
@@ -69,7 +69,7 @@
           <button class="ghost browse-dir" id="dsDestDirBrowse" data-target="dsDestDir">Browse…</button>
           <button id="dsCatalogLoad" class="ghost">Refresh list</button>
         </div>
-        <div id="dsCatalog" class="catalog"></div>
+        <div data-tip="The dataset list: one card per entry with its name, source, approximate size, format and a short description, and a Download button that saves the file into the folder above. The list is built into the app; Refresh list reloads it." id="dsCatalog" class="catalog"></div>
 
         <div class="row">
           <label>HuggingFace repo
@@ -92,7 +92,7 @@
           </label>
           <button id="dsKgDownload">Fetch Kaggle</button>
         </div>
-        <span class="err" id="errDsCatalog" role="alert"></span>
+        <span data-tip="Errors from the catalog, HuggingFace and Kaggle downloads appear here, for example a missing download folder, missing Kaggle credentials or a failed connection, with a hint and a Copy details button below. It is empty when all is well." class="err" id="errDsCatalog" role="alert"></span>
       </fieldset>
 
       <div class="row">
@@ -111,14 +111,14 @@
         <button class="ghost browse" id="dsFileBrowse" data-target="dsFile">Browse…</button>
         <button id="dsLoadFile">Load file</button>
       </div>
-      <span class="err" id="errDsSource" role="alert"></span>
+      <span data-tip="Errors from the Source URL download and from Load file appear here: an empty field, a URL that does not start with http or https, a host that does not answer, or a file that cannot be read. Empty means no error." class="err" id="errDsSource" role="alert"></span>
 
       <label>Raw text
         <textarea id="dsRaw" rows="6" placeholder="Downloaded / loaded / pasted text appears here. You can also paste directly."></textarea>
       </label>
 
       <fieldset>
-        <legend>Cleaning options</legend>
+        <legend data-tip="These switches decide what Clean and preview does to the raw text: drop Project Gutenberg headers and footers, collapse blank lines, turn smart punctuation into ASCII, remove control characters, lowercase, and cap the length. The Raw text box itself is never changed.">Cleaning options</legend>
         <label class="chk"><input type="checkbox" id="optGutenberg" checked /> Strip Project Gutenberg boilerplate</label>
         <label class="chk"><input type="checkbox" id="optCollapse" checked /> Collapse blank lines / trailing spaces</label>
         <label class="chk"><input type="checkbox" id="optPunct" checked /> Normalize smart punctuation → ASCII</label>
@@ -131,9 +131,9 @@
 
       <div class="row">
         <button id="dsClean" class="primary">Clean &amp; preview</button>
-        <div class="stats" id="dsStats"></div>
+        <div data-tip="Statistics of the cleaned corpus after Clean and preview: characters, words, lines, bytes, and the number of distinct characters, which is the vocabulary a character-level model would need. It stays empty until the first clean." class="stats" id="dsStats"></div>
       </div>
-      <span class="err" id="errDsClean" role="alert"></span>
+      <span data-tip="Errors from Clean and preview appear here, for example when the Raw text box is empty or nothing is left after cleaning, which means the options removed everything. A hint and a Copy details button appear below it." class="err" id="errDsClean" role="alert"></span>
 
       <label>Cleaned preview
         <textarea id="dsPreview" rows="6" readonly placeholder="Cleaned corpus preview…"></textarea>
@@ -146,12 +146,12 @@
         <button class="ghost browse-save" id="dsOutBrowse" data-target="dsOut">Browse…</button>
         <button id="dsSave" class="primary">Save corpus</button>
       </div>
-      <span class="err" id="errDsSave" role="alert"></span>
+      <span data-tip="Errors from Save corpus appear here: nothing cleaned yet, an empty Save to path, or a folder or file the app cannot create or write. Missing parent folders are created automatically, so a brand-new path is fine." class="err" id="errDsSave" role="alert"></span>
     </section>
 
     <!-- ── Prepare (clean + split text files, like `train_transformer prepare`) ── -->
     <section class="panel" id="panel-prepare" role="tabpanel" aria-labelledby="tab-prepare">
-      <h2>Prepare — clean, deduplicate and split a dataset</h2>
+      <h2 data-tip="The Prepare tab cleans text files or whole folders straight from disk, can drop duplicate documents, and splits them into train, validation and test files with a manifest, exactly like the train_transformer prepare command with the same options.">Prepare — clean, deduplicate and split a dataset</h2>
       <p class="hint">Reads text files or whole folders straight from disk (a big corpus never
         goes through this window), cleans every document, and writes
         <code>train.txt</code>, <code>val.txt</code>, <code>test.txt</code> and a
@@ -185,15 +185,15 @@
         <label class="chk"><input type="checkbox" id="dpGutenberg" /> Strip Project Gutenberg boilerplate</label>
         <label class="chk"><input type="checkbox" id="dpLossy" /> Replace invalid UTF-8 bytes</label>
       </div>
-      <span class="err" id="errPrepare" role="alert"></span>
+      <span data-tip="Problems with the Prepare form or run appear here: no inputs, no output folder, a share that is not between 0 and 1, shares that add up to 1 or more, a negative whole number, or a file that cannot be read." class="err" id="errPrepare" role="alert"></span>
 
       <div class="row">
         <button id="dpRun" class="primary">Prepare</button>
         <button id="dpCancel" class="ghost hidden">Stop</button>
-        <div class="progress" role="progressbar" aria-label="Dataset preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dpBar"></div></div>
-        <span id="dpStatus" class="muted" role="status">idle</span>
+        <div data-tip="Progress of the running preparation, from 0 to 100 percent, measured in bytes of input read out of the total size of all input files. It jumps to 100 percent when the run finishes and starts again at 0 on the next run." class="progress" role="progressbar" aria-label="Dataset preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dpBar"></div></div>
+        <span data-tip="What the preparation is doing: idle, then the file number, megabytes read out of the total and documents read so far, then done or error, or stopped when Stop was pressed, in which case no files were changed." id="dpStatus" class="muted" role="status">idle</span>
       </div>
-      <div id="dpResult" class="result"></div>
+      <div data-tip="The summary of the last run: files read and seconds taken, the documents, characters, bytes and path of each split, why documents were rejected, the manifest path, and the same summary line the command line prints." id="dpResult" class="result"></div>
       <div class="row">
         <button id="dpUse" class="ghost hidden">Use the splits in Train and Evaluate</button>
       </div>
@@ -201,7 +201,7 @@
 
     <!-- ── Train ─────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-train" role="tabpanel" aria-labelledby="tab-train">
-      <h2>Train a transformer SLM</h2>
+      <h2 data-tip="The Train tab trains a new GPT-2 style transformer language model from scratch on your corpus, on the CPU, and saves it as a GGUF file. The Vocab field chooses a character-level model (0) or a byte-level BPE vocabulary (256 or more).">Train a transformer SLM</h2>
       <div class="row">
         <label>Corpus <input type="text" id="trCorpus" placeholder="/path/to/corpus.txt, or a token file made below" /></label>
         <button class="ghost browse" id="trCorpusBrowse" data-target="trCorpus">Browse…</button>
@@ -243,7 +243,7 @@
       </div>
       <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <fieldset>
-        <legend>Tokenize a large corpus first (optional)</legend>
+        <legend data-tip="This optional block turns a corpus too big for memory into a token file once, using an existing tokenizer file. Training then streams the tokens from disk, so RAM does not grow with the corpus, and the model comes out the same.">Tokenize a large corpus first (optional)</legend>
         <p class="hint">For text too big to hold in memory: turn it into a token file once, then put
           that file in the <strong>Corpus</strong> field above. Training streams it from disk, so RAM
           does not grow with the corpus. It uses the <strong>Tokenizer file</strong> field above, which
@@ -259,36 +259,36 @@
           <button class="ghost browse-save" id="tkOutBrowse" data-target="tkOut">Save as…</button>
           <label class="narrow">Document separator <input type="text" id="tkSep" value="&lt;|endoftext|&gt;" /></label>
         </div>
-        <span class="err" id="errTokenize" role="alert"></span>
+        <span data-tip="Problems with tokenizing appear here: an empty text, tokenizer or output field, a tokenizer file that does not exist yet, or text that cannot be read. A first training run with the Tokenizer file field filled in creates that tokenizer." class="err" id="errTokenize" role="alert"></span>
         <div class="row">
           <button id="tkRun">Tokenize corpus</button>
           <button id="tkCancel" class="ghost hidden">Stop</button>
-          <div class="progress" role="progressbar" aria-label="Tokenizing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="tkBar"></div></div>
-          <span id="tkStatus" class="muted" role="status">idle</span>
+          <div data-tip="Progress of the tokenizing run, from 0 to 100 percent, in bytes of text read out of the total size of all input files. It reaches 100 percent when the token file has been written and starts at 0 on the next run." class="progress" role="progressbar" aria-label="Tokenizing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="tkBar"></div></div>
+          <span data-tip="What tokenizing is doing: idle, then the file number, megabytes read out of the total and tokens written so far, then done or error, or stopped when Stop was pressed, in which case no token file was written." id="tkStatus" class="muted" role="status">idle</span>
         </div>
-        <div id="tkResult" class="result"></div>
+        <div data-tip="The summary of the last tokenizing run: tokens and documents written, number of files, vocabulary size, seconds, bytes in and out and the token file path, plus the matching command-line line. The Train Corpus field then points at that file." id="tkResult" class="result"></div>
       </fieldset>
       <fieldset>
-        <legend>Pre-flight check</legend>
-        <div id="trPreflight" class="infocards"></div>
-        <p class="hint" id="trPreflightWhy"></p>
+        <legend data-tip="The pre-flight check runs 300 milliseconds after any Train field changes. It estimates the parameter count and peak RAM of the run and whether llama.cpp can run the result. Train stays disabled while the run would exceed the RAM limit, unless the box below is ticked.">Pre-flight check</legend>
+        <div data-tip="Pre-flight cards: parameter count, estimated peak RAM against the usable limit and the free RAM, whether llama.cpp can run the model and why, the token file's size when the corpus is one, and any problem to fix first." id="trPreflight" class="infocards"></div>
+        <p data-tip="Why Train is blocked: the run needs more RAM than the engine allows, which is three quarters of the free RAM and at most 16 GB. Lower batch, context, embed dim or blocks, or tick the box below to skip the check." class="hint" id="trPreflightWhy"></p>
         <label class="chk hidden" id="trForceLabel"><input type="checkbox" id="trForce" /> I know, try anyway (skip the RAM check)</label>
       </fieldset>
-      <span class="err" id="errTrain" role="alert"></span>
+      <span data-tip="Problems with training appear here: a required field left empty, a number out of range, an embed dim not divisible by the heads, a vocab between 1 and 255, Resume without a checkpoint file, or an engine error during the run." class="err" id="errTrain" role="alert"></span>
 
       <div class="row">
         <button id="trStart" class="primary">Train</button>
         <button id="trCancel" class="ghost hidden">Stop training</button>
-        <div class="progress" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="trBar"></div></div>
-        <span id="trStatus" class="muted" role="status">idle</span>
+        <div data-tip="Training progress from 0 to 100 percent: epochs finished out of the epochs requested. Under a token budget the number of epochs is not known in advance, so the bar does not move, but the status beside it still counts." class="progress" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="trBar"></div></div>
+        <span data-tip="The training status: idle, training, then the current epoch out of the total with its loss, then done, error, or the step at which Stop ended the run. The loss should fall as the epochs go by." id="trStatus" class="muted" role="status">idle</span>
       </div>
-      <canvas id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
-      <pre id="trResult" class="result"></pre>
+      <canvas data-tip="The training loss curve: one point per reported epoch, the latest 1000 at most, scaled between the lowest and the highest loss seen, which are printed on the chart. A falling line means the model is learning." id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
+      <pre data-tip="The result of the last training run: bytes written and model path, method, final loss and seconds, input and output dimensions, tokenizer and layer count. A run ended by Stop still saves the model trained so far." id="trResult" class="result"></pre>
     </section>
 
     <!-- ── Generate ──────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-generate" role="tabpanel" aria-labelledby="tab-generate">
-      <h2>Generate (with live streaming)</h2>
+      <h2 data-tip="The Generate tab writes new text with a Ferrum model trained in this Studio or with the command line. The text appears in the box below while it is produced when streaming is on, or all at once at the end.">Generate (with live streaming)</h2>
       <div class="row">
         <label>Model <input type="text" id="genModel" placeholder="/path/to/model.gguf" /></label>
         <button class="ghost browse" id="genModelBrowse" data-target="genModel">Browse…</button>
@@ -310,18 +310,18 @@
       </label>
       <label class="chk"><input type="checkbox" id="genStream" checked /> Stream output live</label>
       <label class="chk"><input type="checkbox" id="genVerbose" /> Verbose</label>
-      <span class="err" id="errGen" role="alert"></span>
+      <span data-tip="Problems with generating appear here: no model path, a number out of range such as Top-p above 1 or Chars below 1, a file that is not a Ferrum model, or an engine error while writing." class="err" id="errGen" role="alert"></span>
       <div class="row">
         <button id="genStart" class="primary">Generate</button>
         <button id="genCancel" class="ghost hidden">Stop</button>
-        <span class="spinner hidden" id="genSpin" aria-hidden="true"></span><span id="genStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="genSpin" aria-hidden="true"></span><span data-tip="The generation status: generating while the model writes, then done or stopped with the number of characters returned, or error. The spinner beside it turns for as long as a generation runs." id="genStatus" class="muted" role="status"></span>
       </div>
-      <div id="genOut" class="output" placeholder="Generated text appears here…"></div>
+      <div data-tip="The generated text. With streaming on it shows only the continuation, grows piece by piece and is set from the final result at the end, so a late piece is never lost; with streaming off the whole text, seed included, appears at the end." id="genOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Evaluate ──────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-evaluate" role="tabpanel" aria-labelledby="tab-evaluate">
-      <h2>Evaluate — held-out perplexity</h2>
+      <h2 data-tip="The Evaluate tab scores models on text they were not trained on and adds one table row per scored text. Lower perplexity is better; a model that learned nothing scores about its vocabulary size, the uniform baseline.">Evaluate — held-out perplexity</h2>
       <p class="hint">Score one or more models on text they were <em>not</em> trained
         on. Lower perplexity is better; a model that learned nothing scores its
         vocabulary size.</p>
@@ -342,7 +342,7 @@
       </div>
       <label class="chk"><input type="checkbox" id="evLossy" /> Decode invalid UTF-8 lossily (replace bad bytes instead of refusing the file)</label>
       <fieldset>
-        <legend>Imported Llama/Qwen GGUF only</legend>
+        <legend data-tip="These settings apply only when the model is an imported Llama or Qwen GGUF, which is then scored like the eval-gguf command: precision, window length, an optional fine-tune checkpoint and the RAM override. Ferrum models ignore them.">Imported Llama/Qwen GGUF only</legend>
         <p class="hint">A Ferrum model needs none of these. For a Llama or Qwen
           <code>.gguf</code> the model is scored like <code>eval-gguf</code>.</p>
         <div class="grid">
@@ -361,23 +361,23 @@
         </div>
         <label class="chk"><input type="checkbox" id="evForce" /> Load even if it may exceed available RAM</label>
       </fieldset>
-      <span class="err" id="errEval" role="alert"></span>
+      <span data-tip="Problems with evaluating appear here: no model, no held-out text or file, a text too short to score, a file that cannot be read or is not valid UTF-8 without the lossy option, or a model that will not load." class="err" id="errEval" role="alert"></span>
       <div class="row">
         <button id="evRun" class="primary">Evaluate &amp; add row</button>
         <button id="evClear" class="ghost">Clear table</button>
-        <span class="spinner hidden" id="evSpin" aria-hidden="true"></span><span id="evStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="evSpin" aria-hidden="true"></span><span data-tip="The evaluation status: evaluating while scoring runs, then added, or added with the number of rows when a test file was scored too, or error. A notice also reports the perplexity of each new row." id="evStatus" class="muted" role="status"></span>
       </div>
       <div class="row">
         <label>Save JSON to <input type="text" id="evJsonPath" placeholder="/path/to/eval.json" /></label>
         <button class="ghost browse-save" id="evJsonBrowse" data-target="evJsonPath">Browse…</button>
         <button id="evSaveJson" class="ghost">Save JSON</button>
       </div>
-      <span class="err" id="errEvalJson" role="alert"></span>
-      <table id="evTable" class="data">
+      <span data-tip="Problems with Save JSON appear here: no evaluation in the table, an empty path, or a file that cannot be written. The saved file has the same keys as eval --json, under held_out and test when both were scored." class="err" id="errEvalJson" role="alert"></span>
+      <table data-tip="The results table: one row per scored text, newest at the bottom, kept across restarts for up to 50 runs. A row's verdict says learned when its perplexity is below half the uniform baseline. Clear table empties it." id="evTable" class="data">
         <thead><tr>
-          <th>Model</th><th>Set</th><th>Predictions</th><th>Cross-entropy (nats)</th>
-          <th>Bits/token</th><th>Bits/byte</th><th>Perplexity</th><th>Uniform baseline</th>
-          <th>Seconds</th><th>Verdict</th>
+          <th data-tip="The file name of the model that was scored, without its folder. Compare perplexity only between models with the same vocabulary; bits per byte compares any two models that scored the same text.">Model</th><th data-tip="Which text the row scored: held-out for the text pasted or named in the held-out file field, test for the optional test text file, which is scored the same way and reported as a second row.">Set</th><th data-tip="How many next-token predictions were scored, about the number of tokens in the text. More predictions give a steadier result, and a very short text gives a noisy perplexity. It is the tokens field of the saved JSON report.">Predictions</th><th data-tip="Average cross-entropy per predicted token, in nats, the natural-logarithm unit: how surprised the model was by each real next token. Lower is better, and the perplexity column is e raised to this number.">Cross-entropy (nats)</th>
+          <th data-tip="The same cross-entropy in bits instead of nats, that is divided by ln 2: the average number of bits the model would need to encode each token of the text. Lower is better.">Bits/token</th><th data-tip="Cross-entropy spread over the bytes of the text instead of its tokens: total bits divided by bytes. It does not depend on the vocabulary, so it compares character-level and BPE models fairly. Lower is better.">Bits/byte</th><th data-tip="The headline number: e to the cross-entropy, read as the number of tokens the model was choosing between at each step. Lower is better, and a value near the uniform baseline means the model learned almost nothing.">Perplexity</th><th data-tip="The perplexity of a model that guesses uniformly over its whole vocabulary, which equals the vocabulary size. It is the score of a model that learned nothing, and the yardstick of the verdict column.">Uniform baseline</th>
+          <th data-tip="Wall-clock seconds the scoring of this text took on this machine. It grows with model size and text length, and depends on the precision, the number of Ferrum threads and any other load on the machine.">Seconds</th><th data-tip="Learned when the perplexity is below half the uniform baseline, otherwise weak. It is a quick sanity check, not a quality grade: a weak model has barely beaten random guessing over its vocabulary.">Verdict</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -385,19 +385,19 @@
 
     <!-- ── Models ────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-models" role="tabpanel" aria-labelledby="tab-models">
-      <h2>Models — inspect / load from disk</h2>
+      <h2 data-tip="The Models tab reads a Ferrum model file from disk and shows what is inside it, without changing it. Use it to check a model's tokenizer, size and shape before generating, evaluating or exporting with it.">Models — inspect / load from disk</h2>
       <div class="row">
         <label>Model file <input type="text" id="miPath" placeholder="/path/to/model.gguf" /></label>
         <button class="ghost browse" id="miPathBrowse" data-target="miPath">Browse…</button>
         <button id="miInspect" class="primary">Inspect / reload</button>
       </div>
-      <span class="err" id="errModel" role="alert"></span>
-      <div id="miInfo" class="infocards"></div>
+      <span data-tip="Problems with Inspect appear here: an empty path, a file that does not exist or cannot be read, or a file that is not a valid Ferrum model. A hint and a Copy details button for the full message sit below it." class="err" id="errModel" role="alert"></span>
+      <div data-tip="The model's details after Inspect: file path, size in bytes, GGUF format, name, task, input and output dimensions, the tokenizer with its vocabulary size, the number of BPE merges (0 for a character-level model) and the layer count." id="miInfo" class="infocards"></div>
     </section>
 
     <!-- ── GGUF (import & run Llama/Qwen checkpoints) ─────────────────────── -->
     <section class="panel" id="panel-gguf" role="tabpanel" aria-labelledby="tab-gguf">
-      <h2>GGUF — import &amp; run a Llama/Qwen checkpoint</h2>
+      <h2 data-tip="The GGUF tab imports an external Llama or Qwen checkpoint in GGUF format and generates text from it on the CPU. Inspect reads only the header; Run loads the weights at the chosen precision and writes a reply.">GGUF — import &amp; run a Llama/Qwen checkpoint</h2>
       <p class="hint">Load an external <code>.gguf</code> model (F32/F16/Q8_0/Q8_1/Q4_0/Q4_1/Q4_K/Q5_K/Q6_K)
         and generate from it. CPU-only: a 1B model decodes at only a few tokens/sec and a
         real prompt takes tens of seconds to ingest. Prefer <strong>int8</strong> for speed,
@@ -407,7 +407,7 @@
         <button class="ghost browse" id="ggPathBrowse" data-target="ggPath">Browse…</button>
         <button id="ggInspect" class="ghost">Inspect</button>
       </div>
-      <div id="ggInfo" class="infocards"></div>
+      <div data-tip="Cards after Inspect: architecture and whether Ferrum can run it, GGUF version and tensor count, the shape (width, layers, heads, key-value heads, vocabulary), tokenizer, resident RAM at int4, int8 and f32, free RAM and a note." id="ggInfo" class="infocards"></div>
       <label>Prompt
         <textarea id="ggPrompt" rows="3" placeholder="Once upon a time"></textarea>
       </label>
@@ -435,18 +435,18 @@
       </div>
       <label class="chk"><input type="checkbox" id="ggChatFmt" checked /> Chat format (auto)</label>
       <label class="chk"><input type="checkbox" id="ggForce" /> Load even if it may exceed available RAM</label>
-      <span class="err" id="errGguf" role="alert"></span>
+      <span data-tip="Problems with the GGUF tab appear here: no file, neither a prompt nor token IDs, a sampler value out of range, a model too big for the free RAM without the override, or an architecture or tensor type that cannot be run." class="err" id="errGguf" role="alert"></span>
       <div class="row">
         <button id="ggRun" class="primary">Run</button>
         <button id="ggCancel" class="ghost hidden">Stop</button>
-        <span class="spinner hidden" id="ggSpin" aria-hidden="true"></span><span id="ggStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="ggSpin" aria-hidden="true"></span><span data-tip="The run status: inspecting, loading and generating, then done with the tokens generated, seconds, tokens per second and prompt length, or stopped, or cancelled when the size warning was declined, or error." id="ggStatus" class="muted" role="status"></span>
       </div>
-      <div id="ggOut" class="output" placeholder="Generated text appears here…"></div>
+      <div data-tip="The text the imported model generated for your prompt, shown when the run ends rather than streamed. With Chat format on, the prompt was first wrapped in the chat template detected from the file. Select the text to copy it." id="ggOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Fine-tune (GGUF) ──────────────────────────────────────────────── -->
     <section class="panel" id="panel-finetune" role="tabpanel" aria-labelledby="tab-finetune">
-      <h2>Fine-tune — adapt an imported GGUF to your corpus</h2>
+      <h2 data-tip="The Fine-tune tab adapts an imported Llama or Qwen GGUF to your own text with AdamW in full f32 precision and writes a .flck checkpoint. Training needs roughly four times the f32 weight size in RAM.">Fine-tune — adapt an imported GGUF to your corpus</h2>
       <p class="hint">AdamW fine-tunes a Llama/Qwen <code>.gguf</code> on your own text (full-precision f32 masters),
         then writes a <code>.flck</code> checkpoint. Run it back on the <strong>GGUF</strong> tab via the
         “Fine-tune checkpoint” field. CPU-only: keep the model small — training needs roughly
@@ -481,20 +481,20 @@
       </div>
       <label class="chk"><input type="checkbox" id="ftQat" /> Quantization-aware (int8) fine-tuning</label>
       <label class="chk"><input type="checkbox" id="ftForce" /> Train even if the estimate exceeds available RAM</label>
-      <span class="err" id="errFt" role="alert"></span>
+      <span data-tip="Problems with fine-tuning appear here: an empty model, corpus or output path, a number out of range, a RAM estimate above the free memory without the override, a model that cannot be trained, or an engine error during training." class="err" id="errFt" role="alert"></span>
       <div class="row">
         <button id="ftRun" class="primary">Fine-tune</button>
         <button id="ftCancel" class="ghost hidden">Stop fine-tuning</button>
-        <div class="progress" role="progressbar" aria-label="Fine-tuning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ftBar"></div></div>
-        <span class="spinner hidden" id="ftSpin" aria-hidden="true"></span><span id="ftStatus" class="muted" role="status"></span>
+        <div data-tip="Fine-tuning progress from 0 to 100 percent: epochs finished out of the epochs requested. Each epoch is one full pass over the training corpus, so a big corpus or a big model moves the bar slowly." class="progress" role="progressbar" aria-label="Fine-tuning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ftBar"></div></div>
+        <span class="spinner hidden" id="ftSpin" aria-hidden="true"></span><span data-tip="The fine-tune status: fine-tuning, then the current epoch out of the total with its loss and perplexity, then done, error, or the step at which Stop ended the run. The spinner beside it turns while it runs." id="ftStatus" class="muted" role="status"></span>
       </div>
-      <canvas id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
-      <div id="ftResult" class="result"></div>
+      <canvas data-tip="The fine-tuning loss curve: one point per reported epoch, the latest 1000 at most, scaled between the lowest and the highest loss seen, which are printed on the chart. A falling line means the model is adapting to your corpus." id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
+      <div data-tip="The result of the last fine-tune: checkpoint bytes and path, epochs, first and final loss, tokens, steps and seconds, and where to use the checkpoint. A run ended by Stop still saves a checkpoint that can be resumed." id="ftResult" class="result"></div>
     </section>
 
     <!-- ── Export (write a GGUF back out) ───────────────────────────────── -->
     <section class="panel" id="panel-export" role="tabpanel" aria-labelledby="tab-export">
-      <h2>Export — write a model back to GGUF</h2>
+      <h2 data-tip="The Export tab writes an imported GGUF, optionally with a fine-tune checkpoint applied, to a new GGUF file in the number format you choose. The new file runs in llama.cpp, Ollama and LM Studio as it is.">Export — write a model back to GGUF</h2>
       <p class="hint">Serializes a Llama/Qwen <code>.gguf</code> — optionally with a
         fine-tune checkpoint applied — to a new GGUF that runs in llama.cpp, ollama,
         or LM Studio. <strong>f16/f32</strong> are lossless (f32 masters); re-quantizing an
@@ -506,7 +506,7 @@
         <button class="ghost browse" id="exPathBrowse" data-target="exPath">Browse…</button>
         <button id="exInspect" class="ghost">Inspect</button>
       </div>
-      <div id="exInfo" class="infocards"></div>
+      <div data-tip="Cards after Inspect: architecture and whether it can be exported, GGUF version and tensor count, shape, tokenizer, the f32 memory the export needs because it loads every weight as f32, and the free RAM." id="exInfo" class="infocards"></div>
       <div class="grid">
         <label>Output type
           <select id="exQuant">
@@ -531,16 +531,16 @@
         <button class="ghost browse-save" id="exOutBrowse" data-target="exOut">Save as…</button>
       </div>
       <label class="chk"><input type="checkbox" id="exForce" /> Export even if the estimate exceeds available RAM</label>
-      <span class="err" id="errExport" role="alert"></span>
+      <span data-tip="Problems with exporting appear here: an empty source or output path, a model too big for the free RAM without the override, an architecture that cannot be exported, or a file that cannot be read or written." class="err" id="errExport" role="alert"></span>
       <div class="row">
         <button id="exExport" class="primary">Export</button>
         <button id="exCancel" class="ghost hidden">Cancel export</button>
-        <span class="spinner hidden" id="exSpin" aria-hidden="true"></span><span id="exStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="exSpin" aria-hidden="true"></span><span data-tip="The export status: inspecting or starting, then a line for each phase of the export while it runs, then done or error, or cancelled when the size warning was declined or Cancel export was pressed." id="exStatus" class="muted" role="status"></span>
       </div>
-      <div id="exResult" class="result"></div>
+      <div data-tip="The result of the last export: bytes written, output path and seconds, and a summary of the tensor types written, which shows any matrix that fell back to f16 because its row length was not block-aligned for the chosen type." id="exResult" class="result"></div>
 
       <fieldset>
-        <legend>Run a Ferrum model in Ollama or LM Studio</legend>
+        <legend data-tip="This block hands a Ferrum byte-level BPE model, a gpt2 GGUF, to Ollama or LM Studio, with the same code as the export-ollama and export-lmstudio commands. Any other model is refused before a tool starts.">Run a Ferrum model in Ollama or LM Studio</legend>
         <p class="hint">Only Ferrum's own byte-level BPE models (<code>gpt2</code> GGUF) run
           there; anything else is refused before a tool starts (an imported llama model needs a
           hand-written Modelfile, Manual section 9.5).
@@ -566,25 +566,25 @@
           <label>Modelfile to write (for Write Modelfile only) <input type="text" id="rxModelfileOut" placeholder="/path/to/ferrum.Modelfile" /></label>
           <button class="ghost browse-save" id="rxModelfileOutBrowse" data-target="rxModelfileOut">Save as…</button>
         </div>
-        <span class="err" id="errRuntime" role="alert"></span>
+        <span data-tip="Problems with the Ollama and LM Studio export appear here: an empty model, name or Modelfile field, a model that is not a Ferrum BPE model, a tool that cannot be found, or a tool that failed." class="err" id="errRuntime" role="alert"></span>
         <div class="row">
           <button id="rxPreview" class="ghost">Show Modelfile and commands</button>
           <button id="rxOllama" class="primary">Export to Ollama</button>
           <button id="rxLms" class="primary">Import into LM Studio</button>
           <button id="rxWriteModelfile" class="ghost">Write Modelfile only</button>
           <button id="rxCancel" class="ghost hidden">Stop</button>
-          <span id="rxStatus" class="muted" role="status"></span>
+          <span data-tip="The status of the Ollama or LM Studio step: looking while previewing, running or writing, then done, stopped or error. An Ollama create can take a while on a big model, and the buttons stay disabled meanwhile." id="rxStatus" class="muted" role="status"></span>
         </div>
         <label>Modelfile
           <textarea id="rxModelfile" rows="6" readonly placeholder="The Modelfile appears here."></textarea>
         </label>
-        <div id="rxResult" class="result"></div>
+        <div data-tip="What the last step did: for a preview, the tool each target would use and its commands, ending with Nothing was run; after a run, the summary, every command that ran and the tool's output." id="rxResult" class="result"></div>
       </fieldset>
     </section>
 
     <!-- ── Serve ─────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-serve" role="tabpanel" aria-labelledby="tab-serve">
-      <h2>Serve — an HTTP server for one model</h2>
+      <h2 data-tip="The Serve tab starts an HTTP server for one Ferrum model inside this window, the same server as the ferrum-serve command, so scripts and evaluation harnesses can score and generate text over HTTP.">Serve — an HTTP server for one model</h2>
       <p class="hint">Starts the same server as the <code>ferrum-serve</code> command inside this
         window, so other programs (an evaluation harness, a script, <code>curl</code>) can score
         text and generate with a Ferrum model over HTTP. One model at a time. It listens on this
@@ -607,57 +607,57 @@
         <button class="ghost" id="svGenToken">Generate</button>
         <label class="chk"><input type="checkbox" id="svShowToken" /> Show token</label>
       </div>
-      <span class="err" id="errServe" role="alert"></span>
+      <span data-tip="Problems with the server appear here: an empty model or host, a port above 65535, a limit below 1, a port already taken, a host other than this machine without a token, or a model that will not load." class="err" id="errServe" role="alert"></span>
       <div class="row">
         <button id="svStart" class="primary">Start server</button>
         <button id="svStop" class="ghost hidden">Stop server</button>
-        <span class="spinner hidden" id="svSpin" aria-hidden="true"></span><span id="svStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="svSpin" aria-hidden="true"></span><span data-tip="The server status: loading the model, running, stopping, then stopped with the number of requests answered, or error. If the server stops on its own, it reads stopped and the server log below says why." id="svStatus" class="muted" role="status"></span>
       </div>
       <div id="svRunning" class="hidden">
-        <p>Listening at <code id="svUrl"></code> — <b id="svRequests">0</b> requests so far</p>
+        <p data-tip="Where the running server listens, as a full URL, and how many requests it has answered so far. The counter is refreshed once per second while the server runs, and this line is hidden when no server runs.">Listening at <code id="svUrl"></code> — <b id="svRequests">0</b> requests so far</p>
         <div class="row">
           <button class="ghost" id="svCopyUrl">Copy URL</button>
           <button class="ghost" id="svCopyCurl">Copy curl example</button>
         </div>
-        <pre id="svCurl" class="result"></pre>
+        <pre data-tip="A ready-to-paste curl command that asks the running server for 32 tokens after Once upon a time. When a token is set, the command reads it from the FERRUM_TOKEN environment variable, so the copied text never contains the token." id="svCurl" class="result"></pre>
       </div>
-      <h3>Server log</h3>
-      <div id="svLog" class="serverlog" role="log" aria-live="off" aria-label="Server log" tabindex="0"></div>
+      <h3 data-tip="The server log below lists the server's own messages and every request it answered, newest at the bottom. It keeps the latest 500 lines and is not saved anywhere when the window closes.">Server log</h3>
+      <div data-tip="The server log: one line per server message or answered request, newest at the bottom, at most the latest 500 lines. It can be focused with Tab and scrolled with the keys; screen readers do not announce each new line." id="svLog" class="serverlog" role="log" aria-live="off" aria-label="Server log" tabindex="0"></div>
     </section>
 
     <!-- ── System ────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system">
-      <h2>System monitor</h2>
-      <p class="hint" id="hwSystem">Detecting your hardware...</p>
+      <h2 data-tip="The System monitor shows the live CPU load, memory use and per-core load of this machine, polled from the backend at the interval below. The same poll feeds the CPU, MEM and THREADS figures in the top bar.">System monitor</h2>
+      <p data-tip="The full hardware line: CPU threads and cores, total and free RAM, and any GPU detected. Ferrum runs only on the CPU, so a GPU is listed but not used. Free RAM is refreshed every 5 seconds." class="hint" id="hwSystem">Detecting your hardware...</p>
       <div class="row">
         <label class="chk"><input type="checkbox" id="sysOn" checked /> Monitoring on</label>
         <label class="narrow">Interval (s) <input type="number" id="sysInterval" value="1.5" step="0.5" min="0.5" /></label>
       </div>
       <div class="sysgrid">
         <div class="gauge">
-          <h3>CPU total</h3>
-          <div class="big" id="sysCpu">–</div>
-          <div class="meter" role="progressbar" aria-label="CPU load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysCpuBar"></div></div>
+          <h3 data-tip="The CPU total gauge below shows the load of all CPU cores together, as a percentage with one decimal and as a bar, for every program on the machine, not only Ferrum. It is refreshed at each monitor poll.">CPU total</h3>
+          <div data-tip="Total CPU load in percent, averaged over all cores and counting every program on the machine, with one decimal. It is refreshed at each monitor poll and stays at the last value while monitoring is switched off." class="big" id="sysCpu">–</div>
+          <div data-tip="Bar view of the total CPU load, from empty at 0 percent to full at 100 percent. Screen readers read the same value as a progress bar named CPU load, refreshed at every monitor poll." class="meter" role="progressbar" aria-label="CPU load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysCpuBar"></div></div>
         </div>
         <div class="gauge">
-          <h3>Memory</h3>
-          <div class="big" id="sysMem">–</div>
-          <div class="meter" role="progressbar" aria-label="Memory in use" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysMemBar"></div></div>
-          <div class="muted" id="sysMemAbs"></div>
+          <h3 data-tip="The Memory gauge below shows how much of this machine's RAM is in use, as a percentage, as a bar and as used out of total, counting every program. Compare it with the peak RAM estimate on the Train tab.">Memory</h3>
+          <div data-tip="Share of RAM in use, in percent with one decimal, counting every program on the machine. The line below gives the same amount as used and total size. It stays at the last value while monitoring is switched off." class="big" id="sysMem">–</div>
+          <div data-tip="Bar view of the memory in use, from empty at 0 percent to full at 100 percent of the total RAM. Screen readers read it as a progress bar named Memory in use, refreshed at every monitor poll." class="meter" role="progressbar" aria-label="Memory in use" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sysMemBar"></div></div>
+          <div data-tip="Memory in use and total memory, in units of 1024, so 1 GB here is 1024 MB. It stays empty until the first monitor poll. The free memory the Studio's estimates work with is in the hardware line above." class="muted" id="sysMemAbs"></div>
         </div>
         <div class="gauge">
-          <h3>Ferrum threads</h3>
-          <div class="big" id="sysThreads">–</div>
-          <div class="muted">used by parallel kernels</div>
+          <h3 data-tip="The Ferrum threads gauge below shows how many worker threads the engine's parallel matrix kernels use. The number is fixed when the app starts, from FERRUM_NUM_THREADS or the detected core count, and does not change while it runs.">Ferrum threads</h3>
+          <div data-tip="Size of Ferrum's worker thread pool. Set FERRUM_NUM_THREADS before starting the app to change it. Generation and evaluation results are identical at any thread count; more threads only change the speed." class="big" id="sysThreads">–</div>
+          <div data-tip="The worker threads run Ferrum's hand-written parallel matrix multiplication. The Threads fields on the Train and Fine-tune tabs choose the training workers separately; 0 in those fields picks this number." class="muted">used by parallel kernels</div>
         </div>
       </div>
-      <h3>Per-core load</h3>
-      <div id="sysCores" class="cores"></div>
+      <h3 data-tip="The per-core list below shows one entry for each logical CPU core with its load in percent and a bar, so you can see whether a job keeps all cores busy or only a few. It is refreshed at each monitor poll.">Per-core load</h3>
+      <div data-tip="One entry per logical CPU core, numbered from 0, with its load in percent and a bar. The list is rebuilt at every monitor poll and stays empty until the first poll, or when the page runs outside the desktop app." id="sysCores" class="cores"></div>
     </section>
 
     <!-- ── Capable ───────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-capable" role="tabpanel" aria-labelledby="tab-capable">
-      <h2>Capable — what can this machine run?</h2>
+      <h2 data-tip="The Capable tab measures this machine with a short benchmark and estimates the range of model sizes, in parameters, that it can load, train or fine-tune within 24 hours, and run at 3 or more tokens per second.">Capable — what can this machine run?</h2>
       <p class="hint">Runs a quick (~1–2 s) micro-benchmark of memory bandwidth and
         matmul throughput on <em>this</em> CPU, then estimates the parameter range of an
         SLM this machine can <strong>load</strong>, <strong>train</strong> (&lt; 24 h),
@@ -666,28 +666,28 @@
         architecture and context length.</p>
       <div class="row">
         <button id="capCheck" class="primary">Check this machine</button>
-        <span class="spinner hidden" id="capSpin" aria-hidden="true"></span><span id="capStatus" class="muted" role="status"></span>
+        <span class="spinner hidden" id="capSpin" aria-hidden="true"></span><span data-tip="The status of the check: benchmarking while the micro-benchmark runs, empty when it has finished and the report has opened, or error if it failed. The spinner beside it turns during the run, which takes about one to two seconds." id="capStatus" class="muted" role="status"></span>
       </div>
-      <div id="capCards" class="infocards"></div>
+      <div data-tip="Summary of the last check: CPU name, cores and threads, free and total memory, measured memory bandwidth and matrix-multiply throughput, and the largest model it can load at int4 and run at int8. The report dialog has the full ranges." id="capCards" class="infocards"></div>
     </section>
   </main>
 
   <!-- ── Docked terminal ──────────────────────────────────────────────────── -->
   <section id="terminal" aria-label="Engine log">
     <div class="term-head">
-      <span>Engine log — <code>--verbose</code> output</span>
+      <span data-tip="The engine log dock: verbose engine output, for example from Train or Generate with Verbose ticked, plus messages from the Studio itself. It is shared by every tab and stays visible whichever tab is open.">Engine log — <code>--verbose</code> output</span>
       <div class="term-actions">
         <button id="termClear" class="ghost small">Clear</button>
       </div>
     </div>
-    <div id="termOut" class="term-out" role="log" aria-live="off" aria-label="Engine log output" tabindex="0"></div>
+    <div data-tip="The engine log: one line per message, newest at the bottom, coloured by source, at most the latest 2000 lines. It can be focused with Tab and scrolled with the keys, and Clear empties it. Screen readers do not announce each line." id="termOut" class="term-out" role="log" aria-live="off" aria-label="Engine log output" tabindex="0"></div>
   </section>
 
   <!-- ── Capability report dialog ─────────────────────────────────────────── -->
   <dialog id="capDialog" class="capdlg" aria-labelledby="capDialogTitle">
     <form method="dialog">
-      <h2 id="capDialogTitle">Machine capability</h2>
-      <div id="capDialogBody"></div>
+      <h2 data-tip="The machine capability report from the last check of this machine. It opens by itself when the benchmark finishes and closes with the Close button or Escape; the summary cards stay on the Capable tab." id="capDialogTitle">Machine capability</h2>
+      <div data-tip="The full report: CPU, cores, bandwidth and throughput, then a table of the parameter range for loading, training from scratch, fine-tuning, inference and an evaluation pass, each with the basis of its estimate. All of them are upper bounds." id="capDialogBody"></div>
       <menu class="dlg-actions">
         <button class="primary" id="capDialogClose" value="ok">Close</button>
       </menu>
@@ -696,15 +696,15 @@
 
   <!-- ── GGUF over-budget warning dialog ──────────────────────────────────── -->
   <dialog id="ggWarnDialog" class="capdlg" aria-labelledby="ggWarnTitle">
-    <h2 id="ggWarnTitle">⚠ Model exceeds this machine's estimated limits</h2>
-    <div id="ggWarnBody"></div>
+    <h2 data-tip="This dialog warns that the model has more parameters than this machine's estimated limits from the Capable check. It opens after Inspect, as advice only, and before Run or Export, where it asks whether to go on." id="ggWarnTitle">⚠ Model exceeds this machine's estimated limits</h2>
+    <div data-tip="The model's parameter count and every limit it crosses, such as loading at int4 or inference at 3 tokens per second. If it crosses the fits-in-RAM limit, expect heavy swapping or a failed load; otherwise expect slowness." id="ggWarnBody"></div>
     <menu class="dlg-actions">
       <button id="ggWarnCancel" class="ghost">Cancel</button>
       <button id="ggWarnProceed" class="primary">Proceed anyway</button>
     </menu>
   </dialog>
 
-  <div id="toasts" aria-live="polite" aria-atomic="false"></div>
+  <div data-tip="Short notices appear here: a green edge for success, a red edge for errors, orange otherwise. A notice disappears after 5 seconds and an error after 15, and screen readers announce them. Most errors also stay beside their form." id="toasts" aria-live="polite" aria-atomic="false"></div>
   <script src="escape.js"></script>
   <script src="stream.js"></script>
   <script src="help.js"></script>

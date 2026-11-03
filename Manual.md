@@ -2020,6 +2020,19 @@ embedding, heads, blocks, seed...). Press Esc to dismiss it. Inside a modal dial
 without touching any logic; a Node test fails if a control has no entry or too
 short a one. Screen readers get the same text through `aria-describedby`.
 
+**Tool-tips on everything else, too.** The section headings, box
+titles, status lines, progress bars, error lines, Evaluate column headers,
+charts, result and output areas, the top-bar figures (hardware line, CPU, MEM,
+THREADS, connection dot), the logs and the dialogs each carry a `data-tip`
+attribute in `ui/index.html`, shown in the same bubble on hover. Every tip has
+at least 30 words of real information; `ui/tooltips_guard.test.js` fails for any
+element that lacks one, and for a native `title` attribute, which would open a
+second bubble. Elements that are not controls are not added to the Tab order:
+they show their tip on hover and give it to screen readers through
+`aria-describedby`. How to add a tip, and the exact list of exempt elements
+(options, inline text, wrappers, static hint paragraphs), is in the tutorial
+[docs/gui-tooltips.md](docs/gui-tooltips.md).
+
 **Live estimates on every button.** A button's tooltip also says what it does
 and an *estimated time* and *RAM need* computed by `estimate_job` from your
 current form values and hardware, for example "about 4 min on your 8 CPU
@@ -2145,7 +2158,7 @@ few seconds:
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, tokenizing, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Serve tab (validation, generated token, start, poll, copy, stop, a server that dies), the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` (`ui/icons.test.js` also checks the bundle icons' PNG, ICO and ICNS structure) |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), the 30-word tool-tip guard over every element of `index.html` (`tooltips_guard.test.js`), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Serve tab (validation, generated token, start, poll, copy, stop, a server that dies), the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` (`ui/icons.test.js` also checks the bundle icons' PNG, ICO and ICNS structure) |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
 arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and

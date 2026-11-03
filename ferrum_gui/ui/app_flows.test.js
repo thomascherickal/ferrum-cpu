@@ -56,6 +56,70 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a.$("panel-capable").classList.contains("active") && !a.$("panel-train").classList.contains("active"));
   }
 
+  // ── Tool-tips: hover a tab and a heading, focus an output area, Escape, runtime buttons ──
+  {
+    const a = await start();
+    const bubble = a.$("ferrum-tooltip");
+    const shown = () => !bubble.classList.contains("hidden");
+    // Hover waits for the show delay: a real timer here, capped at 5 ms by testapp.js, so each
+    // step yields to the timer queue (bounded, not a fixed sleep).
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    const hover = async (el) => { el.dispatch("mouseenter"); for (let i = 0; i < 200 && !shown(); i++) await tick(); };
+    const descOf = (el) => a.doc.getElementById(el.getAttribute("aria-describedby")).textContent;
+
+    await hover(a.$("tab-train"));
+    assert.ok(shown(), "hovering a tab shows its tip");
+    assert.ok(bubble.textContent.includes("Shows the Train page") && bubble.textContent.includes("pre-flight check"), bubble.textContent);
+    a.$("tab-train").dispatch("mouseleave");
+    assert.ok(!shown());
+
+    const h2 = a.$("panel-datasets").querySelector("h2");
+    await hover(h2);
+    assert.ok(shown(), "hovering a heading shows its tip");
+    assert.strictEqual(bubble.textContent, h2.getAttribute("data-tip"), "a data-tip shows as it is, with no title");
+    assert.strictEqual(descOf(h2), h2.getAttribute("data-tip"), "and screen readers get the same text");
+    h2.dispatch("mouseleave");
+
+    // Keyboard: the focusable engine log shows its tip at once; Escape hides it.
+    a.$("termOut").focus();
+    assert.ok(shown() && bubble.textContent === a.$("termOut").getAttribute("data-tip"));
+    a.doc.dispatch("keydown", { key: "Escape" });
+    assert.ok(!shown());
+    a.$("termOut").blur();
+
+    // The buttons each error line gets at runtime have tips too.
+    await a.click("evRun"); // no model: an inline error
+    const box = a.$("errEval").nextSibling;
+    const copy = box.children.find((c) => c.textContent === "Copy details");
+    const expand = box.children.find((c) => c.textContent === "Show full message");
+    const { ERR_TIPS } = require("./common.js");
+    assert.strictEqual(descOf(copy), ERR_TIPS.copy);
+    assert.strictEqual(descOf(expand), ERR_TIPS.expand);
+    copy.focus();
+    assert.strictEqual(bubble.textContent, ERR_TIPS.copy);
+    copy.blur();
+
+    // Without live.js (no getLive, or it answers null) the buttons still carry their data-tip.
+    const { Document } = require("./testdom.js");
+    globalThis.FerrumErrors = require("./errors.js"); // common.js reads it from the global, as in the page
+    for (const getLive of [undefined, () => null]) {
+      const doc = new Document();
+      const row = doc.createElement("div");
+      const err = doc.createElement("span");
+      err.id = "e";
+      row.appendChild(err);
+      doc.body.appendChild(row);
+      require("./common.js").create({ $: (id) => doc.getElementById(id), doc, getLive }).setErr("e", "boom");
+      const b = row.children[1].children.find((c) => c.textContent === "Copy details");
+      assert.strictEqual(b.getAttribute("data-tip"), ERR_TIPS.copy);
+      assert.strictEqual(b.getAttribute("aria-describedby"), null);
+    }
+
+    // No native title bubble competes with ours.
+    assert.strictEqual(a.$("connDot").getAttribute("title"), null);
+    assert.strictEqual(a.$("hwLine").getAttribute("title"), null);
+  }
+
   // ── Train ───────────────────────────────────────────────────────────────
   {
     const a = await start({ train_slm: async () => TRAINED });

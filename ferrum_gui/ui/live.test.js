@@ -90,6 +90,14 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
       const d = doc.getElementById(c.getAttribute("aria-describedby"));
       assert.ok(d && d.textContent.length > 40, `#${c.id} has a screen-reader description`);
     }
+    // Every other element takes its tip from data-tip; an element with neither gets none.
+    const tipped = doc.querySelectorAll("[data-tip]");
+    assert.ok(tipped.length >= 100, "found only " + tipped.length);
+    for (const el of tipped) assert.strictEqual(doc.getElementById(el.getAttribute("aria-describedby")).textContent, el.getAttribute("data-tip"));
+    const bare = doc.createElement("div");
+    doc.body.appendChild(bare);
+    live.attach(bare);
+    assert.strictEqual(bare.getAttribute("aria-describedby"), null);
     assert.strictEqual(doc.getElementById("hwLine").textContent, view.hardwareLine(HW));
     assert.strictEqual(doc.getElementById("hwSystem").textContent, view.hardwareLine(HW));
     assert.ok(doc.getElementById("hwLine").textContent.includes("Test GPU") && /not used by Ferrum/.test(doc.getElementById("hwLine").textContent));

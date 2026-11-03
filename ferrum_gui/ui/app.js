@@ -13,7 +13,7 @@ const dialog = hasTauri && T.dialog ? T.dialog : null;
 const $ = (id) => document.getElementById(id);
 let live = null; // tooltips + live estimates (live.js), created in init()
 
-const common = window.FerrumCommon.create({ $, doc: document, navigator: window.navigator });
+const common = window.FerrumCommon.create({ $, doc: document, navigator: window.navigator, getLive: () => live });
 // Form values, last-used folders and the Evaluate table survive a restart (settings.js); storage
 // that is missing or blocked just means nothing is remembered.
 const settings = window.FerrumSettings.create({ doc: document, getStorage: () => window.localStorage, win: window });
@@ -64,11 +64,11 @@ async function wireEvents() {
   await listen("serve-log", (e) => serveTab.onLog(e.payload));
 }
 
-// The connection dot: colour plus shape (filled or hollow) plus a spoken label.
+// The connection dot: colour plus shape (filled or hollow) plus a spoken label (its data-tip
+// explains both states; a native title would show a second bubble).
 function setConn(on, text) {
   const dot = $("connDot");
   dot.textContent = on ? "●" : "○";
-  dot.title = text;
   dot.setAttribute("aria-label", text);
 }
 

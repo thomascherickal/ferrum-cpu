@@ -29,9 +29,10 @@
     kind: "instant",
     beginner: "A path is the address of a file on your computer, like /home/you/data/story.txt. Browsing just fills in that address for you; nothing is read or written until you press the action button.",
   });
-  const tab = (name, what) => ({
+  const tab = (name, what, how) => ({
     title: name + " tab",
     does: "Shows the " + name + " page: " + what,
+    how,
     kind: "instant",
   });
 
@@ -756,6 +757,7 @@
     dsCatalogLoad: {
       title: "Refresh list",
       does: "Reloads the built-in list of small, CPU-friendly datasets (HuggingFace and Kaggle) shown below.",
+      how: "The list is built into the app, not fetched from the internet, and keeps only entries of at most 200 MB. It is also loaded once when the window opens; a failure is shown under the catalog.",
       kind: "instant",
     },
     dsCatalogDownload: {
@@ -773,6 +775,7 @@
     dsKgDownload: {
       title: "Fetch Kaggle",
       does: "Downloads the named file from the named Kaggle dataset into the download folder. Needs Kaggle credentials.",
+      how: "It needs a download folder, the owner/slug and the file name. Credentials come from KAGGLE_USERNAME and KAGGLE_KEY or from ~/.kaggle/kaggle.json, and the saved file is put into the local file field.",
       kind: "download",
     },
     dsDownload: {
@@ -784,6 +787,7 @@
     dsLoadFile: {
       title: "Load file",
       does: "Reads the local file (up to 16 MiB) into the Raw text box.",
+      how: "The path comes from the local file field; invalid UTF-8 bytes are replaced instead of refused. Loading replaces whatever is in the Raw text box, and a notice reports how many characters arrived.",
       kind: "load_file",
     },
     dsClean: {
@@ -795,6 +799,7 @@
     dsSave: {
       title: "Save corpus",
       does: "Writes the cleaned text to the Save to path (creating folders as needed) and fills the Train tab's Corpus field.",
+      how: "It saves the whole cleaned text, not only the 4000-character preview, and fails with a message when nothing was cleaned yet. The Train Corpus field is filled only when it is empty.",
       kind: "instant",
     },
     trStart: {
@@ -806,6 +811,7 @@
     genStart: {
       title: "Generate",
       does: "Loads the model and writes new text that continues the seed, showing it live when streaming is on.",
+      how: "Chars or Max tokens set the length; Temperature, Top-k, Top-p and Repetition penalty shape the choice of each token; Stop strings end the text early. The button is disabled while a generation runs.",
       kind: "generate",
     },
     evRun: {
@@ -823,6 +829,7 @@
     genCancel: {
       title: "Stop",
       does: "Ends the running generation after the current piece of text. What was produced so far stays in the output box.",
+      how: "The button appears only while a generation runs. The status line then reads stopped, with the number of characters returned.",
       kind: "instant",
     },
     ggCancel: {
@@ -850,16 +857,19 @@
     evClear: {
       title: "Clear table",
       does: "Removes all rows from the evaluation table. No file is touched.",
+      how: "It also forgets the stored copy of the table that would otherwise come back after a restart. After clearing, Save JSON has nothing to save until the next evaluation.",
       kind: "instant",
     },
     miInspect: {
       title: "Inspect / reload",
       does: "Reads the model file and shows its format, task, sizes, tokenizer and number of layers.",
+      how: "It reads the file named in Model file and shows the result as cards below; a file that is not a valid Ferrum model shows an error instead. The file itself is never changed.",
       kind: "model_info",
     },
     ggInspect: {
       title: "Inspect",
       does: "Reads only the GGUF header and shows the architecture, shape, tokenizer and the RAM needed at int4, int8 and f32. Warns when the model exceeds this machine's estimated limits.",
+      how: "The warning appears only after the Capable tab has measured this machine; until then a notice suggests running that check.",
       kind: "gguf_info",
     },
     ggRun: {
@@ -877,11 +887,13 @@
     exInspect: {
       title: "Inspect",
       does: "Reads only the GGUF header and shows its architecture, shape and the memory an export would need.",
+      how: "The cards show architecture, GGUF version and tensor count, shape, tokenizer, the f32 memory an export loads and the free RAM. After a Capable check, an oversized model also opens a warning.",
       kind: "gguf_info",
     },
     exExport: {
       title: "Export",
       does: "Converts the model (with the fine-tune checkpoint applied, if given) to the chosen output type and writes a new GGUF file, with progress for each phase.",
+      how: "It is disabled while an export runs; Cancel export stops it and nothing is written. After a Capable check, a model over the limits opens a warning that asks first.",
       kind: "gguf_export",
     },
     capCheck: {
@@ -899,21 +911,25 @@
     termClear: {
       title: "Clear",
       does: "Empties the Engine log panel. It does not affect any running job.",
+      how: "New lines keep arriving after it: engine logs and messages from the Studio. The panel keeps only the latest 2000 lines on its own anyway.",
       kind: "instant",
     },
     ggWarnCancel: {
       title: "Cancel",
       does: "Closes the warning and does not run the oversized model.",
+      how: "Escape does the same. After Inspect, cancelling only closes the dialog; before Run or Export it keeps the job from starting, and the status line reads cancelled.",
       kind: "instant",
     },
     ggWarnProceed: {
       title: "Proceed anyway",
       does: "Continues despite the warning that the model exceeds this machine's estimated limits. The job may be very slow or fail.",
+      how: "After Inspect it only closes the dialog. Before Run or Export, the job starts as if no limit were crossed. The dialog lists every limit the model crosses.",
       kind: "instant",
     },
     capDialogClose: {
       title: "Close",
       does: "Closes the machine capability report. The numbers stay on the Capable tab.",
+      how: "Escape closes it too. The bounds it measured stay in use: the GGUF and Export tabs check model sizes against them.",
       kind: "instant",
     },
 
@@ -939,6 +955,7 @@
     svCopyUrl: {
       title: "Copy URL",
       does: "Copies the address of the running server, for example http://127.0.0.1:8080, to the clipboard.",
+      how: "The button is visible only while the server runs. If the clipboard is blocked, a notice asks you to select the address and copy it by hand.",
       kind: "instant",
     },
     svCopyCurl: {
@@ -1025,6 +1042,7 @@
     rxCancel: {
       title: "Stop export",
       does: "Stops the export before the next program starts, or while waiting for LM Studio's listing. A program that is already running (ollama create) cannot be interrupted and finishes.",
+      how: "It appears only while an export runs; the status line then reads stopped.",
       kind: "instant",
     },
     // ── Train: tokenize a corpus ──────────────────────────────────────────
@@ -1059,6 +1077,7 @@
     tkCancel: {
       title: "Stop tokenizing",
       does: "Stops the tokenizing between documents. No token file is written and the text is untouched.",
+      how: "It appears only while tokenizing runs; the status line then reads stopped, and the Train Corpus field keeps its value.",
       kind: "instant",
     },
     // ── Prepare ───────────────────────────────────────────────────────────
@@ -1158,20 +1177,33 @@
     dpUse: {
       title: "Use the splits in Train and Evaluate",
       does: "Fills the Train tab's corpus with train.txt and the Evaluate tab's held-out and test files with val.txt and test.txt from the run that just finished (empty splits are skipped).",
+      how: "It appears after a run that put at least one document into train.txt.",
       kind: "instant",
     },
-    "tab-datasets": tab("Datasets", "download, load, clean and save the text your model learns from."),
-    "tab-prepare": tab("Prepare", "clean, deduplicate and split text files into train, validation and test sets with a manifest."),
-    "tab-train": tab("Train", "train a new small transformer language model from scratch on your corpus."),
-    "tab-generate": tab("Generate", "write new text with a trained model, optionally streamed live."),
-    "tab-evaluate": tab("Evaluate", "score models on text they have not seen, using perplexity."),
-    "tab-models": tab("Models", "inspect a model file."),
-    "tab-gguf": tab("GGUF", "inspect and run an external Llama or Qwen model."),
-    "tab-finetune": tab("Fine-tune", "adapt an external GGUF model to your own text."),
-    "tab-export": tab("Export", "write a (fine-tuned) GGUF model to a new file in another number format."),
-    "tab-serve": tab("Serve", "run an HTTP server for one model so other programs can use it."),
-    "tab-system": tab("System", "live CPU, memory and thread load."),
-    "tab-capable": tab("Capable", "benchmark this machine and see which model sizes it can handle."),
+    "tab-datasets": tab("Datasets", "download, load, clean and save the text your model learns from.",
+      "It holds the dataset catalog, the HuggingFace and Kaggle fetchers, the URL download, the local file loader, the cleaning options and the save box. Nothing here trains a model; it produces a plain text corpus file."),
+    "tab-prepare": tab("Prepare", "clean, deduplicate and split text files into train, validation and test sets with a manifest.",
+      "It runs the same code as the train_transformer prepare command on files and folders read straight from disk, and writes train.txt, val.txt, test.txt and manifest.json into the output folder."),
+    "tab-train": tab("Train", "train a new small transformer language model from scratch on your corpus.",
+      "It holds the model shape, the optimizer settings, the optional tokenize step and a pre-flight check of parameters and peak RAM. The model is saved as a GGUF file when training ends or is stopped."),
+    "tab-generate": tab("Generate", "write new text with a trained model, optionally streamed live.",
+      "Point it at a Ferrum model file, type a seed text and choose the sampling settings; Stop ends a run early and keeps the text produced so far. Imported Llama or Qwen models run on the GGUF tab."),
+    "tab-evaluate": tab("Evaluate", "score models on text they have not seen, using perplexity.",
+      "Each run adds a row with cross-entropy, bits per token and per byte, perplexity and the uniform baseline, for a held-out text and an optional test file. The table is remembered across restarts and can be saved as JSON."),
+    "tab-models": tab("Models", "inspect a model file.",
+      "Point it at a Ferrum model file and press Inspect to see its size, format, name, task, input and output dimensions, tokenizer, BPE merge count and number of layers. Nothing is changed on disk."),
+    "tab-gguf": tab("GGUF", "inspect and run an external Llama or Qwen model.",
+      "It reads the GGUF header for architecture, shape, tokenizer and RAM needs, then generates from a prompt at int8, int4 or f32 precision, optionally with a fine-tune checkpoint laid over the weights. Everything runs on the CPU."),
+    "tab-finetune": tab("Fine-tune", "adapt an external GGUF model to your own text.",
+      "AdamW trains the imported model on a plain text corpus and writes a .flck checkpoint, with a loss chart and a Stop button. The GGUF, Evaluate and Export tabs can then load that checkpoint on top of the original file."),
+    "tab-export": tab("Export", "write a (fine-tuned) GGUF model to a new file in another number format.",
+      "Choose one of nine output types from q8_0 to f32 and an optional fine-tune checkpoint; the new file runs in llama.cpp, Ollama and LM Studio. The block at the bottom hands a Ferrum model to Ollama or LM Studio."),
+    "tab-serve": tab("Serve", "run an HTTP server for one model so other programs can use it.",
+      "It starts the same server as the ferrum-serve command inside this window, with limits per request, an optional bearer token, a request counter, a copyable curl example and a log of every request."),
+    "tab-system": tab("System", "live CPU, memory and thread load.",
+      "It polls the backend every 1.5 seconds by default, at an interval you can change, and shows total CPU load, memory in use, the Ferrum worker thread count and one bar per CPU core. Monitoring can be switched off."),
+    "tab-capable": tab("Capable", "benchmark this machine and see which model sizes it can handle.",
+      "Check this machine runs a micro-benchmark of about one to two seconds and estimates the model sizes this machine can load, train, fine-tune and run. The GGUF and Export tabs use the result to warn about oversized models."),
 
     // Browse buttons
     dsDestDirBrowse: browse("download folder", "dir"),

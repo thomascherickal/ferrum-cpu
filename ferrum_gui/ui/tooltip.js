@@ -6,6 +6,9 @@
 // - The visible bubble is one shared <div role="tooltip">. Every target also
 //   gets a visually hidden description node and `aria-describedby`, so screen
 //   readers always have the (live-updated) text, not only while it is shown.
+// - Content comes from a help.js entry (`contentFromHelp`) or from a plain
+//   `data-tip` attribute (`contentFromTip`, no title). Every tip has at least
+//   MIN_WORDS words (`wordCount`); tooltips_guard.test.js enforces it.
 // - All text is set with textContent, never innerHTML.
 // - CSP: the page forbids inline styles. Only CSSOM (`element.style.left = ...`)
 //   is used for positioning; it is allowed, unlike a style="" attribute.
@@ -15,6 +18,16 @@
   const HOVER_MS = 350;
   const GAP = 8;
   const MARGIN = 8;
+  const MIN_WORDS = 30;
+
+  // Words in `text`: its whitespace-separated pieces. The one counter the guard test uses.
+  const wordCount = (text) => String(text == null ? "" : text).split(/\s+/).filter(Boolean).length;
+
+  // A `data-tip` attribute value -> renderable content (null when empty).
+  function contentFromTip(text) {
+    const t = String(text == null ? "" : text).trim();
+    return t ? { title: "", sections: [{ label: null, text: t }] } : null;
+  }
 
   // Where to put a tooltip of size `tip` next to `anchor`, inside `vp`.
   // Prefers below the anchor, then above, then the side with more room; always
@@ -51,7 +64,7 @@
   function plainText(content) {
     if (!content) return "";
     const stop = (t) => (/[.!?]$/.test(t) ? t : t + ".");
-    const parts = [stop(content.title)];
+    const parts = content.title ? [stop(content.title)] : [];
     for (const s of content.sections) parts.push(stop(s.label ? `${s.label}: ${s.text}` : s.text));
     return parts.join(" ");
   }
@@ -82,10 +95,12 @@
 
     function render(content) {
       bubble.textContent = "";
-      const h = doc.createElement("div");
-      h.className = "tip-title";
-      h.textContent = content.title;
-      bubble.appendChild(h);
+      if (content.title) {
+        const h = doc.createElement("div");
+        h.className = "tip-title";
+        h.textContent = content.title;
+        bubble.appendChild(h);
+      }
       for (const s of content.sections) {
         const p = doc.createElement("p");
         p.className = "tip-sec" + (s.tone ? " tip-" + s.tone : "");
@@ -197,7 +212,7 @@
     };
   }
 
-  const api = { placeTooltip, contentFromHelp, plainText, createTooltips, HOVER_MS };
+  const api = { placeTooltip, contentFromHelp, contentFromTip, plainText, wordCount, createTooltips, HOVER_MS, MIN_WORDS };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {
