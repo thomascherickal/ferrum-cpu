@@ -1,6 +1,7 @@
 //! GGUF checkpoint save / load with strict header validation.
 use crate::ckpt;
 use crate::error::{InferError, Result};
+pub(crate) use crate::resume::{EpochStart, RunSettings};
 use crate::rng::Rng;
 use crate::train_transformer::TransformerNet;
 
@@ -15,53 +16,6 @@ pub struct CheckpointInfo {
     pub hidden: usize,
     pub blocks: usize,
     pub step: u64,
-}
-
-/// The start of the epoch a checkpoint was written in (`ferrum.ckpt.epoch_rng`, stored as
-/// `[rng, step, epoch]`): the RNG state its window order was drawn from, the optimizer step
-/// it began after, and its 1-based number. Epochs are not all the same length (a stride
-/// above 1 draws a random grid phase per epoch), so the step and the number are stored
-/// rather than derived from the step count.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EpochStart {
-    pub(crate) rng: u64,
-    pub(crate) step: u64,
-    pub(crate) epoch: u64,
-}
-
-impl EpochStart {
-    /// Read it from a checkpoint taken at `step`: absent in checkpoints older than the key,
-    /// an error when malformed or later than the checkpoint itself.
-    fn read(g: &crate::gguf::Gguf, step: u64) -> Result<Option<Self>> {
-        match ckpt::get_u64s(g, "epoch_rng")? {
-            None => Ok(None),
-            Some(&[rng, start, epoch]) if start <= step && epoch >= 1 => Ok(Some(Self {
-                rng,
-                step: start,
-                epoch,
-            })),
-            Some(_) => Err(InferError::Format(
-                "checkpoint key 'ferrum.ckpt.epoch_rng' is not [rng, step, epoch]".into(),
-            )),
-        }
-    }
-}
-
-/// The training settings a checkpoint was written under (`ferrum.ckpt.batch_size`,
-/// `ferrum.ckpt.window_stride`, `ferrum.ckpt.lr_settings`), so a `--resume` can tell when they
-/// changed. A different batch or stride changes the window order and the step count, so a
-/// resume refuses it; the learning-rate settings may change and are only noted.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct RunSettings {
-    pub(crate) batch: u64,
-    /// Effective stride (`--stride 0` already resolved to the context length).
-    pub(crate) stride: u64,
-    pub(crate) lr: f32,
-    pub(crate) cosine: bool,
-    pub(crate) warmup: u64,
-    pub(crate) clip: f32,
-    pub(crate) weight_decay: f32,
-    pub(crate) dropout: f32,
 }
 
 impl RunSettings {
@@ -80,120 +34,6 @@ impl RunSettings {
             weight_decay: cfg.weight_decay,
             dropout: cfg.dropout,
         }
-    }
-
-    fn write(&self, b: &mut crate::gguf_write::GgufBuilder) {
-        ckpt::put_u64s(b, "batch_size", &[self.batch]);
-        ckpt::put_u64s(b, "window_stride", &[self.stride]);
-        ckpt::put_u64s(
-            b,
-            "lr_settings",
-            &[
-                self.lr.to_bits() as u64,
-                self.cosine as u64,
-                self.warmup,
-                self.clip.to_bits() as u64,
-                self.weight_decay.to_bits() as u64,
-                self.dropout.to_bits() as u64,
-            ],
-        );
-    }
-
-    /// `None` for a checkpoint older than the keys; an error for a malformed one.
-    fn read(g: &crate::gguf::Gguf) -> Result<Option<Self>> {
-        let one = |k: &str| -> Result<Option<u64>> {
-            match ckpt::get_u64s(g, k)? {
-                None => Ok(None),
-                Some(&[v]) => Ok(Some(v)),
-                Some(_) => Err(InferError::Format(format!(
-                    "checkpoint key 'ferrum.ckpt.{k}' is not one number"
-                ))),
-            }
-        };
-        let (Some(batch), Some(stride)) = (one("batch_size")?, one("window_stride")?) else {
-            return Ok(None);
-        };
-        let Some(&[lr, cosine, warmup, clip, wd, dropout]) = ckpt::get_u64s(g, "lr_settings")?
-        else {
-            return Ok(None);
-        };
-        let f = |bits: u64| f32::from_bits(bits as u32);
-        Ok(Some(Self {
-            batch,
-            stride,
-            lr: f(lr),
-            cosine: cosine != 0,
-            warmup,
-            clip: f(clip),
-            weight_decay: f(wd),
-            dropout: f(dropout),
-        }))
-    }
-
-    /// Compare a checkpoint's settings (`self`) with this run's. `Err` names a changed batch
-    /// or stride; `Ok` lists the changed learning-rate settings, one `note:` line.
-    pub(crate) fn compare(&self, now: &Self) -> Result<Option<String>> {
-        for (name, was, is) in [
-            ("batch", self.batch, now.batch),
-            ("stride", self.stride, now.stride),
-        ] {
-            if was != is {
-                return Err(InferError::DimMismatch(format!(
-                    "--{name} is {is} but the checkpoint was trained with {name} {was}; a \
-                     resume with another {name} is a different run (window order and step \
-                     count change). Resume with --{name} {was}, or start a new run"
-                )));
-            }
-        }
-        let mut changed = Vec::new();
-        let mut diff = |name: &str, was: String, is: String, same: bool| {
-            if !same {
-                changed.push(format!("{name} {was} -> {is}"));
-            }
-        };
-        diff(
-            "lr",
-            self.lr.to_string(),
-            now.lr.to_string(),
-            self.lr.to_bits() == now.lr.to_bits(),
-        );
-        diff(
-            "cosine",
-            self.cosine.to_string(),
-            now.cosine.to_string(),
-            self.cosine == now.cosine,
-        );
-        diff(
-            "warmup",
-            self.warmup.to_string(),
-            now.warmup.to_string(),
-            self.warmup == now.warmup,
-        );
-        diff(
-            "clip",
-            self.clip.to_string(),
-            now.clip.to_string(),
-            self.clip.to_bits() == now.clip.to_bits(),
-        );
-        diff(
-            "weight_decay",
-            self.weight_decay.to_string(),
-            now.weight_decay.to_string(),
-            self.weight_decay.to_bits() == now.weight_decay.to_bits(),
-        );
-        diff(
-            "dropout",
-            self.dropout.to_string(),
-            now.dropout.to_string(),
-            self.dropout.to_bits() == now.dropout.to_bits(),
-        );
-        Ok((!changed.is_empty()).then(|| {
-            format!(
-                "note: training settings changed since the checkpoint was written ({}); the \
-                 resumed run will not match an uninterrupted one",
-                changed.join(", ")
-            )
-        }))
     }
 }
 
@@ -257,7 +97,7 @@ impl TransformerNet {
             r.write(&mut b);
         }
         if let Some(e) = self.epoch_start {
-            ckpt::put_u64s(&mut b, "epoch_rng", &[e.rng, e.step, e.epoch]);
+            e.write(&mut b);
         }
         for (i, p) in self.params_all().into_iter().enumerate() {
             ckpt::put_param(&mut b, i, &p.data.data, &p.m.data, &p.v.data);

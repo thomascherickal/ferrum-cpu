@@ -78,6 +78,7 @@ pub mod ops;
 pub mod optim;
 pub mod parallel;
 pub mod quant;
+mod resume;
 pub mod rng;
 pub mod slm;
 pub mod stop;

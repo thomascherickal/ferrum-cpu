@@ -25,16 +25,12 @@ pub(super) fn prepare_net(
                 cfg.context_len
             )));
         }
-        if let (Some(was), Some(now)) = (&net.corpus_id, &cfg.corpus_id) {
-            if was != now {
-                return Err(InferError::DimMismatch(format!(
-                    "the checkpoint was trained on corpus {was}, this run's corpus is {now}; \
-                     resume on the corpus it was started with (a text corpus and the token \
-                     file made from it have different ids, so neither resumes the other's \
-                     checkpoint)"
-                )));
-            }
-        }
+        crate::resume::check_corpus(
+            net.corpus_id.as_deref(),
+            cfg.corpus_id.as_deref(),
+            " (a text corpus and the token file made from it have different ids, so neither \
+             resumes the other's checkpoint)",
+        )?;
         if let Some(was) = &net.run_settings {
             if let Some(note) = was.compare(&RunSettings::of(cfg))? {
                 crate::verbose::log_line(&note); // also reaches a GUI log sink
