@@ -867,6 +867,8 @@ Throughput is
 measured; the presets are reasonable defaults, not tuned optima. A GPU is never
 used, so a small discrete GPU (for example, a 2 GB MX330) adds nothing.
 
+For estimates across other RAM sizes and processors (Intel i3/i5/i7, Ryzen, Snapdragon), see the [capability report](docs/ferrum-capabilities.md); only this machine was measured.
+
 ### 6.8 Multi-threading and determinism
 
 There are two independent knobs:

@@ -263,7 +263,7 @@ GPU makes no difference because Ferrum never uses it.
 The sizes come from short runs of four configurations, after the speed work in
 this release ([Manual §6.7](Manual.md#67-sizing-a-run-for-your-machine)). A
 TinyStories-class model (1–3M parameters on about 470M tokens) is a 2–4 day
-job. [Manual §6.7](Manual.md#67-sizing-a-run-for-your-machine) has the throughput
+job. The [capability report](docs/ferrum-capabilities.md) estimates what 8 to 128 GB machines and recent Intel, Ryzen and Snapdragon processors can do. [Manual §6.7](Manual.md#67-sizing-a-run-for-your-machine) has the throughput
 table, and [Status §3](Status.md#3-capability-assessment) has the assessment.
 
 Two reference sizes are used in the docs:
