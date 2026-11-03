@@ -67,6 +67,7 @@ pub mod gguf_write;
 pub mod layer;
 pub mod llm;
 mod llm_score;
+pub mod llm_stop;
 pub mod llm_train;
 pub mod loader;
 pub mod loss;

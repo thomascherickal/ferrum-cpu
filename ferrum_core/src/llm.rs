@@ -579,6 +579,22 @@ impl LlamaModel {
         self.generate_inner(prompt, max_new, params, stops, rng, &|| false, stop_after)
     }
 
+    /// [`LlamaModel::generate_until`] that also asks `cancelled()` like
+    /// [`LlamaModel::generate_cancellable`] (before every prompt and sampled token).
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_until_cancellable(
+        &self,
+        prompt: &[usize],
+        max_new: usize,
+        params: &SamplingParams,
+        stops: &[usize],
+        rng: &mut Rng,
+        cancelled: &dyn Fn() -> bool,
+        stop_after: &mut dyn FnMut(&[usize]) -> bool,
+    ) -> Result<Vec<usize>> {
+        self.generate_inner(prompt, max_new, params, stops, rng, cancelled, stop_after)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn generate_inner(
         &self,
@@ -1001,6 +1017,31 @@ mod tests {
         let first = plain.iter().position(|&t| t == stop).unwrap();
         assert_eq!(out, plain[..=first]);
         assert_eq!(asked, first);
+    }
+
+    #[test]
+    fn generate_until_cancellable_honours_both_the_flag_and_the_hook() {
+        let model = tiny_model();
+        let params = SamplingParams::with_temperature(0.8);
+        let plain = model
+            .generate(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7))
+            .unwrap();
+        let run = |cancel: bool, until: usize| {
+            model
+                .generate_until_cancellable(
+                    &[1, 2, 3],
+                    10,
+                    &params,
+                    &[],
+                    &mut Rng::new(7),
+                    &|| cancel,
+                    &mut |out| out.len() == until,
+                )
+                .unwrap()
+        };
+        assert_eq!(run(false, 0), plain);
+        assert_eq!(run(false, 3), plain[..3]);
+        assert!(run(true, 0).is_empty());
     }
 
     #[test]

@@ -8,6 +8,7 @@
 //! at most 512 tokens like `eval-gguf`) are scored in overlapping windows.
 
 use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
+use ferrum_core::llm_stop::{continuation_text, StopMatcher};
 use ferrum_core::{GgufTokenizer, InferError, LlamaModel, LlamaScore, Result, Rng, SamplingParams};
 use std::sync::atomic::Ordering;
 
@@ -52,19 +53,6 @@ pub(crate) struct Imported {
 pub(crate) struct Generated {
     pub(crate) text: String,
     pub(crate) n_tokens: usize,
-}
-
-/// Byte offset of the earliest stop string in `text[from..]` (`from` floored to a character
-/// boundary).
-fn earliest_stop(text: &str, from: usize, stops: &[String]) -> Option<usize> {
-    let from = (0..=from.min(text.len()))
-        .rev()
-        .find(|&i| text.is_char_boundary(i))
-        .unwrap_or(0);
-    stops
-        .iter()
-        .filter_map(|s| text[from..].find(s.as_str()).map(|i| from + i))
-        .min()
 }
 
 impl Imported {
@@ -129,14 +117,7 @@ impl Imported {
     /// The text of `out`, generated after the prompt token `anchor`: decoded together with the
     /// anchor so a leading space survives SentencePiece's dummy-prefix stripping.
     fn continuation_text(&self, anchor: usize, out: &[usize]) -> String {
-        let mut ids = Vec::with_capacity(out.len() + 1);
-        ids.push(anchor);
-        ids.extend_from_slice(out);
-        let full = self.tok.decode(&ids);
-        match full.strip_prefix(self.tok.decode(&[anchor]).as_str()) {
-            Some(rest) => rest.to_string(),
-            None => self.tok.decode(out),
-        }
+        continuation_text(&self.tok, anchor, out)
     }
 
     /// Raw completion of `g.prompt`: up to `max_tokens` tokens, stopping at EOS or at the
@@ -158,12 +139,7 @@ impl Imported {
         };
         let eos: Vec<usize> = self.tok.eos().into_iter().collect();
         let anchor = prompt.last().copied().unwrap_or(0);
-        // Rescan this many bytes before the old end: a stop may straddle it, and lossy UTF-8
-        // decoding may rewrite a few trailing bytes once a character completes.
-        let back = g.stop.iter().map(String::len).max().unwrap_or(0) + 8;
-        let (mut text, mut scanned, mut hit) = (String::new(), 0usize, None);
-        // ponytail: every token re-decodes the whole continuation (O(n^2) in max_tokens,
-        // at most 4096); keep a running decode if long generations get slow.
+        let mut matcher = StopMatcher::new(&self.tok, anchor, &g.stop);
         let mut out = self.model.generate_until(
             &prompt,
             max_new,
@@ -174,20 +150,14 @@ impl Imported {
                 if g.cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed)) {
                     return true;
                 }
-                if g.stop.is_empty() {
-                    return false;
-                }
-                text = self.continuation_text(anchor, out);
-                hit = earliest_stop(&text, scanned.saturating_sub(back), &g.stop);
-                scanned = text.len();
-                hit.is_some()
+                matcher.check(out)
             },
         )?;
         if out.last().is_some_and(|t| eos.contains(t)) {
             out.pop();
         }
-        let text = match hit {
-            Some(i) => text[..i].to_string(),
+        let text = match matcher.cut() {
+            Some(cut) => cut.to_string(),
             None => self.continuation_text(anchor, &out),
         };
         Ok(Generated {
@@ -217,16 +187,6 @@ mod tests {
             repetition_penalty: None,
             cancel: None,
         }
-    }
-
-    #[test]
-    fn earliest_stop_scans_from_a_char_boundary() {
-        let stops = vec!["c".to_string(), "ab".to_string()];
-        assert_eq!(earliest_stop("xxabc", 0, &stops), Some(2));
-        assert_eq!(earliest_stop("xxabc", 3, &stops), Some(4));
-        assert_eq!(earliest_stop("xx", 9, &stops), None);
-        // `from` inside a multi-byte character is floored to its start.
-        assert_eq!(earliest_stop("éc", 1, &stops), Some(2));
     }
 
     #[test]

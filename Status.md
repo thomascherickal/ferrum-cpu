@@ -345,6 +345,10 @@ Follow-up to H3 (2026-11-03, decisions of the user): scoring no longer always pr
 
 No public API changed. Behaviour: a dropped connection during `/v1/generate` sets a per-request `SamplingParams.cancel` flag (Ferrum models) / ends `generate_until` at the next token (imported GGUFs), and a queued request whose client left is skipped. The response of a request that is not cancelled is unchanged. Scoring routes are not cancellable.
 
+### 7.0.11 `ferrum_core::llm_stop` and `LlamaModel::generate_until_cancellable`: stop strings for imported models
+
+New public module and method (additive). `llm_stop::StopMatcher` (`new(tok, anchor, stops)`, `check(out)`, `cut()`), `earliest_stop` and `continuation_text` are the stop-string logic that used to be private to `slm_server`'s imported backend, moved so `ferrum-serve`, `run-gguf` and the GUI GGUF tab share one implementation (earliest match wins, the stop is not in the output, a stop spanning tokens matches; empty stops are ignored). `generate_until_cancellable` is `generate_until` plus the `cancelled()` check of `generate_cancellable`. The server's responses are unchanged (its tests pass unchanged except the `earliest_stop` unit test, which moved to `ferrum_core` with the function).
+
 ### 7.1 Breaking changes
 
 | Change | What breaks | What to do |
