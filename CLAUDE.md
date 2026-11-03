@@ -82,10 +82,15 @@ skills. When the user states a new rule, add it here.
     A floor is only raised to a value a real run has met. (`GEMINI.md` is a
     symlink to this file, like `AGENTS.md`.)
 
-16. **Ask, never assume.** When anything is unclear, ask the user: doubts,
-    clarifications, questions, queries. Do not fill a gap with an assumption
-    or a ruling of your own. Subagents report doubts back (NEEDS_CONTEXT) and
-    the controller relays them to the user.
+16. **Ask only when there is no clear choice.** When a question has a
+    **Recommended** option, take it without asking. Ask the user only when no
+    option is marked Recommended, or when the choice is genuinely ambiguous or
+    confusing. Never fill a real gap with an unstated assumption: if you took a
+    Recommended option or ruled on a detail, say so in one line. Subagents
+    report real doubts back (NEEDS_CONTEXT) and the controller relays them
+    only under this same test. (This replaces the earlier "ask, never assume"
+    rule of 2026-11-03; `GEMINI.md` and `AGENTS.md` are symlinks to this file,
+    so the rule applies to all three.)
 
 17. **Hand-off file.** After every agent result (and at every task boundary)
     refresh `.superpowers/HANDOFF.md` (git-ignored): the goal, what is done
