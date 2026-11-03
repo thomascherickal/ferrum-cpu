@@ -1348,6 +1348,20 @@ tools, serving them, evaluating them, and the DVC pipeline. The file layout is i
 `Q2_K, Q3_K, Q4_K, Q5_K, Q6_K`. The `IQ*` families are rejected with a clear
 message. **Architectures:** `llama`, `qwen2`.
 
+**RoPE scaling.** RoPE pairs follow the architecture (`Norm` for llama, `Neox`
+for qwen2, as in llama.cpp). Two kinds of scaling are applied, the way
+llama.cpp's `ggml_rope_ext` does, in `run-gguf`, `eval-gguf`, `ferrum-serve` and
+fine-tuning alike: the per-frequency factors of a `rope_freqs.weight` tensor
+(Llama 3.1/3.2 files ship one; each frequency is divided by its factor), and
+`linear` scaling (`{arch}.rope.scaling.factor`, or the legacy
+`{arch}.rope.scale_linear`; positions are divided by the factor, and a factor
+without a `rope.scaling.type` is linear, as in llama.cpp). `export-gguf` writes
+both back. Refused at load, with an error naming the cause: `yarn`,
+`longrope` and any other `rope.scaling.type`, a `rope.scaling.attn_factor`
+other than 1, type `none` with a factor, and a `rope_freqs.weight` whose length
+is not `rope.dimension_count / 2`. They are refused rather than run unscaled,
+which would give wrong output silently.
+
 ### 9.1 Running (`run-gguf`)
 
 ```text
@@ -2870,7 +2884,7 @@ Llama GGUF), or a truncated file, gives a `Format` error rather than a panic.
 |---|---|---|
 | `gguf` (directory: `format`, `cursor`, `header`, `tensors`, `dequant`, `llama`) | `Gguf::from_path` (in memory), `Gguf::open` (streamed via `Mutex<File>`, no mmap), `load_llama(QKind)`, `load_llama_prec(None)` | GGUF v2/v3; checked offsets, EOF guards, rejects nested arrays and absurd counts; numeric metadata arrays are held at their on-disk width (`MetaValue::Nums`, 1-8 bytes per element, not 32) and a count beyond the bytes left in the file is rejected before allocating |
 | `gguf_tokenizer` | `GgufTokenizer::from_gguf`, `encode`, `decode` | BPE exact; SPM decode exact, encode greedy longest-match |
-| `llm` | `LlamaModel::{forward, generate, generate_cancellable}`, `LlamaConfig`, `RopeType` | RMSNorm, RoPE (Norm and Neox), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
+| `llm` | `LlamaModel::{forward, generate, generate_cancellable, set_rope_scaling}`, `LlamaConfig`, `RopeType`, `RopeScaling` | RMSNorm, RoPE (Norm and Neox; `rope_freqs` factors and linear scaling), GQA + KV cache, SwiGLU; cached decode verified row-for-row against the full forward |
 | `llm_train` | `LlamaTrainer::{new, set_lr, set_lr_schedule, set_grad_clip, train_step, train_batch, finetune_epoch_threaded, save_checkpoint, load_checkpoint_into}` | finite-difference-checked backward pass; AdamW; `.flck` checkpoints; rejects quantized weights |
 | `gguf_write` | `GgufBuilder`, `write_llama_gguf`, `LlamaModel::write_gguf`, `GgufQuant` | byte-exact GGUF v3; encoders are exact inverses of the decoders (verified round trip) |
 | `token_file` | `write_token_file`, `TokenSink::push`, `TokenFile::{open, read_window, len}`, `is_gguf_file`; `GenerativeSLM::{train_transformer_tokens, train_transformer_tokens_validated}` | the `ferrum-tokens` corpus file and streamed training, bit-identical to in-memory training ([§6.11](#611-corpora-larger-than-ram-tokenize-and-token-files)) |

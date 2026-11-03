@@ -42,6 +42,7 @@ pub(super) fn tiny(
         rope_dim: hd,
         rope_base: 10000.0,
         rope_type: RopeType::Norm,
+        rope_scaling: Default::default(),
         norm_eps: 1e-5,
         context_len: 64,
     };

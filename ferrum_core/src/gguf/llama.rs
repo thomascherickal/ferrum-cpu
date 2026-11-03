@@ -4,7 +4,9 @@ use crate::gguf::cursor::fmt;
 use crate::gguf::header::bounded;
 use crate::gguf::Gguf;
 use crate::layer::Linear;
-use crate::llm::{Attention, FeedForward, LlamaBlock, LlamaConfig, LlamaModel, RmsNorm, RopeType};
+use crate::llm::{
+    Attention, FeedForward, LlamaBlock, LlamaConfig, LlamaModel, RmsNorm, RopeScaling, RopeType,
+};
 use crate::quant::{QKind, QWeight};
 
 /// A `[n_in, n_out]` [`Linear`] from f32 weights, packed to `prec` when given.
@@ -40,6 +42,64 @@ impl Gguf {
             .get(key)
             .and_then(|v| v.as_f32())
             .unwrap_or(default)
+    }
+
+    /// RoPE scaling as llama.cpp reads it: the `rope_freqs.weight` factors (Llama 3.x) and
+    /// `linear` scaling (`{arch}.rope.scaling.factor`, legacy `{arch}.rope.scale_linear`; a
+    /// factor with no type is linear, as in llama.cpp). Every other type (`yarn`, `longrope`,
+    /// ...) and a non-1 `attn_factor` are refused: running them unscaled would be silently wrong.
+    fn rope_scaling(&self, arch: &str, rope_dim: usize) -> Result<RopeScaling> {
+        let key = |k: &str| format!("{arch}.rope.{k}");
+        let factor = self
+            .metadata
+            .get(&key("scaling.factor"))
+            .or_else(|| self.metadata.get(&key("scale_linear")))
+            .and_then(|v| v.as_f32());
+        let ty = match self.metadata.get(&key("scaling.type")) {
+            Some(v) => v
+                .as_str()
+                .ok_or_else(|| fmt(&format!("'{}' is not a string", key("scaling.type"))))?,
+            None => "linear",
+        };
+        // llama.cpp: a factor of 0 (or none) means no scaling.
+        let factor = factor.filter(|&f| f != 0.0).unwrap_or(1.0);
+        let linear_factor = match ty {
+            "linear" => factor,
+            "none" if factor == 1.0 => 1.0,
+            "none" => {
+                return Err(fmt(&format!(
+                    "'{}' is \"none\" but the scaling factor is {factor}",
+                    key("scaling.type")
+                )))
+            }
+            other => {
+                return Err(fmt(&format!(
+                    "RoPE scaling type '{other}' is not supported: Ferrum implements \
+                     none, linear and rope_freqs.weight (yarn and longrope are refused)"
+                )))
+            }
+        };
+        let attn = self.meta_f32_or(&key("scaling.attn_factor"), 1.0);
+        if attn != 1.0 {
+            return Err(fmt(&format!(
+                "RoPE scaling attn_factor {attn} is not supported (only 1.0)"
+            )));
+        }
+        let freq_factors = match self.tensor("rope_freqs.weight") {
+            Some(t) if t.dims != [(rope_dim / 2) as u64] => {
+                return Err(fmt(&format!(
+                    "rope_freqs.weight has dims {:?}, expected [{}] (rope_dim / 2)",
+                    t.dims,
+                    rope_dim / 2
+                )))
+            }
+            Some(t) => self.dequantize(t)?,
+            None => Vec::new(),
+        };
+        Ok(RopeScaling {
+            freq_factors,
+            linear_factor,
+        })
     }
 
     fn dequant_named(&self, name: &str) -> Result<Vec<f32>> {
@@ -144,6 +204,7 @@ impl Gguf {
             .meta_opt_usize(&format!("{arch}.rope.dimension_count"))
             .unwrap_or(head_dim);
         let rope_base = self.meta_f32_or(&format!("{arch}.rope.freq_base"), 10000.0);
+        let rope_scaling = self.rope_scaling(&arch, rope_dim)?;
         let eps = self.meta_f32_or(&format!("{arch}.attention.layer_norm_rms_epsilon"), 1e-5);
         let ctx = self
             .meta_opt_usize(&format!("{arch}.context_length"))
@@ -260,17 +321,20 @@ impl Gguf {
             rope_dim,
             rope_base,
             rope_type,
+            rope_scaling: RopeScaling::default(),
             norm_eps: eps,
             context_len: ctx,
         };
-        Ok(LlamaModel {
+        let mut model = LlamaModel {
             cfg,
             tok_emb,
             blocks,
             final_norm,
             lm_head,
             tied_head,
-        })
+        };
+        model.set_rope_scaling(rope_scaling)?;
+        Ok(model)
     }
 }
 
@@ -441,6 +505,100 @@ mod tests {
             ml.forward_tokens(&[0, 5, 9]).unwrap(),
         );
         assert_ne!(a.data, b.data);
+    }
+
+    /// synth_llama (head_dim = rope_dim = 4) with extra `llama.rope.*` metadata.
+    fn with_rope_meta(kv: &[(&str, MetaValue)]) -> Gguf {
+        let mut g = Gguf::parse(synth_llama()).unwrap();
+        for (k, v) in kv {
+            g.metadata.insert(format!("llama.rope.{k}"), v.clone());
+        }
+        g
+    }
+
+    #[test]
+    fn rope_scaling_metadata_sets_the_linear_factor_as_llama_cpp_reads_it() {
+        use crate::llm::RopeScaling;
+        let lin = |kv: &[(&str, MetaValue)]| {
+            let m = with_rope_meta(kv).load_llama_prec(None).unwrap();
+            assert!(m.cfg.rope_scaling.freq_factors.is_empty());
+            m.cfg.rope_scaling.linear_factor
+        };
+        let (s, f) = (MetaValue::String, MetaValue::F32);
+        // No scaling metadata: unscaled.
+        let plain = with_rope_meta(&[]).load_llama_prec(None).unwrap();
+        assert_eq!(plain.cfg.rope_scaling, RopeScaling::default());
+        assert_eq!(
+            lin(&[
+                ("scaling.type", s("linear".into())),
+                ("scaling.factor", f(4.0))
+            ]),
+            4.0
+        );
+        // A factor without a type is linear (llama.cpp's default type); the legacy key too.
+        assert_eq!(lin(&[("scaling.factor", f(4.0))]), 4.0);
+        assert_eq!(lin(&[("scale_linear", f(2.0))]), 2.0);
+        // Factor 0 means none; "none" alone or with factor 1 is unscaled; attn_factor 1 is fine.
+        assert_eq!(lin(&[("scaling.factor", f(0.0))]), 1.0);
+        assert_eq!(lin(&[("scaling.type", s("none".into()))]), 1.0);
+        assert_eq!(
+            lin(&[
+                ("scaling.type", s("none".into())),
+                ("scaling.factor", f(1.0))
+            ]),
+            1.0
+        );
+        assert_eq!(lin(&[("scaling.attn_factor", f(1.0))]), 1.0);
+        // And the scaling reaches the forward pass.
+        let scaled = with_rope_meta(&[("scaling.factor", f(4.0))])
+            .load_llama_prec(None)
+            .unwrap();
+        let toks = [1usize, 4, 2, 7, 0];
+        assert_ne!(
+            plain.forward_tokens(&toks).unwrap().data,
+            scaled.forward_tokens(&toks).unwrap().data
+        );
+    }
+
+    #[test]
+    fn unsupported_rope_scaling_is_refused_never_run_unscaled() {
+        let (s, f) = (MetaValue::String, MetaValue::F32);
+        for ty in ["yarn", "longrope", "llama3", "dynamic"] {
+            let g = with_rope_meta(&[("scaling.type", s(ty.into())), ("scaling.factor", f(4.0))]);
+            llama_err(&g, &format!("RoPE scaling type '{ty}' is not supported"));
+        }
+        llama_err(
+            &with_rope_meta(&[("scaling.type", MetaValue::U32(1))]),
+            "'llama.rope.scaling.type' is not a string",
+        );
+        llama_err(
+            &with_rope_meta(&[
+                ("scaling.type", s("none".into())),
+                ("scaling.factor", f(2.0)),
+            ]),
+            "is \"none\" but the scaling factor is 2",
+        );
+        llama_err(
+            &with_rope_meta(&[("scaling.attn_factor", f(0.5))]),
+            "attn_factor 0.5 is not supported",
+        );
+        llama_err(
+            &with_rope_meta(&[("scaling.factor", f(-2.0))]),
+            "finite and > 0",
+        );
+    }
+
+    #[test]
+    fn rope_freqs_of_the_wrong_length_is_refused() {
+        // rope_dim 4 needs 2 factors. The check fires on the directory entry, before any data.
+        let mut g = Gguf::parse(synth_llama()).unwrap();
+        g.tensors.push(crate::gguf::TensorInfo {
+            name: "rope_freqs.weight".into(),
+            dims: vec![3],
+            ggml_type: GGML_F32,
+            offset: 0,
+        });
+        llama_err(&g, "rope_freqs.weight has dims [3], expected [2]");
     }
 
     #[test]

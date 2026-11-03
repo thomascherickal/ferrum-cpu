@@ -665,3 +665,66 @@ fn run_gguf_stop_strings_cut_the_text_and_absent_ones_change_nothing() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("--stop needs a tokenizer"));
 }
+
+/// A RoPE-scaled llama (linear factor 2 in the metadata, Llama 3.x-style `rope_freqs.weight`
+/// factors written by the library's export) runs through the real `run-gguf` exactly as the
+/// library generates, and `eval-gguf` scores it differently from the unscaled file.
+#[test]
+fn run_gguf_on_a_rope_scaled_llama_equals_the_library() {
+    use ferrum_core::{llama_gguf_bytes, GgufQuant, GgufTokenizer, RopeScaling, SamplingParams};
+    let t = Tmp::new("rope");
+    let vocab = letter_vocab();
+    let scale = [("llama.rope.scaling.factor", MetaValue::F32(2.0))];
+    let (gs, gp) = (
+        Gguf::parse(common::tiny_llama_gguf(Some(&vocab), &scale)).unwrap(),
+        Gguf::parse(common::tiny_llama_gguf(Some(&vocab), &[])).unwrap(),
+    );
+    // The fixture's q/k weights are ~0.1, so attention is near uniform and RoPE barely
+    // matters; sharpen them so the position encoding moves the output.
+    let mut m = gp.load_llama_prec(None).unwrap();
+    for b in &mut m.blocks {
+        for w in [&mut b.attn.wq, &mut b.attn.wk] {
+            w.weight.data.iter_mut().for_each(|v| *v *= 30.0);
+        }
+    }
+    let (sf, pf, corpus) = (t.s("s.gguf"), t.s("p.gguf"), t.s("c.txt"));
+    std::fs::write(&pf, llama_gguf_bytes(&m, &gp, GgufQuant::F32).unwrap()).unwrap();
+    m.set_rope_scaling(RopeScaling {
+        freq_factors: vec![1.0, 4.0], // head_dim 4
+        linear_factor: 2.0,
+    })
+    .unwrap();
+    std::fs::write(&sf, llama_gguf_bytes(&m, &gs, GgufQuant::F32).unwrap()).unwrap();
+    std::fs::write(&corpus, "abc cab bca abc cab bca").unwrap();
+
+    let file = Gguf::open(&sf).unwrap();
+    let lib = file.load_llama_prec(None).unwrap();
+    assert_eq!(lib.cfg.rope_scaling.freq_factors, vec![1.0, 4.0]);
+    assert_eq!(lib.cfg.rope_scaling.linear_factor, 2.0);
+    let tok = GgufTokenizer::from_gguf(&file).unwrap();
+    let stops: Vec<usize> = tok.eos().into_iter().collect();
+    let params = SamplingParams::with_temperature(0.0);
+    let ids = lib
+        .generate(
+            &[1, 2, 3],
+            10,
+            &params,
+            &stops,
+            &mut ferrum_core::Rng::new(0),
+        )
+        .unwrap();
+    let cli = generated(&[
+        "run-gguf", &sf, "--ids", "1 2 3", "--temp", "0", "--max", "10", "--quant", "f32",
+    ]);
+    assert_eq!(cli, tok.decode(&ids));
+
+    let nats = |f: &str| {
+        let json = t.s("e.json");
+        ok(&["eval-gguf", f, &corpus, "--json", &json]);
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(json).unwrap()).unwrap();
+        v["cross_entropy_nats"].as_f64().unwrap()
+    };
+    let (ns, np) = (nats(&sf), nats(&pf));
+    // The tiny model is near uniform (≈ ln 32 nats), so the difference is small but real.
+    assert_ne!(ns, np, "the scaling changed nothing");
+}

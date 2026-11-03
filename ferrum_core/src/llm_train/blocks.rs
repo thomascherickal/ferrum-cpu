@@ -64,6 +64,7 @@ pub(super) fn attn_forward(
             t,
             cfg.rope_base,
             cfg.rope_type,
+            &cfg.rope_scaling,
             false,
         );
         rope_apply(
@@ -74,6 +75,7 @@ pub(super) fn attn_forward(
             t,
             cfg.rope_base,
             cfg.rope_type,
+            &cfg.rope_scaling,
             false,
         );
     }
@@ -185,6 +187,7 @@ fn attn_backward(
             t,
             cfg.rope_base,
             cfg.rope_type,
+            &cfg.rope_scaling,
             true,
         );
         rope_apply(
@@ -195,6 +198,7 @@ fn attn_backward(
             t,
             cfg.rope_base,
             cfg.rope_type,
+            &cfg.rope_scaling,
             true,
         );
     }

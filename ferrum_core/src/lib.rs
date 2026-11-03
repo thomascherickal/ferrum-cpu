@@ -102,7 +102,7 @@ pub use layer::{
 };
 pub use llm::{
     apply_rope, Attention, FeedForward, LlamaBlock, LlamaCache, LlamaConfig, LlamaModel, RmsNorm,
-    RopeType,
+    RopeScaling, RopeType,
 };
 pub use llm_score::LlamaScore;
 pub use llm_train::{apply_checkpoint_weights, FinetuneRun, LlamaTrainer};

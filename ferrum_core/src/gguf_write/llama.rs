@@ -87,6 +87,13 @@ pub fn llama_gguf_bytes(model: &LlamaModel, source: &Gguf, quant: GgufQuant) -> 
     }
 
     add_norm(&mut b, "output_norm.weight", &model.final_norm.weight);
+    // Llama 3.x RoPE frequency factors (1-D F32, never quantized). The scaling metadata
+    // keys came across verbatim with the rest of the source metadata above.
+    // ponytail: a linear factor changed in code (set_rope_scaling) is not written; the
+    // source's keys are. Write the keys from `cfg.rope_scaling` if that use appears.
+    if !cfg.rope_scaling.freq_factors.is_empty() {
+        add_norm(&mut b, "rope_freqs.weight", &cfg.rope_scaling.freq_factors);
+    }
     // Emit an explicit LM head only if the source had one (else tying is kept).
     if source.tensor("output.weight").is_some() {
         add_weight_2d(&mut b, "output.weight", &model.lm_head, quant);
@@ -235,6 +242,56 @@ mod tests {
         let l0 = model.forward_tokens(&toks).unwrap();
         let l1 = model2.forward_tokens(&toks).unwrap();
         assert_eq!(l0.data, l1.data);
+    }
+
+    /// A Llama 3.x-style file (rope_freqs.weight + linear scaling metadata) exports as the
+    /// same model: the factors tensor and the scaling keys come back, the logits are equal.
+    #[test]
+    fn rope_scaling_round_trips_through_export() {
+        use crate::llm::RopeScaling;
+        let mut g0 = Gguf::parse(tiny_llama_gguf_bytes()).unwrap(); // head_dim 4
+        g0.metadata.insert(
+            "llama.rope.scaling.type".into(),
+            MetaValue::String("linear".into()),
+        );
+        g0.metadata
+            .insert("llama.rope.scaling.factor".into(), MetaValue::F32(2.0));
+        let mut model = g0.load_llama_prec(None).unwrap();
+        let scaling = RopeScaling {
+            freq_factors: vec![1.0, 4.0],
+            linear_factor: 2.0,
+        };
+        model.set_rope_scaling(scaling.clone()).unwrap();
+        // The scaled source as a real file: its export carries the tensor, reload it.
+        let first = llama_gguf_bytes(&model, &g0, GgufQuant::F32).unwrap();
+        let src = Gguf::parse(first.clone()).unwrap();
+        let t = src
+            .tensor("rope_freqs.weight")
+            .expect("rope_freqs.weight written");
+        assert_eq!(
+            (t.dims.clone(), t.ggml_type),
+            (vec![2], crate::gguf::GGML_F32)
+        );
+        assert_eq!(src.tensors.len(), g0.tensors.len() + 1);
+        let m1 = src.load_llama_prec(None).unwrap();
+        assert_eq!(m1.cfg.rope_scaling, scaling);
+        // Re-export of the loaded file: byte-identical, same logits.
+        let out = llama_gguf_bytes(&m1, &src, GgufQuant::F32).unwrap();
+        assert_eq!(out, first);
+        let g2 = Gguf::parse(out).unwrap();
+        for k in ["llama.rope.scaling.type", "llama.rope.scaling.factor"] {
+            assert_eq!(g2.meta(k), src.meta(k), "{k}");
+        }
+        let m2 = g2.load_llama_prec(None).unwrap();
+        assert_eq!(m2.cfg.rope_scaling, scaling);
+        let toks = [1usize, 5, 2, 7, 3, 9];
+        let want = model.forward_tokens(&toks).unwrap().data;
+        assert_eq!(want, m1.forward_tokens(&toks).unwrap().data);
+        assert_eq!(want, m2.forward_tokens(&toks).unwrap().data);
+        // A file without scaling writes no factors tensor.
+        let plain = g0.load_llama_prec(None).unwrap();
+        let g3 = Gguf::parse(llama_gguf_bytes(&plain, &g0, GgufQuant::F32).unwrap()).unwrap();
+        assert!(g3.tensor("rope_freqs.weight").is_none());
     }
 
     #[test]

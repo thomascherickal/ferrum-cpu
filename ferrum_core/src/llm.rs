@@ -97,9 +97,61 @@ pub enum RopeType {
     Neox,
 }
 
+/// RoPE frequency scaling read from GGUF metadata, as llama.cpp's `ggml_rope_ext`
+/// applies it: frequency `i` turns by `theta = (pos · base^(−2i/rope_dim) / freq_factors[i])
+/// · (1 / linear_factor)`. [`RopeScaling::default`] (no factors, linear factor 1) is
+/// unscaled RoPE, bit for bit (dividing or multiplying by exactly 1.0 is exact).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RopeScaling {
+    /// Per-frequency divisors from the `rope_freqs.weight` tensor (Llama 3.1/3.2),
+    /// `rope_dim / 2` long; empty means none.
+    pub freq_factors: Vec<f32>,
+    /// `{arch}.rope.scaling.factor` of `linear` scaling: positions are divided by it
+    /// (llama.cpp's `freq_scale = 1 / factor`). 1.0 is no scaling.
+    pub linear_factor: f32,
+}
+
+impl Default for RopeScaling {
+    fn default() -> Self {
+        Self {
+            freq_factors: Vec::new(),
+            linear_factor: 1.0,
+        }
+    }
+}
+
+impl RopeScaling {
+    /// The rotation angle of frequency `i` (base frequency `freq`) at `pos`. Shared
+    /// by inference and the fine-tuning trainer, so both turn by the same angle.
+    pub(crate) fn angle(&self, pos: usize, i: usize, freq: f32) -> f32 {
+        let ff = self.freq_factors.get(i).copied().unwrap_or(1.0);
+        pos as f32 * freq / ff * (1.0 / self.linear_factor)
+    }
+
+    /// Refuse factors that cannot rotate (wrong count, zero, negative, non-finite).
+    fn check(&self, rope_dim: usize) -> Result<()> {
+        let n = self.freq_factors.len();
+        if n != 0 && n != rope_dim / 2 {
+            return Err(InferError::DimMismatch(format!(
+                "rope_freqs.weight has {n} factors, expected rope_dim / 2 = {}",
+                rope_dim / 2
+            )));
+        }
+        let ok = |v: f32| v.is_finite() && v > 0.0;
+        if !self.freq_factors.iter().all(|&v| ok(v)) || !ok(self.linear_factor) {
+            return Err(InferError::DimMismatch(
+                "RoPE scaling factors must be finite and > 0".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Apply RoPE in place to a `[n_heads · head_dim]` vector at sequence position
 /// `pos`. Only the first `rope_dim` (≤ `head_dim`, even) channels of each head
-/// are rotated; the rest pass through (partial-rotary models).
+/// are rotated; the rest pass through (partial-rotary models). `scaling` is the
+/// file's frequency scaling ([`RopeScaling::default`] for none).
+#[allow(clippy::too_many_arguments)]
 pub fn apply_rope(
     x: &mut [f32],
     n_heads: usize,
@@ -108,13 +160,14 @@ pub fn apply_rope(
     pos: usize,
     base: f32,
     rope_type: RopeType,
+    scaling: &RopeScaling,
 ) {
     let half = rope_dim / 2;
     for h in 0..n_heads {
         let off = h * head_dim;
         for i in 0..half {
             let freq = (base as f64).powf(-2.0 * i as f64 / rope_dim as f64) as f32;
-            let theta = pos as f32 * freq;
+            let theta = scaling.angle(pos, i, freq);
             let (s, c) = theta.sin_cos();
             let (ia, ib) = match rope_type {
                 RopeType::Norm => (off + 2 * i, off + 2 * i + 1),
@@ -161,6 +214,7 @@ pub struct Attention {
     rope_dim: usize,
     rope_base: f32,
     rope_type: RopeType,
+    rope_scaling: RopeScaling,
 }
 
 impl Attention {
@@ -198,6 +252,7 @@ impl Attention {
             rope_dim,
             rope_base,
             rope_type,
+            rope_scaling: RopeScaling::default(),
         })
     }
 
@@ -221,6 +276,7 @@ impl Attention {
             pos,
             self.rope_base,
             self.rope_type,
+            &self.rope_scaling,
         );
         apply_rope(
             &mut k,
@@ -230,6 +286,7 @@ impl Attention {
             pos,
             self.rope_base,
             self.rope_type,
+            &self.rope_scaling,
         );
         Ok((q, k, v))
     }
@@ -424,6 +481,9 @@ pub struct LlamaConfig {
     pub rope_dim: usize,
     pub rope_base: f32,
     pub rope_type: RopeType,
+    /// Frequency scaling from the GGUF (unscaled by default). Set it with
+    /// [`LlamaModel::set_rope_scaling`], which keeps every block's attention in step.
+    pub rope_scaling: RopeScaling,
     pub norm_eps: f32,
     pub context_len: usize,
 }
@@ -469,6 +529,17 @@ pub struct LlamaModel {
 }
 
 impl LlamaModel {
+    /// Use `scaling` for RoPE in inference and fine-tuning alike (the config and
+    /// every block's attention). Factors that do not fit `rope_dim` are refused.
+    pub fn set_rope_scaling(&mut self, scaling: RopeScaling) -> Result<()> {
+        scaling.check(self.cfg.rope_dim)?;
+        for b in &mut self.blocks {
+            b.attn.rope_scaling = scaling.clone();
+        }
+        self.cfg.rope_scaling = scaling;
+        Ok(())
+    }
+
     /// Re-derive a tied head from `tok_emb` (no-op for an untied model).
     pub fn sync_tied_head(&mut self) {
         if self.tied_head {
@@ -711,7 +782,7 @@ mod tests {
         for rt in [RopeType::Norm, RopeType::Neox] {
             let mut x = det(16, 9);
             let orig = x.clone();
-            apply_rope(&mut x, 2, 8, 8, 0, 10000.0, rt);
+            apply_rope(&mut x, 2, 8, 8, 0, 10000.0, rt, &RopeScaling::default());
             for (a, b) in x.iter().zip(&orig) {
                 assert!((a - b).abs() < 1e-6, "rope@0 changed values for {rt:?}");
             }
@@ -724,7 +795,7 @@ mod tests {
         for rt in [RopeType::Norm, RopeType::Neox] {
             let mut x = det(8, 3);
             let n0 = x.iter().map(|v| v * v).sum::<f32>();
-            apply_rope(&mut x, 1, 8, 8, 5, 10000.0, rt);
+            apply_rope(&mut x, 1, 8, 8, 5, 10000.0, rt, &RopeScaling::default());
             let n1 = x.iter().map(|v| v * v).sum::<f32>();
             assert!(
                 (n0 - n1).abs() < 1e-4,
@@ -738,9 +809,109 @@ mod tests {
         let base = det(8, 7);
         let mut a = base.clone();
         let mut b = base.clone();
-        apply_rope(&mut a, 1, 8, 8, 3, 10000.0, RopeType::Norm);
-        apply_rope(&mut b, 1, 8, 8, 3, 10000.0, RopeType::Neox);
+        apply_rope(
+            &mut a,
+            1,
+            8,
+            8,
+            3,
+            10000.0,
+            RopeType::Norm,
+            &RopeScaling::default(),
+        );
+        apply_rope(
+            &mut b,
+            1,
+            8,
+            8,
+            3,
+            10000.0,
+            RopeType::Neox,
+            &RopeScaling::default(),
+        );
         assert!(a.iter().zip(&b).any(|(x, y)| (x - y).abs() > 1e-3));
+    }
+
+    fn scaled(factors: &[f32], linear: f32) -> RopeScaling {
+        RopeScaling {
+            freq_factors: factors.to_vec(),
+            linear_factor: linear,
+        }
+    }
+
+    #[test]
+    fn rope_with_unit_factors_is_bit_identical_to_unscaled() {
+        let unit = scaled(&[1.0; 4], 1.0);
+        for rt in [RopeType::Norm, RopeType::Neox] {
+            for pos in [0, 1, 5, 17, 300] {
+                let mut a = det(16, 3);
+                let mut b = a.clone();
+                apply_rope(&mut a, 2, 8, 8, pos, 10000.0, rt, &RopeScaling::default());
+                apply_rope(&mut b, 2, 8, 8, pos, 10000.0, rt, &unit);
+                let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+                assert_eq!(bits(&a), bits(&b), "{rt:?} pos {pos}");
+            }
+        }
+    }
+
+    #[test]
+    fn rope_freq_factors_divide_each_frequency_as_hand_computed() {
+        // head_dim = rope_dim = 4, base 10000: base frequencies are 10000^(-2i/4), i.e.
+        // freq_0 = 1 and freq_1 = 0.01. With freq_factors [1, 4] (ggml_rope_ext:
+        // theta_i = pos * freq_i / ff_i), x = [1, 0, 1, 0] (Norm pairs (0,1), (2,3))
+        // rotates to [cos t0, sin t0, cos t1, sin t1] with t0 = pos, t1 = pos * 0.01 / 4.
+        // pos 2: t0 = 2, t1 = 0.005; pos 7: t0 = 7, t1 = 0.0175 (values from libm, f64).
+        let want = [
+            (2, [-0.416_146_84, 0.909_297_4, 0.999_987_5, 0.004_999_979]),
+            (7, [0.753_902_25, 0.656_986_6, 0.999_846_9, 0.017_499_107]),
+        ];
+        let s = scaled(&[1.0, 4.0], 1.0);
+        for (pos, w) in want {
+            let mut x = vec![1.0, 0.0, 1.0, 0.0];
+            apply_rope(&mut x, 1, 4, 4, pos, 10000.0, RopeType::Norm, &s);
+            for (g, w) in x.iter().zip(w) {
+                assert!((g - w).abs() < 1e-6, "pos {pos}: {x:?} vs {w}");
+            }
+            // Neox pairs (0,2), (1,3) see the same angles: [1,1,0,0] -> [cos t0, cos t1, sin t0, sin t1].
+            let mut y = vec![1.0, 1.0, 0.0, 0.0];
+            apply_rope(&mut y, 1, 4, 4, pos, 10000.0, RopeType::Neox, &s);
+            for (g, w) in y.iter().zip([w[0], w[2], w[1], w[3]]) {
+                assert!((g - w).abs() < 1e-6, "neox pos {pos}: {y:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn linear_factor_two_halves_the_effective_position() {
+        let two = scaled(&[], 2.0);
+        for rt in [RopeType::Norm, RopeType::Neox] {
+            for pos in [2, 6, 10, 64] {
+                let mut a = det(8, 9);
+                let mut b = a.clone();
+                apply_rope(&mut a, 1, 8, 8, pos, 10000.0, rt, &two);
+                let half = &RopeScaling::default();
+                apply_rope(&mut b, 1, 8, 8, pos / 2, 10000.0, rt, half);
+                assert_eq!(a, b, "{rt:?} pos {pos}");
+            }
+        }
+    }
+
+    #[test]
+    fn set_rope_scaling_refuses_factors_that_cannot_rotate() {
+        let mut m = tiny_model(); // rope_dim 4: two factors
+        for (bad, want) in [
+            (scaled(&[1.0; 3], 1.0), "expected rope_dim / 2 = 2"),
+            (scaled(&[1.0, 0.0], 1.0), "finite and > 0"),
+            (scaled(&[1.0, f32::NAN], 1.0), "finite and > 0"),
+            (scaled(&[], 0.0), "finite and > 0"),
+            (scaled(&[], -2.0), "finite and > 0"),
+        ] {
+            let e = m.set_rope_scaling(bad).unwrap_err().to_string();
+            assert!(e.contains(want), "{e}");
+        }
+        assert_eq!(m.cfg.rope_scaling, RopeScaling::default());
+        m.set_rope_scaling(scaled(&[1.0, 4.0], 2.0)).unwrap();
+        assert_eq!(m.blocks[1].attn.rope_scaling, m.cfg.rope_scaling);
     }
 
     // ── Attention ─────────────────────────────────────────────────────────────
@@ -898,6 +1069,7 @@ mod tests {
             rope_dim: hd,
             rope_base: 10000.0,
             rope_type: RopeType::Norm,
+            rope_scaling: RopeScaling::default(),
             norm_eps: 1e-6,
             context_len: 32,
         };
@@ -930,6 +1102,25 @@ mod tests {
             }
         }
         assert_eq!(cache.pos(), tokens.len());
+    }
+
+    #[test]
+    fn scaled_model_cached_decode_matches_full_forward() {
+        let mut model = tiny_model();
+        let tokens = [3usize, 7, 1, 9, 4, 0];
+        let plain = model.forward_tokens(&tokens).unwrap();
+        model.set_rope_scaling(scaled(&[1.0, 4.0], 2.0)).unwrap();
+        let full = model.forward_tokens(&tokens).unwrap();
+        assert_ne!(plain.data, full.data, "scaling changed nothing");
+        let vocab = model.cfg.vocab_size;
+        let mut cache = LlamaCache::new(model.blocks.len());
+        for (t, &tok) in tokens.iter().enumerate() {
+            let logits = model.forward_one(tok, &mut cache).unwrap();
+            for (v, &got) in logits.iter().enumerate() {
+                let want = full.data[t * vocab + v];
+                assert!((got - want).abs() < 1e-3, "t{t} v{v}: {got} vs {want}");
+            }
+        }
     }
 
     #[test]

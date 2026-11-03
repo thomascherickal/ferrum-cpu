@@ -181,9 +181,38 @@ mod tests {
 
     #[test]
     fn end_to_end_gradient_matches_finite_difference() {
-        let model = tiny(7, 8, 2, 1, 16, 2); // GQA: 2 q-heads share 1 kv-head
+        gradient_check(tiny(7, 8, 2, 1, 16, 2)); // GQA: 2 q-heads share 1 kv-head
+    }
+
+    /// A RoPE-scaled model (rope_freqs factors and linear factor 2): the trainer's
+    /// forward is the inference forward, and its backward still matches finite differences.
+    #[test]
+    fn rope_scaled_training_matches_inference_and_finite_differences() {
+        use crate::llm::RopeScaling;
+        let mut model = tiny(7, 8, 2, 1, 16, 2); // head_dim 4: two factors
+        let tokens = [1usize, 3, 0, 5, 2, 6];
+        let plain = super::forward_train(&model, &tokens, 0.0, 0)
+            .unwrap()
+            .logits;
+        let scaling = RopeScaling {
+            freq_factors: vec![1.0, 4.0],
+            linear_factor: 2.0,
+        };
+        model.set_rope_scaling(scaling).unwrap();
+        let train = super::forward_train(&model, &tokens, 0.0, 0)
+            .unwrap()
+            .logits;
+        let infer = model.forward_tokens(&tokens).unwrap().data;
+        assert_ne!(plain, train, "the trainer ignored the scaling");
+        for (a, b) in train.iter().zip(&infer) {
+            assert!((a - b).abs() < 1e-4, "train {a} vs inference {b}");
+        }
+        gradient_check(model);
+    }
+
+    fn gradient_check(model: crate::llm::LlamaModel) {
         let mut tr = LlamaTrainer::new(model).unwrap();
-        let tokens = [1usize, 3, 0, 5, 2];
+        let tokens = [1usize, 3, 0, 5, 2, 6];
         tr.loss_and_backward(&tokens).unwrap();
 
         let eps = 1e-3;
@@ -206,13 +235,25 @@ mod tests {
             &mut tr,
             "tok_emb",
         );
-        let g = tr.grads.blocks[0].wq.w[5];
-        check(
-            g,
-            &mut |t, d| t.model.blocks[0].attn.wq.weight.data[5] += d,
-            &mut tr,
-            "wq",
-        );
+        // Every query and key weight: their gradient is the one RoPE's backward rotates.
+        for i in 0..tr.grads.blocks[0].wq.w.len() {
+            let g = tr.grads.blocks[0].wq.w[i];
+            check(
+                g,
+                &mut |t, d| t.model.blocks[0].attn.wq.weight.data[i] += d,
+                &mut tr,
+                "wq",
+            );
+        }
+        for i in 0..tr.grads.blocks[0].wk.w.len() {
+            let g = tr.grads.blocks[0].wk.w[i];
+            check(
+                g,
+                &mut |t, d| t.model.blocks[0].attn.wk.weight.data[i] += d,
+                &mut tr,
+                "wk",
+            );
+        }
         let g = tr.grads.blocks[1].down.w[9];
         check(
             g,

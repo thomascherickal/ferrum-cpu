@@ -1,7 +1,7 @@
 //! Scalar / row kernels: linear, RMSNorm, SiLU, RoPE and cross-entropy.
 use crate::error::{InferError, Result};
 use crate::layer::Linear;
-use crate::llm::RopeType;
+use crate::llm::{RopeScaling, RopeType};
 use crate::llm_train::buffers::LinBuf;
 
 /// `y[r,o] = Σ_i x[r,i]·W[i,o] + b[o]`.
@@ -111,6 +111,7 @@ pub(super) fn rope_apply(
     pos: usize,
     base: f32,
     rope_type: RopeType,
+    scaling: &RopeScaling,
     transpose: bool,
 ) {
     let half = rope_dim / 2;
@@ -118,7 +119,7 @@ pub(super) fn rope_apply(
         let off = h * head_dim;
         for i in 0..half {
             let freq = (base as f64).powf(-2.0 * i as f64 / rope_dim as f64) as f32;
-            let theta = pos as f32 * freq;
+            let theta = scaling.angle(pos, i, freq);
             let (mut s, c) = theta.sin_cos();
             if transpose {
                 s = -s;
@@ -176,7 +177,7 @@ pub(super) fn check_loss_finite(loss: f32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{rmsnorm_backward_row, rmsnorm_forward_row, rope_apply, silu, silu_grad};
-    use crate::llm::RopeType;
+    use crate::llm::{RopeScaling, RopeType};
     use crate::llm_train::test_support::det;
 
     #[test]
@@ -243,8 +244,28 @@ mod tests {
     fn rope_transpose_is_the_inverse_rotation() {
         let mut x = det(8, 5);
         let orig = x.clone();
-        rope_apply(&mut x, 2, 4, 4, 3, 10000.0, RopeType::Norm, false);
-        rope_apply(&mut x, 2, 4, 4, 3, 10000.0, RopeType::Norm, true);
+        rope_apply(
+            &mut x,
+            2,
+            4,
+            4,
+            3,
+            10000.0,
+            RopeType::Norm,
+            &RopeScaling::default(),
+            false,
+        );
+        rope_apply(
+            &mut x,
+            2,
+            4,
+            4,
+            3,
+            10000.0,
+            RopeType::Norm,
+            &RopeScaling::default(),
+            true,
+        );
         for (a, b) in x.iter().zip(&orig) {
             assert!((a - b).abs() < 1e-5);
         }
