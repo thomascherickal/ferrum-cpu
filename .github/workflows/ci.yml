@@ -93,10 +93,10 @@ jobs:
       - name: Run the Python tests
         run: python -m unittest discover -s eval/lighteval -p 'test_*.py'
 
-  # Line-coverage gate. Floors ratchet up with each Phase 1 task and reach 100 for Rust in Task 1.4.
-  # ponytail: the Rust floor (98) was set locally (98.19 % measured on a workstation); re-check it after
-  # the first CI run, because env-dependent lines (.ferrum-dev, tool-gated runtimes, core count, /proc)
-  # may cover differently here. GUI/JS/Python floors are the local measurements rounded down.
+  # Line-coverage gate. Floors are the whole percent the daily noon run met (CLAUDE.md rules 10 and 15):
+  # Rust 99.70, GUI 98.75, JS 98.06 (demo) / 100 (ui), Python 100 on 2026-11-03.
+  # ponytail: these are local numbers; re-check after the first CI run, because env-dependent lines
+  # (.ferrum-dev, tool-gated runtimes, core count, /proc) may cover differently here.
   coverage:
     name: Coverage (llvm-cov, Node, coverage.py)
     runs-on: ubuntu-22.04
@@ -122,14 +122,14 @@ jobs:
             ferrum_gui/target
           key: ${{ runner.os }}-cargo-cov-${{ hashFiles('**/Cargo.lock') }}
       - name: Rust workspace
-        run: scripts/coverage.sh --rust --fail-under 98
+        run: scripts/coverage.sh --rust --fail-under 99
       - name: ferrum_gui Rust
-        run: scripts/coverage.sh --gui --fail-under 90
+        run: scripts/coverage.sh --gui --fail-under 98
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: UI JavaScript (the demo joins at Task 1.6)
-        run: FERRUM_JS_DIRS=ferrum_gui/ui scripts/coverage.sh --js --fail-under 98
+      - name: UI and demo JavaScript
+        run: scripts/coverage.sh --js --fail-under 98
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -137,7 +137,7 @@ jobs:
         run: |
           python -m venv .venv-cov
           .venv-cov/bin/pip install -r requirements-coverage.txt
-          scripts/coverage.sh --py --fail-under 67
+          scripts/coverage.sh --py --fail-under 100
       - uses: actions/upload-artifact@v4
         if: always()
         with:

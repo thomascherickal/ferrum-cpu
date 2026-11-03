@@ -71,8 +71,7 @@ js_dir() { # dir
 js() {
   : > "$OUT/js.txt"
   local rc=0
-  # ponytail: demo.js/worker.js are read as text by their tests, never run, so the demo gate cannot pass
-  # until Task 1.6 loads them; CI sets FERRUM_JS_DIRS=ferrum_gui/ui until then.
+  # both directories are measured: the demo tests run demo.js and worker.js under their real file names
   local d
   for d in ${FERRUM_JS_DIRS:-ferrum_gui/ui slm_wasm/demo}; do js_dir "$d" || rc=1; done
   tail -n 40 "$OUT/js.txt" >&2 || true
