@@ -165,7 +165,8 @@ mod tests {
         let tok = ByteBpeTokenizer::train(CORPUS, 300).unwrap();
         assert!(!tok.encode_state().is_empty(), "no merges learned");
         let ids = tok.encode(CORPUS);
-        assert!(ids.len() < CORPUS.len(), "encoding not shorter");
+        let (n_ids, n_bytes) = (ids.len(), CORPUS.len());
+        assert!(n_ids < n_bytes, "{n_ids} ids for {n_bytes} bytes");
     }
 
     #[test]
@@ -280,7 +281,7 @@ mod tests {
             let bytes = tok.token_bytes(id).expect("every id has bytes");
             assert!(
                 !(bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',')),
-                "token {id} spans letter and punctuation"
+                "token {id} spans letter and punctuation: {bytes:?}"
             );
         }
     }

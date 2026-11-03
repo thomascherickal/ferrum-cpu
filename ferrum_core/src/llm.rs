@@ -728,10 +728,8 @@ mod tests {
             let row = &x.data[t * dim..(t + 1) * dim];
             let inc = attn.forward_one(row, t, &mut cache).unwrap();
             for (d, &got) in inc.iter().enumerate() {
-                assert!(
-                    (got - full.data[t * dim + d]).abs() < 1e-4,
-                    "row {t} dim {d}"
-                );
+                let want = full.data[t * dim + d];
+                assert!((got - want).abs() < 1e-4, "row {t} d{d}: {got} vs {want}");
             }
         }
     }
@@ -878,7 +876,8 @@ mod tests {
             let logits = model.forward_one(tok, &mut cache).unwrap();
             let row = &full.data[t * vocab..(t + 1) * vocab];
             for v in 0..vocab {
-                assert!((logits[v] - row[v]).abs() < 1e-3, "step {t} vocab {v}");
+                let (got, want) = (logits[v], row[v]);
+                assert!((got - want).abs() < 1e-3, "t{t} v{v}: {got} vs {want}");
             }
         }
         assert_eq!(cache.pos(), tokens.len());

@@ -604,7 +604,8 @@ mod tests {
             for ki in 0..t {
                 if ki > qi {
                     // Future tokens must have zero attention weight
-                    assert!(attn[qi * t + ki] < 1e-6, "attn[{qi},{ki}] not masked");
+                    let w = attn[qi * t + ki];
+                    assert!(w < 1e-6, "attn[{qi},{ki}]={w} should be ~0 (causal mask)");
                 }
             }
         }
@@ -736,7 +737,8 @@ mod tests {
         let mut cache = KvCache::new(1, 2);
         let cached = block.forward_with_cache(&x, &mut cache).unwrap();
         for (d, &w) in want.iter().enumerate() {
-            assert!((full.data[d] - w).abs() < 1e-6, "full[{d}]");
+            let got = full.data[d];
+            assert!((got - w).abs() < 1e-6, "full[{d}] {got} vs {w}");
             assert!((cached.data[d] - w).abs() < 1e-6, "cached[{d}]");
         }
     }

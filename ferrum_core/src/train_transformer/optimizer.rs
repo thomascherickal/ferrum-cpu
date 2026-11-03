@@ -226,10 +226,8 @@ mod tests {
             last < first,
             "decayed run should still reduce loss: {first:.4} → {last:.4}"
         );
-        assert!(
-            matrix_norm(&decayed) < matrix_norm(&plain),
-            "weight decay should shrink the weight matrices"
-        );
+        let (dn, pn) = (matrix_norm(&decayed), matrix_norm(&plain));
+        assert!(dn < pn, "decay should shrink weights: {dn} vs {pn}");
     }
 
     /// A warmup+decay schedule is actually applied during training: it drives a

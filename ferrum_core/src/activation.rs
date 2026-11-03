@@ -151,7 +151,8 @@ mod tests {
             assert!((gelu(x) - want).abs() < 1e-6, "gelu({x})");
             let h = 1e-3;
             let num = (gelu(x + h) - gelu(x - h)) / (2.0 * h);
-            assert!((gelu_grad(x) - num).abs() < 1e-3, "gelu'({x})");
+            let g = gelu_grad(x);
+            assert!((g - num).abs() < 1e-3, "gelu'({x}): {g} vs {num}");
         }
         assert_eq!(gelu(0.0), 0.0);
     }
@@ -177,8 +178,9 @@ mod tests {
             (-1.0, -0.158_808_1, -0.082_964_1),
             (0.5, 0.345_714, 0.867_369_9),
         ] {
-            assert!((gelu(x) - want).abs() < 2e-6, "gelu({x})");
-            assert!((gelu_grad(x) - wg).abs() < 2e-6, "gelu'({x})");
+            let (g, gg) = (gelu(x), gelu_grad(x));
+            assert!((g - want).abs() < 2e-6, "gelu({x}) = {g}");
+            assert!((gg - wg).abs() < 2e-6, "gelu'({x}) = {gg}");
         }
         assert_eq!(gelu_grad(0.0), 0.5);
     }

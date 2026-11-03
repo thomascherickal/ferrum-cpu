@@ -760,7 +760,8 @@ mod tests {
                     let got = crate::parallel::run_scoped_with(threads, m, n, |r0, r1, block| {
                         matmul_bias_block(&a, &b, bias, (k, n), (r0, r1), block);
                     });
-                    assert_eq!(got, want, "scoped {m}x{k}x{n} threads={threads}");
+                    let has_bias = bias.is_some();
+                    assert_eq!(got, want, "{m}x{k}x{n} threads={threads} bias={has_bias}");
                 }
             }
             // The transposed operands of the backward pass: (aᵀ)ᵀ·b through the

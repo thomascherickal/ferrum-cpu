@@ -626,7 +626,9 @@ mod tests {
             let amax = row.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
             let step = amax / INT4_MAX;
             for c in 0..cols {
-                assert!((row[c] - back[r * cols + c]).abs() <= step * 0.5 + 1e-6);
+                let (want, got) = (row[c], back[r * cols + c]);
+                let tol = step * 0.5 + 1e-6;
+                assert!((want - got).abs() <= tol, "r{r} c{c}: {want} vs {got}");
             }
         }
     }

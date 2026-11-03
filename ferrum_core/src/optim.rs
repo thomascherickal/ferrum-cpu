@@ -453,7 +453,8 @@ mod tests {
     fn cosine_decays_from_base_to_min() {
         let s = LrSchedule::warmup_cosine(0.2, 10, 110); // 100 decay steps
                                                          // Midpoint of decay (step 60) → halfway down for cosine: base/2.
-        assert!((s.lr_at(60) - 0.1).abs() < 1e-3, "cosine midpoint");
+        let mid = s.lr_at(60);
+        assert!((mid - 0.1).abs() < 1e-3, "cosine midpoint = {mid}");
         // Reaches min_lr (0) by total_steps and stays there.
         assert!(s.lr_at(110).abs() < 1e-6);
         assert!(s.lr_at(500).abs() < 1e-6);
@@ -478,7 +479,8 @@ mod tests {
         // No warmup: step 1 ≈ base (one step into a 100-step linear decay).
         assert!((s.lr_at(1) - 0.992).abs() < 1e-3);
         // Halfway → halfway between base and min.
-        assert!((s.lr_at(50) - 0.6).abs() < 1e-3, "linear midpoint");
+        let mid = s.lr_at(50);
+        assert!((mid - 0.6).abs() < 1e-3, "linear midpoint = {mid}");
         // Floors at min_lr.
         assert!((s.lr_at(100) - 0.2).abs() < 1e-6);
         assert!((s.lr_at(200) - 0.2).abs() < 1e-6);
