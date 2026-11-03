@@ -10,9 +10,9 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
 | High (feature in one front end, missing in another, user-visible) | 0 open (H1, H2, H3 closed) |
-| Medium (declared ceiling with no plan) | 11 open (M2, M7 closed; M6 partly) |
+| Medium (declared ceiling with no plan) | 10 open (M1, M2, M7 closed; M6 partly) |
 | Low (polish) | 14 (13 open, L2 closed) |
-| **Total** | **29** (23 open) |
+| **Total** | **29** (22 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -30,7 +30,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 
 | ID | Severity | Gap | Evidence | Tracked? | Suggested next step |
 |---|---|---|---|---|---|
-| M1 | Medium | The server does not end a generation when the client disconnects; `SamplingParams.cancel` exists but is not wired to the HTTP layer. (Session gap 4: confirmed.) | `Manual.md:1668-1671` ("the server does not wire that up yet"); `rg cancel slm_server/src` finds nothing. | partly: Manual §9.7 only; not in Status §5/§6 | Add a Status §5 row; wire a drop guard on the response future to the flag. |
+| M1 | Medium | **CLOSED in `644c204`** (a dropped connection sets the request cancel flag; queued requests are skipped; scoring is not cancellable, Manual §9.7). The server did not end a generation when the client disconnects; `SamplingParams.cancel` exists but is not wired to the HTTP layer. (Session gap 4: confirmed.) | `Manual.md:1668-1671` ("the server does not wire that up yet"); `rg cancel slm_server/src` finds nothing. | partly: Manual §9.7 only; not in Status §5/§6 | Add a Status §5 row; wire a drop guard on the response future to the flag. |
 | M2 | Medium | **CLOSED in `083b3b9`** (checkpoints record `ferrum.ckpt.batch_size`, `window_stride`, `lr_settings`; a changed `--batch` or `--stride` is refused, changed lr/cosine/warmup/clip/weight decay/dropout are noted; old checkpoints resume with a note; Status §7.0.3a, Manual §6.6). Resume does not detect a changed `--batch` (nor `--stride`, `--lr`, `--cosine`, `--warmup`, `--clip`); only vocab/context/architecture and the corpus id are compared, so a "bit-identical" resume (Manual §6.6, "same flags") silently becomes a different run. (Session gap 8: confirmed.) | No `batch` key in `ferrum_core/src/train_transformer/checkpoint.rs` or `ferrum_core/src/ckpt.rs` (`rg batch` in both: no hit); Manual §6.6 prints notes only for `--embed/--heads/--hidden/--blocks/--seed`. | no | Record batch size and stride in the checkpoint and refuse or warn on mismatch, as for the corpus id. |
 | M3 | Medium | `finetune-gguf` checkpoints (`.flck`) record no corpus identity and no mid-epoch RNG state, so `finetune-gguf --resume` on a different corpus is accepted and a resumed fine-tune is not bit-identical; both guarantees exist only for `train`. | `rg -i corpus ferrum_core/src/llm_train/checkpoint.rs` is empty; `ferrum.ckpt.epoch_rng` appears only under `train_transformer/` and `slm/`; CLI `slm_cli/src/finetune.rs` has no id. | no | Reuse the `corpus_id` mechanism in the llama checkpoint; or state in Manual §9.2 that it is train-only. |
 | M4 | Medium | Arm, Windows (incl. Windows-on-Arm / Snapdragon) and macOS (incl. Apple silicon) builds are in no CI job or test; release workflow builds Linux only. (Session gap 11: confirmed.) | `rg 'aarch64\|arm\|windows\|macos' .github/workflows/*.yml` finds nothing; every job is `runs-on: ubuntu-*` (`ci.yml:16,35,62,79,104,151,165,207,291`, `release.yml:25`). Status G13 records "no Windows or macOS bundle was built" but not Arm. | partly (Status §5 G13 row: Windows/macOS GUI bundles; Arm not mentioned) | Add a `cargo check --workspace` matrix on `aarch64-unknown-linux-gnu` (cross) and a macOS/Windows runner; add a Status row. |
