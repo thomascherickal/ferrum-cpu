@@ -7,7 +7,7 @@ use std::str::FromStr;
 pub const USAGE: &str =
     "usage: ferrum-serve --model <model.gguf> [--host 127.0.0.1] [--port 8080] \
 [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096] \
-[--token <t>] [--allow-unauthenticated] [--help] [--version]
+[--repetition-penalty 1.0] [--token <t>] [--allow-unauthenticated] [--help] [--version]
 bearer token: env FERRUM_TOKEN (preferred; a --token value shows in `ps`) or --token; \
 a non-loopback --host needs one unless --allow-unauthenticated is given";
 
@@ -19,6 +19,7 @@ const KNOWN: &[&str] = &[
     "--max-chars",
     "--max-body",
     "--max-tokens",
+    "--repetition-penalty",
     "--token",
     "--allow-unauthenticated",
 ];
@@ -30,7 +31,7 @@ pub fn is_loopback(host: &str) -> bool {
         .any(|h| host.eq_ignore_ascii_case(h))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub model: String,
     pub host: String,
@@ -46,7 +47,7 @@ fn parse_value<T: FromStr>(name: &str, v: &str) -> Result<T, String> {
 }
 
 /// What the command line asked for.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Parsed {
     Help,
     Version,
@@ -91,6 +92,7 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
             "--max-batch" => limits.max_batch = parse_value(name, v)?,
             "--max-chars" => limits.max_chars = parse_value(name, v)?,
             "--max-body" => limits.max_body = parse_value(name, v)?,
+            "--repetition-penalty" => limits.repetition_penalty = parse_value(name, v)?,
             "--token" => token = Some(v.clone()),
             _ => limits.max_tokens = parse_value(name, v)?,
         }
@@ -107,6 +109,12 @@ pub fn parse_args(args: &[String]) -> Result<Parsed, String> {
         if v == 0 {
             return Err(format!("{flag} must be at least 1 (got 0)"));
         }
+    }
+    if !(limits.repetition_penalty.is_finite() && limits.repetition_penalty > 0.0) {
+        return Err(format!(
+            "--repetition-penalty must be a positive number, got {}",
+            limits.repetition_penalty
+        ));
     }
     if token.as_deref() == Some("") {
         return Err("--token must not be empty".into());
@@ -217,8 +225,31 @@ mod tests {
                 max_batch: 2,
                 max_chars: 3,
                 max_body: 4,
-                max_tokens: 5
+                max_tokens: 5,
+                repetition_penalty: 1.0
             }
+        );
+    }
+
+    #[test]
+    fn repetition_penalty_flag() {
+        let c = parse_args(&a(&["--model", "m", "--repetition-penalty", "1.3"])).unwrap();
+        assert_eq!(c.limits.repetition_penalty, 1.3);
+        for bad in ["0", "nan", "inf"] {
+            let e = parse_args(&a(&["--model", "m", "--repetition-penalty", bad]));
+            assert!(
+                e.unwrap_err()
+                    .starts_with("--repetition-penalty must be a positive number"),
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--repetition-penalty", "x"])).unwrap_err(),
+            "--repetition-penalty: cannot parse 'x'"
+        );
+        assert_eq!(
+            parse_args(&a(&["--model", "m", "--repetition-penalty"])).unwrap_err(),
+            "--repetition-penalty needs a value"
         );
     }
 

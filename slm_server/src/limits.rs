@@ -12,13 +12,15 @@ pub(crate) const MAX_STOPS: usize = 16;
 pub(crate) const MAX_STOP_BYTES: usize = 1024;
 
 /// Request limits, enforced before any model compute.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Limits {
     pub max_batch: usize,
     pub max_chars: usize,
     pub max_body: usize,
     /// Cap on `max_tokens` per generate request.
     pub max_tokens: usize,
+    /// Repetition penalty for a generate request that omits the field (`--repetition-penalty`).
+    pub repetition_penalty: f32,
 }
 
 impl Default for Limits {
@@ -28,6 +30,7 @@ impl Default for Limits {
             max_chars: 65_536,
             max_body: 8 << 20,
             max_tokens: 4096,
+            repetition_penalty: 1.0,
         }
     }
 }
@@ -43,5 +46,6 @@ mod tests {
             (d.max_batch, d.max_chars, d.max_body, d.max_tokens),
             (64, 65_536, 8 << 20, 4096)
         );
+        assert_eq!(d.repetition_penalty, 1.0);
     }
 }

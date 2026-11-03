@@ -85,7 +85,7 @@ fn handle(model: &GenerativeSLM, job: Job) {
                         temperature: g.temperature,
                         top_k: g.top_k,
                         top_p: g.top_p,
-                        repetition_penalty: 1.0,
+                        repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
                         ..SamplingParams::default()
                     };
                     model
@@ -184,6 +184,9 @@ pub(crate) struct GenRequest {
     pub(crate) top_p: f32,
     #[serde(default)]
     pub(crate) seed: u64,
+    /// `None` until the HTTP layer fills in the server default.
+    #[serde(default)]
+    pub(crate) repetition_penalty: Option<f32>,
 }
 
 #[cfg(test)]

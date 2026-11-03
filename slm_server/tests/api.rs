@@ -227,6 +227,53 @@ async fn generate_defaults_and_sampling_fields() {
     assert_eq!(v["results"][1]["n_tokens"], 5);
 }
 
+/// H2: `repetition_penalty` is optional; omitted == 1.0 == today's output, a value reaches the
+/// sampler (matches the library), the server default fills in when omitted, bad values are 400.
+#[tokio::test]
+async fn repetition_penalty_field_and_server_default() {
+    let one = |extra: Value| {
+        let mut r = json!({"prompt": "the cat", "max_tokens": 24});
+        r.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json!({"requests": [r]})
+    };
+    let text = |v: &Value| v["results"][0]["text"].as_str().unwrap().to_string();
+    let r = router();
+    let (_, plain) = post(&r, "/v1/generate", one(json!({}))).await;
+    let (s, unit) = post(&r, "/v1/generate", one(json!({"repetition_penalty": 1.0}))).await;
+    assert_eq!(s, StatusCode::OK, "{unit}");
+    assert_eq!(plain, unit);
+    let params = ferrum_core::SamplingParams {
+        temperature: 0.0,
+        repetition_penalty: 3.0,
+        ..ferrum_core::SamplingParams::default()
+    };
+    let want = reference()
+        .generate_tokens("the cat", 24, &[], &params, &mut Rng::new(0))
+        .unwrap();
+    let (s, v) = post(&r, "/v1/generate", one(json!({"repetition_penalty": 3.0}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(text(&v), want.text);
+    // The flag's default applies to a request that omits the field; an explicit value wins.
+    let r3 = router_with(Limits {
+        repetition_penalty: 3.0,
+        ..Limits::default()
+    });
+    let (_, v) = post(&r3, "/v1/generate", one(json!({}))).await;
+    assert_eq!(text(&v), want.text);
+    let (_, v) = post(&r3, "/v1/generate", one(json!({"repetition_penalty": 1.0}))).await;
+    assert_eq!(v, plain);
+    for bad in [json!(0), json!(-1.5)] {
+        let (s, v) = post(&r, "/v1/generate", one(json!({"repetition_penalty": bad}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert!(v["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("repetition_penalty must be a positive number, got"));
+    }
+}
+
 /// D23: an omitted `max_tokens` defaults to min(64, the server limit), not to a 400.
 #[tokio::test]
 async fn omitted_max_tokens_respects_a_small_server_limit() {
@@ -355,6 +402,7 @@ async fn limits_are_enforced() {
         max_chars: 50,
         max_body: 1024,
         max_tokens: 40,
+        ..Limits::default()
     });
     let rolling = "/v1/loglikelihood_rolling";
     let (s, v) = post(&r, rolling, json!({"texts": ["a", "b", "c"]})).await;

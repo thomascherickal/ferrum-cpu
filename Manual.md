@@ -1596,7 +1596,7 @@ Rules for both commands:
 ```text
 ferrum-serve --model <path.gguf> [--host 127.0.0.1] [--port 8080]
              [--max-batch 64] [--max-chars 65536] [--max-body 8388608] [--max-tokens 4096]
-             [--token <t>] [--allow-unauthenticated]
+             [--repetition-penalty 1.0] [--token <t>] [--allow-unauthenticated]
 ```
 
 The server binds to loopback by default and prints the model and address when
@@ -1610,16 +1610,23 @@ dedicated model thread** and handles **one request at a time**, because
 | `GET /v1/info` | none | `{params, context_len, vocab, quant, tokenizer, model_sha256}` |
 | `POST /v1/loglikelihood` | `{"requests":[{"context","continuation"}]}` | `{"results":[{"logprob","n_tokens","greedy"}]}` |
 | `POST /v1/loglikelihood_rolling` | `{"texts":[...]}` | `{"results":[{"logprob","n_tokens"}]}` |
-| `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed"}]}` | `{"results":[{"text","n_tokens"}]}` |
+| `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed","repetition_penalty"}]}` | `{"results":[{"text","n_tokens"}]}` |
 
 `generate` defaults: `temperature` 0 (greedy), `max_tokens` 64 (or the server's
-`--max-tokens` if that is smaller), `top_k` 0, `top_p` 1, `seed` 0. `temperature` must be finite and at least 0, `top_p` in (0, 1].
+`--max-tokens` if that is smaller), `top_k` 0, `top_p` 1, `seed` 0, `repetition_penalty` the server's `--repetition-penalty` (1, which is off,
+unless the flag says otherwise). `temperature` must be finite and at least 0, `top_p` in (0, 1], and
+`repetition_penalty` finite and greater than 0 (`400` otherwise: `repetition_penalty must be a positive
+number, got 0`). A request that omits the field generates exactly what it did before the field existed.
+`--repetition-penalty F` sets the value used by requests that omit it and is checked at startup the
+same way; the scoring routes have no sampling and ignore it.
 POST requests must send `Content-Type: application/json`; without it the server
 answers `400`, and `curl -d` does not set it for you.
 
 ```bash
 curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/loglikelihood \
   -d '{"requests":[{"context":"The cat sat on the","continuation":" mat"}]}'
+curl -s -H 'Content-Type: application/json' http://127.0.0.1:8080/v1/generate \
+  -d '{"requests":[{"prompt":"The cat","max_tokens":20,"repetition_penalty":1.3}]}'
 ```
 
 **Limits.** They are checked before any compute.

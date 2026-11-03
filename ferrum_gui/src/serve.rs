@@ -127,6 +127,7 @@ fn validate(p: ServeParams) -> Result<Config, String> {
             max_chars: p.max_chars,
             max_body: p.max_body,
             max_tokens: p.max_tokens,
+            ..Limits::default()
         },
         token,
         allow_unauthenticated: false,

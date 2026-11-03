@@ -238,6 +238,22 @@ fn zero_or_malformed_numeric_flags_exit_one_before_the_model_is_read() {
         }
     }
     let o = Command::new(BIN)
+        .args([
+            "--model",
+            "/nonexistent/m.gguf",
+            "--repetition-penalty",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err.contains("--repetition-penalty must be a positive number"),
+        "{err}"
+    );
+    assert!(!err.contains("cannot read"), "{err}");
+    let o = Command::new(BIN)
         .args(["--model", "/nonexistent/m.gguf", "--port", "70000"])
         .output()
         .unwrap();

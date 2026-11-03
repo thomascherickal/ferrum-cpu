@@ -24,6 +24,7 @@ struct AppState {
     max_batch: usize,
     max_chars: usize,
     max_tokens: usize,
+    repetition_penalty: f32,
     inflight: Arc<Semaphore>,
 }
 
@@ -38,6 +39,7 @@ pub fn app(bytes: Vec<u8>, limits: Limits) -> Result<(Router, Info), String> {
         max_batch: limits.max_batch,
         max_chars: limits.max_chars,
         max_tokens: limits.max_tokens,
+        repetition_penalty: limits.repetition_penalty,
         inflight: Arc::new(Semaphore::new(MAX_INFLIGHT)),
     };
     let posts = Router::new()
@@ -209,6 +211,14 @@ fn validate_gen(r: &GenRequest, max_tokens: usize) -> Result<(), ApiError> {
     if !(r.top_p > 0.0 && r.top_p <= 1.0) {
         return bad(format!("top_p must be in (0, 1], got {}", r.top_p));
     }
+    if let Some(p) = r
+        .repetition_penalty
+        .filter(|p| !(p.is_finite() && *p > 0.0))
+    {
+        return bad(format!(
+            "repetition_penalty must be a positive number, got {p}"
+        ));
+    }
     if r.stop.len() > MAX_STOPS {
         return bad(format!(
             "{} stop strings exceed the limit of {MAX_STOPS}",
@@ -244,6 +254,7 @@ async fn generate(
     for r in &mut b.requests {
         r.max_tokens
             .get_or_insert(DEFAULT_MAX_TOKENS.min(s.max_tokens));
+        r.repetition_penalty.get_or_insert(s.repetition_penalty);
     }
     submit(&s, |tx| Job::Generate(b.requests, tx)).await
 }
@@ -262,6 +273,7 @@ mod tests {
             max_batch: 2,
             max_chars: 3,
             max_tokens: 5,
+            repetition_penalty: 1.0,
             inflight: Arc::new(Semaphore::new(MAX_INFLIGHT)),
         }
     }
@@ -451,6 +463,7 @@ mod tests {
             top_k: 0,
             top_p,
             seed: 0,
+            repetition_penalty: None,
         }
     }
 
@@ -469,6 +482,47 @@ mod tests {
             assert_eq!(e.0, StatusCode::BAD_REQUEST);
             assert!(e.1.contains("top_p"), "{}", e.1);
         }
+    }
+
+    #[test]
+    fn validate_gen_repetition_penalty() {
+        let mut r = gen_req(1, 0.0, 1.0);
+        for p in [0.5, 1.0, 1.3, 100.0] {
+            r.repetition_penalty = Some(p);
+            assert!(validate_gen(&r, 5).is_ok(), "{p}");
+        }
+        for p in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            r.repetition_penalty = Some(p);
+            let e = validate_gen(&r, 5).unwrap_err();
+            assert_eq!(e.0, StatusCode::BAD_REQUEST);
+            assert_eq!(
+                e.1,
+                format!("repetition_penalty must be a positive number, got {p}")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_fills_the_server_default_penalty() {
+        let (tx, rx) = mpsc::channel();
+        let mut st = state(tx);
+        st.repetition_penalty = 1.7;
+        let mut explicit = gen_req(1, 0.0, 1.0);
+        explicit.repetition_penalty = Some(2.0);
+        let body = GenBody {
+            requests: vec![gen_req(1, 0.0, 1.0), explicit],
+        };
+        let h = tokio::spawn(generate(State(st), Ok(Json(body))));
+        let job = tokio::task::spawn_blocking(move || rx.recv().unwrap())
+            .await
+            .unwrap();
+        let Job::Generate(reqs, reply) = job else {
+            panic!("expected a generate job")
+        };
+        let got: Vec<_> = reqs.iter().map(|r| r.repetition_penalty).collect();
+        assert_eq!(got, [Some(1.7), Some(2.0)]);
+        reply.send(Ok(vec![])).unwrap();
+        let _ = h.await.unwrap().unwrap();
     }
 
     #[test]

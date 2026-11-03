@@ -9,10 +9,10 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 | Severity | Count |
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
-| High (feature in one front end, missing in another, user-visible) | 3 |
+| High (feature in one front end, missing in another, user-visible) | 2 open (H2 closed) |
 | Medium (declared ceiling with no plan) | 13 |
 | Low (polish) | 13 |
-| **Total** | **29** |
+| **Total** | **29** (28 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -23,7 +23,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 | ID | Severity | Gap | Evidence | Tracked in Status §5/§6 or plan Phase 3? | Suggested next step |
 |---|---|---|---|---|---|
 | H1 | High | The GUI Train tab cannot choose the saved precision: every model is saved int8. The CLI offers `--quant f32\|int8\|int4`, `--preset`, `--metrics-csv`, `--max-seconds`, `--sample`, `--debug`; none exists in the GUI. Manual §10.3 does not say this. | `ferrum_gui/src/commands/train.rs:295` calls `slm.save()`, which is int8 (`ferrum_core/src/slm/persist.rs:44-48`); `TrainParams` (train.rs:13-65) and `ui/train_tab.js` have no quant field (`rg -i quant ferrum_gui/ui/train_tab.js` is empty); CLI `args.rs:42-45`, `slm_cli/src/train.rs:35,271`. Same gap was in the old `e2e-report.md` §4 and is not closed. | no | Add a precision select (f32/int8/int4) using `to_bytes_*` as `slm_cli/src/train.rs:271` does; state the other missing flags in Manual §10.3. |
-| H2 | High | `ferrum-serve` ignores repetition penalty: `/v1/generate` has no such field and the model thread hard-codes 1.0, while CLI `generate --repetition-penalty`, GUI Generate/GGUF and wasm `Slm.generate` all expose it. | `slm_server/src/model_thread.rs:88` (`repetition_penalty: 1.0`); request fields in Manual §9.7 table are `prompt,max_tokens,stop,temperature,top_k,top_p,seed` only; `ferrum_core/src/slm/sampling.rs:32` has the field. | no | Add an optional `repetition_penalty` to `GenRequest` (validated like the GUI: finite, > 0), default 1.0; document it in §9.7. |
+| H2 | High | **CLOSED in `2a72d02`** (optional `repetition_penalty`, server flag `--repetition-penalty`). `ferrum-serve` ignores repetition penalty: `/v1/generate` has no such field and the model thread hard-codes 1.0, while CLI `generate --repetition-penalty`, GUI Generate/GGUF and wasm `Slm.generate` all expose it. | `slm_server/src/model_thread.rs:88` (`repetition_penalty: 1.0`); request fields in Manual §9.7 table are `prompt,max_tokens,stop,temperature,top_k,top_p,seed` only; `ferrum_core/src/slm/sampling.rs:32` has the field. | no | Add an optional `repetition_penalty` to `GenRequest` (validated like the GUI: finite, > 0), default 1.0; document it in §9.7. |
 | H3 | High | `ferrum-serve` and the wasm `Slm` load only Ferrum's own models (`GenerativeSLM`); an imported Llama/Qwen GGUF can be run (CLI `run-gguf`, GUI GGUF tab), scored (`eval-gguf`, Evaluate tab) and fine-tuned, but not served. Manual §9.7 does not state that the server is Ferrum-model-only. | `slm_server/src/model_thread.rs:126` (`spawn_with(bytes, GenerativeSLM::from_bytes)`); `slm_wasm/src/text.rs:75` (`from_bytes`); no `LlamaModel` reference in `slm_server/src` or `slm_wasm/src`. | no | Either state the limit in Manual §9.7/§11.3, or add a `LlamaModel` backend for `/v1/loglikelihood*` and `/v1/generate`. |
 
 ### Medium
@@ -69,7 +69,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 ## Mechanical cross-checks
 
 - **CLI flags, Manual vs `args.rs`.** All 65 distinct flag names in the `*_FLAGS` tables appear in `Manual.md`. Flags in the Manual but in no CLI table are the server's (`--host --port --max-batch --max-body --token --allow-unauthenticated`, all present in `slm_server/src/cli.rs:15-23`), LightEval's (`--max-samples --wikitext` in `eval/lighteval/run.sh:17,19`), cargo/tool flags, `--help/--version/--verbose` (accepted everywhere, `Manual.md:620-638`) and `--contxt` (an example typo). Per-section check: the only code flags missing from their command's Manual text are in L1. `train_transformer <cmd> --help` for `finetune-gguf`, `export-gguf`, `eval-gguf`, `run-gguf` matches `args.rs`.
-- **Server.** Routes in `slm_server/src/http.rs:44-53` (`/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`) equal Manual §9.7's five; flags and defaults match; `deny_unknown_fields` and limits as documented. Defects: L2, L5, H2, H3.
+- **Server.** Routes in `slm_server/src/http.rs:44-53` (`/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`) equal Manual §9.7's five; flags and defaults match; `deny_unknown_fields` and limits as documented. Defects: L2, L5, H3 (H2 closed).
 - **GUI.** All 29 commands in `generate_handler!` (`ferrum_gui/src/lib.rs:69-99`) are called from some `ui/*.js` (non-test); no UI call names a command that is not registered. Parity gaps: H1, L12.
 - **Subcommands.** `spec_for` (`args.rs:154-172`) has train, run, generate, run-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio, prepare, tokenize, eval, eval-gguf, info (plus aliases); all are in the Manual and `CLAUDE.md` Layout. `tests/tests/test_cli_matrix.rs` guards test coverage of each.
 - **Defaults.** Manual §6.2 train defaults (context 16, embed 32, heads 4, blocks 2, hidden 64, vocab 512, epochs 100, batch 16, lr 0.01, seed 1337) equal `TransformerConfig::default()` (`ferrum_core/src/slm/config.rs:95-115`).
@@ -141,7 +141,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 | sampling: temperature | yes (0 = greedy) | yes | yes | yes | partial: `sample_from_probs(temperature)` only |
 | sampling: top-k | yes | yes | yes | yes | partial: `top_k_indices` helper only |
 | sampling: top-p | yes | yes | yes ((0, 1], L5) | yes | no |
-| sampling: repetition penalty | yes (`--repetition-penalty`; `--rep` for run-gguf) | yes | no (H2) | yes | no |
+| sampling: repetition penalty | yes (`--repetition-penalty`; `--rep` for run-gguf) | yes | yes (H2, closed) | yes | no |
 | info / inspect | yes `info` (models, checkpoints, tokenizer, token files, imported GGUF) | partial: `model_info` only Ferrum models, `gguf_info` imported (L12) | yes `/v1/info` | yes `info()` | yes `metadata()` |
 | serve | `ferrum-serve` binary (separate) | yes Serve tab (in-process library) | yes | no | no |
 
