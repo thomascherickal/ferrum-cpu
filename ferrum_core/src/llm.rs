@@ -557,6 +557,39 @@ impl LlamaModel {
         rng: &mut Rng,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Vec<usize>> {
+        self.generate_inner(prompt, max_new, params, stops, rng, cancelled, &mut |_| {
+            false
+        })
+    }
+
+    /// [`LlamaModel::generate`] that hands the tokens generated so far to `stop_after` after
+    /// every sampled token that is not in `stops`, and ends the generation (keeping that
+    /// token) as soon as it answers `true`: the hook for text-level stop strings, which only
+    /// the caller's tokenizer can see. With `|_| false` it is bit-for-bit
+    /// [`LlamaModel::generate`].
+    pub fn generate_until(
+        &self,
+        prompt: &[usize],
+        max_new: usize,
+        params: &SamplingParams,
+        stops: &[usize],
+        rng: &mut Rng,
+        stop_after: &mut dyn FnMut(&[usize]) -> bool,
+    ) -> Result<Vec<usize>> {
+        self.generate_inner(prompt, max_new, params, stops, rng, &|| false, stop_after)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn generate_inner(
+        &self,
+        prompt: &[usize],
+        max_new: usize,
+        params: &SamplingParams,
+        stops: &[usize],
+        rng: &mut Rng,
+        cancelled: &dyn Fn() -> bool,
+        stop_after: &mut dyn FnMut(&[usize]) -> bool,
+    ) -> Result<Vec<usize>> {
         if prompt.is_empty() {
             return Err(InferError::DimMismatch("prompt must be non-empty".into()));
         }
@@ -588,7 +621,7 @@ impl LlamaModel {
             }
             let next = sample_with_params(&logits, params, &recent, rng);
             out.push(next);
-            if stops.contains(&next) {
+            if stops.contains(&next) || stop_after(&out) {
                 break;
             }
             recent.push(next);
@@ -921,6 +954,53 @@ mod tests {
             .unwrap();
         assert!(out.is_empty());
         assert_eq!(rng.state(), Rng::new(7).state());
+    }
+
+    #[test]
+    fn generate_until_matches_generate_and_stops_where_the_hook_says() {
+        let model = tiny_model();
+        let params = SamplingParams::with_temperature(0.8);
+        let plain = model
+            .generate(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7))
+            .unwrap();
+        let never = model
+            .generate_until(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &mut |_| {
+                false
+            })
+            .unwrap();
+        assert_eq!(plain, never);
+        // The hook sees every prefix of the output and stopping keeps the token it saw last.
+        let mut seen = Vec::new();
+        let part = model
+            .generate_until(&[1, 2, 3], 10, &params, &[], &mut Rng::new(7), &mut |out| {
+                seen.push(out.to_vec());
+                out.len() == 4
+            })
+            .unwrap();
+        assert_eq!(part, plain[..4]);
+        assert_eq!(
+            seen,
+            (1..=4).map(|n| plain[..n].to_vec()).collect::<Vec<_>>()
+        );
+        // A token in `stops` ends the run before the hook is asked.
+        let stop = plain[1];
+        let mut asked = 0;
+        let out = model
+            .generate_until(
+                &[1, 2, 3],
+                10,
+                &params,
+                &[stop],
+                &mut Rng::new(7),
+                &mut |_| {
+                    asked += 1;
+                    false
+                },
+            )
+            .unwrap();
+        let first = plain.iter().position(|&t| t == stop).unwrap();
+        assert_eq!(out, plain[..=first]);
+        assert_eq!(asked, first);
     }
 
     #[test]

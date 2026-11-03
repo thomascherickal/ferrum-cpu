@@ -20,8 +20,8 @@ mod training_loop;
 pub use self::config::{TransformerConfig, ValidationConfig, ValidationProgress};
 pub use self::corpus::{char_to_hex, corpus_vocab, hex_to_char, tokenize_corpus};
 pub use self::generate::{Generation, StopReason};
-pub(crate) use self::sampling::sample_with_params;
 pub use self::sampling::SamplingParams;
+pub(crate) use self::sampling::{argmax_first, sample_with_params};
 pub use self::scoring::{Evaluation, Score};
 pub use self::token_stream::GenStream;
 

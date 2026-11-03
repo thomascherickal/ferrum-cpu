@@ -90,7 +90,7 @@ impl SamplingParams {
 /// — bit-identical to the pre-I2 sampler.
 /// Index of the largest value, the **first** on ties (what llama.cpp's greedy
 /// sampler and `torch.argmax` return); `0` for an empty slice.
-pub(super) fn argmax_first(xs: &[f32]) -> usize {
+pub(crate) fn argmax_first(xs: &[f32]) -> usize {
     let mut best = 0;
     for (i, x) in xs.iter().enumerate() {
         if x.total_cmp(&xs[best]).is_gt() {
