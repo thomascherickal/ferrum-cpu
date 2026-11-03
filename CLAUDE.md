@@ -77,6 +77,11 @@ skills. When the user states a new rule, add it here.
     A floor is only raised to a value a real run has met. (`GEMINI.md` is a
     symlink to this file, like `AGENTS.md`.)
 
+16. **Ask, never assume.** When anything is unclear, ask the user: doubts,
+    clarifications, questions, queries. Do not fill a gap with an assumption
+    or a ruling of your own. Subagents report doubts back (NEEDS_CONTEXT) and
+    the controller relays them to the user.
+
 ## Hard constraints
 
 Do not break these; they are the product's selling points.
