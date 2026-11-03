@@ -91,7 +91,10 @@ impl LlamaTrainer {
     /// [`LlamaTrainer::finetune_epoch_threaded`] that asks `stop(step_count)`
     /// after every optimizer step and ends the epoch early when it answers
     /// `true`. Returns the mean loss over the steps run and whether it stopped.
-    /// With `stop` always `false` it is bit-for-bit the plain epoch.
+    /// With `stop` always `false` it is bit-for-bit the plain epoch. Each epoch records
+    /// where it began (saved as `ferrum.ckpt.epoch_rng`); the first epoch after loading a
+    /// checkpoint written inside an epoch replays that epoch's window order and skips the
+    /// steps already done, so the resumed run is bit-identical to an uninterrupted one.
     pub fn finetune_epoch_until(
         &mut self,
         tokens: &[usize],
@@ -111,12 +114,13 @@ impl LlamaTrainer {
         let batch_size = batch_size.max(1);
         let num_windows = tokens.len() - seq_len + 1;
         let steps = num_windows.div_ceil(batch_size);
-        let perm = rng.shuffled_indices(num_windows);
+        // A fresh epoch shuffles; the first one after a mid-epoch checkpoint replays its order.
+        let (perm, skip) = self.epoch_plan(num_windows, steps, rng);
         let dropout = self.dropout;
         let mut total = 0.0f32;
         let mut done = 0usize;
 
-        for step in 0..steps {
+        for step in skip..steps {
             let idxs = &perm[step * batch_size..((step + 1) * batch_size).min(num_windows)];
             let windows: Vec<&[usize]> = idxs.iter().map(|&s| &tokens[s..s + seq_len]).collect();
             let base_seed = if dropout > 0.0 { rng.next_u64() } else { 0 };
@@ -127,7 +131,7 @@ impl LlamaTrainer {
                 return Ok((total / done as f32, true));
             }
         }
-        Ok((total / steps as f32, false))
+        Ok((total / done as f32, false))
     }
 
     /// Shared gradient computation for one minibatch of already-sliced windows,

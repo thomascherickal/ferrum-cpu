@@ -1439,6 +1439,28 @@ is exactly the fine-tuned model. A model with tied embeddings (no `output.weight
 like SmolLM2) keeps its LM head tied to the embedding while training and stays
 tied on export. A `.flck` from before these rules is refused; re-run the fine-tune.
 
+**Resume.** `--resume part.flck` continues a fine-tune with the same flags; `--epochs` counts
+the epochs still to run, and an epoch the checkpoint stopped inside counts as one of them
+(stopped inside epoch 1 of 3: resume with `--epochs 3`; stopped after epoch 1: `--epochs 2`).
+A `.flck` records the corpus (`ferrum.ckpt.corpus_id`, `sha256:<hex>` of the corpus file),
+the batch and window (`ferrum.ckpt.batch_size`, `ferrum.ckpt.window_stride`, always 1 here,
+and `ferrum.ckpt.window_len`, the effective `--seq`), the learning-rate settings
+(`ferrum.ckpt.lr_settings`: lr, warmup, clip, weight decay, dropout) and where the current
+epoch began (`ferrum.ckpt.epoch_rng`). A resume on a corpus file with another hash is refused
+with an error naming both ids (exit 1; in the GUI a Fine-tune error), as is one with another
+`--batch` (`--batch is B but the checkpoint was trained with batch A ...`) or `--seq`
+(`--seq is ...`); nothing is written. A changed `--lr`, `--warmup`, `--clip`,
+`--weight_decay` or `--dropout` only prints `note: training settings changed since the
+checkpoint was written (lr 0.01 -> 0.005); ...`. A run stopped inside an epoch replays the
+rest of that epoch's windows in their original order and ends bit-identical to an
+uninterrupted run (same flags and the same effective thread count; tested serial and with
+two threads, with dropout and warmup on). The thread count matters because each step's
+batch is split across the threads; the memory cap above can lower `--threads`, and the
+banner line says so. A `.flck` written before these keys existed still resumes as before
+(a checkpoint from inside an epoch starts a fresh epoch, so the result differs slightly)
+and prints `note: the checkpoint predates its recorded corpus, epoch and training settings;
+...`. Walk-through: [docs/resume-cancel-and-prepare.md](docs/resume-cancel-and-prepare.md) §5.
+
 ### 9.3 Exporting (`export-gguf`)
 
 ```bash

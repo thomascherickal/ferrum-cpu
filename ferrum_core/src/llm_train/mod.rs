@@ -43,10 +43,12 @@ mod kernels;
 mod optim;
 mod params;
 mod passes;
+mod run;
 #[cfg(test)]
 mod test_support;
 
 pub use self::checkpoint::apply_checkpoint_weights;
+pub use self::run::FinetuneRun;
 
 use crate::error::Result;
 use crate::llm::LlamaModel;
@@ -70,6 +72,8 @@ pub struct LlamaTrainer {
     dropout: f32,
     qat: bool,
     step_t: u64,
+    /// The run recorded in (and checked against) checkpoints; see [`LlamaTrainer::begin_run`].
+    run: run::RunState,
 }
 
 impl LlamaTrainer {
@@ -94,6 +98,7 @@ impl LlamaTrainer {
             dropout: 0.0,
             qat: false,
             step_t: 0,
+            run: Default::default(),
         })
     }
 

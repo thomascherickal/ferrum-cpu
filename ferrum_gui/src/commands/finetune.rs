@@ -5,7 +5,7 @@ use crate::error::CmdError;
 use crate::jobs::{Job, JobGuard};
 use crate::paths::checked_path;
 use crate::AppState;
-use ferrum_core::{Adam, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng};
+use ferrum_core::{Adam, FinetuneRun, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
@@ -131,6 +131,11 @@ fn finetune_inner<R: Runtime>(
         tokens.push(bos);
     }
     tokens.extend(tok.encode(&text));
+    // The corpus identity the checkpoint records and a resume checks (the CLI's rule).
+    let corpus_id = slm_cli::hash::file_id(&p.corpus_path).map_err(|e| {
+        cleanup();
+        format!("cannot read corpus {}: {e}", p.corpus_path)
+    })?;
 
     let seq = p.seq_len.min(model.cfg.context_len).max(2);
     let batch = p.batch_size.max(1);
@@ -167,11 +172,27 @@ fn finetune_inner<R: Runtime>(
     } else {
         Rng::new(p.seed)
     };
+    // Refuses a resume on another corpus, batch or sequence length; notes changed lr settings
+    // in the log. The returned step is where this run's first epoch began.
+    let run = FinetuneRun {
+        corpus_id: Some(corpus_id),
+        batch,
+        seq,
+        lr: p.lr,
+        warmup: p.warmup,
+        clip: p.clip,
+        weight_decay: p.weight_decay.max(0.0),
+        dropout: p.dropout,
+    };
+    let base = tr.begin_run(&run, tokens.len()).map_err(|e| {
+        cleanup();
+        format!("cannot resume: {e}")
+    })?;
 
     // The schedule spans the *cumulative* step timeline (after any resume), so a
     // resumed run does not start past total_steps — which would pin the LR at 0.
     if p.warmup > 0 {
-        let total = tr.step_count() + steps_per_epoch * p.epochs as u64;
+        let total = base + steps_per_epoch * p.epochs as u64;
         tr.set_lr_schedule(Some(LrSchedule::warmup_cosine(
             p.lr,
             p.warmup,
@@ -189,7 +210,7 @@ fn finetune_inner<R: Runtime>(
     let t0 = std::time::Instant::now();
     let mut first_loss = f32::NAN;
     let mut final_loss = f32::NAN;
-    let total_steps = tr.step_count() + steps_per_epoch * p.epochs as u64;
+    let total_steps = base + steps_per_epoch * p.epochs as u64;
     let mut epochs_run = 0;
     let mut stopped = false;
     for e in 0..p.epochs {

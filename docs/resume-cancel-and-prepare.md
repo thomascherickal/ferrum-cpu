@@ -2,7 +2,7 @@
 
 # Resume exactly, refuse the wrong corpus, cancel generation, trust `prepare`
 
-Four small features, one how-to each. Every command and output below comes from a
+Four small features, one how-to each, and the same resume rules for `finetune-gguf` (section 5). Every command and output below comes from a
 real run on this machine with a tiny model (context 16, embed 16, 2 blocks, 2 heads,
 hidden 32, vocab 300, `--threads 1`) on a generated 300-document corpus. The paths
 are shortened to bare file names. Only what is marked "not run" was not run.
@@ -130,3 +130,55 @@ In scripts, test for the manifest before using a prepared folder:
 `test -f prep/manifest.json || train_transformer prepare ...`. A `*.part` file left
 behind is harmless and is replaced by the next run. The DVC `prepare` stage
 tracks the manifest in git, so a changed manifest is a changed dataset.
+
+## 5. The same for `finetune-gguf`
+
+A `.flck` records the corpus id, the batch, `--seq`, the learning-rate settings and where
+its epoch began, so `finetune-gguf --resume` follows the same rules as `train --resume`.
+Run on 2026-11-03 with the synthetic tiny llama the tests build (`base.gguf`: dim 8,
+2 layers, a 32-letter vocabulary, context 16) and a 31-character corpus:
+
+```bash
+F="--epochs 3 --batch 4 --seq 8 --lr 1e-2 --dropout 0.1 --warmup 2 --threads 1"
+```
+
+```text
+$ train_transformer finetune-gguf base.gguf c.txt full.flck $F
+  24 windows · 6 steps/epoch
+  epoch   1/3  loss 3.4522  ppl 31.57  [0.0s, 154712 tok/s, lr 8.54e-3]
+  epoch   2/3  loss 3.3973  ppl 29.88  [0.0s, 161901 tok/s, lr 3.09e-3]
+  epoch   3/3  loss 3.3635  ppl 28.89  [0.0s, 160604 tok/s, lr 0.00e0]
+$ touch part.flck.stop
+$ train_transformer finetune-gguf base.gguf c.txt part.flck $F
+  epoch   1/3  loss 3.4699  ppl 32.13  [0.0s, 833066 tok/s, lr 5.00e-3]
+stopped early at step 1: stop file found; resume with --resume part.flck
+$ train_transformer finetune-gguf base.gguf c.txt rest.flck $F --resume part.flck
+  resumed from part.flck at step 1
+  epoch   1/3  loss 3.4486  ppl 31.46  [0.0s, 187161 tok/s, lr 8.54e-3]
+  epoch   2/3  loss 3.3973  ppl 29.88  [0.0s, 164668 tok/s, lr 3.09e-3]
+  epoch   3/3  loss 3.3635  ppl 28.89  [0.0s, 160665 tok/s, lr 0.00e0]
+$ sha256sum full.flck rest.flck
+a226bd5a87a3d06d...  full.flck
+a226bd5a87a3d06d...  rest.flck
+```
+
+Step 1 is inside the first 6-step epoch; the resume replays its other 5 steps (the first
+"epoch" line of the resumed run is that rest, so `--epochs 3` again) and the checkpoints
+are byte-identical. Another corpus, another batch, and a new learning rate:
+
+```text
+$ train_transformer finetune-gguf base.gguf d.txt x.flck $F --resume part.flck
+error: dimension mismatch: the checkpoint was trained on corpus sha256:58b9dba5...6cf2, this run's corpus is sha256:1db33607...825c; resume on the corpus it was started with
+$ echo $?
+1
+$ train_transformer finetune-gguf base.gguf c.txt x.flck $F --resume part.flck --batch 2
+error: dimension mismatch: --batch is 2 but the checkpoint was trained with batch 4; a resume with another batch is a different run (window order and step count change). Resume with --batch 4, or start a new run
+$ train_transformer finetune-gguf base.gguf c.txt y.flck $F --resume part.flck --lr 5e-3
+note: training settings changed since the checkpoint was written (lr 0.01 -> 0.005); the resumed run will not match an uninterrupted one
+```
+
+(Ids and hashes shortened with `...`; lines of the banner left out.) A `.flck` written
+before these keys existed resumes as before with `note: the checkpoint predates its
+recorded corpus, epoch and training settings; ...`. Not run here from the command line
+(no older build's `.flck` of a GGUF model exists on this machine); a unit test in
+`ferrum_core` resumes such a checkpoint.

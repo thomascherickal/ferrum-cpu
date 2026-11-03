@@ -264,6 +264,53 @@ fn finetune_refuses_bad_input_and_resumes_from_its_own_checkpoint() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[test]
+fn finetune_resume_on_another_corpus_or_batch_is_refused() {
+    let (_app, w) = app();
+    let dir = tmp("ft_other_corpus");
+    std::fs::write(dir.join("base.gguf"), Tiny::default().build()).unwrap();
+    std::fs::write(
+        dir.join("a.txt"),
+        "hi abc hi abc hi abc hi abc hi abc hi abc ",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("b.txt"),
+        "hi abd hi abd hi abd hi abd hi abd hi abd ",
+    )
+    .unwrap();
+    call(
+        &w,
+        "finetune_gguf",
+        ft_params(&dir, "base.gguf", "a.txt", "a.flck"),
+    )
+    .unwrap();
+    let ckpt = dir.join("a.flck");
+    let before = std::fs::read(&ckpt).unwrap();
+    // Resuming in place on another corpus is refused, naming the corpus, and writes nothing.
+    let mut p = ft_params(&dir, "base.gguf", "b.txt", "a.flck");
+    p["params"]["resume"] = json!(ckpt);
+    let e = call(&w, "finetune_gguf", p.clone()).unwrap_err();
+    assert!(
+        msg(&e).contains("cannot resume")
+            && msg(&e).contains("corpus")
+            && msg(&e).contains("sha256:"),
+        "{e}"
+    );
+    p["params"]["corpusPath"] = json!(dir.join("a.txt"));
+    p["params"]["batchSize"] = json!(3);
+    let e = call(&w, "finetune_gguf", p.clone()).unwrap_err();
+    assert!(
+        msg(&e).contains("--batch is 3 but the checkpoint was trained with batch 2"),
+        "{e}"
+    );
+    assert_eq!(std::fs::read(&ckpt).unwrap(), before);
+    // The corpus and batch it was started with resume.
+    p["params"]["batchSize"] = json!(2);
+    call(&w, "finetune_gguf", p).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn train_params(dir: &std::path::Path, corpus: &str) -> Value {
     json!({"params": {
         "method": "transformer", "corpusPath": dir.join(corpus), "modelPath": dir.join("m.gguf"),

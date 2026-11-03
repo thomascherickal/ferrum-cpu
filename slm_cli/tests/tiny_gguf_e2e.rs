@@ -235,6 +235,131 @@ fn finetune_stops_on_a_stop_file_and_resume_equals_the_full_run() {
     );
 }
 
+/// A stop after step 1 of a 6-step epoch, then `--resume` for the 3 epochs not finished, writes
+/// the same `.flck` (and export) as the uninterrupted run, serial and with two threads, with
+/// dropout and a warmup schedule on. A resume on another corpus or batch exits 1 and writes nothing.
+#[test]
+fn finetune_resumed_mid_epoch_is_byte_identical_and_another_corpus_is_refused() {
+    let t = Tmp::new("ftmid");
+    std::fs::write(
+        t.s("base.gguf"),
+        tiny_llama_gguf_with_tokens(&letter_vocab()),
+    )
+    .unwrap();
+    std::fs::write(t.s("c.txt"), "abc abc abc abc abc abc abc abc").unwrap();
+    std::fs::write(t.s("d.txt"), "cba cba cba cba cba cba cba cba").unwrap();
+    let base = t.s("base.gguf");
+    let ft = |corpus: &str, out: &str, threads: &str, extra: &[&str]| {
+        let corpus = t.s(corpus);
+        let mut a = vec![
+            "finetune-gguf",
+            &base,
+            &corpus,
+            out,
+            "--epochs",
+            "3",
+            "--batch",
+            "4",
+            "--seq",
+            "8",
+            "--lr",
+            "1e-2",
+            "--dropout",
+            "0.1",
+            "--warmup",
+            "2",
+            "--threads",
+            threads,
+        ];
+        a.extend(extra);
+        tt(&a)
+    };
+    for threads in ["1", "2"] {
+        let full = t.s(&format!("full{threads}.flck"));
+        let part = t.s(&format!("part{threads}.flck"));
+        let rest = t.s(&format!("rest{threads}.flck"));
+        let out = ft("c.txt", &full, threads, &[]);
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            out.status.success() && text.contains("steps/epoch"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("· 1 steps/epoch"),
+            "the stop must fall inside an epoch: {text}"
+        );
+        std::fs::write(format!("{part}.stop"), b"").unwrap();
+        let out = ft("c.txt", &part, threads, &[]);
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("stopped early at step 1"),
+            "{out:?}"
+        );
+        assert!(ft("c.txt", &rest, threads, &["--resume", &part])
+            .status
+            .success());
+        assert!(
+            std::fs::read(&full).unwrap() == std::fs::read(&rest).unwrap(),
+            "threads {threads}: the resumed checkpoint differs from the uninterrupted one"
+        );
+        let export = |ck: &str, name: &str| {
+            ok(&["export-gguf", &base, &t.s(name), "--resume", ck]);
+            std::fs::read(t.s(name)).unwrap()
+        };
+        assert!(export(&full, "full.gguf") == export(&rest, "rest.gguf"));
+    }
+
+    // Another corpus: refused with both ids, exit 1, the checkpoint untouched, nothing written.
+    let part = t.s("part1.flck");
+    let before = std::fs::read(&part).unwrap();
+    let out = ft("d.txt", &t.s("x.flck"), "1", &["--resume", &part]);
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+    let (a, b) = (
+        slm_cli::hash::file_id(&t.s("c.txt")).unwrap(),
+        slm_cli::hash::file_id(&t.s("d.txt")).unwrap(),
+    );
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("corpus") && err.contains(&a) && err.contains(&b),
+        "{err}"
+    );
+    let out = ft(
+        "c.txt",
+        &t.s("x.flck"),
+        "1",
+        &["--resume", &part, "--batch", "2"],
+    );
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("--batch is 2 but the checkpoint was trained with batch 4"),
+        "{err}"
+    );
+    let out = ft(
+        "c.txt",
+        &t.s("x.flck"),
+        "1",
+        &["--resume", &part, "--seq", "6"],
+    );
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(err.contains("--seq is 6"), "{err}");
+    assert_eq!(std::fs::read(&part).unwrap(), before);
+    assert!(!std::path::Path::new(&t.s("x.flck")).exists());
+    // A changed learning rate is only noted.
+    let out = ft(
+        "c.txt",
+        &t.s("y.flck"),
+        "1",
+        &["--resume", &part, "--lr", "5e-3"],
+    );
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{out:?}");
+    assert!(
+        text.contains("note: training settings changed") && text.contains("lr 0.01 -> 0.005"),
+        "{text}"
+    );
+}
+
 #[test]
 fn untied_llama_finetune_export_run_round_trip() {
     round_trip("untied", tiny_llama_gguf_with_tokens(&letter_vocab()));

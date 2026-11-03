@@ -3,6 +3,7 @@ use crate::ckpt;
 use crate::error::{InferError, Result};
 use crate::llm::{LlamaConfig, LlamaModel};
 use crate::llm_train::params::{ensure_f32_weights, param_data_mut, param_data_ref};
+use crate::llm_train::run::RunState;
 use crate::llm_train::LlamaTrainer;
 use crate::rng::Rng;
 
@@ -73,8 +74,9 @@ pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Resul
     }
     // The same scalars a full restore reads: a malformed file fails alike.
     ckpt::get_bool(&g, "qat")?;
-    ckpt::get_u64(&g, "step")?;
+    let step = ckpt::get_u64(&g, "step")?;
     ckpt::get_u64(&g, "rng")?;
+    RunState::read(&g, step)?;
     let tied = model.tied_head;
     let mut targets = param_data_mut(model);
     check_no_placeholder_biases(
@@ -96,7 +98,9 @@ pub fn apply_checkpoint_weights(model: &mut LlamaModel, bytes: Vec<u8>) -> Resul
 
 impl LlamaTrainer {
     /// Serialize the full **optimizer state**: a shape header, the QAT flag, the
-    /// step counter, the supplied RNG's state, and every parameter's weights and
+    /// step counter, the supplied RNG's state, the run's optional keys (corpus id,
+    /// batch, window and learning-rate settings when [`LlamaTrainer::begin_run`] set
+    /// them, and where the current epoch began), and every parameter's weights and
     /// both Adam moments. Pair with [`LlamaTrainer::load_checkpoint_into`] on a
     /// freshly-loaded base model of the same shape to resume exactly.
     pub fn save_checkpoint(&self, rng: &Rng) -> Vec<u8> {
@@ -107,6 +111,7 @@ impl LlamaTrainer {
         ckpt::put_bool(&mut b, "qat", self.qat);
         ckpt::put_u64(&mut b, "step", self.step_t);
         ckpt::put_u64(&mut b, "rng", rng.state());
+        self.run.write(&mut b);
         let (data, m, v) = (
             param_data_ref(&self.model),
             self.m.slices(),
@@ -158,6 +163,7 @@ impl LlamaTrainer {
         let qat = ckpt::get_bool(&g, "qat")?;
         let step_t = ckpt::get_u64(&g, "step")?;
         let rng_state = ckpt::get_u64(&g, "rng")?;
+        let run = RunState::read(&g, step_t)?;
 
         let lens: Vec<usize> = param_data_ref(&self.model)
             .iter()
@@ -175,6 +181,7 @@ impl LlamaTrainer {
 
         self.qat = qat;
         self.step_t = step_t;
+        self.run = run;
         let mut off = 0usize;
         for s in param_data_mut(&mut self.model) {
             let n = s.len();

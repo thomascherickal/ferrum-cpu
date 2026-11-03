@@ -10,7 +10,9 @@ use std::time::Instant;
 /// checkpoint that `run-gguf --resume` (or a later `finetune-gguf --resume`) can
 /// apply back over the base GGUF.
 pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    use ferrum_core::{Adam, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng, SamplingParams};
+    use ferrum_core::{
+        Adam, FinetuneRun, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng, SamplingParams,
+    };
 
     if args.positional.len() < 3 {
         return Err(
@@ -96,6 +98,9 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
         tokens.push(bos);
     }
     tokens.extend(tok.encode(&text));
+    // The corpus identity the checkpoint records and a resume checks.
+    let corpus_id = slm_cli::hash::file_id(corpus_path)
+        .map_err(|e| format!("cannot read corpus {corpus_path}: {e}"))?;
     println!("  corpus: {} chars → {} tokens", text.len(), tokens.len());
 
     // 3. Hyperparameters.
@@ -148,11 +153,24 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     } else {
         Rng::new(seed)
     };
+    // Refuses a resume on another corpus, batch or --seq; notes changed lr settings. The
+    // returned step is where this run's first epoch began (an interrupted epoch is replayed).
+    let run = FinetuneRun {
+        corpus_id: Some(corpus_id),
+        batch,
+        seq,
+        lr,
+        warmup,
+        clip,
+        weight_decay,
+        dropout,
+    };
+    let base = tr.begin_run(&run, tokens.len())?;
 
     // The schedule spans the *cumulative* step timeline (after any resume), so a
     // resumed run does not start past total_steps — which would pin the LR at 0.
     if warmup > 0 {
-        let total = tr.step_count() + steps_per_epoch * epochs as u64;
+        let total = base + steps_per_epoch * epochs as u64;
         tr.set_lr_schedule(Some(LrSchedule::warmup_cosine(
             lr,
             warmup,
@@ -180,7 +198,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 6. Train. A stop request ends the run after a step (never the last one);
     // the checkpoint below is still written, so the run resumes.
-    let total_steps = tr.step_count() + steps_per_epoch * epochs as u64;
+    let total_steps = base + steps_per_epoch * epochs as u64;
     let mut stopped = None;
     for e in 0..epochs {
         let te = Instant::now();
