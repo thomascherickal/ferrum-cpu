@@ -5,12 +5,11 @@
 //! `FERRUM_REQUIRE_RUNTIMES=1 cargo test -p slm_cli --release --test runtime_export_cli -- --nocapture`
 //! (tests that touch a runtime share one lock, so default parallel threads are fine).
 //!
-//! ponytail: the model under test is llama.cpp's GPT-2 124M Q8_0 GGUF, an untracked file
-//! outside this repository (`../../.ferrum-dev/gpt2gguf/gpt2-q8_0.gguf` from `slm_cli/`).
-//! Ferrum's own GPT-2 GGUF writer exists, but the fixture was never swapped for a tiny
-//! Ferrum-trained model, so the test skips on a machine without that file. Upgrade path:
-//! train a tiny `--vocab 300` model in the test and drop the file requirement.
-//! Override the model file with `FERRUM_TEST_GGUF=/path/to/gpt2.gguf`.
+//! `export_ollama_ferrum_trained_then_generate` trains its own tiny model, so it needs only
+//! `ollama` and `llama-completion` (the CI `runtimes` job runs it). The other tests use
+//! llama.cpp's GPT-2 124M Q8_0 GGUF, an untracked file outside this repository
+//! (`../../.ferrum-dev/gpt2gguf/gpt2-q8_0.gguf` from `slm_cli/`; override with
+//! `FERRUM_TEST_GGUF=/path/to/gpt2.gguf`), and the LM Studio one a real LM Studio install.
 
 mod common;
 
@@ -48,7 +47,8 @@ fn gpt2_or_skip() -> Option<PathBuf> {
     } else {
         Err(format!(
             "missing test model {}: put llama.cpp's GPT-2 124M Q8_0 GGUF there or point \
-             FERRUM_TEST_GGUF at a gpt2 GGUF file",
+             FERRUM_TEST_GGUF at a gpt2 GGUF file (the LM Studio test also needs a real LM \
+             Studio install: `lms`, its daemon and ~/.lmstudio)",
             p.display()
         ))
     };
@@ -204,6 +204,38 @@ impl Ollama {
         }
         panic!("ollama serve did not come up on {}", me.host);
     }
+    /// A server of its own on a free ephemeral port with a model store at `models`, so the test
+    /// touches neither a running Ollama nor `~/.ollama/models`. Drop kills it.
+    #[allow(clippy::zombie_processes)] // Drop kills and waits
+    fn start_private(bin: PathBuf, models: &Path) -> Self {
+        // ponytail: bind-then-release leaves a tiny race window; retry the pick if it ever flakes.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let host = format!("127.0.0.1:{port}");
+        let child = Command::new(&bin)
+            .arg("serve")
+            .env("OLLAMA_HOST", &host)
+            .env("OLLAMA_MODELS", models)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("ollama serve");
+        let me = Self {
+            host,
+            bin,
+            child: Some(child),
+        };
+        for _ in 0..300 {
+            if answers(&me.host) {
+                return me;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("ollama serve did not come up on {}", me.host);
+    }
     fn rm(&self, name: &str) {
         let _ = Command::new(&self.bin)
             .args(["rm", name])
@@ -299,6 +331,73 @@ fn export_ollama_then_generate() {
     eprintln!("llama.cpp: {want:?}\nollama:    {got:?}");
     assert!(!got.trim().is_empty());
     assert_eq!(got.trim_end(), want.trim_end()); // llama-completion appends newlines
+}
+
+/// `export-ollama` on a model trained by the real binary (no out-of-repo file), served by a private
+/// Ollama (own port, own model store in a temp dir). Ollama's greedy text must agree with
+/// llama.cpp's (one a prefix of the other: llama.cpp's logger can drop a tiny model's tail).
+#[test]
+fn export_ollama_ferrum_trained_then_generate() {
+    let _serial = serial();
+    let Some(bin) = ollama_tool() else { return };
+    let dir = std::env::temp_dir().join(format!("ferrum_e1_trained_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let _cleanup = TmpDir(dir.clone()); // declared first, so dropped after the server
+    let (corpus, model) = (dir.join("corpus.txt"), dir.join("m.gguf"));
+    std::fs::write(&corpus, format!("{PROMPT} Ferrum. ").repeat(60)).unwrap();
+    let (ok, text) = exporter(
+        &[
+            "train",
+            corpus.to_str().unwrap(),
+            model.to_str().unwrap(),
+            "--vocab",
+            "300",
+            "--context",
+            "64",
+            "--embed",
+            "16",
+            "--heads",
+            "2",
+            "--blocks",
+            "1",
+            "--hidden",
+            "32",
+            "--epochs",
+            "40",
+            "--threads",
+            "1",
+        ],
+        &[],
+    );
+    assert!(ok, "{text}");
+    let Some(want) = llama_reference(&model) else {
+        return;
+    };
+    let srv = Ollama::start_private(bin, &dir.join("ollama-models"));
+    let (ok, text) = exporter(
+        &[
+            "export-ollama",
+            model.to_str().unwrap(),
+            "ferrum-e1-trained",
+        ],
+        &[("OLLAMA_HOST", &srv.host)],
+    );
+    assert!(ok, "{text}");
+    let body = format!(
+        r#"{{"model":"ferrum-e1-trained","prompt":"{PROMPT}","raw":true,"stream":false,"options":{{"temperature":0,"num_predict":{N}}}}}"#
+    );
+    let got = json_string_field(
+        &curl_post(&format!("http://{}/api/generate", srv.host), &body),
+        "response",
+    );
+    eprintln!("llama.cpp: {want:?}\nollama:    {got:?}");
+    let (a, b) = (want.trim_end(), got.trim_end());
+    assert!(!b.is_empty(), "ollama generated nothing");
+    assert!(
+        a.starts_with(b) || b.starts_with(a),
+        "llama.cpp {a:?} vs ollama {b:?}"
+    );
 }
 
 /// Cleans up only what this test did: the import under `~/.lmstudio/models/<repo>`,

@@ -1656,6 +1656,13 @@ Rules for both commands:
   run there, but Ferrum exports only its own gpt2 models; the error points to the
   hand-written Modelfile (§9.5).
 - A missing tool gives an error that lists the four places searched (§9.5).
+- The end-to-end tests are in `slm_cli/tests/runtime_export_cli.rs`.
+  `export_ollama_ferrum_trained_then_generate` needs only `ollama` and
+  `llama-completion` (it trains its own tiny model and uses a private server and
+  model store): `FERRUM_REQUIRE_RUNTIMES=1 cargo test -p slm_cli --release --test runtime_export_cli export_ollama_ferrum_trained -- --nocapture`.
+  `export_lmstudio_then_generate` needs a real LM Studio install (`lms`, its
+  daemon, `~/.lmstudio`) and a GPT-2 GGUF outside the repository
+  (`FERRUM_TEST_GGUF`); it skips without them.
 - If the Ollama server is not running, `ollama create` fails and the error says
   to start it with `ollama serve`. `ollama create` talks to `OLLAMA_HOST`.
 - After export you can use `ollama run <name>` or load the model in LM Studio.

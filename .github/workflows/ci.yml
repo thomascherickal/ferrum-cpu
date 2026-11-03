@@ -373,3 +373,5 @@ jobs:
           cat "$RUNNER_TEMP/ollama.log"; exit 1
       - name: Runtime compatibility tests (llama.cpp, Ollama; LM Studio exempt)
         run: cargo test --release --locked -p integration_tests --test test_runtime_compat -- --nocapture --test-threads 1
+      - name: export-ollama end to end (Ferrum-trained tiny model, private Ollama)
+        run: cargo test --release --locked -p slm_cli --test runtime_export_cli export_ollama_ferrum_trained -- --nocapture
