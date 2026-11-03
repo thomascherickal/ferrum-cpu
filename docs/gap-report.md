@@ -129,7 +129,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 | corpus identity (`corpus_id`) | yes (train: `train.rs:48`); no finetune (M3) | yes (train: `commands/train.rs:127`); no finetune | n/a | n/a | n/a |
 | progress events | text lines (`-v`, epoch lines) | yes: `train-progress`, `finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`, `download-progress`, `clean-progress`, `serve-log`; none for `download_text` (L8) | no | partial: pull `next_chunk`, `tokens_generated` | no |
 | stop sequences | yes `generate --stop` (repeatable); no `run-gguf` | yes Generate tab; no GGUF tab (M10) | yes (`stop`, 16 x 1024 B) | yes | no |
-| precision / quantization | yes: `train --quant/--no-qat`, `run-gguf/eval-gguf/export-gguf --quant` | partial: Train has a QAT checkbox and a Save precision select; no precision for GGUF run, Evaluate, Export, f32 Fine-tune | no (serves the file as is; `/v1/info` reports `quant`) | reads f32/int8/int4 files | reads f32/int8/int4 files |
+| precision / quantization | yes: `train --quant/--no-qat`, `run-gguf/eval-gguf/export-gguf --quant` | partial: Train has a QAT checkbox and a Save precision select; precision for GGUF run, Evaluate, Export, f32 Fine-tune | no (serves the file as is; `/v1/info` reports `quant`) | reads f32/int8/int4 files | reads f32/int8/int4 files |
 | eval (Ferrum model) | yes `eval [--json]` | yes Evaluate tab (bpb, JSON save) | yes `/v1/loglikelihood*` | partial: `score()` only | no |
 | eval-gguf (imported) | yes | yes (same Evaluate tab) | no (H3) | no | no |
 | run-gguf (imported) | yes | yes GGUF tab | no (H3) | no | no |
