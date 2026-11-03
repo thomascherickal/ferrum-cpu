@@ -7,7 +7,7 @@ use crate::validate::*;
 use std::time::Instant;
 
 pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    use ferrum_core::{Gguf, GgufTokenizer, QKind, Rng};
+    use ferrum_core::{Gguf, GgufTokenizer, Rng};
 
     if args.positional.is_empty() {
         return Err("usage: train_transformer run-gguf <model.gguf> [prompt] \
@@ -42,12 +42,8 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
         }
         None
     } else {
-        match quant {
-            "int4" | "q4" => Some(QKind::Int4),
-            "int8" | "q8" => Some(QKind::Int8),
-            "f32" | "none" => None,
-            other => return Err(format!("--quant must be int4|int8|f32 (got '{other}')").into()),
-        }
+        ferrum_core::memory::import_precision(quant)
+            .ok_or_else(|| format!("--quant must be int4|int8|f32 (got '{quant}')"))?
     };
 
     // Streamed open: parse the header without reading the whole file.

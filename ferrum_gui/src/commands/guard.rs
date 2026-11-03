@@ -1,37 +1,17 @@
 //! Helpers shared by the commands that load GGUF models: the quantisation
 //! parser and the RAM guard's size estimates.
 
-use ferrum_core::{Gguf, QKind};
+use ferrum_core::QKind;
 
 /// Map a UI quant string to an import precision (`None` = keep f32).
 pub(crate) fn parse_quant(q: &str) -> Result<Option<QKind>, String> {
-    match q {
-        "int4" | "q4" => Ok(Some(QKind::Int4)),
-        "int8" | "q8" => Ok(Some(QKind::Int8)),
-        "f32" | "none" => Ok(None),
-        other => Err(format!("quant must be int4 | int8 | f32 (got '{other}')")),
-    }
+    ferrum_core::memory::import_precision(q)
+        .ok_or_else(|| format!("quant must be int4 | int8 | f32 (got '{q}')"))
 }
 
 /// Estimate resident bytes for a loaded model from the GGUF directory: the token
 /// embedding stays f32, everything else packs to the chosen precision.
-pub(crate) fn gguf_resident_bytes(g: &Gguf, prec: Option<QKind>) -> usize {
-    let mut total = 0usize;
-    for t in &g.tensors {
-        let n = t.num_elements();
-        let bytes = if t.name == "token_embd.weight" {
-            n.saturating_mul(4)
-        } else {
-            match prec {
-                Some(QKind::Int4) => n.div_ceil(2),
-                Some(QKind::Int8) => n,
-                None => n.saturating_mul(4),
-            }
-        };
-        total = total.saturating_add(bytes);
-    }
-    total
-}
+pub(crate) use ferrum_core::memory::resident_bytes as gguf_resident_bytes;
 
 /// Best-effort available RAM (Linux `/proc/meminfo`); `None` elsewhere.
 pub(crate) fn available_memory_bytes() -> Option<usize> {

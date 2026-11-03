@@ -12,7 +12,7 @@ use std::time::Instant;
 const DEFAULT_WINDOW: usize = 512;
 
 pub(crate) fn cmd_eval_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    use ferrum_core::{Gguf, GgufTokenizer, QKind};
+    use ferrum_core::{Gguf, GgufTokenizer};
 
     if args.positional.len() < 2 {
         return Err(
@@ -28,12 +28,8 @@ pub(crate) fn cmd_eval_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error
     let (path, text_path) = (&args.positional[0], &args.positional[1]);
     let resume = args.value("resume");
     let quant = args.value("quant").unwrap_or("f32");
-    let prec = match quant {
-        "int4" | "q4" => Some(QKind::Int4),
-        "int8" | "q8" => Some(QKind::Int8),
-        "f32" | "none" => None,
-        other => return Err(format!("--quant must be f32|int8|int4 (got '{other}')").into()),
-    };
+    let prec = ferrum_core::memory::import_precision(quant)
+        .ok_or_else(|| format!("--quant must be f32|int8|int4 (got '{quant}')"))?;
     // A checkpoint holds f32 weights, so applying one needs an f32 load.
     let prec = if resume.is_some() {
         if prec.is_some() {

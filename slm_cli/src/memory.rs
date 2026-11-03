@@ -1,47 +1,8 @@
 //! Memory estimates and budgets for `run-gguf`, `finetune-gguf` and `export-gguf`.
 
-/// Estimate the resident memory a loaded model will need, from the GGUF tensor
-/// directory and the chosen in-memory precision. The token embedding is kept
-/// f32 (so it is the single largest array for big-vocab models); every other
-/// weight packs to int4/int8/f32. A pre-load guard, not an exact figure.
-pub(crate) fn estimate_resident_bytes(
-    g: &ferrum_core::Gguf,
-    prec: Option<ferrum_core::QKind>,
-) -> usize {
-    use ferrum_core::QKind;
-    let mut total = 0usize;
-    for t in &g.tensors {
-        let n = t.num_elements();
-        let bytes = if t.name == "token_embd.weight" {
-            n * 4 // kept f32 in LlamaModel
-        } else {
-            match prec {
-                Some(QKind::Int4) => n.div_ceil(2),
-                Some(QKind::Int8) => n,
-                None => n * 4,
-            }
-        };
-        total = total.saturating_add(bytes);
-    }
-    total
-}
-
-/// Best-effort available RAM in bytes (Linux `/proc/meminfo` `MemAvailable`);
-/// `None` where it cannot be determined, in which case the guard is skipped.
-pub(crate) fn available_memory_bytes() -> Option<usize> {
-    available_memory_from(&std::fs::read_to_string("/proc/meminfo").ok()?)
-}
-
-/// `MemAvailable` (bytes) from the text of `/proc/meminfo`.
-pub(crate) fn available_memory_from(info: &str) -> Option<usize> {
-    for line in info.lines() {
-        if let Some(rest) = line.strip_prefix("MemAvailable:") {
-            let kb: usize = rest.split_whitespace().next()?.parse().ok()?;
-            return Some(kb * 1024);
-        }
-    }
-    None
-}
+pub(crate) use ferrum_core::memory::{
+    available_memory_bytes, memory_error, resident_bytes as estimate_resident_bytes,
+};
 
 /// Peak resident bytes of applying a fine-tune checkpoint (`--resume`) to an f32 model of size
 /// `est` with `apply_checkpoint_weights`: the model, the checkpoint's raw bytes (parsed in
@@ -79,24 +40,6 @@ pub(crate) fn finetune_threads(est: usize, avail: Option<usize>, requested: usiz
     let budget = (avail / 2).saturating_sub(est.saturating_mul(4));
     let per_thread = est.saturating_mul(3) / 2;
     (budget / per_thread.max(1)).clamp(1, requested.max(1))
-}
-
-/// The refusal when an estimate of `what` exceeds 90% of the free RAM (unless forced); `advice`
-/// is appended after the numbers.
-pub(crate) fn memory_error(
-    what: &str,
-    est: usize,
-    avail: usize,
-    force: bool,
-    advice: &str,
-) -> Option<String> {
-    ((est as f64) > 0.9 * avail as f64 && !force).then(|| {
-        format!(
-            "estimated {what} ({:.2} GB) exceeds 90% of available ({:.2} GB) — {advice}",
-            est as f64 / 1e9,
-            avail as f64 / 1e9
-        )
-    })
 }
 
 /// The refusal when the fine-tune peak exceeds 90% of the free RAM (unless forced).
@@ -181,33 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn memory_error_formats_the_numbers_and_honours_force() {
+    fn finetune_memory_error_keeps_its_wording() {
         let gb = 1_000_000_000;
-        // 9.5 of 10 GB is over the 90% line.
-        let e = memory_error("peak memory", 95 * gb / 10, 10 * gb, false, "do X.").unwrap();
-        assert_eq!(
-            e,
-            "estimated peak memory (9.50 GB) exceeds 90% of available (10.00 GB) — do X."
-        );
-        // Exactly 90% and below passes; --force always passes.
-        assert_eq!(memory_error("m", 9 * gb, 10 * gb, false, "a"), None);
-        assert_eq!(memory_error("m", 100 * gb, 10 * gb, true, "a"), None);
-        // The fine-tune wrapper keeps its wording.
         let e = finetune_memory_error(20 * gb, 10 * gb, false).unwrap();
         assert!(e.starts_with("estimated training memory (20.00 GB)"), "{e}");
         assert!(e.ends_with("fine-tune a smaller model, or pass --force to attempt it anyway."));
         assert_eq!(finetune_memory_error(20 * gb, 10 * gb, true), None);
-    }
-
-    #[test]
-    fn available_memory_is_parsed_from_proc_meminfo_text() {
-        let info = "MemTotal:       16000000 kB\nMemFree:  100 kB\nMemAvailable:    2048 kB\n";
-        assert_eq!(available_memory_from(info), Some(2048 * 1024));
-        assert_eq!(available_memory_from("MemTotal: 1 kB\n"), None);
-        assert_eq!(available_memory_from("MemAvailable: lots kB\n"), None);
-        assert_eq!(available_memory_from(""), None);
-        // The real reader agrees with the parser on this machine's /proc (Linux only).
-        #[cfg(target_os = "linux")]
-        assert!(available_memory_bytes().is_some_and(|b| b > 0));
     }
 }

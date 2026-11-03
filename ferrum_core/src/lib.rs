@@ -70,6 +70,7 @@ mod llm_score;
 pub mod llm_train;
 pub mod loader;
 pub mod loss;
+pub mod memory;
 pub mod meta;
 pub mod model;
 pub mod ops;
