@@ -675,7 +675,13 @@ mod tests {
         )
         .err()
         .expect("must refuse");
-        assert!(e.to_string().contains("training would need"), "{e}");
+        // Which guard fires depends on whether the free RAM is known (Linux) or not: the memory
+        // gate says "training would need", the overflow check says "too large to train".
+        let msg = e.to_string();
+        assert!(
+            msg.contains("training would need") || msg.contains("too large to train"),
+            "{e}"
+        );
     }
 
     #[test]

@@ -412,6 +412,10 @@ mod tests {
     /// A run that never resumes trains exactly as before the run keys: the old build's
     /// checkpoint of this run holds bit-identical weights, Adam moments, step and RNG.
     /// (`ckpt::rewrite` does not re-emit a file byte for byte, so the state is compared.)
+    // Linux only: PRE_RUN_KEYS holds f32 bits recorded on Linux, and libm (exp, tanh, ...) differs in
+    // the last bit between operating systems (CI: macOS and Windows differ, Linux x86_64 and
+    // aarch64 agree). Bit-identity is guaranteed across thread counts on one platform, not across OSes.
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_run_that_never_resumes_is_bit_identical_to_the_old_build() {
         let mut t = LlamaTrainer::new(tiny(6, 8, 2, 2, 16, 1)).unwrap();

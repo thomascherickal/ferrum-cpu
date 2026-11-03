@@ -165,6 +165,17 @@ pub(super) fn run_training<S: TokenSource>(
     run_training_with(net, tokens, cfg, threads, rng, on_epoch, CsvLog::open)
 }
 
+/// Tokens one optimizer step consumes (`batch` windows of `t` tokens), or an error when the
+/// product does not fit a `usize`.
+fn tokens_per_step(batch: usize, t: usize) -> Result<usize> {
+    batch.checked_mul(t).ok_or_else(|| {
+        InferError::DimMismatch(format!(
+            "--batch {batch} x --context {t} is too large to train (the product overflows); \
+             lower --batch or --context"
+        ))
+    })
+}
+
 /// [`run_training`] with the `metrics_csv` log opened by `open_csv(path, append)`, so a test
 /// can hand it a writer that fails.
 fn run_training_with<S: TokenSource>(
@@ -178,6 +189,9 @@ fn run_training_with<S: TokenSource>(
 ) -> Result<()> {
     let t = net.context_len();
     let batch = cfg.batch_size.max(1);
+    // Refused whatever the RAM guard knows: where the free RAM is unknown (non-Linux) the guard
+    // only enforces its hard cap, and an absurd batch would otherwise overflow the product below.
+    let step_tokens = tokens_per_step(batch, t)?;
     let windows = tokens.len().saturating_sub(t + 1) / net.window_stride() + 1;
     memory_gate(
         cfg.skip_memory_check,
@@ -187,7 +201,7 @@ fn run_training_with<S: TokenSource>(
     let steps_per_epoch = windows.div_ceil(batch).max(1) as u64;
     let budgeted = cfg.max_tokens > 0;
     let total_steps = if budgeted {
-        cfg.max_tokens.div_ceil((batch * t) as u64)
+        cfg.max_tokens.div_ceil(step_tokens as u64)
     } else {
         cfg.epochs as u64 * steps_per_epoch
     };
@@ -205,7 +219,7 @@ fn run_training_with<S: TokenSource>(
     let t0 = std::time::Instant::now();
     let start_step = net.step_count();
     let log_every = cfg.log_every_steps;
-    let tokens_per_step = (batch * t) as f64;
+    let tokens_per_step = step_tokens as f64;
     let halted = std::cell::Cell::new(false);
     let epoch = std::cell::Cell::new(0usize);
     let mut csv = (!cfg.metrics_csv.is_empty())
@@ -309,6 +323,19 @@ fn run_training_with<S: TokenSource>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tokens_per_step_is_the_product_and_refuses_overflow() {
+        assert_eq!(super::tokens_per_step(16, 256).unwrap(), 4096);
+        let e = super::tokens_per_step(usize::MAX, 512)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("too large to train") && e.contains("--batch"),
+            "{e}"
+        );
+        assert_eq!(super::tokens_per_step(1, usize::MAX).unwrap(), usize::MAX);
+    }
+
     use super::progress_line;
     use crate::rng::Rng;
     use crate::slm::config::{TransformerConfig, ValidationConfig};
