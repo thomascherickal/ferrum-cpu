@@ -86,13 +86,13 @@ skills. When the user states a new rule, add it here.
     or a ruling of your own. Subagents report doubts back (NEEDS_CONTEXT) and
     the controller relays them to the user.
 
-17. **Hand-off at the usage limit.** At every task boundary (after an agent
-    finishes, before the next dispatch) check the 5-hour usage with the
-    `check-session-usage` skill. At 98 % or more, stop starting work and write
-    `.superpowers/HANDOFF.md` (git-ignored): the goal, what is done and
-    pushed, the running or paused agents, uncommitted files, the next steps in
-    order, and every open question for the user. At the start of every session,
-    if `.superpowers/HANDOFF.md` exists, read it first, continue from its next
+17. **Hand-off file.** After every agent result (and at every task boundary)
+    refresh `.superpowers/HANDOFF.md` (git-ignored): the goal, what is done
+    and pushed, the running or paused agents, uncommitted files, the next
+    steps in order, and every open question for the user. The usage skill
+    cannot read the real 5-hour percentage, so the file is kept current
+    instead of written at 98 %. At the start of every session, if
+    `.superpowers/HANDOFF.md` exists, read it first, continue from its next
     steps, and mark it consumed.
 
 ## Hard constraints
