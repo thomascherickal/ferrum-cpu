@@ -89,7 +89,7 @@ to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
 | Requirement | Version | Notes |
 |---|---|---|
 | Rust + Cargo | 1.87 or newer, edition 2021 | Install via [rustup](https://rustup.rs). The dependency tree needs 1.85 (`sha2`), and the code uses `is_multiple_of`, stable since 1.87. Built and tested with 1.96.0; older toolchains are untested. |
-| OS | Linux (x86_64 gated in CI; aarch64 also tested), macOS or Windows (built and tested by a non-gating CI job whose first runs found failures, see [Status §5](Status.md#5-known-issues)) | Pure CPU code; the RAM guard (it refuses a run that would not fit) works on Linux only |
+| OS | Linux (x86_64 gated in CI; aarch64 also tested), macOS, Windows or Windows-on-Arm (built and tested by a non-gating CI job that is green on all of them, see [Status §5](Status.md#5-known-issues)) | Pure CPU code; the RAM guard (it refuses a run that would not fit) works on Linux only |
 | `curl` | any | Only for `scripts/fetch.sh` (Samples 1 and 2) |
 | GNU coreutils | Linux | The samples use `sha256sum`, `md5sum`, and `timeout`; they are written for Linux |
 | Python 3.10+ | optional | Only for DVC and LightEval (Samples 2 and 8) |

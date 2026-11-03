@@ -149,10 +149,11 @@ Do not break these; they are the product's selling points.
   the thread-count part.
 - **Platforms.** Linux x86_64 is the gated platform (every CI job). Linux
   aarch64, macOS (Apple silicon), Windows and Windows-on-Arm run only the
-  `portable` job (build + test, not a required gate); what that job found is
-  recorded in `Status.md` §5 and §7.0.13. Some behaviour is Linux-only: the
+  `portable` job (build + test, not a required gate; green on all four runners
+  in CI run 41691008924 after two red runs that found real bugs, see
+  `Status.md` §5 and §7.0.13). Some behaviour is Linux-only: the
   RAM guard reads `/proc/meminfo`, and the Linux-recorded bit goldens do not
-  hold elsewhere. Do not claim a platform works until its CI job is green.
+  hold elsewhere. Do not claim a platform works until its CI job is green, and nothing has run on physical macOS, Windows or Snapdragon hardware.
 - **WASM-portable.** `ferrum_core` and `slm_wasm` must compile and run for
   `wasm32-unknown-unknown` (no threads/fs assumptions on that path). CI builds
   `slm_wasm` for wasm32.
