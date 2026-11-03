@@ -314,6 +314,44 @@ fn train_refuses_bad_forms_and_trains_character_level_with_validation() {
 }
 
 #[test]
+fn train_saves_the_chosen_precision_and_refuses_an_unknown_one() {
+    let (_app, w) = app();
+    let dir = tmp("train_quant");
+    std::fs::write(dir.join("c.txt"), "abc abd abe ".repeat(60)).unwrap();
+    let mut sizes = vec![];
+    // Absent = int8 (what every older caller got), then each value explicitly.
+    for (quant, want) in [
+        (None, "int8"),
+        (Some("f32"), "f32"),
+        (Some("int8"), "int8"),
+        (Some("int4"), "int4"),
+    ] {
+        let mut p = train_params(&dir, "c.txt");
+        if let Some(q) = quant {
+            p["params"]["quant"] = json!(q);
+        }
+        let r = call(&w, "train_slm", p).unwrap();
+        let bytes = std::fs::read(dir.join("m.gguf")).unwrap();
+        assert_eq!(ferrum_core::gguf_quant(&bytes).unwrap(), want);
+        assert_eq!(r["bytes"].as_u64().unwrap(), bytes.len() as u64);
+        sizes.push(bytes.len());
+    }
+    assert_eq!(sizes[0], sizes[2], "absent and int8 write the same file");
+    assert!(sizes[1] > sizes[2] && sizes[2] > sizes[3], "{sizes:?}");
+    // An unknown value is refused before anything is trained or written.
+    std::fs::remove_file(dir.join("m.gguf")).unwrap();
+    let mut p = train_params(&dir, "c.txt");
+    p["params"]["quant"] = json!("int2");
+    let e = call(&w, "train_slm", p).unwrap_err();
+    assert!(
+        msg(&e).contains("quant must be int4 | int8 | f32 (got 'int2')"),
+        "{e}"
+    );
+    assert!(!dir.join("m.gguf").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn train_resume_other_corpus_is_refused() {
     let (_app, w) = app();
     let dir = tmp("train_other_corpus");

@@ -96,6 +96,7 @@
           valFraction: Math.max(0, num("trVal") || 0),
           patience: Math.max(0, int("trPatience") || 0),
           force: $("trForce").checked,
+          quant: $("trQuant").value,
         };
         if (params.resume && !params.checkpointPath)
           throw new Error("Resume needs a checkpoint file");

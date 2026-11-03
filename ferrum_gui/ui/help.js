@@ -310,6 +310,12 @@
       how: "Costs a little speed. Keep it on if you will ship the int8 model, because the model learns to be accurate even after rounding. Turn it off for plain 32-bit float training. There is no int4 QAT.",
       beginner: "Quantization stores each number with fewer bits, shrinking the file by about four times. Training with the rounding in the loop makes the small version nearly as good as the big one.",
     },
+    trQuant: {
+      title: "Save precision",
+      what: "How the trained weights are stored in the model file: f32 (full precision, the largest file), int8 (Q8_0, about a quarter of the size) or int4 (Q4_0, the smallest). Default int8.",
+      how: "int8 and int4 files run in llama.cpp, Ollama and LM Studio. Training is unchanged by this choice: with Int8 QAT on, the model learns the int8 grid, so int8 reloads exactly, while int4 rounds more coarsely (there is no int4 QAT) and f32 keeps the unrounded weights.",
+      beginner: "Like saving a photo at high, medium or low quality: lower precision gives a much smaller file that is slightly less exact. If unsure, keep int8.",
+    },
     trResume: {
       title: "Resume from checkpoint",
       what: "Continue a previous run from the Checkpoint file instead of starting from scratch.",

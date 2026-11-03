@@ -166,9 +166,9 @@ function documentFromHtml(html) {
     stack[stack.length - 1].appendChild(el);
     if (!VOID.has(tag) && !m[4]) stack.push(el);
   }
-  // <select> value = first option; textarea/others start empty.
+  // <select> value = the `selected` option, else the first; textarea/others start empty.
   doc.querySelectorAll("select").forEach((sel) => {
-    const first = sel.querySelector("option");
+    const first = sel.querySelector("option[selected]") || sel.querySelector("option");
     sel.value = first ? first.getAttribute("value") || "" : "";
   });
   return doc;

@@ -241,6 +241,15 @@
         <label class="chk"><input type="checkbox" id="trQat" checked /> Int8 QAT</label>
         <label class="chk"><input type="checkbox" id="trResume" /> Resume from checkpoint</label>
       </div>
+      <div class="grid">
+        <label>Save precision
+          <select id="trQuant">
+            <option value="f32">f32 (full precision)</option>
+            <option value="int8" selected>int8 (Q8_0)</option>
+            <option value="int4">int4 (Q4_0)</option>
+          </select>
+        </label>
+      </div>
       <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <fieldset>
         <legend data-tip="This optional block turns a corpus too big for memory into a token file once, using an existing tokenizer file. Training then streams the tokens from disk, so RAM does not grow with the corpus, and the model comes out the same.">Tokenize a large corpus first (optional)</legend>

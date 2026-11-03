@@ -121,7 +121,7 @@ The test also checks five more things:
 - The controls built at runtime have tips of at least 30 words: the catalog's
   Download buttons (help entry `dsCatalogDownload`) and the two error-line
   buttons (`ERR_TIPS` in `common.js`). No other tab module creates a control.
-- The real page passes. On 2026-11-03 that was 351 elements with their own
+- The real page passes. On 2026-11-03 that was 352 elements with their own
   tip: 227 controls and 124 `data-tip` elements, 12 of them the hint
   paragraphs.
 

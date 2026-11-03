@@ -63,6 +63,26 @@ pub struct TrainParams {
     /// "I know, try anyway": skip the engine's up-front refusal of a run that would not fit in RAM.
     #[serde(default)]
     pub force: bool,
+    /// Saved precision: "f32", "int8" or "int4" (the CLI's `--quant`); absent means int8.
+    #[serde(default = "default_quant")]
+    pub quant: String,
+}
+
+fn default_quant() -> String {
+    "int8".into()
+}
+
+/// Save `slm` at the precision `quant` names, as the CLI's `--quant` does.
+fn save_as(
+    slm: &GenerativeSLM,
+    path: &str,
+    quant: Option<ferrum_core::QKind>,
+) -> Result<(), ferrum_core::InferError> {
+    match quant {
+        Some(ferrum_core::QKind::Int8) => slm.save(path),
+        Some(ferrum_core::QKind::Int4) => slm.save_int4(path),
+        None => slm.save_f32(path),
+    }
 }
 
 fn default_true() -> bool {
@@ -140,6 +160,8 @@ fn train_inner<R: Runtime>(
 ) -> Result<TrainResult, String> {
     // ---- shared validation with clear messages ----
     checked_path("output model path", &p.model_path, false)?;
+    // Checked before training so a typo costs nothing (`parse_quant` also takes q4/q8/none).
+    let quant = super::guard::parse_quant(&p.quant)?;
     checked_path("corpus path", &p.corpus_path, true)?;
     for (label, v) in [
         ("tokenizer path", &p.tokenizer_path),
@@ -292,7 +314,7 @@ fn train_inner<R: Runtime>(
     })?;
 
     let seconds = t0.elapsed().as_secs_f64();
-    slm.save(&p.model_path)
+    save_as(&slm, &p.model_path, quant)
         .map_err(|e| format!("cannot save model {}: {e}", p.model_path))?;
     ferrum_core::set_verbose(false);
 

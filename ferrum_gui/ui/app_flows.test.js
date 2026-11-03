@@ -146,9 +146,13 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
       numBlocks: 2, hiddenDim: 64, epochs: 100, lr: 0.01, batchSize: 16, vocabSize: 512, seed: 1337, threads: 0, verbose: false,
       windowStride: 0, maxTokens: 50000000, weightDecay: 0, dropout: 0, gradClip: 0, warmupSteps: 0, cosineLr: true,
       weightTying: false, qat: true, tokenizerPath: "", checkpointPath: "", checkpointEvery: 0, resume: false,
-      valFraction: 0.1, patience: 0, force: false,
+      valFraction: 0.1, patience: 0, force: false, quant: "int8",
     });
     assert.strictEqual(a.$("trStatus").textContent, "done");
+    // The precision select offers the CLI's three values and is sent as chosen.
+    a.set("trQuant", "int4");
+    await a.click("trStart");
+    assert.strictEqual(a.of("train_slm").pop().args.params.quant, "int4");
     assert.ok(a.$("trResult").textContent.includes("Saved 999 bytes → /m/out.gguf"), a.$("trResult").textContent);
     assert.ok(a.$("trResult").textContent.includes("final loss=2.250000"));
     // The trained model flows into the other tabs.

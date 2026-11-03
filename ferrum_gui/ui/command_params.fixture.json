@@ -158,6 +158,7 @@
     "resume": false,
     "valFraction": 0.1,
     "patience": 0,
-    "force": false
+    "force": false,
+    "quant": "int8"
   }
 }
