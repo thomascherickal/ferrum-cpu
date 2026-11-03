@@ -2,9 +2,9 @@
 
 Every control and every informative element of the Studio window has a
 tool-tip of at least 30 words: the tabs, buttons, fields, checkboxes and
-selects, the section headings and box titles, the status lines, progress
-bars, error lines, table headers, charts, result and output areas, the top
-bar figures and the two dialogs. This page explains how they work, how to add
+selects, the section headings, box titles and introduction paragraphs, the
+status lines, progress bars, error lines, table headers, charts, result and
+output areas, the top bar figures and the two dialogs. This page explains how they work, how to add
 one, and the test that keeps the rule.
 
 ## 1. Using them
@@ -19,12 +19,16 @@ one, and the test that keeps the rule.
   leaves that element and comes back. Scrolling and resizing the window also
   hide it.
 - **Screen readers.** Every tipped element carries `aria-describedby`, which
-  points at a visually hidden copy of the text. A screen reader reads the tip
-  whether or not the bubble is shown.
-- Headings, status lines and other elements that are not controls do **not**
-  get added to the Tab order. They show their tip on hover, and screen readers
-  get it through `aria-describedby`. Adding about a hundred extra Tab stops
-  would make keyboard use of the forms slower.
+  points at a visually hidden copy of the text. On a control, a screen reader
+  announces it when focus reaches the control, whether or not the bubble is
+  shown.
+- **Hover only for the rest.** Headings, hint paragraphs, status lines and other
+  elements that are not controls are **not** in the Tab order, so the keyboard
+  cannot open their bubble. Whether a screen reader reads their
+  `aria-describedby` text while browsing depends on the screen reader. More
+  than a hundred extra Tab stops would make keyboard use of the forms slower.
+- **The hardware line** (`#hwLine`, marked `data-tip-live`) adds its current
+  text, which the top bar may cut short, to its tip under *Now*.
 
 The bubble is one shared `<div role="tooltip" id="ferrum-tooltip">`. It is
 styled by `.tip` in `styles.css`, using the theme variables (`--bg3`, `--fg`,
@@ -42,10 +46,12 @@ There are two sources, and an element uses exactly one.
    text from their entry in `ui/help.js`. A field has *What it is / How it works /
    New to AI?*. A button has *What it does / How it works*, plus the live time
    and RAM estimate that `live.js` adds. These entries existed before this
-   feature; `help.test.js` checks them.
+   feature, and 31 of them (the 12 tabs and 19 buttons) were extended to reach
+   30 words; `help.test.js` checks them.
 2. **Everything else** has a `data-tip` attribute in `ui/index.html`, holding
    plain text with no markup, `&`, `<`, `>` or `"`. `live.js` attaches it with
-   `tooltip.contentFromTip`, which gives one section and no title.
+   `tooltip.contentFromTip`, which gives one section and no title. With
+   `data-tip-live` the element's current text is appended as a second section.
 
 Controls created at runtime use the same two paths:
 
@@ -100,10 +106,9 @@ test:
 | `aria-hidden="true"` (the spinners) | decorative |
 | `b`, `strong`, `em`, `i`, `code`, `br` | inline text; the tip of the text block around it covers it |
 | `#topbar`, `#miniStats`, `#tabs`, `#content`, `#svRunning`, `#terminal`, `#capDialog`, `#ggWarnDialog`, every `role="tabpanel"` | page background and wrappers; each of their parts has its own tip |
-| `p.hint` without an id | static explanatory prose; a tip would only repeat it (hints with an id, such as `#trPreflightWhy`, are dynamic and have tips) |
 | anything inside a `role="progressbar"` | the bar's tip covers its fill |
 | a `<label>` wrapping a control with a 30-word tip | the label shows that control's tip on hover |
-| `div`/`span`/`section`/`fieldset` without an id, role, label or own text | structural layout |
+| any other element with no id, role, `aria-label` or text of its own (layout `div`, `span`, `section`, `fieldset`, `form`, `menu`, `thead`, `tbody`, `tr`) | structural layout |
 
 The test also checks five more things:
 
@@ -111,8 +116,12 @@ The test also checks five more things:
 - No control has both a help entry and a `data-tip`.
 - No `data-tip` contains markup characters.
 - No element uses `title`.
-- The real page passes. On 2026-11-03 that was 339 elements with their own
-  tip: 227 controls and 112 `data-tip` elements.
+- The controls built at runtime have tips of at least 30 words: the catalog's
+  Download buttons (help entry `dsCatalogDownload`) and the two error-line
+  buttons (`ERR_TIPS` in `common.js`). No other tab module creates a control.
+- The real page passes. On 2026-11-03 that was 351 elements with their own
+  tip: 227 controls and 124 `data-tip` elements, 12 of them the hint
+  paragraphs.
 
 Before the tips were written, the guard listed 143 offenders on the page:
 
@@ -129,7 +138,8 @@ Before the tips were written, the guard listed 143 offenders on the page:
   - live refresh;
   - no markup injection;
   - dialogs;
-  - `wordCount`, `contentFromTip` and the title-less bubble.
+  - `wordCount`, `contentFromTip` (with and without live text) and the
+    title-less bubble.
 - `ui/app_flows.test.js` runs the real `app.js` on the real page (stub DOM). It
   checks four flows:
   - hovering a tab shows its help tip;

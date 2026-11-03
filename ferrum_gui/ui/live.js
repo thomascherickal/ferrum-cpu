@@ -4,7 +4,7 @@
 //
 //  - Every input/textarea/select/button with a help entry gets a tooltip; any
 //    other element (heading, status line, output area...) gets one from its
-//    `data-tip` attribute.
+//    `data-tip` attribute; with `data-tip-live` its current text is appended.
 //  - Buttons also show an estimate (time, RAM) for the visible tab. It is
 //    recomputed 300 ms after a field changes, when the tab changes, and when
 //    the hardware (free RAM) changes, which is polled every 5 s.
@@ -91,14 +91,16 @@
 
     function attach(el) {
       if (help.helpFor(helpKey(el))) tips.attach(el, () => content(el));
-      else if (el.getAttribute("data-tip")) tips.attach(el, () => tooltip.contentFromTip(el.getAttribute("data-tip")));
+      else if (el.getAttribute("data-tip")) {
+        tips.attach(el, () => tooltip.contentFromTip(el.getAttribute("data-tip"), el.hasAttribute("data-tip-live") ? el.textContent : ""));
+      }
     }
 
     function renderHardware() {
       const text = hardware ? view.hardwareLine(hardware) : hardwareError ? "Hardware unavailable (" + hardwareError + ")" : view.hardwareLine(null);
       for (const id of ["hwLine", "hwSystem"]) {
         const e = doc.getElementById(id);
-        if (e) e.textContent = text; // the full line also stands on the System tab (#hwSystem)
+        if (e) e.textContent = text; // #hwLine's tip shows it in full (data-tip-live)
       }
     }
 

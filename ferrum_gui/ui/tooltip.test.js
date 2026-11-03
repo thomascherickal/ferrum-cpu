@@ -230,6 +230,8 @@ function setup() {
   const c = contentFromTip("  Shows the training loss.  ");
   assert.deepStrictEqual(c, { title: "", sections: [{ label: null, text: "Shows the training loss." }] });
   assert.strictEqual(plainText(c), "Shows the training loss.");
+  assert.deepStrictEqual(contentFromTip("Tip.", "  "), { title: "", sections: [{ label: null, text: "Tip." }] }, "blank live text adds nothing");
+  assert.strictEqual(plainText(contentFromTip("Tip.", "4 CPU threads")), "Tip. Now: 4 CPU threads.");
 
   const { doc, tips } = setup();
   const h2 = doc.createElement("h2");

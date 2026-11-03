@@ -11,6 +11,7 @@ const path = require("node:path");
 const { parse, all, textOf } = require("./testhtml.js");
 const { wordCount, contentFromHelp, MIN_WORDS } = require("./tooltip.js");
 const { helpFor } = require("./help.js");
+const { ERR_TIPS } = require("./common.js");
 
 const CONTROLS = new Set(["input", "select", "textarea", "button"]);
 // Elements that always show something, even before they have text.
@@ -35,7 +36,6 @@ function exempt(n) {
   if (n.attrs["aria-hidden"] === "true") return "decorative (aria-hidden)";
   if (INLINE.has(n.tag)) return "inline text, shares the tip of its block";
   if (STRUCTURAL_IDS.has(n.attrs.id) || n.attrs.role === "tabpanel") return "background / wrapper";
-  if (n.tag === "p" && /\bhint\b/.test(n.attrs.class || "") && !n.attrs.id) return "static hint prose";
   for (const a of ancestors(n)) if (a.attrs.role === "progressbar") return "covered by its progress bar";
   if (n.tag === "label") {
     const control = all(n, (c) => CONTROLS.has(c.tag))[0];
@@ -75,6 +75,12 @@ function missingTips(html) {
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const missing = missingTips(html);
 assert.deepStrictEqual(missing, [], `${missing.length} element(s) without a ${MIN_WORDS}-word tool-tip:\n` + missing.map((m) => `  ${m.what} (${m.words} words)`).join("\n"));
+
+// Controls built at runtime (not in index.html): the catalog's Download buttons
+// (datasets_tab.js, help entry dsCatalogDownload) and the two buttons of every error line
+// (common.js ERR_TIPS). No other tab module creates a control.
+assert.ok(helpWords("dsCatalogDownload") >= MIN_WORDS, "dsCatalogDownload help is too short");
+for (const [k, v] of Object.entries(ERR_TIPS)) assert.ok(wordCount(v) >= MIN_WORDS, `ERR_TIPS.${k} has ${wordCount(v)} words`);
 
 // A help entry and a data-tip on one control would be two texts for one bubble.
 const root = parse(html);

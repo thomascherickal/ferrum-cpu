@@ -23,10 +23,13 @@
   // Words in `text`: its whitespace-separated pieces. The one counter the guard test uses.
   const wordCount = (text) => String(text == null ? "" : text).split(/\s+/).filter(Boolean).length;
 
-  // A `data-tip` attribute value -> renderable content (null when empty).
-  function contentFromTip(text) {
+  // A `data-tip` attribute value -> renderable content (null when empty). `current`, when
+  // given and not empty, is the element's live text, appended as a "Now" section.
+  function contentFromTip(text, current) {
     const t = String(text == null ? "" : text).trim();
-    return t ? { title: "", sections: [{ label: null, text: t }] } : null;
+    if (!t) return null;
+    const now = String(current == null ? "" : current).trim();
+    return { title: "", sections: now ? [{ label: null, text: t }, { label: "Now", text: now }] : [{ label: null, text: t }] };
   }
 
   // Where to put a tooltip of size `tip` next to `anchor`, inside `vp`.

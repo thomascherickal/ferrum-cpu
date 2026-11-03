@@ -2021,16 +2021,17 @@ without touching any logic; a Node test fails if a control has no entry or too
 short a one. Screen readers get the same text through `aria-describedby`.
 
 **Tool-tips on everything else, too.** The section headings, box
-titles, status lines, progress bars, error lines, Evaluate column headers,
+titles, the introduction (hint) paragraphs, status lines, progress bars, error lines, Evaluate column headers,
 charts, result and output areas, the top-bar figures (hardware line, CPU, MEM,
 THREADS, connection dot), the logs and the dialogs each carry a `data-tip`
 attribute in `ui/index.html`, shown in the same bubble on hover. Every tip has
 at least 30 words of real information; `ui/tooltips_guard.test.js` fails for any
 element that lacks one, and for a native `title` attribute, which would open a
-second bubble. Elements that are not controls are not added to the Tab order:
-they show their tip on hover and give it to screen readers through
-`aria-describedby`. How to add a tip, and the exact list of exempt elements
-(options, inline text, wrappers, static hint paragraphs), is in the tutorial
+second bubble. Elements that are not controls are not added to the Tab order, so
+their tip shows on hover only (their text is also linked by
+`aria-describedby`). The hardware line's tip ends with the full current line,
+which the top bar may cut short. How to add a tip, and the exact list of exempt
+elements (options, inline text, wrappers), is in the tutorial
 [docs/gui-tooltips.md](docs/gui-tooltips.md).
 
 **Live estimates on every button.** A button's tooltip also says what it does

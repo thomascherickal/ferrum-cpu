@@ -893,7 +893,7 @@
     exExport: {
       title: "Export",
       does: "Converts the model (with the fine-tune checkpoint applied, if given) to the chosen output type and writes a new GGUF file, with progress for each phase.",
-      how: "It is disabled while an export runs; Cancel export stops it and nothing is written. After a Capable check, a model over the limits opens a warning that asks first.",
+      how: "It is disabled while an export runs. Cancel export stops it between phases and then nothing is written, but the final encode-and-write phase runs to completion. After a Capable check, a model over the limits opens a warning that asks first.",
       kind: "gguf_export",
     },
     capCheck: {

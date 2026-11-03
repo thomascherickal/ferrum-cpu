@@ -93,7 +93,11 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     // Every other element takes its tip from data-tip; an element with neither gets none.
     const tipped = doc.querySelectorAll("[data-tip]");
     assert.ok(tipped.length >= 100, "found only " + tipped.length);
-    for (const el of tipped) assert.strictEqual(doc.getElementById(el.getAttribute("aria-describedby")).textContent, el.getAttribute("data-tip"));
+    const descOf = (el) => doc.getElementById(el.getAttribute("aria-describedby")).textContent;
+    for (const el of tipped.filter((e) => !e.hasAttribute("data-tip-live"))) assert.strictEqual(descOf(el), el.getAttribute("data-tip"));
+    // #hwLine's tip ends with the line as it is now (refreshed with the hardware).
+    const hw = doc.getElementById("hwLine");
+    assert.strictEqual(descOf(hw), hw.getAttribute("data-tip") + " Now: " + view.hardwareLine(HW) + ".");
     const bare = doc.createElement("div");
     doc.body.appendChild(bare);
     live.attach(bare);

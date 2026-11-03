@@ -11,9 +11,9 @@
   <header id="topbar">
     <div class="brand">
       <img data-tip="The Ferrum logo. Ferrum SLM Studio is the desktop front end of the Ferrum engine: it trains, runs, evaluates, fine-tunes, exports and serves small language models, and every job runs on this computer's CPU; no GPU is used." src="logo.png" alt="Ferrum" width="28" height="28" />
-      <span data-tip="The app name. Every tab calls the Ferrum engine library that the train_transformer and ferrum-serve command-line tools use too, and the models it writes are ordinary GGUF files that other tools can open.">Ferrum <b>SLM Studio</b></span>
+      <span data-tip="The app name. Every tab calls the Ferrum engine library that the train_transformer and ferrum-serve command-line tools use too, and every model it writes is a GGUF file: byte-level BPE models also run in llama.cpp, Ollama and LM Studio, character-level ones only in Ferrum.">Ferrum <b>SLM Studio</b></span>
     </div>
-    <div data-tip="Your hardware as the Studio detected it: CPU threads and cores, total and free RAM, and any GPU found. Ferrum is CPU-only, so a GPU is listed but never used. Free RAM is refreshed every 5 seconds; the full line also stands on the System tab." class="hwline muted" id="hwLine">Detecting your hardware...</div>
+    <div data-tip="Your hardware as the Studio detected it: CPU threads and cores, total and free RAM, and any GPU found. Ferrum is CPU-only, so a GPU is listed but never used. Free RAM is refreshed every 5 seconds; the line as it is now, which the top bar may cut short, follows." data-tip-live class="hwline muted" id="hwLine">Detecting your hardware...</div>
     <div class="mini-stats" id="miniStats">
       <span data-tip="Total CPU load of the whole machine in percent, counting every program, not only Ferrum. It is refreshed by the system monitor, every 1.5 seconds by default, and freezes when monitoring is switched off on the System tab." class="mini">CPU <b id="miniCpu">–</b></span>
       <span data-tip="Share of this machine's memory in use, in percent, counting every program. Training, fine-tuning and serving a model raise it. It is refreshed by the system monitor and freezes when monitoring is switched off on the System tab." class="mini">MEM <b id="miniMem">–</b></span>
@@ -48,17 +48,17 @@
     <!-- ── Datasets ──────────────────────────────────────────────────────── -->
     <section class="panel active" id="panel-datasets" role="tabpanel" aria-labelledby="tab-datasets">
       <h2 data-tip="The Datasets tab turns raw text into a training corpus: fetch it from a URL, HuggingFace or Kaggle, or load a local file, then clean it, check the statistics and save it as a plain text file for the Train tab.">Datasets — fetch &amp; clean a corpus</h2>
-      <p class="hint">Download text from the internet (e.g. a Project Gutenberg
+      <p class="hint" data-tip="There are three ways in: Download from a URL, Load file from disk, or pasting into Raw text. Clean and preview never changes the raw text, and nothing reaches the disk until Save corpus writes the cleaned text, which the Train tab's Corpus field then uses if it is empty.">Download text from the internet (e.g. a Project Gutenberg
         <code>.txt</code>), clean it to match the SLM's requirements, and save a
         training corpus.</p>
       <div class="row">
         <div data-tip="Progress, from 0 to 100 percent, of the current catalog, HuggingFace or Kaggle download or of a Clean run. It fills only when the total size is known; the plain Source URL download reports no progress and leaves the bar as it is." class="progress" role="progressbar" aria-label="Download and clean progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="dsBar"></div></div>
-        <span data-tip="What the bar beside it is doing: idle, the megabytes downloaded so far out of the total, or the megabytes and documents cleaned. After a finished job it names the size and the source; after a failure it returns to idle." id="dsProgress" class="muted" role="status">idle</span>
+        <span data-tip="What the bar beside it is doing: idle, the megabytes downloaded so far out of the total, or the megabytes and documents cleaned. After a download it names the size and the source, after Clean only the megabytes cleaned, and after a failure it returns to idle." id="dsProgress" class="muted" role="status">idle</span>
       </div>
 
       <fieldset>
         <legend data-tip="This box lists curated text datasets small enough to train on a CPU and fetches single files from HuggingFace or Kaggle into the download folder. Every finished download is put into the local file field below, ready for Load file.">Browse CPU-friendly datasets (HuggingFace / Kaggle)</legend>
-        <p class="hint">Curated text datasets small enough to train/run on CPU.
+        <p class="hint" data-tip="HuggingFace files need no account except gated repositories, which take the Token field. Kaggle credentials are read by the backend from KAGGLE_USERNAME and KAGGLE_KEY or from ~/.kaggle/kaggle.json. Every download here is capped at 512 MiB and goes into the download folder.">Curated text datasets small enough to train/run on CPU.
           Kaggle entries need credentials — set <code>KAGGLE_USERNAME</code> /
           <code>KAGGLE_KEY</code> or place <code>kaggle.json</code> in
           <code>~/.kaggle/</code>.</p>
@@ -152,7 +152,7 @@
     <!-- ── Prepare (clean + split text files, like `train_transformer prepare`) ── -->
     <section class="panel" id="panel-prepare" role="tabpanel" aria-labelledby="tab-prepare">
       <h2 data-tip="The Prepare tab cleans text files or whole folders straight from disk, can drop duplicate documents, and splits them into train, validation and test files with a manifest, exactly like the train_transformer prepare command with the same options.">Prepare — clean, deduplicate and split a dataset</h2>
-      <p class="hint">Reads text files or whole folders straight from disk (a big corpus never
+      <p class="hint" data-tip="The same split seed and the same documents always give the same split, and the seed is written into the manifest so a run can be repeated. Pressing Stop leaves every existing file unchanged. Progress counts bytes read across all input files.">Reads text files or whole folders straight from disk (a big corpus never
         goes through this window), cleans every document, and writes
         <code>train.txt</code>, <code>val.txt</code>, <code>test.txt</code> and a
         <code>manifest.json</code> that records what was done. It runs the same code as
@@ -244,7 +244,7 @@
       <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <fieldset>
         <legend data-tip="This optional block turns a corpus too big for memory into a token file once, using an existing tokenizer file. Training then streams the tokens from disk, so RAM does not grow with the corpus, and the model comes out the same.">Tokenize a large corpus first (optional)</legend>
-        <p class="hint">For text too big to hold in memory: turn it into a token file once, then put
+        <p class="hint" data-tip="Tokenize corpus writes a ferrum-tokens GGUF file of token ids. When it finishes, the Train Corpus field is set to that file and the pre-flight check runs again, which then shows the file's token, document and vocabulary counts.">For text too big to hold in memory: turn it into a token file once, then put
           that file in the <strong>Corpus</strong> field above. Training streams it from disk, so RAM
           does not grow with the corpus. It uses the <strong>Tokenizer file</strong> field above, which
           must already exist (a first training run with that field filled in creates it), and gives the
@@ -270,7 +270,7 @@
       </fieldset>
       <fieldset>
         <legend data-tip="The pre-flight check runs 300 milliseconds after any Train field changes. It estimates the parameter count and peak RAM of the run and whether llama.cpp can run the result. Train stays disabled while the run would exceed the RAM limit, unless the box below is ticked.">Pre-flight check</legend>
-        <div data-tip="Pre-flight cards: parameter count, estimated peak RAM against the usable limit and the free RAM, whether llama.cpp can run the model and why, the token file's size when the corpus is one, and any problem to fix first." id="trPreflight" class="infocards"></div>
+        <div data-tip="Pre-flight cards: parameter count, estimated peak RAM against the usable limit and the free RAM, whether llama.cpp can run the model and why, the tokens, documents and vocabulary of the token file plus a note on corpus and RAM when the corpus is one, and any problem to fix first." id="trPreflight" class="infocards"></div>
         <p data-tip="Why Train is blocked: the run needs more RAM than the engine allows, which is three quarters of the free RAM and at most 16 GB. Lower batch, context, embed dim or blocks, or tick the box below to skip the check." class="hint" id="trPreflightWhy"></p>
         <label class="chk hidden" id="trForceLabel"><input type="checkbox" id="trForce" /> I know, try anyway (skip the RAM check)</label>
       </fieldset>
@@ -282,7 +282,7 @@
         <div data-tip="Training progress from 0 to 100 percent: epochs finished out of the epochs requested. Under a token budget the number of epochs is not known in advance, so the bar does not move, but the status beside it still counts." class="progress" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="trBar"></div></div>
         <span data-tip="The training status: idle, training, then the current epoch out of the total with its loss, then done, error, or the step at which Stop ended the run. The loss should fall as the epochs go by." id="trStatus" class="muted" role="status">idle</span>
       </div>
-      <canvas data-tip="The training loss curve: one point per reported epoch, the latest 1000 at most, scaled between the lowest and the highest loss seen, which are printed on the chart. A falling line means the model is learning." id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
+      <canvas data-tip="The training loss curve: one point per reported epoch, only the latest 1000 kept, scaled between the lowest and the highest of the plotted points, whose values are printed on the chart. A falling line means the model is learning." id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
       <pre data-tip="The result of the last training run: bytes written and model path, method, final loss and seconds, input and output dimensions, tokenizer and layer count. A run ended by Stop still saves the model trained so far." id="trResult" class="result"></pre>
     </section>
 
@@ -322,7 +322,7 @@
     <!-- ── Evaluate ──────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-evaluate" role="tabpanel" aria-labelledby="tab-evaluate">
       <h2 data-tip="The Evaluate tab scores models on text they were not trained on and adds one table row per scored text. Lower perplexity is better; a model that learned nothing scores about its vocabulary size, the uniform baseline.">Evaluate — held-out perplexity</h2>
-      <p class="hint">Score one or more models on text they were <em>not</em> trained
+      <p class="hint" data-tip="A held-out text and an optional test file give one row each, so a model can be checked on two texts in one run. Perplexity compares only models with the same vocabulary; the bits per byte column compares any two models on the same text.">Score one or more models on text they were <em>not</em> trained
         on. Lower perplexity is better; a model that learned nothing scores its
         vocabulary size.</p>
       <div class="row">
@@ -343,7 +343,7 @@
       <label class="chk"><input type="checkbox" id="evLossy" /> Decode invalid UTF-8 lossily (replace bad bytes instead of refusing the file)</label>
       <fieldset>
         <legend data-tip="These settings apply only when the model is an imported Llama or Qwen GGUF, which is then scored like the eval-gguf command: precision, window length, an optional fine-tune checkpoint and the RAM override. Ferrum models ignore them.">Imported Llama/Qwen GGUF only</legend>
-        <p class="hint">A Ferrum model needs none of these. For a Llama or Qwen
+        <p class="hint" data-tip="Precision chooses how the imported weights are held in memory: f32 is exact, int8 and int4 are smaller and lossy. A fine-tune checkpoint forces f32. Window tokens 0 lets the scorer choose the window, and the RAM box skips the memory check.">A Ferrum model needs none of these. For a Llama or Qwen
           <code>.gguf</code> the model is scored like <code>eval-gguf</code>.</p>
         <div class="grid">
           <label>Precision
@@ -398,7 +398,7 @@
     <!-- ── GGUF (import & run Llama/Qwen checkpoints) ─────────────────────── -->
     <section class="panel" id="panel-gguf" role="tabpanel" aria-labelledby="tab-gguf">
       <h2 data-tip="The GGUF tab imports an external Llama or Qwen checkpoint in GGUF format and generates text from it on the CPU. Inspect reads only the header; Run loads the weights at the chosen precision and writes a reply.">GGUF — import &amp; run a Llama/Qwen checkpoint</h2>
-      <p class="hint">Load an external <code>.gguf</code> model (F32/F16/Q8_0/Q8_1/Q4_0/Q4_1/Q4_K/Q5_K/Q6_K)
+      <p class="hint" data-tip="Every Run loads the whole model into memory at the chosen precision and then generates up to Max new tokens; the status line reports tokens per second. A model that may not fit in the free RAM is refused unless the RAM box below is ticked.">Load an external <code>.gguf</code> model (F32/F16/Q8_0/Q8_1/Q4_0/Q4_1/Q4_K/Q5_K/Q6_K)
         and generate from it. CPU-only: a 1B model decodes at only a few tokens/sec and a
         real prompt takes tens of seconds to ingest. Prefer <strong>int8</strong> for speed,
         <strong>int4</strong> for memory. Quantized import is lossy; <strong>f32</strong> avoids it.</p>
@@ -441,13 +441,13 @@
         <button id="ggCancel" class="ghost hidden">Stop</button>
         <span class="spinner hidden" id="ggSpin" aria-hidden="true"></span><span data-tip="The run status: inspecting, loading and generating, then done with the tokens generated, seconds, tokens per second and prompt length, or stopped, or cancelled when the size warning was declined, or error." id="ggStatus" class="muted" role="status"></span>
       </div>
-      <div data-tip="The text the imported model generated for your prompt, shown when the run ends rather than streamed. With Chat format on, the prompt was first wrapped in the chat template detected from the file. Select the text to copy it." id="ggOut" class="output" placeholder="Generated text appears here…"></div>
+      <div data-tip="The text the imported model generated for your prompt, shown when the run ends rather than streamed. With Chat format on, the prompt was first wrapped in a chat template when one was detected from the file's metadata or architecture; otherwise it was sent as plain text. Select the text to copy it." id="ggOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Fine-tune (GGUF) ──────────────────────────────────────────────── -->
     <section class="panel" id="panel-finetune" role="tabpanel" aria-labelledby="tab-finetune">
       <h2 data-tip="The Fine-tune tab adapts an imported Llama or Qwen GGUF to your own text with AdamW in full f32 precision and writes a .flck checkpoint. Training needs roughly four times the f32 weight size in RAM.">Fine-tune — adapt an imported GGUF to your corpus</h2>
-      <p class="hint">AdamW fine-tunes a Llama/Qwen <code>.gguf</code> on your own text (full-precision f32 masters),
+      <p class="hint" data-tip="The base GGUF file is never changed: only the .flck checkpoint is written, and a Resume checkpoint continues an earlier run. Pressing Stop still saves the checkpoint so far. Each extra thread holds its own copy of the gradients, costing RAM about the size of the weights.">AdamW fine-tunes a Llama/Qwen <code>.gguf</code> on your own text (full-precision f32 masters),
         then writes a <code>.flck</code> checkpoint. Run it back on the <strong>GGUF</strong> tab via the
         “Fine-tune checkpoint” field. CPU-only: keep the model small — training needs roughly
         4× the f32 weight size in RAM (weights + gradient + Adam moments).</p>
@@ -488,14 +488,14 @@
         <div data-tip="Fine-tuning progress from 0 to 100 percent: epochs finished out of the epochs requested. Each epoch is one full pass over the training corpus, so a big corpus or a big model moves the bar slowly." class="progress" role="progressbar" aria-label="Fine-tuning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ftBar"></div></div>
         <span class="spinner hidden" id="ftSpin" aria-hidden="true"></span><span data-tip="The fine-tune status: fine-tuning, then the current epoch out of the total with its loss and perplexity, then done, error, or the step at which Stop ended the run. The spinner beside it turns while it runs." id="ftStatus" class="muted" role="status"></span>
       </div>
-      <canvas data-tip="The fine-tuning loss curve: one point per reported epoch, the latest 1000 at most, scaled between the lowest and the highest loss seen, which are printed on the chart. A falling line means the model is adapting to your corpus." id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
+      <canvas data-tip="The fine-tuning loss curve: one point per reported epoch, only the latest 1000 kept, scaled between the lowest and the highest of the plotted points, whose values are printed on the chart. A falling line means the model is adapting to your corpus." id="ftChart" width="900" height="140" role="img" aria-label="Fine-tuning loss curve"></canvas>
       <div data-tip="The result of the last fine-tune: checkpoint bytes and path, epochs, first and final loss, tokens, steps and seconds, and where to use the checkpoint. A run ended by Stop still saves a checkpoint that can be resumed." id="ftResult" class="result"></div>
     </section>
 
     <!-- ── Export (write a GGUF back out) ───────────────────────────────── -->
     <section class="panel" id="panel-export" role="tabpanel" aria-labelledby="tab-export">
       <h2 data-tip="The Export tab writes an imported GGUF, optionally with a fine-tune checkpoint applied, to a new GGUF file in the number format you choose. The new file runs in llama.cpp, Ollama and LM Studio as it is.">Export — write a model back to GGUF</h2>
-      <p class="hint">Serializes a Llama/Qwen <code>.gguf</code> — optionally with a
+      <p class="hint" data-tip="Export loads every weight as f32 first, so it needs about the f32 size in RAM that Inspect shows, and it is refused when that exceeds the free RAM unless the RAM box below is ticked. Only the output file is written.">Serializes a Llama/Qwen <code>.gguf</code> — optionally with a
         fine-tune checkpoint applied — to a new GGUF that runs in llama.cpp, ollama,
         or LM Studio. <strong>f16/f32</strong> are lossless (f32 masters); re-quantizing an
         already-quantized file is lossy. Norms and biases stay f32; a matrix whose row
@@ -541,7 +541,7 @@
 
       <fieldset>
         <legend data-tip="This block hands a Ferrum byte-level BPE model, a gpt2 GGUF, to Ollama or LM Studio, with the same code as the export-ollama and export-lmstudio commands. Any other model is refused before a tool starts.">Run a Ferrum model in Ollama or LM Studio</legend>
-        <p class="hint">Only Ferrum's own byte-level BPE models (<code>gpt2</code> GGUF) run
+        <p class="hint" data-tip="Export to Ollama runs ollama create with a generated Modelfile, and Import into LM Studio runs lms import. Each tool is found by its program field, then the FERRUM_OLLAMA or FERRUM_LMS variable, then PATH, then its default install path.">Only Ferrum's own byte-level BPE models (<code>gpt2</code> GGUF) run
           there; anything else is refused before a tool starts (an imported llama model needs a
           hand-written Modelfile, Manual section 9.5).
           This runs the same code as <code>export-ollama</code> and <code>export-lmstudio</code>.
@@ -573,7 +573,7 @@
           <button id="rxLms" class="primary">Import into LM Studio</button>
           <button id="rxWriteModelfile" class="ghost">Write Modelfile only</button>
           <button id="rxCancel" class="ghost hidden">Stop</button>
-          <span data-tip="The status of the Ollama or LM Studio step: looking while previewing, running or writing, then done, stopped or error. An Ollama create can take a while on a big model, and the buttons stay disabled meanwhile." id="rxStatus" class="muted" role="status"></span>
+          <span data-tip="The status of the Ollama or LM Studio step: looking while previewing, then empty once the preview is shown or error; running or writing during a run, then done, stopped or error. An Ollama create can take a while on a big model, and the buttons stay disabled meanwhile." id="rxStatus" class="muted" role="status"></span>
         </div>
         <label>Modelfile
           <textarea id="rxModelfile" rows="6" readonly placeholder="The Modelfile appears here."></textarea>
@@ -585,7 +585,7 @@
     <!-- ── Serve ─────────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-serve" role="tabpanel" aria-labelledby="tab-serve">
       <h2 data-tip="The Serve tab starts an HTTP server for one Ferrum model inside this window, the same server as the ferrum-serve command, so scripts and evaluation harnesses can score and generate text over HTTP.">Serve — an HTTP server for one model</h2>
-      <p class="hint">Starts the same server as the <code>ferrum-serve</code> command inside this
+      <p class="hint" data-tip="The server answers on /health, /v1/info, /v1/loglikelihood, /v1/loglikelihood_rolling and /v1/generate. The Studio never stores or logs the token, and Stop server waits at most 10 seconds for running requests before cutting them off.">Starts the same server as the <code>ferrum-serve</code> command inside this
         window, so other programs (an evaluation harness, a script, <code>curl</code>) can score
         text and generate with a Ferrum model over HTTP. One model at a time. It listens on this
         machine only unless you change the host, and then it needs a bearer token. Nothing is sent
@@ -658,7 +658,7 @@
     <!-- ── Capable ───────────────────────────────────────────────────────── -->
     <section class="panel" id="panel-capable" role="tabpanel" aria-labelledby="tab-capable">
       <h2 data-tip="The Capable tab measures this machine with a short benchmark and estimates the range of model sizes, in parameters, that it can load, train or fine-tune within 24 hours, and run at 3 or more tokens per second.">Capable — what can this machine run?</h2>
-      <p class="hint">Runs a quick (~1–2 s) micro-benchmark of memory bandwidth and
+      <p class="hint" data-tip="The results scale the time estimates in the button tool-tips and set the limits the GGUF and Export tabs warn about. Run it in the release app: a debug build runs the benchmark loops unoptimized and measures this machine as much slower.">Runs a quick (~1–2 s) micro-benchmark of memory bandwidth and
         matmul throughput on <em>this</em> CPU, then estimates the parameter range of an
         SLM this machine can <strong>load</strong>, <strong>train</strong> (&lt; 24 h),
         <strong>fine-tune</strong> (&lt; 24 h), and <strong>run</strong> (≥ 3 tok/s),
