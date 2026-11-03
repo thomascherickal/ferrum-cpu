@@ -1,3 +1,5 @@
+<p align="center"><img src="../../assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Completing ferrum-cpu: Coverage, Gaps, Roadmap — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.md working rule 2): subagent-driven means strictly sequential, never parallel.

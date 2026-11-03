@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Glossary of LLM and SLM Engineering
 
 A plain-English guide to the words you will meet when you build, train, shrink,

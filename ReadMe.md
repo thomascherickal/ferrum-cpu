@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.png" width="160" alt="Ferrum logo"></p>
+
 # Ferrum
 
 **A pure-Rust engine for training, running, serving, and evaluating small

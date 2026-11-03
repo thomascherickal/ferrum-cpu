@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Ferrum Samples
 
 Ten walk-throughs. Each one has a goal, what you need, numbered steps with exact

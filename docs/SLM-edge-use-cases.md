@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Small Is the New Big: 38 Real-World Jobs for Language Models Under 500M Parameters
 
 ## How Many Parameters Does Edge AI Really Need? (Far Fewer Than You Think!)

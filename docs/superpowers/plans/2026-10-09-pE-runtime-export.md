@@ -1,3 +1,5 @@
+<p align="center"><img src="../../assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Phase 1E — One-Command Export to Ollama and LM Studio Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Runs after Phase 0** (needs the strict CLI parser from Phase 0 Task 5 and the GPT-2 GGUF codec from Phase 0-G Task G1). It can run in parallel with Phases 1A–1C in its own worktree.

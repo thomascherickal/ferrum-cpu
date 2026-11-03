@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Tutorial: tool-tips in Ferrum SLM Studio
 
 Every control and every informative element of the Studio window has a

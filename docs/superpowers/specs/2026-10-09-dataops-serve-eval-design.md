@@ -1,3 +1,5 @@
+<p align="center"><img src="../../assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # DataOps, serving, LightEval, speed, and samples — design
 
 _2026-10-09 · branch `feat/dataops-serve-eval` · status: approved; amended 2026-10-09 (GGUF only, GPT-2-compatible, no unsafe)_

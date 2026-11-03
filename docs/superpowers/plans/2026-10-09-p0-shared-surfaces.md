@@ -1,3 +1,5 @@
+<p align="center"><img src="../../assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Phase 0 — Shared Surfaces Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Runs after `2026-10-09-p0g-gguf-only.md`** (models are GPT-2-compatible GGUF; FFN is GELU; the LM head has no bias).

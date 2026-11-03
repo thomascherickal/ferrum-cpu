@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # The Ferrum Manual
 
 This manual covers everything about *using* Ferrum. It starts from first
@@ -1808,8 +1810,8 @@ cargo tauri build    # installers / binaries for this OS
 
 `cargo tauri build` writes the bundles under `ferrum_gui/target/release/bundle/`;
 see [§10.5](#105-platform-support) for what each platform needs and for the
-release workflow. The icons are generated from `ferrum_gui/icons/icon.svg`:
-`cargo tauri icon icons/icon.svg -o <dir>`, then copy the files that
+release workflow. The icons are generated from the logo, `docs/assets/logo.png`
+(512x512; `icons/icon.svg` is the older vector source, kept): `cargo tauri icon ../docs/assets/logo.png -o <dir>`, then copy the files that
 `tauri.conf.json` lists (`ui/icons.test.js` checks them).
 
 **Snap-polluted environments.** Launching from a terminal inside a snap app
@@ -2086,7 +2088,7 @@ that the page loaded; it needs a D-Bus session, see Status). macOS and Windows a
 not built here (the icons for their bundles exist, but no job builds or runs them, see Status).
 
 **Packaging.** `tauri.conf.json` has `bundle.active` with every target for the host OS and the
-icons generated from `ferrum_gui/icons/icon.svg` (PNGs, `icon.ico`, `icon.icns`).
+icons generated from the logo `docs/assets/logo.png` (PNGs, `icon.ico`, `icon.icns`).
 `.github/workflows/release.yml` builds the Linux bundles, an **AppImage** and a **deb**, with
 `cargo tauri build --bundles appimage,deb` and a `tauri-cli` pinned to the same minor as the
 `tauri` crate (`TAURI_CLI_VERSION`, cached). Start it by hand with

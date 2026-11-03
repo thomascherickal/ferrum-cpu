@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="96" alt="Ferrum logo"></p>
+
 # Coverage results
 
 One entry per `scripts/coverage.sh` run. Runs happen once a day, at noon (CLAUDE.md rule 10). Numbers are copied from the run's `target/coverage/summary.txt`.
