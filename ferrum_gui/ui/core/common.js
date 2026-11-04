@@ -149,8 +149,8 @@
     }
     // The sampler fields shared by the Generate and GGUF tabs (ids differ by prefix).
     function samplerParams(prefix) {
-      const topP = reqNum(prefix + "TopP", "Top-p", 0, true);
-      if (topP > 1) throw new Error("Top-p must be a number between 0 and 1");
+      const topP = reqNum(prefix + "TopP", "Top-p", 0);
+      if (topP > 1) throw new Error("Top-p must be a number in (0, 1]");
       return {
         temp: reqNum(prefix + "Temp", "Temperature", 0, true),
         topK: reqInt(prefix + "TopK", "Top-k", 0),

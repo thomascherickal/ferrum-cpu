@@ -368,6 +368,10 @@ New public type `llm::RopeScaling { freq_factors: Vec<f32>, linear_factor: f32 }
 
 New dependency `ctrlc = "3.5.2"` in `slm_cli` only (MSRV 1.69; `cargo deny check` passes, `cargo build --workspace --locked` and the `wasm32` build of `ferrum_core` and `slm_wasm` are green; `ferrum_core` gained no dependency, only `atomic_write` is now public). `train` and `finetune-gguf` install a handler: the first SIGINT finishes the current step, writes the checkpoint like the stop file and exits 130; a second exits 130 at once; the fine-tune checkpoint is now written atomically. `--sample` is skipped after an interrupt. No flag or format changed. The GUI installs no handler. Not caught: SIGTERM, SIGHUP.
 
+### 7.0.16 `top_p` is (0, 1] everywhere
+
+`ferrum-serve` already required `top_p` in (0, 1]; `generate`/`run`/`run-gguf --top-p`, the GUI's Generate and GGUF tabs (`sampling_from` and the form check) and the wasm `Slm` (`generate`, `start`) accepted [0, 1] and now refuse `0` like the server (`--top-p must be a number in (0, 1], got 0`, exit 1; a thrown error in the browser). `top_p` 0 kept only the most likely token, so `--temp 0` (exact argmax) does what it did; every other value gives the same output as before. No library type changed: `ferrum_core::SamplingParams` still takes any `f32`.
+
 ### 7.1 Breaking changes
 
 | Change | What breaks | What to do |

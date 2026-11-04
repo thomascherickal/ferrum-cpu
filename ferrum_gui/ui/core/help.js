@@ -380,7 +380,7 @@
     },
     genTopP: {
       title: "Top-p (1.0 = off)",
-      what: "Nucleus sampling: keep the smallest group of likely tokens whose probabilities add up to P and ignore the rest. From 0 up to 1; 1.0 is off. Default 1.0.",
+      what: "Nucleus sampling: keep the smallest group of likely tokens whose probabilities add up to P and ignore the rest. From above 0 up to 1; 1.0 is off. Default 1.0.",
       how: "0.9 is a common value. The group shrinks when the model is confident and grows when it is unsure.",
       beginner: "Instead of a fixed number of candidates, keep just enough candidates to cover 90 percent of the model's belief.",
     },

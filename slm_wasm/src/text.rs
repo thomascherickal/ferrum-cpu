@@ -31,7 +31,7 @@ pub struct GenParams {
 }
 
 impl GenParams {
-    /// Validated like the CLI: temperature finite and >= 0, top-p in [0, 1], repetition penalty
+    /// Validated like the CLI: temperature finite and >= 0, top-p in (0, 1], repetition penalty
     /// finite and > 0.
     pub fn new(
         max_tokens: usize,
@@ -47,8 +47,8 @@ impl GenParams {
                 "temperature must be a finite number >= 0 (0 = greedy), got {temperature}"
             ));
         }
-        if !(top_p.is_finite() && (0.0..=1.0).contains(&top_p)) {
-            return Err(format!("top_p must be a number in [0, 1], got {top_p}"));
+        if !(top_p > 0.0 && top_p <= 1.0) {
+            return Err(format!("top_p must be a number in (0, 1], got {top_p}"));
         }
         if !(repetition_penalty.is_finite() && repetition_penalty > 0.0) {
             return Err(format!(
@@ -388,7 +388,11 @@ mod tests {
         assert!(bad(f32::NAN, 0, 1.0, 1.0));
         assert!(bad(1.0, 0, 1.5, 1.0));
         assert!(bad(1.0, 0, 1.0, 0.0));
-        assert!(!bad(0.0, 0, 0.0, 1.0));
+        // top_p is (0, 1], as ferrum-serve, the CLI and the GUI.
+        assert!(bad(1.0, 0, 0.0, 1.0));
+        assert!(bad(1.0, 0, f32::NAN, 1.0));
+        assert!(!bad(0.0, 0, 0.01, 1.0));
+        assert!(!bad(0.0, 0, 1.0, 1.0));
     }
 
     #[test]

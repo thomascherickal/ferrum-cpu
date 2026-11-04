@@ -41,7 +41,7 @@ pub struct GenParams {
 }
 
 /// The sampler settings shared by the Generate and GGUF tabs, validated like
-/// the CLI's `sampling_params` (`--temp >= 0`, `--top-p` in [0, 1], a positive
+/// the CLI's `sampling_params` (`--temp >= 0`, `--top-p` in (0, 1], a positive
 /// repetition penalty).
 pub(super) fn sampling_from(
     temp: f32,
@@ -54,8 +54,8 @@ pub(super) fn sampling_from(
             "temperature must be a number >= 0 (0 = greedy), got {temp}"
         ));
     }
-    if !(top_p.is_finite() && (0.0..=1.0).contains(&top_p)) {
-        return Err(format!("top-p must be a number in [0, 1], got {top_p}"));
+    if !(top_p > 0.0 && top_p <= 1.0) {
+        return Err(format!("top-p must be a number in (0, 1], got {top_p}"));
     }
     if !(rep_penalty.is_finite() && rep_penalty > 0.0) {
         return Err(format!(
@@ -350,6 +350,8 @@ mod tests {
             (f32::NAN, 1.0, 1.0, "temperature"),
             (0.5, 1.5, 1.0, "top-p"),
             (0.5, -0.1, 1.0, "top-p"),
+            (0.5, 0.0, 1.0, "top-p"),
+            (0.5, f32::NAN, 1.0, "top-p"),
             (0.5, 1.0, 0.0, "repetition"),
         ] {
             let e = sampling_from(t, 0, p, r).unwrap_err();

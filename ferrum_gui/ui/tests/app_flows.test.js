@@ -350,7 +350,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     });
     // Out-of-range values are refused before any call.
     const n = a.of("generate_slm").length;
-    for (const [id, v, msg] of [["genTemp", "-1", /Temperature/], ["genTopP", "1.5", /Top-p/], ["genRep", "0", /Repetition/], ["genTopK", "-2", /Top-k/], ["genMaxTokens", "-1", /Max tokens/]]) {
+    for (const [id, v, msg] of [["genTemp", "-1", /Temperature/], ["genTopP", "1.5", /Top-p/], ["genTopP", "0", /Top-p/], ["genRep", "0", /Repetition/], ["genTopK", "-2", /Top-k/], ["genMaxTokens", "-1", /Max tokens/]]) {
       const keep = a.$(id).value;
       a.set(id, v);
       await a.click("genStart");

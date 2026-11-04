@@ -53,7 +53,7 @@ pub(crate) fn check_temp(temp: f32) -> Result<(), String> {
 }
 
 /// The sampler flags shared by `generate`/`run` and `run-gguf`, validated: `--temp` (default
-/// `temp_default`), `--top-k`, `--top-p` in [0, 1] and a positive finite repetition penalty
+/// `temp_default`), `--top-k`, `--top-p` in (0, 1] (as `ferrum-serve`) and a positive finite repetition penalty
 /// read from `rep_flag` (a value <= 0 or NaN would silently disable it).
 pub(crate) fn sampling_params(
     args: &Args,
@@ -68,9 +68,9 @@ pub(crate) fn sampling_params(
         ..Default::default()
     };
     check_temp(params.temperature)?;
-    if !(params.top_p.is_finite() && (0.0..=1.0).contains(&params.top_p)) {
+    if !(params.top_p > 0.0 && params.top_p <= 1.0) {
         return Err(format!(
-            "--top-p must be a number in [0, 1], got {}",
+            "--top-p must be a number in (0, 1], got {}",
             params.top_p
         ));
     }
@@ -161,7 +161,7 @@ mod tests {
         let spec_r = spec_for("run-gguf").unwrap();
         let g = |a: &[&str]| Args::parse(&s(a), spec_g).unwrap();
         let r = |a: &[&str]| Args::parse(&s(a), spec_r).unwrap();
-        // Defaults, and explicit valid values (0 = greedy, top-p 0 and 1 are the edges).
+        // Defaults, and explicit valid values (temp 0 = greedy; top-p 0.01 and 1 are near the edges).
         let p = sampling_params(&g(&[]), 0.8, "repetition-penalty").unwrap();
         assert_eq!(
             (p.temperature, p.top_k, p.top_p, p.repetition_penalty),
@@ -171,7 +171,7 @@ mod tests {
             "--temp",
             "0",
             "--top-p",
-            "0",
+            "0.01",
             "--top-k",
             "5",
             "--repetition-penalty",
@@ -180,7 +180,7 @@ mod tests {
         let p = sampling_params(&ok, 0.8, "repetition-penalty").unwrap();
         assert_eq!(
             (p.temperature, p.top_p, p.top_k, p.repetition_penalty),
-            (0.0, 0.0, 5, 1.3)
+            (0.0, 0.01, 5, 1.3)
         );
         assert!(sampling_params(&g(&["--top-p", "1"]), 0.8, "repetition-penalty").is_ok());
         // run-gguf names its flag --rep.
@@ -193,6 +193,7 @@ mod tests {
             (&["--temp", "inf"], "--temp"),
             (&["--top-p", "1.5"], "--top-p"),
             (&["--top-p", "-0.1"], "--top-p"),
+            (&["--top-p", "0"], "--top-p"),
             (&["--top-p", "nan"], "--top-p"),
             (&["--repetition-penalty", "0"], "--repetition-penalty"),
             (&["--repetition-penalty", "-1"], "--repetition-penalty"),

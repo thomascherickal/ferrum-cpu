@@ -1184,7 +1184,7 @@ runs each of them.
 | `--temp F` | 0.8 | Sampling temperature. **`0` is exact argmax (greedy).** 0.1–0.3 for faithful, 0.7+ for varied. |
 | `--gen-seed N` | time-based | Fix it for reproducible output |
 | `--top-k N` | 0 (off) | Sample only from the `N` most likely tokens |
-| `--top-p F` | 1.0 (off) | Nucleus sampling, in `[0, 1]` |
+| `--top-p F` | 1.0 (off) | Nucleus sampling, in `(0, 1]` (the same range in `run-gguf`, `ferrum-serve`, the GUI and the wasm `Slm`) |
 | `--repetition-penalty F` | 1.0 (off) | Penalize tokens already generated; must be positive |
 | `--stop S` | none | Stop when `S` appears. Repeatable. The output ends before the first match. |
 | `--stream` | off | Print the completion live, also with `--max-tokens` or `--stop`. With stop strings only the tail that could still become a stop string is held back, so stop text is never printed, and the output equals the non-streamed run. |
@@ -2538,7 +2538,7 @@ same model and seed: `train_transformer generate model.gguf "the cat"
 --max-tokens 40 --temp 0.8 --gen-seed 42 --stop "."` prints the prompt
 followed by the same text (a native test compares the two paths on tiny BPE
 and character-level models, f32 and int8). Bad arguments (a negative
-temperature, `top_p` outside [0, 1], a character the character-level
+temperature, `top_p` outside (0, 1], a character the character-level
 vocabulary lacks) and a file that is not a Ferrum text model throw an
 `Error`. The seed is 32 bits here; the CLI's `--gen-seed` is 64 bits and gives
 the same text for values below 2^32.
