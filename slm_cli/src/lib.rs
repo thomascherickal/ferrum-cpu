@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod file_kind;
 pub mod hash;
 pub mod outputs;
 pub mod prepare;

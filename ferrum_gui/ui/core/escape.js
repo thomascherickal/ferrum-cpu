@@ -31,6 +31,12 @@
 
   // Models tab: Ferrum model_info.
   function modelInfo(i) {
+    // A checkpoint, token file or tokenizer file: what it is and the fields `info` prints.
+    if (i.kind && i.kind !== "model") {
+      return card("File", i.path) + card("Size", i.bytes.toLocaleString() + " bytes") +
+        card("Format", i.format) + card("Kind", i.kind) +
+        (i.details || []).map(([k, v]) => card(k, v)).join("");
+    }
     return card("File", i.path) + card("Size", i.bytes.toLocaleString() + " bytes") +
       card("Format", i.format) + card("Name", i.name) + card("Task", i.task) +
       card("Input dim", i.inputDim) + card("Output dim", i.outputDim) +

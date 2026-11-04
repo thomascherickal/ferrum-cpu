@@ -2037,7 +2037,7 @@ those.
 | **Train** | Train a transformer SLM (the Corpus may be a text file or a **token file**, see *Tokenizing and token files* below): architecture, epochs or a **token budget**, stride, LR/cosine/warmup, clip, weight decay, dropout, tie, QAT, **Save precision** (f32, int8 or int4, default int8: the CLI's `--quant`, checked before training starts; QAT is int8 only, so f32 and int4 files are rounded or kept after int8-QAT training exactly as with the CLI), tokenizer file, checkpoint/resume, validation fraction and patience; live loss chart; a **pre-flight check** under the form (below). Five `train` flags have no control and are CLI-only: `--preset`, `--metrics-csv`, `--max-seconds` (the tab's Stop button ends a run and saves the model so far), `--sample` and `--debug` |
 | **Generate** | Prompt, characters or a **token budget**, temperature (**0 = greedy**, exact argmax), top-k, top-p, repetition penalty, stop strings (one per line; `\n`, `\t`, `\\` are unescaped), gen seed, optional streaming. With the same settings and seed the text equals `train_transformer generate`: a token budget or a stop string selects the token path (`generate_tokens_with`, stop text excluded), otherwise `--chars` characters |
 | **Evaluate** | Score a model on held-out text (typed, pasted or a file) and, optionally, a test file; each run adds a row per text (perplexity, cross-entropy, bits/token, **bits/byte**, tokens, **seconds**, uniform baseline). A Ferrum model is scored like `eval`, an imported Llama/Qwen `.gguf` like `eval-gguf` (precision, window, fine-tune checkpoint, RAM guard). **Save JSON** writes the latest run through the save dialog with the keys of `eval --json` (`perplexity`, `cross_entropy_nats`, `bits_per_token`, `bits_per_byte`, `tokens`, `bytes`, `seconds`; a held-out + test pair becomes `{"held_out": {...}, "test": {...}}`). Files with invalid UTF-8 are refused unless *Decode invalid UTF-8 lossily* is ticked |
-| **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers |
+| **Models** | Inspect or reload a `.gguf` model: format, task, dimensions, tokenizer, layers. A training or fine-tune checkpoint, a token file or a tokenizer file is described as `train_transformer info` describes it (the same detection, `slm_cli::file_kind`: its kind and fields); an imported Llama/Qwen file is sent to the GGUF tab |
 | **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, stop strings (one per line, `\n` `\t` `\\` unescaped, needs a tokenizer), optional fine-tune overlay |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary. A second block runs a Ferrum `gpt2` model in **Ollama** or **LM Studio** (the code of `export-ollama` / `export-lmstudio`): *Show Modelfile and commands*, *Export to Ollama*, *Import into LM Studio*, *Write Modelfile only*; see *Running in Ollama and LM Studio* below |
@@ -2823,7 +2823,9 @@ Keys in the `ferrum.` namespace are ignored by llama.cpp.
 | `ferrum.normalizer` | string | Normalizer state (empty for SLMs) |
 
 `train_transformer info` reads these. It also describes a `.fckp` training checkpoint
-(vocab, context, embed, heads, hidden, blocks, step) and an imported llama/qwen GGUF
+(vocab, context, embed, heads, hidden, blocks, step), a `.flck` fine-tune checkpoint, a token
+file (tokens, documents, vocab, EOS id, tokenizer hash), a tokenizer file (vocab, merges; it
+used to be reported as an unrunnable architecture) and an imported llama/qwen GGUF
 (architecture, layers, dims, heads, vocab, quantization, parameters, context,
 tokenizer) from the header alone, without loading the weights. A GPT-2 GGUF that Ferrum did not write
 also loads, with its metadata rebuilt from the `gpt2.*` keys.

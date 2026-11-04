@@ -490,6 +490,16 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a.$("miInfo").innerHTML.includes("&lt;img") && !a.$("miInfo").innerHTML.includes("<img"));
   }
 
+  // Models tab on a non-model Ferrum file (gap L12): the kind and the CLI's fields, escaped.
+  {
+    const a = await start({ model_info: async () => ({ path: "/t.gguf", bytes: 10, format: "GGUF v3 (ferrum-tokenizer)", name: "", task: "", inputDim: 0, outputDim: 0, tokenizer: "", merges: 0, layers: 0, kind: "BPE tokenizer file", details: [["Vocab", "257"], ["Merges", EVIL]] }) });
+    a.set("miPath", "/t.gguf");
+    await a.click("miInspect");
+    const html = a.$("miInfo").innerHTML;
+    assert.ok(html.includes("BPE tokenizer file") && html.includes("257") && html.includes("Merges"), html);
+    assert.ok(!html.includes("Layers") && !html.includes("<img") && html.includes("&lt;img"), html);
+  }
+
   // ── GGUF run / inspect ──────────────────────────────────────────────────
   {
     const info = { architecture: "llama", runnable: true, version: 3, numTensors: 10, modelDim: 8, nLayers: 2, nHeads: 2, nKvHeads: 2, vocabSize: 32, tokenizer: "t", estInt4Mb: 1, estInt8Mb: 2, estF32Mb: 4, availMb: 4000, note: "n", paramCount: 1000 };

@@ -372,6 +372,10 @@ New dependency `ctrlc = "3.5.2"` in `slm_cli` only (MSRV 1.69; `cargo deny check
 
 `ferrum-serve` already required `top_p` in (0, 1]; `generate`/`run`/`run-gguf --top-p`, the GUI's Generate and GGUF tabs (`sampling_from` and the form check) and the wasm `Slm` (`generate`, `start`) accepted [0, 1] and now refuse `0` like the server (`--top-p must be a number in (0, 1], got 0`, exit 1; a thrown error in the browser). `top_p` 0 kept only the most likely token, so `--temp 0` (exact argmax) does what it did; every other value gives the same output as before. No library type changed: `ferrum_core::SamplingParams` still takes any `f32`.
 
+### 7.0.17 `slm_cli::file_kind`: one file-kind detection for `info` and the Models tab
+
+New public library module (additive): `slm_cli::file_kind::detect(path)` returns `Model`, `Imported(arch)` or `Other` (architecture, GGUF version, a one-line kind and the fields `info` prints). `train_transformer info` now runs on it; its output for models, imported files, training checkpoints, fine-tune checkpoints and token files is unchanged. One change: a tokenizer file (`ferrum-tokenizer`) was printed as an imported, unrunnable architecture and is now `Kind      : BPE tokenizer file; reuse it with train --tokenizer` with its vocab and merges. The GUI's `model_info` result gains `kind` (`"model"` for a model) and `details` (`[label, value]` pairs); a checkpoint, token file or tokenizer file is described instead of failing with "not a valid model", and an imported Llama/Qwen file fails with a pointer to the GGUF tab. The command's arguments are unchanged, so the pinned fixtures are too.
+
 ### 7.1 Breaking changes
 
 | Change | What breaks | What to do |

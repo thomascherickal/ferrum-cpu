@@ -1,7 +1,9 @@
-//! `info`: describe a GGUF file (a Ferrum model, an imported llama/qwen model, a checkpoint, or a token file).
+//! `info`: describe a GGUF file (a Ferrum model, an imported llama/qwen model, a checkpoint,
+//! a token file or a tokenizer file).
 
 use crate::args::*;
-use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, MetaValue, TransformerNet};
+use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, MetaValue};
+use slm_cli::file_kind::FileKind;
 
 /// The quantization of an imported file: the ggml type holding most of its weights.
 fn dominant_quant(g: &Gguf) -> &'static str {
@@ -76,53 +78,26 @@ pub(crate) fn cmd_info(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: train_transformer info <model.gguf>".into());
     }
     let model_path = &args.positional[0];
-    // The header alone says what kind of file this is; anything unreadable falls through to
-    // the Ferrum loader below, which reports the precise error.
-    if let Ok(g) = Gguf::open(model_path) {
-        let size = std::fs::metadata(model_path).map_or(0, |m| m.len());
-        match g.architecture() {
-            Some("gpt2" | "ferrum") | None => {}
-            Some("ferrum-checkpoint") => {
-                let c = TransformerNet::checkpoint_info(std::fs::read(model_path)?)?;
-                println!("Model     : {model_path}  ({size} bytes)");
-                println!("Format    : GGUF v{} (ferrum-checkpoint)", g.version);
-                println!("Kind      : training checkpoint; continue it with train --resume");
-                println!("Vocab     : {}", c.vocab);
-                println!("Context   : {}", c.context);
-                println!("Embed     : {}", c.embed);
-                println!("Heads     : {}", c.heads);
-                println!("Hidden    : {}", c.hidden);
-                println!("Blocks    : {}", c.blocks);
-                println!("Step      : {}", c.step);
-                return Ok(());
+    // The header alone says what kind of file this is (the detection is shared with the
+    // GUI); a Ferrum model, or anything unreadable, falls through to the loader below,
+    // which reports the precise error.
+    match slm_cli::file_kind::detect(model_path)? {
+        FileKind::Model => {}
+        FileKind::Imported(arch) => {
+            let g = Gguf::open(model_path)?;
+            let size = std::fs::metadata(model_path).map_or(0, |m| m.len());
+            info_imported(model_path, &g, &arch, size);
+            return Ok(());
+        }
+        FileKind::Other(o) => {
+            let size = std::fs::metadata(model_path).map_or(0, |m| m.len());
+            println!("Model     : {model_path}  ({size} bytes)");
+            println!("Format    : GGUF v{} ({})", o.version, o.architecture);
+            println!("Kind      : {}", o.kind);
+            for (k, v) in &o.fields {
+                println!("{k:<10}: {v}");
             }
-            Some("ferrum-tokens") => {
-                let f = ferrum_core::TokenFile::open(model_path)?;
-                println!("Model     : {model_path}  ({size} bytes)");
-                println!("Format    : GGUF v{} (ferrum-tokens)", g.version);
-                println!(
-                    "Kind      : pre-tokenized corpus; train on it with train {model_path} ..."
-                );
-                println!("Tokens    : {}", f.len());
-                println!("Documents : {}", f.documents());
-                println!("Vocab     : {}", f.vocab_size());
-                match f.eos_id() {
-                    Some(e) => println!("EOS id    : {e}"),
-                    None => println!("EOS id    : none"),
-                }
-                println!("Tokenizer : sha256 {}", f.tokenizer_sha256());
-                return Ok(());
-            }
-            Some("ferrum-llama-checkpoint") => {
-                println!("Model     : {model_path}  ({size} bytes)");
-                println!("Format    : GGUF v{} (ferrum-llama-checkpoint)", g.version);
-                println!("Kind      : fine-tune checkpoint; apply it with run-gguf --resume");
-                return Ok(());
-            }
-            Some(arch) => {
-                info_imported(model_path, &g, arch, size);
-                return Ok(());
-            }
+            return Ok(());
         }
     }
     let bytes =

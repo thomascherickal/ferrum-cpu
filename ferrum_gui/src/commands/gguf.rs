@@ -10,6 +10,7 @@ use crate::AppState;
 use ferrum_core::llm_stop::StopMatcher;
 use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, LlamaTrainer, QKind, Rng};
 use serde::{Deserialize, Serialize};
+use slm_cli::file_kind::FileKind;
 use tauri::State;
 
 #[derive(Serialize)]
@@ -25,12 +26,47 @@ pub struct ModelInfo {
     pub tokenizer: String,
     pub merges: usize,
     pub layers: usize,
+    /// `"model"`, or what a non-model Ferrum file is (checkpoint, token file, tokenizer
+    /// file); then the model fields are empty and `details` holds what `info` prints.
+    pub kind: String,
+    pub details: Vec<(String, String)>,
 }
 
-/// Inspect a saved model file (mirrors `slm_cli info`).
+/// Inspect a saved model file, or describe a checkpoint, token file or tokenizer file
+/// (the CLI's `info` detection, `slm_cli::file_kind`).
 #[tauri::command]
 pub fn model_info(path: String) -> Result<ModelInfo, CmdError> {
     checked_path("model path", &path, true)?;
+    match slm_cli::file_kind::detect(&path)? {
+        FileKind::Model => {}
+        FileKind::Imported(arch) => {
+            return Err(format!(
+                "{path} is an imported '{arch}' GGUF, not a Ferrum model: inspect and run it in the GGUF tab"
+            )
+            .into())
+        }
+        FileKind::Other(o) => {
+            let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
+            return Ok(ModelInfo {
+                path,
+                bytes,
+                format: format!("GGUF v{} ({})", o.version, o.architecture),
+                name: String::new(),
+                task: String::new(),
+                input_dim: 0,
+                output_dim: 0,
+                tokenizer: String::new(),
+                merges: 0,
+                layers: 0,
+                kind: o.kind,
+                details: o
+                    .fields
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+            });
+        }
+    }
     let raw = std::fs::read(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
     let slm = GenerativeSLM::from_bytes(&raw).map_err(|e| format!("not a valid model: {e}"))?;
     let m = &slm.meta;
@@ -59,6 +95,8 @@ pub fn model_info(path: String) -> Result<ModelInfo, CmdError> {
         tokenizer,
         merges,
         layers: slm.model.len(),
+        kind: "model".into(),
+        details: Vec::new(),
     })
 }
 
@@ -418,6 +456,54 @@ mod tests {
             .expect("FINF junk must be rejected");
         assert!(err.contains("old Ferrum .bin (FINF) model"), "{err}");
         assert!(model_info("/nonexistent/m.gguf".into()).is_err());
+    }
+
+    #[test]
+    fn model_info_describes_tokenizer_files_and_checkpoints_and_points_imports_to_the_gguf_tab() {
+        use ferrum_core::{ByteBpeTokenizer, GgufBuilder, MetaValue};
+        let dir = std::env::temp_dir().join(format!("ferrum_gui_kinds_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let at = |name: &str, bytes: &[u8]| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            p.to_string_lossy().into_owned()
+        };
+        // A tokenizer file: its kind and the CLI's fields.
+        let tok = ByteBpeTokenizer::byte_level();
+        let info = model_info(at("tok.gguf", &tok.to_gguf_bytes())).unwrap();
+        assert_eq!(info.format, "GGUF v3 (ferrum-tokenizer)");
+        assert!(info.kind.contains("--tokenizer"), "{}", info.kind);
+        assert_eq!(
+            info.details,
+            [
+                ("Vocab".to_string(), tok.vocab_size().to_string()),
+                ("Merges".to_string(), "0".to_string())
+            ]
+        );
+        assert_eq!((info.layers, info.name.as_str()), (0, ""));
+        // A fine-tune checkpoint header.
+        let mut b = GgufBuilder::new();
+        b.meta(
+            "general.architecture",
+            MetaValue::String("ferrum-llama-checkpoint".into()),
+        );
+        let info = model_info(at("ft.flck", &b.into_bytes())).unwrap();
+        assert!(info.kind.contains("run-gguf --resume"), "{}", info.kind);
+        // An imported model is sent to the GGUF tab, not called invalid.
+        let llama = crate::test_support::tiny_llama_gguf(8, 1, 2, 16, 32);
+        let e = model_info(at("l.gguf", &llama)).err().unwrap();
+        assert!(
+            e.contains("imported 'llama'") && e.contains("GGUF tab"),
+            "{e}"
+        );
+        // A damaged checkpoint (header only) reports the reader's error.
+        let mut b = GgufBuilder::new();
+        b.meta(
+            "general.architecture",
+            MetaValue::String("ferrum-checkpoint".into()),
+        );
+        assert!(model_info(at("bad.ckpt", &b.into_bytes())).is_err());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
