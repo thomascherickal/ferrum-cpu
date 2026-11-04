@@ -10,10 +10,10 @@
 //! is accepted for gated repos). Kaggle's API requires Basic auth from
 //! `KAGGLE_USERNAME` / `KAGGLE_KEY` or `~/.kaggle/kaggle.json`.
 
-use crate::commands::http_agent;
-use crate::error::CmdError;
-use crate::paths::checked_dir;
-use crate::progress::Throttle;
+use crate::infra::error::CmdError;
+use crate::infra::http::http_agent;
+use crate::infra::paths::checked_dir;
+use crate::infra::progress::Throttle;
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -463,7 +463,7 @@ pub async fn download_dataset<R: Runtime>(
     id: String,
     dest_dir: String,
 ) -> Result<DownloadResult, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let hf_token = std::env::var("HF_TOKEN").ok();
         let mut progress = Progress::events(app, id.clone());
         download_dataset_from(
@@ -510,7 +510,7 @@ pub async fn download_hf_file<R: Runtime>(
     dest_dir: String,
     hf_token: Option<String>,
 ) -> Result<DownloadResult, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let env_token = std::env::var("HF_TOKEN").ok();
         let args = (&*repo, &*file, revision.as_deref(), &*dest_dir, hf_token);
         let mut progress = Progress::events(app, format!("{repo}/{file}"));
@@ -550,7 +550,7 @@ pub async fn download_kaggle_file<R: Runtime>(
     file: String,
     dest_dir: String,
 ) -> Result<DownloadResult, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let mut progress = Progress::events(app, format!("{owner_slug}/{file}"));
         download_kaggle_from(
             &HOSTS,

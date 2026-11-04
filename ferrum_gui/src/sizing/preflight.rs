@@ -4,13 +4,13 @@
 //!
 //! Everything is computed from the form values with the engine's own functions
 //! (`TransformerNet::check_size` and `estimate_train_peak_bytes` through the
-//! [`crate::estimate`] module, so the numbers match the Train button's tooltip
+//! [`crate::sizing::estimate`] module, so the numbers match the Train button's tooltip
 //! and the engine's refusal). Nothing is allocated or trained.
 
-use crate::error::CmdError;
-use crate::estimate::{estimate, JobKind, JobParams, Throughput};
-use crate::estimate_cmd::resolve;
-use crate::hardware::{self, HardwareInfo};
+use crate::infra::error::CmdError;
+use crate::sizing::estimate::{estimate, JobKind, JobParams, Throughput};
+use crate::sizing::estimate_cmd::resolve;
+use crate::sizing::hardware::{self, HardwareInfo};
 use crate::AppState;
 use ferrum_core::TransformerNet;
 use serde::Serialize;
@@ -166,7 +166,7 @@ pub async fn preflight_train(
     params: JobParams,
 ) -> Result<Preflight, CmdError> {
     let bench = *state.bench.lock().unwrap_or_else(|e| e.into_inner());
-    crate::error::blocking_ok(move || {
+    crate::infra::error::blocking_ok(move || {
         let mut params = params;
         resolve(JobKind::Train, &mut params);
         preflight(&params, &hardware::detect(), bench.as_ref())
@@ -177,7 +177,7 @@ pub async fn preflight_train(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::GpuInfo;
+    use crate::sizing::hardware::GpuInfo;
 
     fn hw(avail_mb: Option<u64>) -> HardwareInfo {
         HardwareInfo {
@@ -235,7 +235,7 @@ mod tests {
     }
 
     fn ferrum_core_bpt(vocab: usize) -> f64 {
-        crate::estimate::bytes_per_token(vocab)
+        crate::sizing::estimate::bytes_per_token(vocab)
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! The Generate tab: sampling controls, stop strings, streaming and cancel.
 
 use super::time_seed;
-use crate::error::CmdError;
-use crate::jobs::{Job, JobGuard};
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::{Job, JobGuard};
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{GenerativeSLM, Rng, SamplingParams};
 use serde::Deserialize;
@@ -160,7 +160,7 @@ pub async fn generate_slm<R: Runtime>(
     params: GenParams,
 ) -> Result<String, CmdError> {
     let job = state.jobs.start(Job::Generate)?;
-    crate::error::blocking(move || gen_inner(app, params, job)).await
+    crate::infra::error::blocking(move || gen_inner(app, params, job)).await
 }
 
 fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Result<String, String> {

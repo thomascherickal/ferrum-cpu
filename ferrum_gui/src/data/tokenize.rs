@@ -4,9 +4,9 @@
 //! ids are those of `ByteBpeTokenizer::encode_docs` over the files joined with the separator,
 //! and `train` accepts the result in place of the text (detected by content).
 
-use crate::error::CmdError;
-use crate::jobs::Job;
-use crate::paths::{checked_input, checked_path};
+use crate::infra::error::CmdError;
+use crate::infra::jobs::Job;
+use crate::infra::paths::{checked_input, checked_path};
 use crate::AppState;
 use ferrum_core::{StopCondition, DOC_SEP};
 use serde::{Deserialize, Serialize};
@@ -107,7 +107,7 @@ pub async fn tokenize_corpus<R: Runtime>(
     params: TokenizeParams,
 ) -> Result<TokenizeResult, CmdError> {
     let job = state.jobs.start(Job::Tokenize)?;
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let mut emit = |p: TokenizeProgress| {
             let _ = app.emit(
                 "tokenize-progress",

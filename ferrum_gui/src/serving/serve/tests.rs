@@ -88,7 +88,7 @@ fn the_form_is_checked_like_the_cli_and_becomes_the_servers_config() {
 
 #[test]
 fn every_validation_message_has_a_useful_error_code() {
-    use crate::error::classify;
+    use crate::infra::error::classify;
     for (msg, code) in [
         ("max batch must be at least 1 (got 0)", "invalid"),
         ("host is required (127.0.0.1 keeps the server on this machine)", "invalid"),

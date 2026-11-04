@@ -30,12 +30,7 @@ mod sizing;
 #[cfg(test)]
 mod test_support;
 
-// The groups are folders; the modules keep their flat `crate::x` paths (and the public ones
-// their `ferrum_gui_lib::x` paths) through these re-exports.
-use data::{datasets, prepare, tokenize};
-use infra::{error, jobs, paths, progress};
-use serving::{runtime_export, serve};
-use sizing::{capable, preflight};
+// The public modules keep their `ferrum_gui_lib::x` paths (the integration tests use them).
 pub use sizing::{estimate, estimate_cmd, hardware};
 
 pub use run::run;
@@ -48,10 +43,10 @@ pub struct AppState {
     pub sys: Mutex<System>,
     /// Last Capable-tab benchmark (release builds only), used to scale estimates.
     pub bench: Mutex<Option<estimate::Throughput>>,
-    /// The running long jobs, one slot per kind (see [`jobs`]).
-    pub jobs: jobs::Jobs,
+    /// The running long jobs, one slot per kind (see [`infra::jobs`]).
+    pub jobs: infra::jobs::Jobs,
     /// The Serve tab's running HTTP server, if any.
-    pub serve: serve::Serve,
+    pub serve: serving::serve::Serve,
 }
 
 /// Shared state and the command registry. `run` and the mock-runtime tests
@@ -61,8 +56,8 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             bench: Mutex::new(None),
-            jobs: jobs::Jobs::default(),
-            serve: serve::Serve::default(),
+            jobs: infra::jobs::Jobs::default(),
+            serve: serving::serve::Serve::default(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::download_text,
@@ -72,28 +67,28 @@ fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R>
             commands::train_slm,
             commands::generate_slm,
             evaluate::evaluate_slm,
-            prepare::prepare_dataset,
-            runtime_export::preview_runtime_export,
-            runtime_export::export_to_runtime,
-            tokenize::tokenize_corpus,
-            serve::serve_start,
-            serve::serve_stop,
-            serve::serve_status,
+            data::prepare::prepare_dataset,
+            serving::runtime_export::preview_runtime_export,
+            serving::runtime_export::export_to_runtime,
+            data::tokenize::tokenize_corpus,
+            serving::serve::serve_start,
+            serving::serve::serve_stop,
+            serving::serve::serve_status,
             commands::model_info,
             commands::gguf_info,
             commands::run_gguf,
             commands::finetune_gguf,
             commands::export_gguf,
-            jobs::cancel_job,
+            infra::jobs::cancel_job,
             commands::system_stats,
-            hardware::hardware_info,
-            estimate_cmd::estimate_job,
-            preflight::preflight_train,
-            capable::capability_report,
-            datasets::list_datasets,
-            datasets::download_dataset,
-            datasets::download_hf_file,
-            datasets::download_kaggle_file,
+            sizing::hardware::hardware_info,
+            sizing::estimate_cmd::estimate_job,
+            sizing::preflight::preflight_train,
+            sizing::capable::capability_report,
+            data::datasets::list_datasets,
+            data::datasets::download_dataset,
+            data::datasets::download_hf_file,
+            data::datasets::download_kaggle_file,
         ])
 }
 

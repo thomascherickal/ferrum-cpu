@@ -1,23 +1,14 @@
 //! Corpus text commands: download, clean, save and read text files.
 
-use crate::error::CmdError;
-use crate::paths::checked_path;
-use crate::progress::Throttle;
+use crate::infra::error::CmdError;
+use crate::infra::http::http_agent;
+use crate::infra::paths::checked_path;
+use crate::infra::progress::Throttle;
 use ferrum_core::{clean_corpus, corpus_stats, CleanOptions};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
 use tauri::{AppHandle, Emitter, Runtime};
-
-/// HTTP client with bounded connect/read timeouts so a hung or slow host can
-/// never block a download task indefinitely (G2).
-pub(crate) fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(15))
-        .timeout_read(std::time::Duration::from_secs(30))
-        .timeout_write(std::time::Duration::from_secs(30))
-        .build()
-}
 
 /// Synchronous core of [`download_text`]: validate the URL, fetch with timeouts,
 /// and return at most `cap` bytes decoded as UTF-8. Separated from the Tauri
@@ -47,7 +38,7 @@ fn fetch_text(url: &str, cap: usize) -> Result<String, String> {
 /// HTTP client with connect/read timeouts so a slow host cannot hang the task.
 #[tauri::command]
 pub async fn download_text(url: String, max_bytes: Option<usize>) -> Result<String, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let cap = max_bytes.unwrap_or(8 * 1024 * 1024);
         fetch_text(&url, cap)
     })
@@ -144,7 +135,7 @@ pub async fn clean_text<R: Runtime>(
     raw: String,
     opts: CleanOpts,
 ) -> Result<CleanResult, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let mut th = Throttle::wall();
         clean_text_with(&raw, opts, &mut th, &mut |bytes, documents| {
             let _ = app.emit(
@@ -349,12 +340,6 @@ mod tests {
             assert!(e.contains("not allowed"), "{e}");
         }
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn http_agent_builds() {
-        // Building the timeout-bounded agent must not panic.
-        let _ = http_agent();
     }
 
     #[test]

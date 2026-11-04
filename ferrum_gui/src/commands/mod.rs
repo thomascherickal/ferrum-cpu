@@ -2,7 +2,7 @@
 //!
 //! Conventions:
 //! - Every command returns `Result<T, CmdError>` (`{ code, message, hint }`, see
-//!   [`crate::error`]) so failures surface as a clear, human-readable message with
+//!   [`crate::infra::error`]) so failures surface as a clear, human-readable message with
 //!   a hint in the GUI; the inner functions keep returning `String`.
 //! - Heavy/blocking work runs inside `spawn_blocking` so the UI thread stays
 //!   responsive and events can stream while the command runs.

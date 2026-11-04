@@ -14,7 +14,7 @@
 //! the measured 1/2/4/8-thread points and assumed flat beyond 8 threads
 //! (unmeasured). GPUs are **never** used by Ferrum and never enter a formula.
 
-use crate::hardware::HardwareInfo;
+use crate::sizing::hardware::HardwareInfo;
 use ferrum_core::TransformerNet;
 use serde::{Deserialize, Serialize};
 

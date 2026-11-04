@@ -1,9 +1,9 @@
 //! The Fine-tune tab: AdamW-fine-tune an imported GGUF into a `.flck` checkpoint.
 
 use super::guard::{available_memory_bytes, gguf_resident_bytes, ram_guard};
-use crate::error::CmdError;
-use crate::jobs::{Job, JobGuard};
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::{Job, JobGuard};
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{Adam, FinetuneRun, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng};
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ pub async fn finetune_gguf<R: Runtime>(
     params: FinetuneParams,
 ) -> Result<FinetuneResult, CmdError> {
     let job = state.jobs.start(Job::Finetune)?;
-    crate::error::blocking(move || finetune_inner(app, params, job)).await
+    crate::infra::error::blocking(move || finetune_inner(app, params, job)).await
 }
 
 /// Write `bytes` to `path` through `<path>.tmp` and a rename, so a failure never leaves a

@@ -1,5 +1,5 @@
 use super::*;
-use crate::hardware::GpuInfo;
+use crate::sizing::hardware::GpuInfo;
 
 fn hw(threads: usize, avail_mb: Option<u64>) -> HardwareInfo {
     HardwareInfo {

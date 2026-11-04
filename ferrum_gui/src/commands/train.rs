@@ -1,8 +1,8 @@
 //! The Train tab: train a transformer SLM in-process with streamed progress.
 
-use crate::error::CmdError;
-use crate::jobs::{Job, JobGuard};
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::{Job, JobGuard};
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{validate_for_training, GenerativeSLM, Rng, TransformerConfig, ValidationConfig};
 use serde::{Deserialize, Serialize};
@@ -119,7 +119,7 @@ pub async fn train_slm<R: Runtime>(
     params: TrainParams,
 ) -> Result<TrainResult, CmdError> {
     let job = state.jobs.start(Job::Train)?;
-    crate::error::blocking(move || train_inner(app, params, job)).await
+    crate::infra::error::blocking(move || train_inner(app, params, job)).await
 }
 
 /// Open the Train tab's corpus as a token file with its tokenizer (the CLI's checks: the tokenizer

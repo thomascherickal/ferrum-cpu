@@ -4,7 +4,7 @@
 //! Design specs (archived in ../Ferrum-Junk/docs-archive/docs/superpowers/specs/):
 //! 2026-06-23-capable-module-design.md and 2026-07-02-capable-ranges-design.md.
 
-use crate::error::CmdError;
+use crate::infra::error::CmdError;
 use crate::AppState;
 use serde::Serialize;
 use std::hint::black_box;
@@ -251,7 +251,7 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
 
     // Run the blocking benchmark off the async runtime thread.
     let (bw, gemm_single) =
-        crate::error::blocking_ok(|| (measure_mem_bandwidth(), measure_gemm_gflops()))
+        crate::infra::error::blocking_ok(|| (measure_mem_bandwidth(), measure_gemm_gflops()))
             .await
             .map_err(|e| format!("benchmark task error: {e}"))?;
 
@@ -272,16 +272,17 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
 
 /// Keep a measurement for the time estimates, if `trusted` (an optimized build measured it).
 fn record_bench(
-    slot: &std::sync::Mutex<Option<crate::estimate::Throughput>>,
+    slot: &std::sync::Mutex<Option<crate::sizing::estimate::Throughput>>,
     gemm_single: f64,
     bw_bytes_per_s: f64,
     trusted: bool,
 ) {
     if trusted {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(crate::estimate::Throughput {
-            gemm_single_gflops: gemm_single,
-            mem_bw_gbps: bw_bytes_per_s / 1e9,
-        });
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(crate::sizing::estimate::Throughput {
+                gemm_single_gflops: gemm_single,
+                mem_bw_gbps: bw_bytes_per_s / 1e9,
+            });
     }
 }
 

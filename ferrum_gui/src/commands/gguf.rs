@@ -3,9 +3,9 @@
 use super::generate::{one_f32, parse_stops, sampling_from};
 use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant, ram_guard};
 use super::time_seed;
-use crate::error::CmdError;
-use crate::jobs::{Job, JobGuard};
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::{Job, JobGuard};
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::llm_stop::StopMatcher;
 use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, LlamaTrainer, QKind, Rng};
@@ -98,7 +98,7 @@ pub struct GgufSummary {
 /// Inspect a GGUF file without loading its weights (streamed header parse).
 #[tauri::command]
 pub async fn gguf_info(path: String) -> Result<GgufSummary, CmdError> {
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         checked_path("GGUF path", &path, true)?;
         let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let g = Gguf::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
@@ -206,7 +206,7 @@ pub async fn run_gguf(
     params: GgufRunParams,
 ) -> Result<GgufRunResult, CmdError> {
     let job = state.jobs.start(Job::Run)?;
-    crate::error::blocking(move || gguf_run_inner(params, job)).await
+    crate::infra::error::blocking(move || gguf_run_inner(params, job)).await
 }
 
 /// The error of a run that was cancelled before it produced anything.
@@ -442,7 +442,7 @@ mod tests {
             }))
             .unwrap()
         };
-        let jobs = crate::jobs::Jobs::default();
+        let jobs = crate::infra::jobs::Jobs::default();
         let job = jobs.start(Job::Run).unwrap();
         assert!(jobs.cancel(Job::Run));
         assert_eq!(gguf_run_inner(p(6), job).err().unwrap(), CANCELLED_EARLY);

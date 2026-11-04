@@ -696,10 +696,10 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     use crate::commands::{
         CleanOpts, ExportParams, FinetuneParams, GenParams, GgufRunParams, TrainParams,
     };
+    use crate::data::prepare::PrepareParams;
+    use crate::data::tokenize::TokenizeParams;
     use crate::evaluate::EvalParams;
-    use crate::prepare::PrepareParams;
-    use crate::runtime_export::{RuntimeParams, Target};
-    use crate::tokenize::TokenizeParams;
+    use crate::serving::runtime_export::{RuntimeParams, Target};
     let fixture: Value =
         serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
     macro_rules! parses {
@@ -738,7 +738,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         (2, 7, 50, 20_000, true, true)
     );
     assert_eq!(p.doc_sep, ferrum_core::DOC_SEP);
-    let sv = parses!("serve_start", crate::serve::ServeParams);
+    let sv = parses!("serve_start", crate::serving::serve::ServeParams);
     assert_eq!(
         (sv.host.as_str(), sv.port, sv.max_batch, sv.max_tokens),
         ("127.0.0.1", 0, 64, 4096)
@@ -773,7 +773,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
 
 #[test]
 fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
-    use crate::jobs::Job;
+    use crate::infra::jobs::Job;
     use tauri::Manager;
     let (app, w) = app();
     let progress = collect(&app, "prepare-progress");
@@ -888,7 +888,7 @@ fn prepare_dataset_runs_through_ipc_streams_progress_and_shares_one_job_slot() {
 
 #[test]
 fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
-    use crate::jobs::Job;
+    use crate::infra::jobs::Job;
     use std::os::unix::fs::PermissionsExt;
     use tauri::Manager;
     let (app, w) = app();
@@ -1004,7 +1004,7 @@ fn runtime_export_runs_through_ipc_with_fake_tools_and_shares_one_job_slot() {
 /// as its corpus, and the pre-flight and estimates describing it.
 #[test]
 fn training_from_a_token_file_equals_training_from_text_and_tokenizing_runs_through_ipc() {
-    use crate::jobs::Job;
+    use crate::infra::jobs::Job;
     use tauri::Manager;
     let (app, w) = app();
     let progress = collect(&app, "tokenize-progress");
@@ -1227,7 +1227,7 @@ fn the_command_matrix_guard_finds_a_missing_test() {
 fn download_progress_events_carry_the_id_bytes_and_total() {
     let (app, _w) = app();
     let got = collect(&app, "download-progress");
-    let mut p = crate::datasets::Progress::events(app.handle().clone(), "o/n/f.txt".into());
+    let mut p = crate::data::datasets::Progress::events(app.handle().clone(), "o/n/f.txt".into());
     p.update(5, None);
     p.finish(9);
     // Mock-runtime events are delivered on the listener thread; wait for both.

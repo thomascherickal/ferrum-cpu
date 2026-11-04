@@ -10,9 +10,9 @@
 use crate::commands::{
     available_memory_bytes, file_name, gguf_resident_bytes, parse_quant, ram_guard,
 };
-use crate::error::CmdError;
-use crate::jobs::Job;
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::Job;
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{apply_checkpoint_weights, GenerativeSLM, Gguf, GgufTokenizer};
 use serde::{Deserialize, Serialize};
@@ -297,7 +297,7 @@ pub async fn evaluate_slm(
     // One pass of the engine's scorer, which has no stop hook: it can be refused while another
     // evaluation runs, but not cancelled.
     let job = state.jobs.start(Job::Evaluate)?;
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let _job = job;
         evaluate_now(&params)
     })

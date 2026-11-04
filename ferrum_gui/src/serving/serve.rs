@@ -11,9 +11,9 @@
 //! The bearer token lives only in this process's memory for the life of the server: it is not in
 //! any event, log line or status, and the page never stores it.
 
-use crate::error::{blocking, CmdError};
-use crate::jobs::Job;
-use crate::paths::checked_path;
+use crate::infra::error::{blocking, CmdError};
+use crate::infra::jobs::Job;
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use slm_server::cli::{is_loopback, Config};

@@ -1,7 +1,7 @@
 //! Hardware facts for the GUI: CPU, RAM and (best effort) GPUs.
 //!
 //! The Tauri command [`hardware_info`] feeds the "Your hardware" line and the
-//! time/RAM estimates in [`crate::estimate`]. CPU and RAM come from `sysinfo`
+//! time/RAM estimates in [`crate::sizing::estimate`]. CPU and RAM come from `sysinfo`
 //! (already a dependency, and cross-platform), so there is nothing to
 //! cfg-gate: where a value is unavailable it is `None`.
 //!
@@ -13,7 +13,7 @@
 //!
 //! Every parser is a pure function over text so it is tested with fixtures.
 
-use crate::error::CmdError;
+use crate::infra::error::CmdError;
 use serde::Serialize;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -269,7 +269,7 @@ pub fn detect() -> HardwareInfo {
 /// Tauri command: the machine's hardware (see [`HardwareInfo`]).
 #[tauri::command]
 pub async fn hardware_info() -> Result<HardwareInfo, CmdError> {
-    crate::error::blocking_ok(detect).await
+    crate::infra::error::blocking_ok(detect).await
 }
 
 #[cfg(test)]

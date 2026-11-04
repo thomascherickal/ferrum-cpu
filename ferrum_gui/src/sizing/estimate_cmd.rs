@@ -1,10 +1,12 @@
 //! The `estimate_job` command: resolves file sizes and model facts, reads the
-//! live hardware, and calls the pure [`crate::estimate::estimate`].
+//! live hardware, and calls the pure [`crate::sizing::estimate::estimate`].
 
-use crate::error::CmdError;
-use crate::estimate::{estimate, Estimate, GgufFacts, JobKind, JobParams, SlmFacts, Throughput};
-use crate::hardware;
-use crate::paths::{checked_input, checked_path};
+use crate::infra::error::CmdError;
+use crate::infra::paths::{checked_input, checked_path};
+use crate::sizing::estimate::{
+    estimate, Estimate, GgufFacts, JobKind, JobParams, SlmFacts, Throughput,
+};
+use crate::sizing::hardware;
 use crate::AppState;
 use ferrum_core::Gguf;
 use tauri::State;
@@ -149,7 +151,7 @@ pub async fn estimate_job(
     params: JobParams,
 ) -> Result<Estimate, CmdError> {
     let bench = *state.bench.lock().unwrap_or_else(|e| e.into_inner());
-    crate::error::blocking_ok(move || estimate_now(kind, params, bench)).await
+    crate::infra::error::blocking_ok(move || estimate_now(kind, params, bench)).await
 }
 
 #[cfg(test)]

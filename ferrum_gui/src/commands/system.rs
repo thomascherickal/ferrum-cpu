@@ -1,6 +1,6 @@
 //! The system monitor: CPU and memory load, polled by the frontend.
 
-use crate::error::CmdError;
+use crate::infra::error::CmdError;
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;

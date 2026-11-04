@@ -2,9 +2,9 @@
 //! back out as a runnable GGUF at a chosen quantisation.
 
 use super::guard::{available_memory_bytes, gguf_resident_bytes, ram_guard};
-use crate::error::CmdError;
-use crate::jobs::Job;
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::Job;
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use ferrum_core::{Gguf, LlamaTrainer};
 use serde::{Deserialize, Serialize};
@@ -173,7 +173,7 @@ pub async fn export_gguf<R: Runtime>(
     params: ExportParams,
 ) -> Result<ExportResult, CmdError> {
     let job = state.jobs.start(Job::Export)?;
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         ferrum_core::set_verbose(params.verbose);
         let emit = |m: &str| {
             let _ = app.emit("export-progress", m.to_string());

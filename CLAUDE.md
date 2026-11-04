@@ -115,6 +115,13 @@ skills. When the user states a new rule, add it here.
     every merge, push, checkout, diff base and CI/release reference; do not
     recreate or mention `master` as the integration branch in new work.
 
+19. **Every added file gets unit tests.** When a source file is added (Rust
+    module, JS module, script), the same commit adds unit tests that cover its
+    functionality, in the file's own `#[cfg(test)]` module or `tests.rs`, or in
+    the matching `*.test.js`. This is per file, on top of rule 13's tiers; a
+    file with nothing testable (a pure re-export `mod.rs`) says so in the commit
+    message.
+
 ## Hard constraints
 
 Do not break these; they are the product's selling points.
@@ -189,7 +196,7 @@ Do not break these; they are the product's selling points.
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) and `test_cli_matrix.rs` (every subcommand has a binary test, every server route an HTTP e2e test) |
 | `docs/` | `ferrum-capabilities.md` (capability estimates by RAM tier and processor), `gap-report.md` (functionality gaps and the front-end parity matrix), `resume-cancel-and-prepare.md` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `serving-imported-models.md` (tutorial: serving an imported Llama/Qwen GGUF with `ferrum-serve`), `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
-| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/` is grouped by concern: `commands/` (the Tauri commands per tab), `sizing/` (hardware, estimates, pre-flight, Capable), `data/` (datasets, prepare, tokenize), `serving/` (serve, runtime_export), `infra/` (error, jobs, paths, progress); `lib.rs` re-exports keep the flat `crate::x` paths; `src/serving/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
+| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/` is grouped by concern: `commands/` (the Tauri commands per tab), `sizing/` (hardware, estimates, pre-flight, Capable), `data/` (datasets, prepare, tokenize), `serving/` (serve, runtime_export), `infra/` (error, http, jobs, paths, progress); dependencies point `commands` -> `sizing`/`data`/`serving` -> `infra`, and code names the group (`crate::infra::error`); `lib.rs` re-exports only the public `estimate`, `estimate_cmd` and `hardware` as `ferrum_gui_lib::x`; `src/serving/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
 This repo's directory is `ferrum-cpu` inside the workspace folder `ferrum`
 (`/home/thomas/Projects/ferrum/`; the GitHub repo is `ferrum-cpu`).

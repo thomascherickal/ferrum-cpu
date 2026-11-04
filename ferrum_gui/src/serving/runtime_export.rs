@@ -8,9 +8,9 @@
 //! [`preview_runtime_export`] only reads the model header and looks the tool up, and the
 //! "write the Modelfile only" mode starts nothing at all.
 
-use crate::error::CmdError;
-use crate::jobs::Job;
-use crate::paths::checked_path;
+use crate::infra::error::CmdError;
+use crate::infra::jobs::Job;
+use crate::infra::paths::checked_path;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use slm_cli::runtime_export as rx;
@@ -189,7 +189,7 @@ pub(crate) fn do_export(
 /// Show the Modelfile and the command(s) an export would use. Starts nothing.
 #[tauri::command]
 pub async fn preview_runtime_export(params: RuntimeParams) -> Result<RuntimeResult, CmdError> {
-    crate::error::blocking(move || do_preview(&params)).await
+    crate::infra::error::blocking(move || do_preview(&params)).await
 }
 
 /// Run `export-ollama` / `export-lmstudio` (or write the Modelfile only). One at a time;
@@ -201,7 +201,7 @@ pub async fn export_to_runtime(
     params: RuntimeParams,
 ) -> Result<RuntimeResult, CmdError> {
     let job = state.jobs.start(Job::RuntimeExport)?;
-    crate::error::blocking(move || do_export(&params, &|| job.cancelled())).await
+    crate::infra::error::blocking(move || do_export(&params, &|| job.cancelled())).await
 }
 
 #[cfg(test)]

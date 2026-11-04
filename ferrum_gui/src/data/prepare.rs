@@ -4,9 +4,9 @@
 //! manifest are byte-identical to the CLI's. The manifest `args` are the
 //! equivalent CLI flags, so a GUI run can be repeated on the command line.
 
-use crate::error::CmdError;
-use crate::jobs::Job;
-use crate::paths::{checked_dir, checked_input};
+use crate::infra::error::CmdError;
+use crate::infra::jobs::Job;
+use crate::infra::paths::{checked_dir, checked_input};
 use crate::AppState;
 use ferrum_core::{StopCondition, DOC_SEP};
 use serde::{Deserialize, Serialize};
@@ -221,7 +221,7 @@ pub async fn prepare_dataset<R: Runtime>(
     params: PrepareParams,
 ) -> Result<PrepareResult, CmdError> {
     let job = state.jobs.start(Job::Prepare)?;
-    crate::error::blocking(move || {
+    crate::infra::error::blocking(move || {
         let mut emit = |p: PrepareProgress| {
             let _ = app.emit(
                 "prepare-progress",

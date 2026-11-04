@@ -6,7 +6,7 @@
 //! panic) and carries the [`StopCondition`] that the engine polls once per
 //! optimizer step. `cancel_job` sets the flag behind it.
 
-use crate::error::CmdError;
+use crate::infra::error::CmdError;
 use ferrum_core::StopCondition;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
