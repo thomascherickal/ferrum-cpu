@@ -2,16 +2,18 @@
 // src/lib.rs, every registered command is called by the UI, and every command
 // has a #[tauri::command] definition. A typo in either side fails here instead
 // of at runtime in a window nobody can click-test.
-// Run with: node ui/commands.test.js
+// Run with: node ui/tests/commands.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const ui = __dirname;
+const ui = path.join(__dirname, "..");
 const src = path.join(ui, "..", "src");
 const used = new Set();
-for (const f of fs.readdirSync(ui).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js") && !f.startsWith("test"))) {
+const sources = ["core", "tabs"].flatMap((d) => fs.readdirSync(path.join(ui, d)).filter((f) => f.endsWith(".js")).map((f) => `${d}/${f}`));
+assert.ok(sources.length >= 27, `only ${sources.length} ui scripts found`);
+for (const f of sources) {
   for (const m of fs.readFileSync(path.join(ui, f), "utf8").matchAll(/\binvoke\(\s*"([a-z_]+)"/g)) used.add(m[1]);
 }
 

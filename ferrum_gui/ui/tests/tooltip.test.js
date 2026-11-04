@@ -1,9 +1,9 @@
-// Node test for tooltip.js. Run with: node ui/tooltip.test.js
+// Node test for tooltip.js. Run with: node ui/tests/tooltip.test.js
 "use strict";
 const assert = require("node:assert");
-const { placeTooltip, contentFromHelp, plainText, createTooltips, HOVER_MS } = require("./tooltip.js");
+const { placeTooltip, contentFromHelp, plainText, createTooltips, HOVER_MS } = require("../core/tooltip.js");
 const { Document } = require("./testdom.js");
-const { HELP } = require("./help.js");
+const { HELP } = require("../core/help.js");
 
 const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
 const VP = { width: 1000, height: 700 };
@@ -213,7 +213,7 @@ function setup() {
 // The stylesheet keeps the bubble out of the layout (fixed) and above the page, which is what
 // lets it sit inside a dialog and still be placed by viewport coordinates.
 {
-  const css = require("node:fs").readFileSync(require("node:path").join(__dirname, "styles.css"), "utf8");
+  const css = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "styles.css"), "utf8");
   const rule = css.match(/\n\.tip \{([^}]*)\}/)[1];
   assert.ok(/position:\s*fixed/.test(rule) && /z-index:\s*1000/.test(rule), rule);
   assert.ok(!/(^|[;\s])(transform|filter|perspective)\s*:/.test(rule), "a transform would make it relative to its parent");
@@ -221,7 +221,7 @@ function setup() {
 
 // data-tip content: one plain section, no title; the bubble and the description skip the title.
 {
-  const { MIN_WORDS, wordCount, contentFromTip } = require("./tooltip.js");
+  const { MIN_WORDS, wordCount, contentFromTip } = require("../core/tooltip.js");
   assert.strictEqual(MIN_WORDS, 30);
   assert.strictEqual(wordCount("one  two\nthree\t four "), 4);
   assert.strictEqual(wordCount(null), 0);

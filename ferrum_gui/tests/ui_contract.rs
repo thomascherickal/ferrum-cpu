@@ -1,5 +1,5 @@
-//! The JavaScript side builds `estimate_job` arguments (ui/live.js); this test
-//! reads the file the Node test pins them to (ui/live_params.fixture.json) and
+//! The JavaScript side builds `estimate_job` arguments (ui/core/live.js); this test
+//! reads the file the Node test pins them to (ui/tests/live_params.fixture.json) and
 //! checks them against the Rust types. serde silently ignores unknown fields,
 //! so a misspelt key in the UI would otherwise just read as 0.
 
@@ -7,7 +7,7 @@ use ferrum_gui_lib::estimate::{JobKind, JobParams};
 use ferrum_gui_lib::estimate_cmd::estimate_now;
 use serde_json::Value;
 
-const FIXTURE: &str = include_str!("../ui/live_params.fixture.json");
+const FIXTURE: &str = include_str!("../ui/tests/live_params.fixture.json");
 
 #[test]
 fn every_key_the_ui_sends_is_a_real_job_param() {

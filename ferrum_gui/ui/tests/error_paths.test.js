@@ -1,10 +1,10 @@
 // Error and edge paths of the tab scripts that app_flows.test.js does not reach: a failing
 // backend call per tab, the Export tab's Inspect button and size gate, the non-streaming Generate
-// result, fmtParams below 1000, and testdom's attribute selectors. Run: node ui/error_paths.test.js
+// result, fmtParams below 1000, and testdom's attribute selectors. Run: node ui/tests/error_paths.test.js
 "use strict";
 const assert = require("node:assert");
 const { loadApp, settle } = require("./testapp.js");
-const { fmtParams } = require("./common.js");
+const { fmtParams } = require("../core/common.js");
 const { documentFromHtml } = require("./testdom.js");
 
 const HW = { cpuModel: "T", ferrumThreads: 4, logicalCores: 4, physicalCores: 4, ramTotalMb: 8000, ramAvailableMb: 4000, gpus: [] };

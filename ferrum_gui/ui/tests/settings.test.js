@@ -1,15 +1,15 @@
 // Tests of settings.js (remembered form values, folders and the Evaluate table) and of how the
 // page uses it. Storage is a stand-in object; a real webview's localStorage was NOT exercised.
-// Run with: node ui/settings.test.js
+// Run with: node ui/tests/settings.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const S = require("./settings.js");
+const S = require("../core/settings.js");
 const { documentFromHtml } = require("./testdom.js");
 const { loadApp, settle } = require("./testapp.js");
 
-const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const memory = (initial = {}) => {
   const m = { data: { ...initial }, sets: 0 };
   m.getItem = (k) => (k in m.data ? m.data[k] : null);

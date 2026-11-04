@@ -1,4 +1,4 @@
-// Node test for the help data. Run with: node ui/help.test.js
+// Node test for the help data. Run with: node ui/tests/help.test.js
 // Guards completeness (every field and button in index.html has a long enough
 // help entry), safety (no markup in the data) and that the job kinds agree with
 // the Rust enum.
@@ -6,9 +6,9 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { HELP, KINDS, helpFor, isButton } = require("./help.js");
+const { HELP, KINDS, helpFor, isButton } = require("../core/help.js");
 
-const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 // Every input / textarea / select / button of the page, with its id.
 const elements = [];
@@ -57,7 +57,7 @@ for (const key of Object.keys(HELP)) {
 })(HELP, "HELP");
 
 // Job kinds agree with the Rust enum (snake_case of the variant names).
-const rs = fs.readFileSync(path.join(__dirname, "..", "src", "sizing", "estimate.rs"), "utf8");
+const rs = fs.readFileSync(path.join(__dirname, "..", "..", "src", "sizing", "estimate.rs"), "utf8");
 const body = rs.match(/pub enum JobKind \{([\s\S]*?)\n\}/)[1];
 const variants = [...body.matchAll(/^\s*([A-Z]\w*),/gm)].map((m) => m[1].replace(/(?<!^)([A-Z])/g, "_$1").toLowerCase());
 assert.deepStrictEqual([...variants].sort(), [...KINDS].sort(), "KINDS differs from JobKind in src/sizing/estimate.rs");

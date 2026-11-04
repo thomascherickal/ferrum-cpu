@@ -3,15 +3,15 @@
 // whitespace-separated pieces, counted by tooltip.js `wordCount`). A tip comes from one of two
 // places: the help.js entry of a control (input, select, textarea, button; its section texts,
 // not the title or the "What it does:" labels) or a `data-tip` attribute on any element.
-// Run with: node ui/tooltips_guard.test.js
+// Run with: node ui/tests/tooltips_guard.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { parse, all, textOf } = require("./testhtml.js");
-const { wordCount, contentFromHelp, MIN_WORDS } = require("./tooltip.js");
-const { helpFor } = require("./help.js");
-const { ERR_TIPS } = require("./common.js");
+const { wordCount, contentFromHelp, MIN_WORDS } = require("../core/tooltip.js");
+const { helpFor } = require("../core/help.js");
+const { ERR_TIPS } = require("../core/common.js");
 
 const CONTROLS = new Set(["input", "select", "textarea", "button"]);
 // Elements that always show something, even before they have text.
@@ -72,7 +72,7 @@ function missingTips(html) {
 }
 
 // ── The real page ──
-const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const missing = missingTips(html);
 assert.deepStrictEqual(missing, [], `${missing.length} element(s) without a ${MIN_WORDS}-word tool-tip:\n` + missing.map((m) => `  ${m.what} (${m.words} words)`).join("\n"));
 

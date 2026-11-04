@@ -88,7 +88,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
       - name: JavaScript syntax check
         run: |
-          for f in ferrum_gui/ui/*.js; do node --check "$f"; done
+          for f in $(find ferrum_gui/ui -name '*.js'); do node --check "$f" || exit 1; done
 
   msrv:
     name: MSRV (Rust 1.87)
@@ -275,7 +275,7 @@ jobs:
         working-directory: ferrum_gui
         run: cargo test --locked
       - name: Run UI tests (Node, no dependencies)
-        run: for t in ferrum_gui/ui/*.test.js; do node "$t" || exit 1; done
+        run: for t in ferrum_gui/ui/tests/*.test.js; do node "$t" || exit 1; done
       # CI5: does the app start at all? Build it (the cache above already holds the dependencies),
       # run it under a virtual X display for 8 s, require that its window opens and that the
       # process is still running; then stop it. This starts the real webview, but nothing clicks

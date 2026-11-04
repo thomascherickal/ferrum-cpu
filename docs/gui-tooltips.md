@@ -12,7 +12,7 @@ one, and the test that keeps the rule.
 ## 1. Using them
 
 - **Mouse.** Rest the pointer on an element. The tip appears after 350 ms
-  (`HOVER_MS` in `ferrum_gui/ui/tooltip.js`) and goes when the pointer leaves.
+  (`HOVER_MS` in `ferrum_gui/ui/core/tooltip.js`) and goes when the pointer leaves.
   Hovering the text label of a field shows the field's tip.
 - **Keyboard.** Tab to a control and its tip shows at once. It hides on blur.
   The two logs (`#termOut`, `#svLog`) can also be focused, so they show their tip
@@ -45,7 +45,7 @@ inline styles, and positioning uses CSSOM (`element.style.left`).
 There are two sources, and an element uses exactly one.
 
 1. **Controls** (`input`, `select`, `textarea`, `button` with an id) take their
-   text from their entry in `ui/help.js`. A field has *What it is / How it works /
+   text from their entry in `ui/core/help.js`. A field has *What it is / How it works /
    New to AI?*. A button has *What it does / How it works*, plus the live time
    and RAM estimate that `live.js` adds. These entries existed before this
    feature, and 31 of them (the 12 tabs and 19 buttons) were extended to reach
@@ -71,7 +71,7 @@ To give a new element a tip, follow these steps.
 
 1. Write what the element does or shows: units, defaults and ranges, what a
    click does and any side effects, and when it is hidden or disabled. Take
-   every fact from the code (the tab module in `ui/*_tab.js` and the Rust
+   every fact from the code (the tab module in `ui/tabs/*_tab.js` and the Rust
    command in `ferrum_gui/src/`). Do not take facts from memory. Do not pad the
    text by repeating the label.
 2. Make it at least 30 words. The count is whitespace-separated pieces, as
@@ -89,13 +89,13 @@ To give a new element a tip, follow these steps.
 
 ```bash
 cd ferrum_gui
-node ui/tooltips_guard.test.js
+node ui/tests/tooltips_guard.test.js
 ```
 
 ## 4. The guard test
 
-`ui/tooltips_guard.test.js` (`every_element_has_a_30_word_tooltip`) parses
-`index.html` with the dependency-free reader in `ui/testhtml.js`. It fails with
+`ui/tests/tooltips_guard.test.js` (`every_element_has_a_30_word_tooltip`) parses
+`index.html` with the dependency-free reader in `ui/tests/testhtml.js`. It fails with
 a list of every element that needs a tip and has fewer than 30 words. An
 element needs its own tip when it is a control, an `img`, `canvas`, `pre`,
 `table`, heading, `legend` or `th`, or has an id, a role, an `aria-label` or
@@ -132,7 +132,7 @@ Before the tips were written, the guard listed 143 offenders on the page:
 
 ## 5. Tests that cover the component
 
-- `ui/tooltip.test.js` covers:
+- `ui/tests/tooltip.test.js` covers:
   - placement, as a pure function;
   - hover delay with a fake timer;
   - focus showing the tip at once;
@@ -142,7 +142,7 @@ Before the tips were written, the guard listed 143 offenders on the page:
   - dialogs;
   - `wordCount`, `contentFromTip` (with and without live text) and the
     title-less bubble.
-- `ui/app_flows.test.js` runs the real `app.js` on the real page (stub DOM). It
+- `ui/tests/app_flows.test.js` runs the real `app.js` on the real page (stub DOM). It
   checks four flows:
   - hovering a tab shows its help tip;
   - hovering a heading shows its `data-tip` as written, with the same text for

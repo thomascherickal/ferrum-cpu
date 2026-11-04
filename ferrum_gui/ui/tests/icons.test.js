@@ -2,13 +2,13 @@
 // their stated size, icon.ico is a container of PNG images and icon.icns a chain of typed chunks
 // whose lengths add up. Windows and macOS bundles fail without the last two. Regenerate every file
 // from the logo with `cd ferrum_gui && cargo tauri icon ../docs/assets/logo.png -o /tmp/icons` and copy
-// the ones listed in tauri.conf.json. Run with: node ui/icons.test.js
+// the ones listed in tauri.conf.json. Run with: node ui/tests/icons.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const root = path.join(__dirname, "..");
+const root = path.join(__dirname, "..", "..");
 const conf = JSON.parse(fs.readFileSync(path.join(root, "tauri.conf.json"), "utf8"));
 const listed = conf.bundle.icon;
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

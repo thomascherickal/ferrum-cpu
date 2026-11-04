@@ -1,6 +1,6 @@
 // Smoke test: the real app.js loads against the real index.html, wires the
 // tooltips and live estimates, and degrades cleanly without Tauri.
-// Run with: node ui/app_smoke.test.js
+// Run with: node ui/tests/app_smoke.test.js
 "use strict";
 const assert = require("node:assert");
 const { loadApp, settle } = require("./testapp.js");

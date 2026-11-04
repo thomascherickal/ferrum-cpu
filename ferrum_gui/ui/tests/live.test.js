@@ -1,17 +1,17 @@
 // Functional test of the tooltip + estimate wiring (live.js) against the REAL
 // index.html structure (parsed into a stub DOM) and a fake Tauri backend.
-// Run with: node ui/live.test.js
+// Run with: node ui/tests/live.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { documentFromHtml } = require("./testdom.js");
-const help = require("./help.js");
-const tooltip = require("./tooltip.js");
-const view = require("./estimate_view.js");
-const Live = require("./live.js");
+const help = require("../core/help.js");
+const tooltip = require("../core/tooltip.js");
+const view = require("../core/estimate_view.js");
+const Live = require("../core/live.js");
 
-const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const settle = () => new Promise((r) => setImmediate(r));
 
 const HW = {
@@ -76,7 +76,7 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     }
     const file = path.join(__dirname, "live_params.fixture.json");
     if (process.env.UPDATE_FIXTURE) fs.writeFileSync(file, JSON.stringify(current, null, 2) + "\n");
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")), current, "live_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/live.test.js");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")), current, "live_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/tests/live.test.js");
   }
 
   // 1. Startup: every control with a help entry gets a tooltip description; hardware line is filled.

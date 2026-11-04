@@ -5,7 +5,7 @@
 //! what to try next). Inner functions keep returning plain `String` errors; the command wrapper
 //! turns one into a `CmdError` with `?` / [`blocking`], and the code is derived from the
 //! message by [`classify`]. The UI also accepts a plain string (a Tauri-level error such as a
-//! malformed argument, or a page running outside Tauri), see `ui/errors.js`.
+//! malformed argument, or a page running outside Tauri), see `ui/core/errors.js`.
 
 use serde::Serialize;
 

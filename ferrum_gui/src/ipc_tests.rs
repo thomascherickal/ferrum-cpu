@@ -688,7 +688,7 @@ fn imported_gguf_inspect_run_finetune_export_through_ipc() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// The arguments app.js really sends (captured by ui/app_flows.test.js) must
+/// The arguments app.js really sends (captured by ui/tests/app_flows.test.js) must
 /// deserialize into the Rust parameter types; a renamed or mistyped required
 /// field fails here rather than in a window.
 #[test]
@@ -701,7 +701,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
     use crate::evaluate::EvalParams;
     use crate::serving::runtime_export::{RuntimeParams, Target};
     let fixture: Value =
-        serde_json::from_str(include_str!("../ui/command_params.fixture.json")).unwrap();
+        serde_json::from_str(include_str!("../ui/tests/command_params.fixture.json")).unwrap();
     macro_rules! parses {
         ($key:literal, $ty:ty) => {
             serde_json::from_value::<$ty>(fixture[$key].clone())

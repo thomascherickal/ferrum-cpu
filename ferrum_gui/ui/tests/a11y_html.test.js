@@ -1,14 +1,14 @@
 // Static accessibility checks over index.html: every form control has an accessible name, every
 // button has text or an aria-label, the tab bar and dialogs carry their ARIA roles, status and
 // error elements are live regions, and ids are unique.
-// Run with: node ui/a11y_html.test.js
+// Run with: node ui/tests/a11y_html.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { parse, all, textOf, ancestor } = require("./testhtml.js");
 
-const root = parse(fs.readFileSync(path.join(__dirname, "index.html"), "utf8"));
+const root = parse(fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8"));
 const byId = new Map();
 all(root, (n) => n.attrs.id).forEach((n) => {
   assert.ok(!byId.has(n.attrs.id), "duplicate id " + n.attrs.id);

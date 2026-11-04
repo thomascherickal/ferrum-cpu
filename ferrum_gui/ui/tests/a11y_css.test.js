@@ -1,13 +1,13 @@
 // Accessibility checks over styles.css: WCAG contrast ratios of the colours the page really uses
 // (a pure function over the CSS variables), a visible focus ring, no removed outlines, reduced
 // motion, and no colour-only status marks.
-// Run with: node ui/a11y_css.test.js
+// Run with: node ui/tests/a11y_css.test.js
 "use strict";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const css = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
 // ── WCAG 2.x relative luminance and contrast ratio (pure) ──
 function luminance(hex) {

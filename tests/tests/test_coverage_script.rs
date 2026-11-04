@@ -130,15 +130,18 @@ fn js_guard_is_not_satisfied_by_a_longer_file_name() {
             ("FERRUM_JS_DIRS", "ferrum_gui/ui"),
             (
                 "FAKE_NODE",
-                "for f in *.js; do [ \"$f\" = app.js ] || echo \"i $f | 100\"; done",
+                "for f in $(find . -name '*.js'); do f=${f##*/}; [ \"$f\" = app.js ] || echo \"i $f | 100\"; done",
             ),
         ],
     );
     assert!(!o.status.success());
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
-        err.contains("not in the coverage report: ferrum_gui/ui/app.js"),
+        err.contains("not in the coverage report: ferrum_gui/ui/core/app.js"),
         "{err}"
     );
-    assert!(!err.contains("ui/testapp.js"), "{err}");
+    assert!(
+        !err.contains("report: ferrum_gui/ui/tests/testapp.js"),
+        "{err}"
+    );
 }

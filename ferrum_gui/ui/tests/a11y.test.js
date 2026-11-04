@@ -2,10 +2,10 @@
 // into the real page: the tab bar's roving tabindex and keys, toasts, progress bars, the
 // connection dot and the dialogs' focus handling, all against the stub DOM. A screen reader and
 // a real focus ring were NOT exercised.
-// Run with: node ui/a11y.test.js
+// Run with: node ui/tests/a11y.test.js
 "use strict";
 const assert = require("node:assert");
-const { nextTabIndex, openDialog } = require("./a11y.js");
+const { nextTabIndex, openDialog } = require("../core/a11y.js");
 const { Document } = require("./testdom.js");
 const { loadApp, settle } = require("./testapp.js");
 

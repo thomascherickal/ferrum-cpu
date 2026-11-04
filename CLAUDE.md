@@ -122,6 +122,18 @@ skills. When the user states a new rule, add it here.
     file with nothing testable (a pure re-export `mod.rs`) says so in the commit
     message.
 
+20. **Keep the repo modular and fully tested.** Extends rules 12, 13 and 19.
+    Each file has one cohesive purpose; split a file that mixes concerns. Keep
+    coupling low: modules talk through small public interfaces, dependencies
+    point one way, no cycles, no reaching into another module's internals.
+    Follow good engineering practice (DRY, small functions, clear names,
+    errors handled not swallowed). Test at every tier that applies: unit tests
+    per file; functional tests per feature; integration tests per module and
+    across crates; a regression test with every bug fix, which fails without
+    the fix; and determinism, property, golden or end-to-end tests where the
+    behaviour calls for them. Say in the commit message which tiers a change
+    added and why any tier was skipped.
+
 ## Hard constraints
 
 Do not break these; they are the product's selling points.
@@ -196,7 +208,7 @@ Do not break these; they are the product's selling points.
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) and `test_cli_matrix.rs` (every subcommand has a binary test, every server route an HTTP e2e test) |
 | `docs/` | `ferrum-capabilities.md` (capability estimates by RAM tier and processor), `gap-report.md` (functionality gaps and the front-end parity matrix), `resume-cancel-and-prepare.md` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `serving-imported-models.md` (tutorial: serving an imported Llama/Qwen GGUF with `ferrum-serve`), `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
-| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/` is grouped by concern: `commands/` (the Tauri commands per tab), `sizing/` (hardware, estimates, pre-flight, Capable), `data/` (datasets, prepare, tokenize), `serving/` (serve, runtime_export), `infra/` (error, http, jobs, paths, progress); dependencies point `commands` -> `sizing`/`data`/`serving` -> `infra`, and code names the group (`crate::infra::error`); `lib.rs` re-exports only the public `estimate`, `estimate_cmd` and `hardware` as `ferrum_gui_lib::x`; `src/serving/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
+| `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/` is grouped by concern: `commands/` (the Tauri commands per tab), `sizing/` (hardware, estimates, pre-flight, Capable), `data/` (datasets, prepare, tokenize), `serving/` (serve, runtime_export), `infra/` (error, http, jobs, paths, progress); dependencies point `commands` -> `sizing`/`data`/`serving` -> `infra`, and code names the group (`crate::infra::error`); `lib.rs` re-exports only the public `estimate`, `estimate_cmd` and `hardware` as `ferrum_gui_lib::x`; `ui/` holds `index.html`, `styles.css`, `logo.png` and the folders `core/`, `tabs/`, `tests/` (see Commands); `src/serving/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
 This repo's directory is `ferrum-cpu` inside the workspace folder `ferrum`
 (`/home/thomas/Projects/ferrum/`; the GitHub repo is `ferrum-cpu`).
@@ -275,15 +287,15 @@ cd ferrum_gui
 cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo tauri dev                           # run the app
 cargo tauri build --bundles appimage,deb  # what .github/workflows/release.yml runs (it downloads linuxdeploy: CI only)
-for f in ui/*.js; do node --check "$f"; done && for t in ui/*.test.js; do node "$t" || exit 1; done
+for f in $(find ui -name '*.js'); do node --check "$f" || exit 1; done && for t in ui/tests/*.test.js; do node "$t" || exit 1; done
 ```
 
 After changing what `live.js` or a tab module (`*_tab.js`) sends to the backend, refresh the pinned
-arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
-`UPDATE_FIXTURE=1 node ui/app_flows.test.js`; `cargo test` then checks them against
+arguments with `UPDATE_FIXTURE=1 node ui/tests/live.test.js` and
+`UPDATE_FIXTURE=1 node ui/tests/app_flows.test.js`; `cargo test` then checks them against
 the Rust types. `cargo test` also needs no display (Tauri's mock runtime).
 
-The UI (`ui/index.html`, `app.js` plus one `*_tab.js` module per tab, `styles.css`) is static — `cargo build`
+The UI (`ui/index.html`, `ui/styles.css` and `ui/logo.png` at the top, where `frontendDist` points; `ui/core/` the shell, `app.js` and the shared scripts; `ui/tabs/` one `*_tab.js` module per tab; `ui/tests/` the Node tests, the stub-DOM helpers and both fixtures) is static — `cargo build`
 won't catch JS errors; `node --check` is the gate. Tabs are generic: a
 `<button class="tab" data-tab="X">` auto-wires to `<section class="panel" id="panel-X">`.
 

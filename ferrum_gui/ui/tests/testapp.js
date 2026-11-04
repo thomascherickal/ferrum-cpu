@@ -7,8 +7,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { documentFromHtml } = require("./testdom.js");
 
-const SCRIPTS = ["escape.js", "stream.js", "help.js", "tooltip.js", "estimate_view.js", "live.js", "a11y.js", "errors.js", "common.js", "settings.js", "shell.js", "datasets_tab.js", "prepare_tab.js", "tokenize_tab.js", "train_tab.js", "generate_tab.js", "evaluate_tab.js", "models_tab.js", "capable_tab.js", "gguf_budget.js", "gguf_tab.js", "finetune_tab.js", "runtime_tab.js", "export_tab.js", "serve_tab.js", "system_tab.js", "app.js"];
-const read = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
+const SCRIPTS = ["core/escape.js", "core/stream.js", "core/help.js", "core/tooltip.js", "core/estimate_view.js", "core/live.js", "core/a11y.js", "core/errors.js", "core/common.js", "core/settings.js", "core/shell.js", "tabs/datasets_tab.js", "tabs/prepare_tab.js", "tabs/tokenize_tab.js", "tabs/train_tab.js", "tabs/generate_tab.js", "tabs/evaluate_tab.js", "tabs/models_tab.js", "tabs/capable_tab.js", "core/gguf_budget.js", "tabs/gguf_tab.js", "tabs/finetune_tab.js", "tabs/runtime_tab.js", "tabs/export_tab.js", "tabs/serve_tab.js", "tabs/system_tab.js", "core/app.js"];
+const ui = path.join(__dirname, "..");
+const read = (f) => fs.readFileSync(path.join(ui, f), "utf8");
 
 // Canvas context that accepts any drawing call.
 const ctx2d = new Proxy({}, { get: () => () => {}, set: () => true });
@@ -56,7 +57,7 @@ function loadApp({ backend, tauri = true, events = {}, dialogs = {}, storage, na
   else if (storage) sandbox.localStorage = storage;
   sandbox.window = sandbox; // like a browser: window === the global object
   vm.createContext(sandbox);
-  for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: path.join(__dirname, f) });
+  for (const f of SCRIPTS) vm.runInContext(read(f), sandbox, { filename: path.join(ui, f) });
   return { doc, win, calls, listeners, intervals, timeouts, emit: (name, payload) => listeners[name]({ payload }), fireWindow: (t) => (winListeners[t] || []).forEach((f) => f({ type: t })) };
 }
 

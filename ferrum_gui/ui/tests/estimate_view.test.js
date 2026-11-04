@@ -1,7 +1,7 @@
-// Node test for estimate_view.js. Run with: node ui/estimate_view.test.js
+// Node test for estimate_view.js. Run with: node ui/tests/estimate_view.test.js
 "use strict";
 const assert = require("node:assert");
-const V = require("./estimate_view.js");
+const V = require("../core/estimate_view.js");
 
 // ── durations ───────────────────────────────────────────────────────────────
 const f = V.formatDuration;

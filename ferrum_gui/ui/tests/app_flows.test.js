@@ -2,7 +2,7 @@
 // a fake Tauri backend. Each test is a user flow: fill the form, click the
 // button, check the command that was sent and what the page shows.
 // What this CANNOT see (no display here): layout, the real webview, the CSP in
-// a running window. Run with: node ui/app_flows.test.js
+// a running window. Run with: node ui/tests/app_flows.test.js
 "use strict";
 const assert = require("node:assert");
 const { loadApp, settle } = require("./testapp.js");
@@ -39,7 +39,7 @@ async function start(overrides, opts = {}) {
   return { ...app, ...b, $, set, click };
 }
 
-// The exact `params` objects each flow sent; pinned to ui/command_params.fixture.json,
+// The exact `params` objects each flow sent; pinned to ui/tests/command_params.fixture.json,
 // which src/commands.rs-side tests (ipc_tests.rs) deserialize into the Rust types.
 const captured = {};
 
@@ -92,7 +92,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     const box = a.$("errEval").nextSibling;
     const copy = box.children.find((c) => c.textContent === "Copy details");
     const expand = box.children.find((c) => c.textContent === "Show full message");
-    const { ERR_TIPS } = require("./common.js");
+    const { ERR_TIPS } = require("../core/common.js");
     assert.strictEqual(descOf(copy), ERR_TIPS.copy);
     assert.strictEqual(descOf(expand), ERR_TIPS.expand);
     copy.focus();
@@ -101,7 +101,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
 
     // Without live.js (no getLive, or it answers null) the buttons still carry their data-tip.
     const { Document } = require("./testdom.js");
-    globalThis.FerrumErrors = require("./errors.js"); // common.js reads it from the global, as in the page
+    globalThis.FerrumErrors = require("../core/errors.js"); // common.js reads it from the global, as in the page
     for (const getLive of [undefined, () => null]) {
       const doc = new Document();
       const row = doc.createElement("div");
@@ -109,7 +109,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
       err.id = "e";
       row.appendChild(err);
       doc.body.appendChild(row);
-      require("./common.js").create({ $: (id) => doc.getElementById(id), doc, getLive }).setErr("e", "boom");
+      require("../core/common.js").create({ $: (id) => doc.getElementById(id), doc, getLive }).setErr("e", "boom");
       const b = row.children[1].children.find((c) => c.textContent === "Copy details");
       assert.strictEqual(b.getAttribute("data-tip"), ERR_TIPS.copy);
       assert.strictEqual(b.getAttribute("aria-describedby"), null);
@@ -1109,7 +1109,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     const sorted = Object.fromEntries(Object.keys(captured).sort().map((k) => [k, captured[k]]));
     assert.strictEqual(Object.keys(sorted).length, 12, "every flow captured its arguments");
     if (process.env.UPDATE_FIXTURE) require("node:fs").writeFileSync(file, JSON.stringify(sorted, null, 2) + "\n");
-    assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/app_flows.test.js");
+    assert.deepStrictEqual(JSON.parse(require("node:fs").readFileSync(file, "utf8")), sorted, "command_params.fixture.json is stale; run UPDATE_FIXTURE=1 node ui/tests/app_flows.test.js");
   }
 
   console.log("app_flows.test.js: all assertions passed");

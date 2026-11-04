@@ -58,11 +58,11 @@ gui() {
 js_dir() { # dir
   local dir=$1 rc=0 rep="$OUT/js.$(echo "$1" | tr / _).txt"
   (cd "$dir" && node --test --experimental-test-coverage --test-coverage-lines="$N" \
-    --test-coverage-exclude='**/*.test.js' ./*.test.js) > "$rep" 2>&1 || rc=$?
+    --test-coverage-exclude='**/*.test.js' $(find . -name '*.test.js' -not -path './pkg/*' | sort)) > "$rep" 2>&1 || rc=$?
   cat "$rep" >> "$OUT/js.txt"
   local f missing=0
-  for f in "$dir"/*.js; do
-    case "$f" in *.test.js) continue ;; esac
+  # recursive (ferrum_gui/ui has core/, tabs/, tests/); the generated wasm-bindgen pkg/ is not ours
+  for f in $(find "$dir" -name '*.js' -not -name '*.test.js' -not -path '*/pkg/*' | sort); do
     # whole-name match: "app.js" must not be satisfied by the "testapp.js" line
     grep -qE "(^|[ /])$(basename "$f" | sed 's/\./\\./g')( |\$)" "$rep" || { echo "not in the coverage report: $f" >&2; missing=1; }
   done

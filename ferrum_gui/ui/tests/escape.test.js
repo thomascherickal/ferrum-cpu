@@ -1,8 +1,8 @@
 // Node test for the HTML escaping helpers and card/row builders. Run with:
-//   node ui/escape.test.js
+//   node ui/tests/escape.test.js
 "use strict";
 const assert = require("node:assert");
-const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo, preflightView, preflightWhy } = require("./escape.js");
+const { esc, card, catalogMeta, evalRow, modelInfo, ggufInfo, exportInfo, preflightView, preflightWhy } = require("../core/escape.js");
 
 const EVIL = [
   "<img src=x onerror=alert(1)>",

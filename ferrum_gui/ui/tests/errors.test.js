@@ -2,10 +2,10 @@
 // message + hint, "Show full message" for long ones, "Copy details" with the clipboard API and
 // its fallback, toasts, and the busy spinner. Stub DOM and a stand-in clipboard; the real
 // clipboard and webview were NOT exercised.
-// Run with: node ui/errors.test.js
+// Run with: node ui/tests/errors.test.js
 "use strict";
 const assert = require("node:assert");
-const E = require("./errors.js");
+const E = require("../core/errors.js");
 const { loadApp, settle } = require("./testapp.js");
 
 // ── normalize ──

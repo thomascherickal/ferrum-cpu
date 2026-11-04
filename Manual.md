@@ -1999,7 +1999,7 @@ cargo tauri build    # installers / binaries for this OS
 see [§10.5](#105-platform-support) for what each platform needs and for the
 release workflow. The icons are generated from the logo, `docs/assets/logo.png`
 (512x512; `icons/icon.svg` is the older vector source, kept): `cargo tauri icon ../docs/assets/logo.png -o <dir>`, then copy the files that
-`tauri.conf.json` lists (`ui/icons.test.js` checks them).
+`tauri.conf.json` lists (`ui/tests/icons.test.js` checks them).
 
 **Snap-polluted environments.** Launching from a terminal inside a snap app
 (for example, the VS Code snap) can crash with `undefined symbol:
@@ -2205,7 +2205,7 @@ effect on RAM and time) and a "New to AI?" paragraph that defines the jargon
 (token, epoch, batch size, learning rate, perplexity, vocabulary, context
 window, temperature, top-k/top-p, checkpoint, quantization, GGUF, BPE,
 embedding, heads, blocks, seed...). Press Esc to dismiss it. Inside a modal dialog the bubble is moved into the dialog, because a modal dialog sits above everything else on the page. The text lives in
-`ui/help.js` as plain data, one entry per element id, so it can be edited
+`ui/core/help.js` as plain data, one entry per element id, so it can be edited
 without touching any logic; a Node test fails if a control has no entry or too
 short a one. Screen readers get the same text through `aria-describedby`.
 
@@ -2214,7 +2214,7 @@ titles, the introduction (hint) paragraphs, status lines, progress bars, error l
 charts, result and output areas, the top-bar figures (hardware line, CPU, MEM,
 THREADS, connection dot), the logs and the dialogs each carry a `data-tip`
 attribute in `ui/index.html`, shown in the same bubble on hover. Every tip has
-at least 30 words of real information; `ui/tooltips_guard.test.js` fails for any
+at least 30 words of real information; `ui/tests/tooltips_guard.test.js` fails for any
 element that lacks one, and for a native `title` attribute, which would open a
 second bubble. Elements that are not controls are not added to the Tab order, so
 their tip shows on hover only (their text is also linked by
@@ -2348,13 +2348,13 @@ few seconds:
 | Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
 | IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; tokenizing and training from the token file through IPC (the model file byte-identical to training from the text, the ids equal to `encode_docs`, errors, the pre-flight and estimates of a token file); the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot); the Serve tab's server started on port 0 with a tiny model and called over a real `std::net::TcpStream` on 127.0.0.1 (`/health`, `/v1/info`, `/v1/generate`, 401 with and without the token, 404, the request counter, the startup banner and request lines in `serve-log`, a second start refused, stop closing the port and a restart), start-up errors (non-loopback host without a token, zero limit, missing or damaged model, a taken port) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
-| Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/live_params.fixture.json`, `ui/command_params.fixture.json`, `tests/ui_contract.rs` |
+| Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/tests/live_params.fixture.json`, `ui/tests/command_params.fixture.json`, `tests/ui_contract.rs` |
 | Regression | The estimate for a tiny job is compared with its measured wall time on training, generation, evaluation, cleaning, preparing a dataset, tokenizing, GGUF run, fine-tune and export; it must stay within 0.05x to 20x of the measurement (a floor of 10 ms applies) | `tests/regression_estimate.rs` |
-| Node | Help completeness (every control in `index.html` has an entry of the required length), the 30-word tool-tip guard over every element of `index.html` (`tooltips_guard.test.js`), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Serve tab (validation, generated token, start, poll, copy, stop, a server that dies), the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` (`ui/icons.test.js` also checks the bundle icons' PNG, ICO and ICNS structure) |
+| Node | Help completeness (every control in `index.html` has an entry of the required length), the 30-word tool-tip guard over every element of `index.html` (`tooltips_guard.test.js`), tooltip positioning and behaviour, estimate formatting, the live wiring, the real `app.js` flows (train, datasets, generate streaming, evaluate, models, GGUF, fine-tune, export, prepare, tokenize, the Ollama / LM Studio block, the Serve tab (validation, generated token, start, poll, copy, stop, a server that dies), the Stop buttons, capability, browse, plain browser) against a stub DOM and a fake backend, `invoke()` names versus `lib.rs`, the CSP, and accessibility (below) | `ui/*.test.js` (`ui/tests/icons.test.js` also checks the bundle icons' PNG, ICO and ICNS structure) |
 
 After changing what `live.js` or `app.js` sends, regenerate the pinned
-arguments with `UPDATE_FIXTURE=1 node ui/live.test.js` and
-`UPDATE_FIXTURE=1 node ui/app_flows.test.js`, then run `cargo test`.
+arguments with `UPDATE_FIXTURE=1 node ui/tests/live.test.js` and
+`UPDATE_FIXTURE=1 node ui/tests/app_flows.test.js`, then run `cargo test`.
 
 ### 10.8 Accessibility
 
@@ -2377,7 +2377,7 @@ What the page does for keyboard and screen-reader users:
   modal: Tab wraps inside, Esc closes them (the warning then counts as
   "Cancel"), and focus goes back to the button that opened them. Esc also
   hides a tooltip.
-- **Colour.** The CSS variables are contrast-checked by `ui/a11y_css.test.js`
+- **Colour.** The CSS variables are contrast-checked by `ui/tests/a11y_css.test.js`
   (a pure WCAG ratio function): text is at least 4.5:1 on every surface it sits
   on, field borders and the focus ring at least 3:1. The primary button uses a
   darker orange than the accent for that reason. Nothing relies on colour
@@ -2387,10 +2387,10 @@ What the page does for keyboard and screen-reader users:
 - **Motion.** `prefers-reduced-motion: reduce` switches off the toast slide and
   the bar transitions.
 
-Tests: `ui/a11y_html.test.js` reads `index.html` and fails if a field has no
+Tests: `ui/tests/a11y_html.test.js` reads `index.html` and fails if a field has no
 accessible name, a button has neither text nor a label, a tab does not match
 its panel, or a status, error or progress element lacks its role;
-`ui/a11y.test.js` drives the tab keys, the roving tabindex, the toast roles,
+`ui/tests/a11y.test.js` drives the tab keys, the roving tabindex, the toast roles,
 the progress values, the connection dot and both dialogs' focus handling
 against the stub DOM. These checks cannot show how a screen reader reads the
 page or how the focus ring looks in the real window; that was not tested.
@@ -2407,7 +2407,7 @@ one for folders) and the Evaluate table. It is stored in the webview's
 - **Never stored:** the raw, preview and held-out text boxes and the generated
   Modelfile (file contents), the Hugging Face token, and the "try anyway"
   switches that skip a safety check. A new text box or token field has to be
-  added to the list in `ui/settings.js` on purpose; `ui/settings.test.js` fails
+  added to the list in `ui/core/settings.js` on purpose; `ui/tests/settings.test.js` fails
   until it is.
 - **Evaluate table:** the result rows are stored, not HTML, and are rendered
   again through the escaping builder, so a hand-edited entry cannot inject
@@ -2418,7 +2418,7 @@ one for folders) and the Evaluate table. It is stored in the webview's
 - **Reset settings** (top bar) deletes the stored data, puts every field back to
   its starting value and empties the Evaluate table. Nothing on disk is touched.
 
-`ui/settings.test.js` covers the round trip, the debounce and the flush on
+`ui/tests/settings.test.js` covers the round trip, the debounce and the flush on
 hide, the folders, the never-stored fields (a leaked marker string is searched
 for in the stored text), junk and throwing storage, and the whole flow through
 the real page. A real webview's `localStorage` was not exercised.
@@ -2456,7 +2456,7 @@ stops short and jumps to 100 % when the command finishes. The progress bar and t
 other GUI additions were tested against the stub DOM and the mock runtime, not
 click-tested in a window.
 
-`ui/errors.test.js` covers the reading, truncation, details text, both copy
+`ui/tests/errors.test.js` covers the reading, truncation, details text, both copy
 paths, and the whole display through the real page; `src/error.rs` and the
 headless IPC tests cover the wire shape and the codes. The clipboard and the
 spinner were not seen in a real window.

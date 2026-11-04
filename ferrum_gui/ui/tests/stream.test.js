@@ -1,8 +1,8 @@
 // Node test for the streamed-generation reconciliation (G1). Run with:
-//   node ui/stream.test.js
+//   node ui/tests/stream.test.js
 "use strict";
 const assert = require("node:assert");
-const { streamContinuation } = require("./stream.js");
+const { streamContinuation } = require("../core/stream.js");
 
 // The backend returns `seed + continuation`; the UI shows only the continuation.
 assert.strictEqual(streamContinuation("the quick brown", "the q"), "uick brown");
