@@ -6,7 +6,7 @@
 //   button entry: { title, does, kind, how?, beginner? }
 //
 // `kind` is the estimate job kind (the snake_case names of JobKind in
-// src/estimate.rs); the tooltip adds a live time/RAM estimate for it.
+// src/sizing/estimate.rs); the tooltip adds a live time/RAM estimate for it.
 // Plain text only: the tooltip sets textContent, so "<" and "&" are safe but
 // are kept out of the data anyway.
 "use strict";

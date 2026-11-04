@@ -20,25 +20,23 @@
 
 #![forbid(unsafe_code)]
 
-mod capable;
 mod commands;
-mod datasets;
-mod error;
-pub mod estimate;
-pub mod estimate_cmd;
+mod data;
 mod evaluate;
-pub mod hardware;
-mod jobs;
-mod paths;
-mod preflight;
-mod prepare;
-mod progress;
+mod infra;
 mod run;
-mod runtime_export;
-mod serve;
+mod serving;
+mod sizing;
 #[cfg(test)]
 mod test_support;
-mod tokenize;
+
+// The groups are folders; the modules keep their flat `crate::x` paths (and the public ones
+// their `ferrum_gui_lib::x` paths) through these re-exports.
+use data::{datasets, prepare, tokenize};
+use infra::{error, jobs, paths, progress};
+use serving::{runtime_export, serve};
+use sizing::{capable, preflight};
+pub use sizing::{estimate, estimate_cmd, hardware};
 
 pub use run::run;
 use std::sync::Mutex;

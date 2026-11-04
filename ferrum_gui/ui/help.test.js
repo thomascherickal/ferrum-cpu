@@ -57,10 +57,10 @@ for (const key of Object.keys(HELP)) {
 })(HELP, "HELP");
 
 // Job kinds agree with the Rust enum (snake_case of the variant names).
-const rs = fs.readFileSync(path.join(__dirname, "..", "src", "estimate.rs"), "utf8");
+const rs = fs.readFileSync(path.join(__dirname, "..", "src", "sizing", "estimate.rs"), "utf8");
 const body = rs.match(/pub enum JobKind \{([\s\S]*?)\n\}/)[1];
 const variants = [...body.matchAll(/^\s*([A-Z]\w*),/gm)].map((m) => m[1].replace(/(?<!^)([A-Z])/g, "_$1").toLowerCase());
-assert.deepStrictEqual([...variants].sort(), [...KINDS].sort(), "KINDS differs from JobKind in src/estimate.rs");
+assert.deepStrictEqual([...variants].sort(), [...KINDS].sort(), "KINDS differs from JobKind in src/sizing/estimate.rs");
 for (const k of KINDS) {
   assert.ok(Object.values(HELP).some((e) => e.kind === k), `no button uses the kind '${k}'`);
 }

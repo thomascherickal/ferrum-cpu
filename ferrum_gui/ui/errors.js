@@ -1,5 +1,5 @@
 // Command errors in the webview. A failed backend command rejects with `{ code, message, hint }`
-// (src/error.rs); anything else that reaches a catch block (a plain string from Tauri itself, an
+// (src/infra/error.rs); anything else that reaches a catch block (a plain string from Tauri itself, an
 // Error thrown by a field check, a page running outside Tauri) is accepted too and read the
 // same way. Pure functions plus the clipboard helper, no DOM of their own.
 "use strict";
