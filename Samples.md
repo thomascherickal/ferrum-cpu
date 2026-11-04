@@ -217,7 +217,7 @@ which is what `info` printed.
 
 **You need.** Sample 1's prerequisites. To run DVC itself, also Python 3.10 or newer.
 
-**Not run for this document.** DVC is not installed on the machine used for this documentation pass (`dvc: command not found`), so no `dvc` command below was run and no DVC output is shown. Step 4 was run: it checks the files from Sample 1 against `dvc.lock`, which was written by a real `dvc repro` (commit `b28aef8` regenerated it from a full repro).
+**Not run for this document.** DVC is installed in the project venv, not on `PATH` (`which dvc` finds nothing; `.venv/bin/dvc --version` printed `3.67.1` on 2026-11-04, after the venv was recreated for the broken-shebang fault in [Status §5](Status.md#5-known-issues)), but no `dvc` command below was run for this document and no DVC output is shown. Step 4 was run: it checks the files from Sample 1 against `dvc.lock`, which was written by a real `dvc repro` (commit `b28aef8` regenerated it from a full repro).
 
 **Steps.**
 
@@ -1031,7 +1031,7 @@ One day, they were playing, and the park to play with the tir and befish. They p
 Sue was very happy and laughed. They thanked the ball for the ball and had a lot. They played on the ball and played with the ball together. They played together, and had fun together every day.
 ```
 
-`export-lmstudio` was not run for this sample (the manual commands of Part D were); the 2026-10-25 development ledger records its test `export_lmstudio_then_generate` passing under `FERRUM_REQUIRE_RUNTIMES=1`, no output of that run is kept, and it was not re-run on 2026-11-03. Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
+`export-lmstudio` was not run for this sample (the manual commands of Part D were). `export-lmstudio` end to end was last run on 2026-10-25: the development ledger's battery of that day records `runtime_export_cli 7 passed` under `FERRUM_REQUIRE_RUNTIMES=1`, and the file had 7 tests then (at `48be9e9`), `export_lmstudio_then_generate` among them; no output of that run is kept in the repository, and it has not been re-run since (not at the current commit; nothing was run against the LM Studio daemon after it) ([Status §5](Status.md#5-known-issues)). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
 
 ```bash
 train_transformer train data/prepared/val.txt samples/char.gguf --vocab 0 --context 16 --embed 32 \

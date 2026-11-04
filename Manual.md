@@ -1442,6 +1442,8 @@ train_transformer finetune-gguf <model.gguf> <corpus.txt> <out.flck> [options]
 | `--resume ckpt.flck` | — | Continue a previous fine-tune |
 | `--max-seconds F` | — | Stop after the step that crosses `F` seconds, or when `<out.flck>.stop` exists; the `.flck` is written, so `--resume` continues ([§6.6](#66-validation-checkpoints-and-resuming)) |
 | `--sample` | — | Print a sample afterwards |
+| `--temp F`, `--max N` | 0.8, 48 | Temperature and token count of the `--sample` text (ignored without `--sample`; `--temp` is checked before training starts) |
+| `--force` | off | Skip the training-memory guard (it refuses when the estimated training RAM exceeds 90 % of the available memory) |
 
 The model loads at f32, because training needs full-precision masters.
 Full-parameter AdamW needs about **16 bytes per parameter** for the training
@@ -1501,6 +1503,9 @@ train_transformer export-gguf base.gguf tuned.gguf --resume tuned.flck --quant q
   f16. The per-type summary printed after export shows what was emitted.
 - Writes are atomic. Re-quantizing an already-quantized source is lossy. The
   lossless paths are `f16`/`f32`, or exporting fine-tuned f32 masters.
+- The export loads the source at f32; when the estimated peak (f32 model plus
+  output buffer) exceeds 90 % of the available memory it refuses, and `--force` skips
+  that guard.
 
 **Scoring an imported model (`eval-gguf`).** Perplexity of a Llama/Qwen GGUF on a text file,
 printed like `eval` (§8) with the same fields and `--json`:
@@ -2036,6 +2041,7 @@ those.
 | **GGUF** | Inspect and run a Llama/Qwen checkpoint: precision, temperature (0 = greedy), top-k/top-p/repetition penalty, chat format, stop strings (one per line, `\n` `\t` `\\` unescaped, needs a tokenizer), optional fine-tune overlay |
 | **Fine-tune** | AdamW fine-tune an imported GGUF on a corpus into a `.flck` checkpoint |
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary. A second block runs a Ferrum `gpt2` model in **Ollama** or **LM Studio** (the code of `export-ollama` / `export-lmstudio`): *Show Modelfile and commands*, *Export to Ollama*, *Import into LM Studio*, *Write Modelfile only*; see *Running in Ollama and LM Studio* below |
+| **Serve** | Run the `ferrum-serve` HTTP server ([§9.7](#97-serving-ferrum-serve)) for one model inside the app: model, host, port, request limits and an optional bearer token; **Start server** / **Stop**, the real address, a request counter and the server log; see *Serving a model* below |
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |
 | **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](Status.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
@@ -2521,7 +2527,7 @@ const out = slm.generate(
   0,           // top_k (0 = off)
   1.0,         // top_p (1 = off)
   1.0,         // repetition_penalty (1 = off)
-  42,          // seed (0 to 4294967295)
+  42,          // seed (0 to 4294967295: a u32, so a CLI --gen-seed above that has no browser twin)
   ["."],       // stop strings: generation ends before the first one
 );
 const logp = slm.score("the cat sat");            // rolling log-probability of the whole text
