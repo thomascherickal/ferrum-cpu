@@ -288,6 +288,44 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(a.$("errDsCatalog").textContent.includes("boom"));
   }
 
+  // one_bar_one_job: the Source URL download moves the bar like the others, and while any
+  // download or Clean runs, every button that would start another one is disabled (gap L9).
+  {
+    let a;
+    const mb = 1e6;
+    const others = () => ["dsDownload", "dsHfDownload", "dsKgDownload", "dsClean"].map((id) => a.$(id).disabled)
+      .concat([a.$("dsCatalog").querySelector("button").disabled]);
+    a = await start({
+      download_text: async (args) => {
+        assert.deepStrictEqual(others(), [true, true, true, true, true]);
+        a.emit("download-progress", { id: args.url, bytes: 1 * mb, total: 2 * mb });
+        assert.strictEqual(a.$("dsBar").style.width, "50%");
+        assert.strictEqual(a.$("dsProgress").textContent, "https://e.x/t.txt: 1.0 MB of 2.0 MB");
+        return "abc";
+      },
+      download_kaggle_file: async () => {
+        assert.deepStrictEqual(others(), [true, true, true, true, true]);
+        throw "download failed: boom";
+      },
+      list_datasets: async () => [{ id: "x", name: "X", source: "huggingface", approxMb: 5, format: "txt", description: "d" }],
+    });
+    assert.deepStrictEqual(others(), [false, false, false, false, false]);
+    a.set("dsUrl", "https://e.x/t.txt");
+    await a.click("dsDownload");
+    assert.strictEqual(a.$("dsBar").style.width, "100%");
+    assert.strictEqual(a.$("dsProgress").textContent, "downloaded 0.0 MB");
+    assert.deepStrictEqual(others(), [false, false, false, false, false]);
+    // A failure frees the buttons too; a form error before the start leaves them as they were.
+    a.set("dsDestDir", "/d"); a.set("dsKgRepo", "o/d"); a.set("dsKgFile", "k.csv");
+    await a.click("dsKgDownload");
+    assert.strictEqual(a.$("dsProgress").textContent, "idle");
+    assert.deepStrictEqual(others(), [false, false, false, false, false]);
+    a.set("dsUrl", "");
+    await a.click("dsDownload");
+    assert.ok(a.$("errDsSource").textContent.includes("Source URL is required"));
+    assert.deepStrictEqual(others(), [false, false, false, false, false]);
+  }
+
   // clean_progress_updates_bar: clean-progress events fill the bar against the raw text's size.
   {
     let a;

@@ -3,7 +3,7 @@
 use crate::infra::error::CmdError;
 use crate::infra::http::http_agent;
 use crate::infra::paths::checked_path;
-use crate::infra::progress::Throttle;
+use crate::infra::progress::{Progress, Tap, Throttle};
 use ferrum_core::{clean_corpus, corpus_stats, CleanOptions};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -11,9 +11,10 @@ use std::path::Path;
 use tauri::{AppHandle, Emitter, Runtime};
 
 /// Synchronous core of [`download_text`]: validate the URL, fetch with timeouts,
-/// and return at most `cap` bytes decoded as UTF-8. Separated from the Tauri
-/// command so it is unit-testable without an `AppHandle`.
-fn fetch_text(url: &str, cap: usize) -> Result<String, String> {
+/// and return at most `cap` bytes decoded as UTF-8, reporting the bytes read to
+/// `progress` (a final event only on success). Separated from the Tauri command so
+/// it is unit-testable without an `AppHandle`.
+fn fetch_text(url: &str, cap: usize, progress: &mut Progress) -> Result<String, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("URL must start with http:// or https://".to_string());
     }
@@ -22,25 +23,38 @@ fn fetch_text(url: &str, cap: usize) -> Result<String, String> {
         .get(url)
         .call()
         .map_err(|e| format!("download failed: {e}"))?;
+    // The announced size, but never more than the cap (the read stops there).
+    let total = resp
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|t| t.min(cap as u64));
     let mut buf = Vec::new();
-    resp.into_reader()
+    Tap::new(resp.into_reader(), total, progress)
         .take(cap as u64)
         .read_to_end(&mut buf)
         .map_err(|e| format!("read failed: {e}"))?;
     if buf.is_empty() {
         return Err("downloaded resource was empty".to_string());
     }
+    progress.finish(buf.len() as u64);
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// Download a text resource (e.g. a Project Gutenberg `.txt`) and return it as a
 /// UTF-8 string (lossily decoded), capped at `max_bytes` (default 8 MiB). Uses an
 /// HTTP client with connect/read timeouts so a slow host cannot hang the task.
+/// Progress goes out as `download-progress {id: url, bytes, total}`, like the
+/// catalog downloads.
 #[tauri::command]
-pub async fn download_text(url: String, max_bytes: Option<usize>) -> Result<String, CmdError> {
+pub async fn download_text<R: Runtime>(
+    app: AppHandle<R>,
+    url: String,
+    max_bytes: Option<usize>,
+) -> Result<String, CmdError> {
     crate::infra::error::blocking(move || {
         let cap = max_bytes.unwrap_or(8 * 1024 * 1024);
-        fetch_text(&url, cap)
+        let mut progress = Progress::events(app, url.clone());
+        fetch_text(&url, cap, &mut progress)
     })
     .await
 }
@@ -352,7 +366,7 @@ mod tests {
             "javascript:1",
             "",
         ] {
-            let err = fetch_text(url, 1024).unwrap_err();
+            let err = fetch_text(url, 1024, &mut Progress::silent()).unwrap_err();
             assert!(
                 err.contains("http://"),
                 "unexpected error for {url:?}: {err}"
@@ -364,24 +378,57 @@ mod tests {
     fn fetch_text_returns_the_body_up_to_the_cap_and_refuses_failures() {
         use crate::test_support::http_server;
         let (url, _rx) = http_server("200 OK", "héllo wörld".as_bytes().to_vec(), 1);
-        assert_eq!(fetch_text(&url, 1024).unwrap(), "héllo wörld");
+        assert_eq!(
+            fetch_text(&url, 1024, &mut Progress::silent()).unwrap(),
+            "héllo wörld"
+        );
         // The cap cuts the body (lossily when it splits a character); a cap of 0 still reads a byte.
         let (url, _rx) = http_server("200 OK", "héllo".as_bytes().to_vec(), 2);
-        assert_eq!(fetch_text(&url, 2).unwrap(), "h\u{fffd}");
-        assert_eq!(fetch_text(&url, 0).unwrap(), "h");
+        assert_eq!(
+            fetch_text(&url, 2, &mut Progress::silent()).unwrap(),
+            "h\u{fffd}"
+        );
+        assert_eq!(fetch_text(&url, 0, &mut Progress::silent()).unwrap(), "h");
         let (url, _rx) = http_server("200 OK", Vec::new(), 1);
         assert_eq!(
-            fetch_text(&url, 8).unwrap_err(),
+            fetch_text(&url, 8, &mut Progress::silent()).unwrap_err(),
             "downloaded resource was empty"
         );
         let (url, _rx) = http_server("404 Not Found", b"no".to_vec(), 1);
-        assert!(fetch_text(&url, 8)
+        assert!(fetch_text(&url, 8, &mut Progress::silent())
             .unwrap_err()
             .starts_with("download failed:"));
-        // The command applies the 8 MiB default and reports the same errors as the core.
-        let (url, _rx) = http_server("200 OK", b"text".to_vec(), 1);
-        let got = tauri::async_runtime::block_on(download_text(url, None)).unwrap();
-        assert_eq!(got, "text");
+        // The command itself (8 MiB default, events) is driven through IPC in `ipc_tests.rs`.
+    }
+
+    #[test]
+    fn fetch_text_reports_progress_and_a_final_event_only_on_success() {
+        use crate::test_support::http_server;
+        let run = |body: &[u8], cap: usize| {
+            let (url, _rx) = http_server("200 OK", body.to_vec(), 1);
+            let mut seen = Vec::new();
+            let r = fetch_text(
+                &url,
+                cap,
+                &mut Progress::new(Throttle::new(|| 0), |b, t| seen.push((b, t))),
+            );
+            (r, seen)
+        };
+        // The total is the announced Content-Length; the last event is the final count.
+        let (r, seen) = run(b"hello world", 1024);
+        assert_eq!(r.unwrap(), "hello world");
+        assert_eq!(seen.first().unwrap().1, Some(11), "{seen:?}");
+        assert_eq!(*seen.last().unwrap(), (11, Some(11)), "{seen:?}");
+        assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "{seen:?}");
+        // A cap below the size: the total is the cap, so the bar can reach 100 %.
+        let (r, seen) = run(b"0123456789", 4);
+        assert_eq!(r.unwrap(), "0123");
+        assert_eq!(seen.first().unwrap().1, Some(4), "{seen:?}");
+        assert_eq!(*seen.last().unwrap(), (4, Some(4)), "{seen:?}");
+        // An empty body fails and sends no final event.
+        let (r, seen) = run(b"", 1024);
+        assert!(r.is_err());
+        assert!(seen.iter().all(|&(b, _)| b == 0), "{seen:?}");
     }
 
     #[test]

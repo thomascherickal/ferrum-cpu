@@ -1224,10 +1224,32 @@ fn the_command_matrix_guard_finds_a_missing_test() {
 }
 
 #[test]
+fn download_text_returns_the_text_and_sends_progress_with_the_url_as_id() {
+    let (app, w) = app();
+    let got = collect(&app, "download-progress");
+    let (url, _rx) = crate::test_support::http_server("200 OK", b"text".to_vec(), 1);
+    // No maxBytes: the 8 MiB default applies.
+    let text = call(&w, "download_text", json!({"url": url})).unwrap();
+    assert_eq!(text, json!("text"));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !got
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| e.contains("\"total\":4"))
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let last: Value = serde_json::from_str(got.lock().unwrap().last().unwrap()).unwrap();
+    assert_eq!(last, json!({"id": url, "bytes": 4, "total": 4}));
+}
+
+#[test]
 fn download_progress_events_carry_the_id_bytes_and_total() {
     let (app, _w) = app();
     let got = collect(&app, "download-progress");
-    let mut p = crate::data::datasets::Progress::events(app.handle().clone(), "o/n/f.txt".into());
+    let mut p = crate::infra::progress::Progress::events(app.handle().clone(), "o/n/f.txt".into());
     p.update(5, None);
     p.finish(9);
     // Mock-runtime events are delivered on the listener thread; wait for both.

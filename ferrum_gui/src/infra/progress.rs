@@ -1,6 +1,10 @@
 //! Throttled progress for the long commands that stream (downloads, Clean): at most one
 //! event per [`INTERVAL_MS`], plus a final one that always goes out. The clock is a
-//! closure so tests drive it by hand (no sleeping, no `Instant::now`).
+//! closure so tests drive it by hand (no sleeping, no `Instant::now`). [`Progress`] and
+//! [`Tap`] turn a download's byte stream into `download-progress` events.
+
+use std::io::Read;
+use tauri::{AppHandle, Emitter, Runtime};
 
 /// Smallest gap between two throttled events, in milliseconds.
 pub const INTERVAL_MS: u64 = 100;
@@ -37,6 +41,77 @@ impl<'a> Throttle<'a> {
         }
         self.last = Some(now);
         true
+    }
+}
+
+/// Download progress: `update` is throttled to one event per 100 ms, `finish` always goes
+/// out. The sink receives `(bytes so far, total if the server said)`.
+pub(crate) struct Progress<'a> {
+    throttle: Throttle<'a>,
+    sink: Box<dyn FnMut(u64, Option<u64>) + 'a>,
+}
+
+impl<'a> Progress<'a> {
+    pub(crate) fn new(throttle: Throttle<'a>, sink: impl FnMut(u64, Option<u64>) + 'a) -> Self {
+        Progress {
+            throttle,
+            sink: Box::new(sink),
+        }
+    }
+
+    /// Reports nothing.
+    #[cfg(test)]
+    pub(crate) fn silent() -> Progress<'static> {
+        Progress::new(Throttle::wall(), |_, _| {})
+    }
+
+    /// Emits `download-progress {id, bytes, total}` for `id` on the real clock.
+    pub(crate) fn events<R: Runtime>(app: AppHandle<R>, id: String) -> Progress<'static> {
+        Progress::new(Throttle::wall(), move |bytes, total| {
+            let _ = app.emit(
+                "download-progress",
+                serde_json::json!({ "id": id, "bytes": bytes, "total": total }),
+            );
+        })
+    }
+
+    pub(crate) fn update(&mut self, bytes: u64, total: Option<u64>) {
+        if self.throttle.ready() {
+            (self.sink)(bytes, total);
+        }
+    }
+
+    pub(crate) fn finish(&mut self, bytes: u64) {
+        (self.sink)(bytes, Some(bytes));
+    }
+}
+
+/// A reader that reports the running byte count after every read.
+pub(crate) struct Tap<'p, 'a, R> {
+    inner: R,
+    bytes: u64,
+    total: Option<u64>,
+    progress: &'p mut Progress<'a>,
+}
+
+impl<'p, 'a, R> Tap<'p, 'a, R> {
+    /// Wraps `inner`; `total` is the size the server announced, if any.
+    pub(crate) fn new(inner: R, total: Option<u64>, progress: &'p mut Progress<'a>) -> Self {
+        Tap {
+            inner,
+            bytes: 0,
+            total,
+            progress,
+        }
+    }
+}
+
+impl<R: Read> Read for Tap<'_, '_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.bytes += n as u64;
+        self.progress.update(self.bytes, self.total);
+        Ok(n)
     }
 }
 

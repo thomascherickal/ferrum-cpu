@@ -13,11 +13,11 @@
 use crate::infra::error::CmdError;
 use crate::infra::http::http_agent;
 use crate::infra::paths::checked_dir;
-use crate::infra::progress::Throttle;
+use crate::infra::progress::{Progress, Tap};
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 
 /// Upper bound (MB) on datasets we surface as "CPU-friendly". Bigger sets still
 /// download via the generic commands, but are kept out of the curated list so a
@@ -267,65 +267,6 @@ pub struct DownloadResult {
     pub source: String,
 }
 
-/// Download progress: `update` is throttled to one event per 100 ms, `finish` always goes
-/// out. The sink receives `(bytes so far, total if the server said)`.
-pub(crate) struct Progress<'a> {
-    throttle: Throttle<'a>,
-    sink: Box<dyn FnMut(u64, Option<u64>) + 'a>,
-}
-
-impl<'a> Progress<'a> {
-    pub(crate) fn new(throttle: Throttle<'a>, sink: impl FnMut(u64, Option<u64>) + 'a) -> Self {
-        Progress {
-            throttle,
-            sink: Box::new(sink),
-        }
-    }
-
-    /// Reports nothing.
-    #[cfg(test)]
-    pub(crate) fn silent() -> Progress<'static> {
-        Progress::new(Throttle::wall(), |_, _| {})
-    }
-
-    /// Emits `download-progress {id, bytes, total}` for `id` on the real clock.
-    pub(crate) fn events<R: Runtime>(app: AppHandle<R>, id: String) -> Progress<'static> {
-        Progress::new(Throttle::wall(), move |bytes, total| {
-            let _ = app.emit(
-                "download-progress",
-                serde_json::json!({ "id": id, "bytes": bytes, "total": total }),
-            );
-        })
-    }
-
-    pub(crate) fn update(&mut self, bytes: u64, total: Option<u64>) {
-        if self.throttle.ready() {
-            (self.sink)(bytes, total);
-        }
-    }
-
-    pub(crate) fn finish(&mut self, bytes: u64) {
-        (self.sink)(bytes, Some(bytes));
-    }
-}
-
-/// A reader that reports the running byte count after every read.
-struct Tap<'p, 'a, R> {
-    inner: R,
-    bytes: u64,
-    total: Option<u64>,
-    progress: &'p mut Progress<'a>,
-}
-
-impl<R: Read> Read for Tap<'_, '_, R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let n = self.inner.read(buf)?;
-        self.bytes += n as u64;
-        self.progress.update(self.bytes, self.total);
-        Ok(n)
-    }
-}
-
 /// Stream `url` (with optional Basic / Bearer auth) to `dest`, capped at
 /// [`DOWNLOAD_CAP`] (over-cap is an error). Goes through `<dest>.part`. Validates
 /// the URL scheme and creates parent directories.
@@ -382,12 +323,7 @@ fn stream_to_dest(
         let mut file =
             std::fs::File::create(&part).map_err(|e| format!("cannot create {part:?}: {e}"))?;
         // Read one byte past the cap so a longer body is detected, not truncated.
-        let tap = Tap {
-            inner: reader,
-            bytes: 0,
-            total,
-            progress: &mut *progress,
-        };
+        let tap = Tap::new(reader, total, &mut *progress);
         let n = std::io::copy(&mut tap.take(cap + 1), &mut file)
             .map_err(|e| format!("write failed: {e}"))?;
         if n > cap {
@@ -567,6 +503,7 @@ pub async fn download_kaggle_file<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infra::progress::Throttle;
 
     #[test]
     fn download_commands_refuse_bad_destination_folders() {
