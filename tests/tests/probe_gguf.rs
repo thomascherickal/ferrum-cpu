@@ -1,6 +1,6 @@
 //! Exploration helper (ignored): export a Ferrum .bin to GGUF at every precision and print
-//! Ferrum's own greedy continuation from each, so the shell can diff it against llama.cpp,
-//! Ollama and LM Studio.
+//! Ferrum's own greedy continuation from each, so the shell can diff it against llama.cpp
+//! and LM Studio.
 //! FERRUM_PROBE_BIN=m.bin FERRUM_PROBE_OUT=/dir/m FERRUM_PROBE_PROMPT="Once" FERRUM_PROBE_CHARS=40
 //!   cargo test --release -p integration_tests --test probe_gguf -- --ignored --nocapture
 use ferrum_core::{from_gguf, to_gguf, GenerativeSLM, QPrec, Rng, SamplingParams};

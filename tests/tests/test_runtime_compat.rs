@@ -1,6 +1,6 @@
 //! Ferrum GGUFs against llama.cpp (plan p0g Task G5): the tokenizer produces the same ids,
-//! greedy generation agrees, and quantized files load and run. Ollama and LM Studio are
-//! covered by `slm_cli/tests/runtime_export_cli.rs`.
+//! greedy generation agrees, and quantized files load and run. LM Studio is covered by
+//! `slm_cli/tests/runtime_export_cli.rs`; no test runs a real Ollama (`Status.md` §7).
 //!
 //! Tools are found via `FERRUM_LLAMA_BIN` (dir holding `llama-completion` and
 //! `llama-tokenize`), then `~/.local/opt/llama.cpp-b11521`. A missing tool skips the test,
@@ -265,7 +265,7 @@ fn script() -> PathBuf {
 }
 
 /// Run the script with a clean, hermetic environment: `HOME` is an empty dir and `PATH` holds
-/// only symlinks to the handful of utilities the script needs (so no real Ollama / LM Studio /
+/// only symlinks to the handful of utilities the script needs (so no real LM Studio /
 /// llama.cpp is found unless the test provides one). Returns (exit code, stdout + stderr).
 #[cfg(target_os = "linux")]
 fn run_script(work: &Path, args: &[&Path], envs: &[(&str, &str)]) -> (i32, String) {
@@ -343,47 +343,61 @@ fn verify_script_usage_and_missing_tool_semantics() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn verify_script_skips_or_fails_missing_ollama_and_lm_studio() {
+fn verify_script_skips_or_fails_missing_lm_studio_and_never_runs_ollama() {
     let work = tmp("script_tools");
     let model = work.join("m.gguf");
     std::fs::write(&model, b"GGUF").unwrap();
     let llama = fake_llama(&work);
     let l = llama.to_str().unwrap();
-    // Reference present, Ollama and LM Studio absent, not required: both skip, exit 0.
-    let (code, text) = run_script(&work, &[&model], &[("FERRUM_LLAMA_BIN", l)]);
+    // A fake `ollama` on FERRUM_OLLAMA that leaves a marker if anything ever runs it.
+    let marker = work.join("ollama-ran");
+    let fake = work.join("ollama");
+    std::fs::write(
+        &fake,
+        format!("#!/bin/bash\necho ran > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let f = fake.to_str().unwrap();
+    // Reference present, LM Studio absent, not required: skip, exit 0.
+    let (code, text) = run_script(
+        &work,
+        &[&model],
+        &[("FERRUM_LLAMA_BIN", l), ("FERRUM_OLLAMA", f)],
+    );
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("llama.cpp: "), "{text}");
-    assert!(
-        text.contains("SKIP ollama") && text.contains("SKIP lms"),
-        "{text}"
-    );
+    assert!(text.contains("SKIP lms"), "{text}");
     assert!(text.trim_end().ends_with("OK"), "{text}");
-    // Required: both missing tools fail ...
-    let req = [("FERRUM_LLAMA_BIN", l), ("FERRUM_REQUIRE_RUNTIMES", "1")];
+    // Required: the missing LM Studio fails ...
+    let req = [
+        ("FERRUM_LLAMA_BIN", l),
+        ("FERRUM_REQUIRE_RUNTIMES", "1"),
+        ("FERRUM_OLLAMA", f),
+    ];
     let (code, text) = run_script(&work, &[&model], &req);
     assert_eq!(code, 1, "{text}");
-    assert!(
-        text.contains("FAIL ollama") && text.contains("FAIL lms"),
-        "{text}"
-    );
-    // ... except LM Studio, which FERRUM_SKIP_LMSTUDIO=1 exempts (the CI setting).
-    let req_skip = [req[0], req[1], ("FERRUM_SKIP_LMSTUDIO", "1")];
+    assert!(text.contains("FAIL lms"), "{text}");
+    // ... unless FERRUM_SKIP_LMSTUDIO=1 exempts it (the CI setting): then nothing is missing.
+    let req_skip = [req[0], req[1], req[2], ("FERRUM_SKIP_LMSTUDIO", "1")];
     let (code, text) = run_script(&work, &[&model], &req_skip);
-    assert_eq!(code, 1, "{text}");
-    assert!(text.contains("FAIL ollama"), "{text}");
+    assert_eq!(code, 0, "{text}");
     assert!(
-        text.contains("SKIP lm-studio") && !text.contains("FAIL lms"),
+        text.contains("SKIP lm-studio") && !text.contains("FAIL"),
         "{text}"
     );
+    assert!(!text.to_lowercase().contains("ollama"), "{text}");
+    assert!(!marker.exists(), "verify_runtimes.sh ran ollama");
     let _ = std::fs::remove_dir_all(&work);
 }
 
-/// Ollama and LM Studio produce what llama.cpp produces for a Ferrum F32 GGUF (plan G5). Needs
+/// LM Studio produces what llama.cpp produces for a Ferrum F32 GGUF (plan G5). Needs
 /// the real tools, so it runs only with `FERRUM_VERIFY_RUNTIMES=1`; the script itself honours
 /// `FERRUM_REQUIRE_RUNTIMES` and `FERRUM_SKIP_LMSTUDIO`.
 #[cfg(target_os = "linux")]
 #[test]
-fn ollama_and_lm_studio_run_ferrum_gguf() {
+fn lm_studio_runs_ferrum_gguf() {
     if std::env::var("FERRUM_VERIFY_RUNTIMES").ok().as_deref() != Some("1") {
         eprintln!("skip: set FERRUM_VERIFY_RUNTIMES=1 to run scripts/verify_runtimes.sh");
         return;

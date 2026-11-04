@@ -320,16 +320,13 @@ jobs:
           if grep -q "panicked at" "$log"; then echo "::error::the app panicked while running"; exit 1; fi
 
   runtimes:
-    name: Runtimes (llama.cpp + Ollama)
+    name: Runtimes (llama.cpp)
     runs-on: ubuntu-latest
     env:
       # Pinned releases; the sha256 values are checked on every download.
       LLAMA_CPP_TAG: b11521
       LLAMA_CPP_URL: https://github.com/ggml-org/llama.cpp/releases/download/b11521/llama-b11521-bin-ubuntu-x64.tar.gz
       LLAMA_CPP_SHA256: 2fc996ee8d7c08b47d0ee9a57ab0cbde5e275fbfcfd7d67478384244c302d264
-      OLLAMA_TAG: v0.40.2
-      OLLAMA_URL: https://github.com/ollama/ollama/releases/download/v0.40.2/ollama-linux-amd64.tar.zst
-      OLLAMA_SHA256: 726bee78706c281b0eeef00746efe51a044d71c592c3f0b195820707f31fdf04
       # A missing runtime is a failure, not a skip. LM Studio needs its desktop app, so it is
       # the one exemption (local pre-release runs must not set FERRUM_SKIP_LMSTUDIO).
       FERRUM_REQUIRE_RUNTIMES: "1"
@@ -349,29 +346,17 @@ jobs:
         id: runtimes-cache
         with:
           path: ~/.local/opt
-          key: runtimes-${{ env.LLAMA_CPP_TAG }}-${{ env.OLLAMA_TAG }}-${{ env.LLAMA_CPP_SHA256 }}-${{ env.OLLAMA_SHA256 }}
-      - name: Install llama.cpp ${{ env.LLAMA_CPP_TAG }} and Ollama ${{ env.OLLAMA_TAG }} (sha256-pinned)
+          key: runtimes-${{ env.LLAMA_CPP_TAG }}-${{ env.LLAMA_CPP_SHA256 }}
+      - name: Install llama.cpp ${{ env.LLAMA_CPP_TAG }} (sha256-pinned)
         if: steps.runtimes-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          command -v zstd >/dev/null || sudo apt-get install -y zstd
-          mkdir -p ~/.local/opt/llama.cpp-$LLAMA_CPP_TAG ~/.local/opt/ollama-$OLLAMA_TAG
+          mkdir -p ~/.local/opt/llama.cpp-$LLAMA_CPP_TAG
           curl -fL --retry 3 -o "$RUNNER_TEMP/llama.tar.gz" "$LLAMA_CPP_URL"
           echo "$LLAMA_CPP_SHA256  $RUNNER_TEMP/llama.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/llama.tar.gz" --strip-components=1 -C ~/.local/opt/llama.cpp-$LLAMA_CPP_TAG
-          curl -fL --retry 3 -o "$RUNNER_TEMP/ollama.tar.zst" "$OLLAMA_URL"
-          echo "$OLLAMA_SHA256  $RUNNER_TEMP/ollama.tar.zst" | sha256sum -c -
-          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C ~/.local/opt/ollama-$OLLAMA_TAG
-          rm -f "$RUNNER_TEMP/llama.tar.gz" "$RUNNER_TEMP/ollama.tar.zst"
-      - name: Put the runtimes on PATH and start ollama serve
-        run: |
-          set -euo pipefail
-          echo "$HOME/.local/opt/ollama-$OLLAMA_TAG/bin" >> "$GITHUB_PATH"
-          echo "FERRUM_LLAMA_BIN=$HOME/.local/opt/llama.cpp-$LLAMA_CPP_TAG" >> "$GITHUB_ENV"
-          nohup "$HOME/.local/opt/ollama-$OLLAMA_TAG/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
-          for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/ >/dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/ollama.log"; exit 1
-      - name: Runtime compatibility tests (llama.cpp, Ollama; LM Studio exempt)
+          rm -f "$RUNNER_TEMP/llama.tar.gz"
+      - name: Point the tests at llama.cpp
+        run: echo "FERRUM_LLAMA_BIN=$HOME/.local/opt/llama.cpp-$LLAMA_CPP_TAG" >> "$GITHUB_ENV"
+      - name: Runtime compatibility tests (llama.cpp; LM Studio exempt; no Ollama)
         run: cargo test --release --locked -p integration_tests --test test_runtime_compat -- --nocapture --test-threads 1
-      - name: export-ollama end to end (Ferrum-trained tiny model, private Ollama)
-        run: cargo test --release --locked -p slm_cli --test runtime_export_cli export_ollama_ferrum_trained -- --nocapture

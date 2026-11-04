@@ -1,13 +1,13 @@
-//! `export-ollama` / `export-lmstudio` against the real runtimes.
+//! `export-lmstudio` against a real LM Studio, plus `export-ollama` / `export-lmstudio`
+//! checks that run no runtime (refusals, `--modelfile-only`, usage). No test here starts or
+//! talks to a real Ollama (removed 2026-11-04 by user decision, `Status.md` §7).
 //!
 //! Tool-gated: a missing tool skips the test unless `FERRUM_REQUIRE_RUNTIMES=1`.
 //! Run with:
 //! `FERRUM_REQUIRE_RUNTIMES=1 cargo test -p slm_cli --release --test runtime_export_cli -- --nocapture`
 //! (tests that touch a runtime share one lock, so default parallel threads are fine).
 //!
-//! `export_ollama_ferrum_trained_then_generate` trains its own tiny model, so it needs only
-//! `ollama` and `llama-completion` (the CI `runtimes` job runs it). The other tests use
-//! llama.cpp's GPT-2 124M Q8_0 GGUF, an untracked file outside this repository
+//! The tests use llama.cpp's GPT-2 124M Q8_0 GGUF, an untracked file outside this repository
 //! (`../../.ferrum-dev/gpt2gguf/gpt2-q8_0.gguf` from `slm_cli/`; override with
 //! `FERRUM_TEST_GGUF=/path/to/gpt2.gguf`), and the LM Studio one a real LM Studio install.
 
@@ -16,13 +16,13 @@ mod common;
 use common::{is_required, require_or_skip, require_or_skip_with, tool};
 use ferrum_core::{GgufBuilder, MetaValue};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 
 const DEV: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.ferrum-dev");
 const PROMPT: &str = "Hello, my name is";
 const N: usize = 8;
 
-/// One lock for everything that touches Ollama, LM Studio or their ports (threads and processes).
+/// One lock for everything that touches LM Studio or its port (threads and processes).
 fn serial() -> common::RuntimeLock {
     common::runtime_lock()
 }
@@ -156,114 +156,6 @@ fn answers(host: &str) -> bool {
     })
 }
 
-/// The Ollama server the test talks to; kills it on drop if we started it.
-struct Ollama {
-    host: String,
-    bin: PathBuf,
-    child: Option<Child>,
-}
-
-impl Ollama {
-    #[allow(clippy::zombie_processes)] // Drop kills and waits
-    fn start(bin: PathBuf) -> Self {
-        let wanted = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "127.0.0.1:11434".into());
-        if answers(&wanted) {
-            return Self {
-                host: wanted,
-                bin,
-                child: None,
-            };
-        }
-        // 11545 belongs to another agent; this suite owns 11546.
-        let host = ["127.0.0.1:11546"]
-            .into_iter()
-            .find(|h| !answers(h))
-            .expect("no free port for ollama serve")
-            .to_string();
-        let models = Path::new(DEV).join("scratch/ollama-models");
-        std::fs::create_dir_all(&models).unwrap();
-        let child = Command::new(&bin)
-            .arg("serve")
-            .env("OLLAMA_HOST", &host)
-            .env("OLLAMA_MODELS", &models)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("ollama serve");
-        // Owning `me` before waiting means Drop kills the child if the port never answers.
-        let me = Self {
-            host,
-            bin,
-            child: Some(child),
-        };
-        for _ in 0..100 {
-            if answers(&me.host) {
-                return me;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        panic!("ollama serve did not come up on {}", me.host);
-    }
-    /// A server of its own on a free ephemeral port with a model store at `models`, so the test
-    /// touches neither a running Ollama nor `~/.ollama/models`. Drop kills it.
-    #[allow(clippy::zombie_processes)] // Drop kills and waits
-    fn start_private(bin: PathBuf, models: &Path) -> Self {
-        // ponytail: bind-then-release leaves a tiny race window; retry the pick if it ever flakes.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let host = format!("127.0.0.1:{port}");
-        let child = Command::new(&bin)
-            .arg("serve")
-            .env("OLLAMA_HOST", &host)
-            .env("OLLAMA_MODELS", models)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("ollama serve");
-        let me = Self {
-            host,
-            bin,
-            child: Some(child),
-        };
-        for _ in 0..300 {
-            if answers(&me.host) {
-                return me;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        panic!("ollama serve did not come up on {}", me.host);
-    }
-    fn rm(&self, name: &str) {
-        let _ = Command::new(&self.bin)
-            .args(["rm", name])
-            .env("OLLAMA_HOST", &self.host)
-            .output();
-    }
-}
-
-impl Drop for Ollama {
-    fn drop(&mut self) {
-        if let Some(c) = &mut self.child {
-            let _ = c.kill();
-            let _ = c.wait();
-        }
-    }
-}
-
-/// Removes the Ollama model even if the test panics.
-struct OllamaModel<'a>(&'a Ollama, &'static str);
-impl Drop for OllamaModel<'_> {
-    fn drop(&mut self) {
-        self.0.rm(self.1);
-    }
-}
-
-fn ollama_tool() -> Option<PathBuf> {
-    require_or_skip(tool("FERRUM_OLLAMA", "ollama", ".local/bin/ollama"))
-}
 fn lms_tool() -> Option<PathBuf> {
     require_or_skip(tool("FERRUM_LMS", "lms", ".lmstudio/bin/lms"))
 }
@@ -304,100 +196,6 @@ fn spaced_link_survives_a_stale_dir_and_cleans_up() {
     drop(second);
     assert!(!dir.exists(), "guard must remove the dir on drop");
     let _ = std::fs::remove_file(&target);
-}
-
-#[test]
-fn export_ollama_then_generate() {
-    let _serial = serial();
-    let Some(bin) = ollama_tool() else { return };
-    let Some(want) = llama_reference(&gpt2()) else {
-        return;
-    };
-    let srv = Ollama::start(bin);
-    let (_tmp, model) = spaced_link("gen", &gpt2());
-    let _guard = OllamaModel(&srv, "ferrum-e1-gen");
-    let (ok, text) = exporter(
-        &["export-ollama", model.to_str().unwrap(), "ferrum-e1-gen"],
-        &[("OLLAMA_HOST", &srv.host)],
-    );
-    assert!(ok, "{text}");
-    let body = format!(
-        r#"{{"model":"ferrum-e1-gen","prompt":"{PROMPT}","raw":true,"stream":false,"options":{{"temperature":0,"num_predict":{N}}}}}"#
-    );
-    let got = json_string_field(
-        &curl_post(&format!("http://{}/api/generate", srv.host), &body),
-        "response",
-    );
-    eprintln!("llama.cpp: {want:?}\nollama:    {got:?}");
-    assert!(!got.trim().is_empty());
-    assert_eq!(got.trim_end(), want.trim_end()); // llama-completion appends newlines
-}
-
-/// `export-ollama` on a model trained by the real binary (no out-of-repo file), served by a private
-/// Ollama (own port, own model store in a temp dir). Ollama's greedy text must agree with
-/// llama.cpp's (one a prefix of the other: llama.cpp's logger can drop a tiny model's tail).
-#[test]
-fn export_ollama_ferrum_trained_then_generate() {
-    let _serial = serial();
-    let Some(bin) = ollama_tool() else { return };
-    let dir = std::env::temp_dir().join(format!("ferrum_e1_trained_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let _cleanup = TmpDir(dir.clone()); // declared first, so dropped after the server
-    let (corpus, model) = (dir.join("corpus.txt"), dir.join("m.gguf"));
-    std::fs::write(&corpus, format!("{PROMPT} Ferrum. ").repeat(60)).unwrap();
-    let (ok, text) = exporter(
-        &[
-            "train",
-            corpus.to_str().unwrap(),
-            model.to_str().unwrap(),
-            "--vocab",
-            "300",
-            "--context",
-            "64",
-            "--embed",
-            "16",
-            "--heads",
-            "2",
-            "--blocks",
-            "1",
-            "--hidden",
-            "32",
-            "--epochs",
-            "40",
-            "--threads",
-            "1",
-        ],
-        &[],
-    );
-    assert!(ok, "{text}");
-    let Some(want) = llama_reference(&model) else {
-        return;
-    };
-    let srv = Ollama::start_private(bin, &dir.join("ollama-models"));
-    let (ok, text) = exporter(
-        &[
-            "export-ollama",
-            model.to_str().unwrap(),
-            "ferrum-e1-trained",
-        ],
-        &[("OLLAMA_HOST", &srv.host)],
-    );
-    assert!(ok, "{text}");
-    let body = format!(
-        r#"{{"model":"ferrum-e1-trained","prompt":"{PROMPT}","raw":true,"stream":false,"options":{{"temperature":0,"num_predict":{N}}}}}"#
-    );
-    let got = json_string_field(
-        &curl_post(&format!("http://{}/api/generate", srv.host), &body),
-        "response",
-    );
-    eprintln!("llama.cpp: {want:?}\nollama:    {got:?}");
-    let (a, b) = (want.trim_end(), got.trim_end());
-    assert!(!b.is_empty(), "ollama generated nothing");
-    assert!(
-        a.starts_with(b) || b.starts_with(a),
-        "llama.cpp {a:?} vs ollama {b:?}"
-    );
 }
 
 /// Cleans up only what this test did: the import under `~/.lmstudio/models/<repo>`,
@@ -516,20 +314,8 @@ fn reference_matching_accepts_either_token_budget_and_nothing_else() {
 }
 
 #[test]
-fn export_is_idempotent() {
+fn export_lmstudio_is_idempotent() {
     let _serial = serial();
-    if let Some(bin) = ollama_tool() {
-        let srv = Ollama::start(bin);
-        let _guard = OllamaModel(&srv, "ferrum-e1-idem");
-        let model = gpt2();
-        for round in 0..2 {
-            let (ok, text) = exporter(
-                &["export-ollama", model.to_str().unwrap(), "ferrum-e1-idem"],
-                &[("OLLAMA_HOST", &srv.host)],
-            );
-            assert!(ok, "ollama round {round}: {text}");
-        }
-    }
     if let Some(lms) = lms_tool() {
         let _guard = LmStudioImport::new(&lms, "ferrum-test/e1idem");
         let model = gpt2();
@@ -546,24 +332,6 @@ fn export_is_idempotent() {
             assert!(ok, "lmstudio round {round}: {text}");
         }
     }
-}
-
-#[test]
-fn ollama_down_gives_actionable_error() {
-    let _serial = serial();
-    let Some(bin) = ollama_tool() else { return };
-    let (ok, text) = exporter(
-        &[
-            "export-ollama",
-            gpt2().to_str().unwrap(),
-            "ferrum-e1-down",
-            "--bin",
-            bin.to_str().unwrap(),
-        ],
-        &[("OLLAMA_HOST", "127.0.0.1:1")],
-    );
-    assert!(!ok, "{text}");
-    assert!(text.contains("ollama serve"), "{text}");
 }
 
 #[test]

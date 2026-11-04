@@ -1621,8 +1621,8 @@ all four places. The compatibility tests and `scripts/verify_runtimes.sh` also
 find llama.cpp this way, through `FERRUM_LLAMA_BIN` (the directory holding
 `llama-completion`), then `PATH`, then `~/.local/opt/llama.cpp-b11521`. They skip
 a missing tool, but fail instead when `FERRUM_REQUIRE_RUNTIMES=1` is set.
-`FERRUM_VERIFY_RUNTIMES=1` also runs the Ollama and LM Studio checks in
-`test_runtime_compat` (it starts those tools).
+`FERRUM_VERIFY_RUNTIMES=1` also runs the LM Studio check in `test_runtime_compat`
+(it starts LM Studio). No test runs a real Ollama (removed 2026-11-04, Status §7).
 
 **An exported llama/qwen2 GGUF (§9.3).** `export-ollama` and `export-lmstudio`
 refuse it, because Ferrum exports only its own `gpt2` models. The Ollama route
@@ -1667,10 +1667,11 @@ Rules for both commands:
   run there, but Ferrum exports only its own gpt2 models; the error points to the
   hand-written Modelfile (§9.5).
 - A missing tool gives an error that lists the four places searched (§9.5).
-- The end-to-end tests are in `slm_cli/tests/runtime_export_cli.rs`.
-  `export_ollama_ferrum_trained_then_generate` needs only `ollama` and
-  `llama-completion` (it trains its own tiny model and uses a private server and
-  model store): `FERRUM_REQUIRE_RUNTIMES=1 cargo test -p slm_cli --release --test runtime_export_cli export_ollama_ferrum_trained -- --nocapture`.
+- The tests are in `slm_cli/tests/runtime_export_cli.rs` and
+  `slm_cli/tests/tiny_gguf_e2e.rs`. No test runs a real Ollama (removed 2026-11-04
+  by user decision): `export-ollama` is tested for its refusals, its usage errors
+  and `--modelfile-only`, and the library's `ollama create` call and its
+  `ollama serve` hint run against fake scripts (`slm_cli/src/runtime_export.rs`).
   `export_lmstudio_then_generate` needs a real LM Studio install (`lms`, its
   daemon, `~/.lmstudio`) and a GPT-2 GGUF outside the repository
   (`FERRUM_TEST_GGUF`); it skips without them.

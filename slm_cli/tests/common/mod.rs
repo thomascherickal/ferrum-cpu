@@ -46,7 +46,7 @@ pub fn tool(env: &str, name: &str, home_rel: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{name} not found (${env}, PATH, ~/{home_rel})"))
 }
 
-/// Held while a test touches Ollama, LM Studio or their ports. Serialises threads of this
+/// Held while a test touches LM Studio or its port. Serialises threads of this
 /// process (mutex) *and* concurrent test processes (advisory `flock` on a file in the temp
 /// dir), so two `cargo test` runs never fight over the same runtime. Released on drop.
 pub struct RuntimeLock {

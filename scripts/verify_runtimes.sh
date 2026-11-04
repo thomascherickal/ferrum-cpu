@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Check that a Ferrum GGUF runs in llama.cpp, Ollama and LM Studio and that all three
-# produce the same greedy continuation.
+# Check that a Ferrum GGUF runs in llama.cpp and LM Studio and that both produce the same
+# greedy continuation. Ollama is not checked (removed 2026-11-04 by user decision, Status.md §7).
 #
 #   scripts/verify_runtimes.sh <model.gguf>
 #
 # Tool discovery (each: env var, then PATH, then the default location):
 #   llama.cpp  FERRUM_LLAMA_BIN (dir holding llama-completion), ~/.local/opt/llama.cpp-b11521
-#   Ollama     FERRUM_OLLAMA (the binary),                       ~/.local/bin/ollama
 #   LM Studio  FERRUM_LMS (the `lms` binary),                    ~/.lmstudio/bin/lms
 #
 # A tool that is not found is skipped with a message, unless FERRUM_REQUIRE_RUNTIMES=1, which
@@ -15,8 +14,7 @@
 # needed. Exit status: 0 = every checked runtime matched llama.cpp, 1 = mismatch/missing
 # required tool, 2 = usage.
 #
-# Env knobs: FERRUM_VERIFY_PROMPT (default "The cat sat"), FERRUM_VERIFY_N (default 16),
-# FERRUM_VERIFY_OLLAMA_PORT (port for an Ollama we start, default 11545).
+# Env knobs: FERRUM_VERIFY_PROMPT (default "The cat sat"), FERRUM_VERIFY_N (default 16).
 set -u
 LC_ALL=C
 
@@ -80,38 +78,6 @@ say "llama.cpp: $(printf '%q' "$want")"
 
 # same <got> <want...>: got equals one of the candidates (after trimming).
 same() { local g w; g=$(trimmed "$1"); shift; for w in "$@"; do [ "$g" = "$(trimmed "$w")" ] && return 0; done; return 1; }
-
-# ---- Ollama ----
-ollama=${FERRUM_OLLAMA:-$(command -v ollama 2>/dev/null || true)}
-[ -x "${ollama:-/nonexistent}" ] || ollama=$HOME/.local/bin/ollama
-if [ -x "$ollama" ]; then
-  host=${OLLAMA_HOST:-127.0.0.1:11434}
-  if ! answers "$host"; then
-    host=127.0.0.1:${FERRUM_VERIFY_OLLAMA_PORT:-11545}
-    answers "$host" && { fail "port $host is already in use by something that is not Ollama"; host=""; }
-    if [ -n "$host" ]; then
-      OLLAMA_HOST=$host OLLAMA_MODELS="$tmp/ollama-models" "$ollama" serve >"$tmp/ollama.log" 2>&1 &
-      cleanups+=("kill $! ; wait $!")
-      for _ in $(seq 100); do answers "$host" && break; sleep 0.1; done
-      answers "$host" || { fail "ollama serve did not come up on $host (see below)"; cat "$tmp/ollama.log" >&2; host=""; }
-    fi
-  fi
-  if [ -n "$host" ]; then
-    name=ferrum-verify-$$
-    printf 'FROM %s\n' "$model" > "$tmp/Modelfile"
-    cleanups+=("OLLAMA_HOST=$host '$ollama' rm $name")
-    if OLLAMA_HOST=$host "$ollama" create "$name" -f "$tmp/Modelfile" >"$tmp/create.log" 2>&1; then
-      body=$(python3 -c 'import json,sys; print(json.dumps({"model":sys.argv[1],"prompt":sys.argv[2],"raw":True,"stream":False,"options":{"temperature":0,"num_predict":int(sys.argv[3])}}))' "$name" "$prompt" "$n")
-      got=$(curl -s -H 'Content-Type: application/json' "http://$host/api/generate" -d "$body" | json_field response)
-      say "ollama:    $(printf '%q' "$got")"
-      if [ -n "$(trimmed "$got")" ] && same "$got" "$want"; then say "PASS ollama"; else fail "ollama output differs from llama.cpp"; fi
-    else
-      fail "ollama create failed: $(cat "$tmp/create.log")"
-    fi
-  fi
-else
-  missing "ollama (FERRUM_OLLAMA / PATH / ~/.local/bin/ollama)"
-fi
 
 # ---- LM Studio ----
 if [ "${FERRUM_SKIP_LMSTUDIO:-0}" = 1 ]; then

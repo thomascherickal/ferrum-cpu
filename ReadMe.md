@@ -65,7 +65,7 @@ tokenizer. Only BPE transformer SLMs run there.
 | `eval/lighteval/` | Python package | `FerrumModel` and custom tasks for Hugging Face LightEval 0.13.0, plus `run.sh` |
 | `dvc.yaml`, `params.yaml`, `dvc.lock` | DVC pipeline | fetch, prepare, train, eval (and an opt-in `lighteval` stage in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | shell | `fetch.sh` (pinned download with sha256 check), `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
-| `tests` | integration tests | Cross-crate integration and regression tests, including the llama.cpp/Ollama/LM Studio compatibility test |
+| `tests` | integration tests | Cross-crate integration and regression tests, including the llama.cpp/LM Studio compatibility test |
 | `ferrum_gui` | Tauri app (built separately) | **Ferrum SLM Studio**, a desktop GUI; see [Manual §10](Manual.md#10-the-gui-ferrum-slm-studio) |
 
 `ferrum_gui` is deliberately **outside** the Cargo workspace because it needs
@@ -231,7 +231,8 @@ train_transformer export-ollama   models/slm.gguf ferrum-tiny   # writes a Model
 train_transformer export-lmstudio models/slm.gguf               # links it into LM Studio with `lms import -l`
 ```
 
-Versions verified so far: llama.cpp b11521, Ollama v0.40.2, LM Studio 0.4.18.
+Versions verified so far: llama.cpp b11521, Ollama v0.40.2 (by hand; no test or CI job
+runs Ollama since 2026-11-04), LM Studio 0.4.18.
 Each tool is found from a `--bin` flag (export commands), then the env var
 (`FERRUM_LLAMA_BIN`, `FERRUM_OLLAMA`, `FERRUM_LMS`), then `PATH`, then the default
 install location (`~/.local/opt/llama.cpp-b11521`, `~/.local/bin/ollama`,
@@ -320,8 +321,8 @@ CI (`.github/workflows/ci.yml`) runs build and test, rustfmt, clippy, JS syntax
 checks, cargo-deny, a wasm32 build of `slm_wasm`, the LightEval module's import
 check, and the GUI crate's own format, lint, and test jobs. A `runtimes` job
 runs the compatibility tests with `FERRUM_REQUIRE_RUNTIMES=1`: llama.cpp b11521
-and Ollama v0.40.2 are required there, and `FERRUM_SKIP_LMSTUDIO=1` is its one
-exemption (LM Studio is required locally before a release). Python and DVC are
+is required there, and `FERRUM_SKIP_LMSTUDIO=1` is its one exemption (LM Studio is
+required locally before a release). No test or CI job runs Ollama. Python and DVC are
 otherwise not in CI.
 
 ---
