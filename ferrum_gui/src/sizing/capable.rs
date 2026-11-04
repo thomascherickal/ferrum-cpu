@@ -490,7 +490,13 @@ mod tests {
     #[test]
     fn gemm_throughput_is_positive_and_sane() {
         let g = measure_gemm_gflops();
-        assert!(g > 0.1 && g < 5000.0, "implausible GFLOP/s: {g}");
+        // The lower bound is only "a real, finite measurement": CI measures
+        // coverage with instrumented code beside other tests, and a tighter floor
+        // (0.1) failed there at 0.07 and 0.09 GFLOP/s.
+        assert!(
+            g.is_finite() && g > 0.0 && g < 5000.0,
+            "implausible GFLOP/s: {g}"
+        );
     }
 
     #[test]
