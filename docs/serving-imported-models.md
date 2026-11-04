@@ -48,7 +48,9 @@ curl -s -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/generate \
 {"results":[{"n_tokens":2,"text":" Paris"}]}
 ```
 
-This is a raw completion, with no chat template. The stop string `.` is cut from the
+This is a raw completion, with no chat template. Add `"chat": true` to a request to wrap
+the prompt in the file's chat template the way `run-gguf` does (Manual §9.7); that was
+tested on a synthetic tiny model only and was not run on SmolLM2 for this walk-through. The stop string `.` is cut from the
 text, but the token that completed it is counted, which makes `n_tokens` 2. EOS also
 stops generation, and it is neither in the text nor counted. `temperature`, `top_k`,
 `top_p`, `seed` and `repetition_penalty` work as they do for a Ferrum model. A prompt

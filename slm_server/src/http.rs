@@ -495,6 +495,7 @@ mod tests {
             top_p,
             seed: 0,
             repetition_penalty: None,
+            chat: false,
             cancel: None,
         }
     }

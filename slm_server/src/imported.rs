@@ -3,13 +3,17 @@
 //!
 //! Conventions (Manual §9.7): scoring and generation both prepend the BOS token exactly when
 //! the file says so (`prefix_bos`: `add_bos_token` and a BOS id), like `run-gguf` and
-//! `eval-gguf`; generation is a raw completion (no chat template) whose prompt is cut from the
+//! `eval-gguf`; generation is a raw completion unless the request sets `chat` (then the prompt
+//! is wrapped in the file's chat template, as `run-gguf` does), and its prompt is cut from the
 //! left to leave room for `max_tokens`; texts longer than the scoring window (the context,
 //! at most 512 tokens like `eval-gguf`) are scored in overlapping windows.
 
 use crate::backend::{GenRequest, DEFAULT_MAX_TOKENS};
+use ferrum_core::chat_format::{self, ChatFormat};
 use ferrum_core::llm_stop::{continuation_text, StopMatcher};
-use ferrum_core::{GgufTokenizer, InferError, LlamaModel, LlamaScore, Result, Rng, SamplingParams};
+use ferrum_core::{
+    Gguf, GgufTokenizer, InferError, LlamaModel, LlamaScore, Result, Rng, SamplingParams,
+};
 use std::sync::atomic::Ordering;
 
 /// Largest scoring window, in tokens: what `eval-gguf` uses, and it bounds the
@@ -44,6 +48,8 @@ fn truncate_prompt(mut ids: Vec<usize>, n_bos: usize, ctx: usize, max_new: usize
 pub(crate) struct Imported {
     pub(crate) model: LlamaModel,
     pub(crate) tok: GgufTokenizer,
+    /// The chat template `run-gguf` would use (`chat_format::detect`), if the file has one.
+    pub(crate) chat: Option<ChatFormat>,
 }
 
 /// Output of [`Imported::generate`]: the continuation (stop string excluded) and the tokens
@@ -56,6 +62,17 @@ pub(crate) struct Generated {
 }
 
 impl Imported {
+    /// The backend for `model` and `tok`, read from `g`; the chat format is detected as
+    /// `run-gguf` detects it (the template string, else the vocabulary).
+    pub(crate) fn new(model: LlamaModel, tok: GgufTokenizer, g: &Gguf) -> Self {
+        let chat = chat_format::detect(
+            g.meta("tokenizer.chat_template").and_then(|v| v.as_str()),
+            g.architecture(),
+            |p| tok.token_id(p).is_some(),
+        );
+        Imported { model, tok, chat }
+    }
+
     /// The BOS token when the file says to prepend one (`add_bos_token` and a BOS id): the
     /// same rule as generation and `eval-gguf`.
     fn scoring_prefix(&self) -> Vec<usize> {
@@ -120,14 +137,33 @@ impl Imported {
         continuation_text(&self.tok, anchor, out)
     }
 
-    /// Raw completion of `g.prompt`: up to `max_tokens` tokens, stopping at EOS or at the
-    /// first stop string (excluded from the text). A prompt too long for the context window
-    /// together with `max_tokens` is cut from the left ([`truncate_prompt`]), and generation
-    /// ends when the window is full.
+    /// Completion of `g.prompt`: up to `max_tokens` tokens, stopping at EOS or at the first
+    /// stop string (excluded from the text). Raw by default; with `g.chat` the prompt is one
+    /// user turn in the file's chat template and the template's end-of-turn token also stops
+    /// (both as `run-gguf`), and a file without a recognised template is an error. A prompt
+    /// too long for the context window together with `max_tokens` is cut from the left
+    /// ([`truncate_prompt`]; for a chat prompt the template's opening tokens go first), and
+    /// generation ends when the window is full.
     pub(crate) fn generate(&self, g: &GenRequest) -> Result<Generated> {
+        let fmt =
+            match (g.chat, self.chat) {
+                (false, _) => None,
+                (true, Some(f)) => Some(f),
+                (true, None) => return Err(InferError::Format(
+                    "chat: this model has no chat template Ferrum recognises (ChatML, Llama 3, \
+                     Llama 2 [INST], Zephyr); send the prompt without \"chat\""
+                        .into(),
+                )),
+            };
         let mut prompt: Vec<usize> = self.tok.prefix_bos().into_iter().collect();
         let n_bos = prompt.len();
-        prompt.extend(self.tok.encode(&g.prompt));
+        match fmt {
+            Some(f) => prompt.extend(chat_format::encode_segments(
+                &self.tok,
+                &chat_format::render(f, &g.prompt),
+            )),
+            None => prompt.extend(self.tok.encode(&g.prompt)),
+        }
         let max_new = g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
         let prompt = truncate_prompt(prompt, n_bos, self.model.cfg.context_len, max_new);
         let params = SamplingParams {
@@ -137,7 +173,10 @@ impl Imported {
             repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
             ..SamplingParams::default()
         };
-        let eos: Vec<usize> = self.tok.eos().into_iter().collect();
+        let mut eos: Vec<usize> = self.tok.eos().into_iter().collect();
+        if let Some(id) = fmt.and_then(|f| self.tok.token_id(chat_format::stop_token(f))) {
+            eos.push(id);
+        }
         let anchor = prompt.last().copied().unwrap_or(0);
         let mut matcher = StopMatcher::new(&self.tok, anchor, &g.stop);
         let mut out = self.model.generate_until(
@@ -185,6 +224,7 @@ mod tests {
             top_p: 1.0,
             seed: 0,
             repetition_penalty: None,
+            chat: false,
             cancel: None,
         }
     }
@@ -360,6 +400,72 @@ mod tests {
         }
         assert_eq!(g.n_tokens, want.len());
         assert_eq!(g.text, m.tok.decode(&want));
+    }
+
+    #[test]
+    fn chat_wraps_the_prompt_in_the_template_and_raw_stays_the_default() {
+        let m = imported(&llama::tiny_llama_chatml());
+        assert_eq!(m.chat, Some(ChatFormat::ChatMl));
+        // The library side, as run-gguf builds it: BOS + the rendered turn; EOS and
+        // <|im_end|> stop and are dropped.
+        let mut prompt = vec![llama::BOS as usize];
+        prompt.extend(chat_format::encode_segments(
+            &m.tok,
+            &chat_format::render(ChatFormat::ChatMl, "ab"),
+        ));
+        assert_eq!(prompt[1], llama::IM_START as usize, "{prompt:?}");
+        assert!(prompt.contains(&(llama::IM_END as usize)), "{prompt:?}");
+        let stops = [llama::EOS as usize, llama::IM_END as usize];
+        let params = SamplingParams {
+            temperature: 0.0,
+            ..SamplingParams::default()
+        };
+        let mut want = m
+            .model
+            .generate(&prompt, 6, &params, &stops, &mut Rng::new(0))
+            .unwrap();
+        if want.last().is_some_and(|t| stops.contains(t)) {
+            want.pop();
+        }
+        let chat = GenRequest {
+            chat: true,
+            ..req("ab", 6, &[])
+        };
+        let g = m.generate(&chat).unwrap();
+        assert_eq!(g.n_tokens, want.len());
+        assert_eq!(
+            g.text,
+            continuation_text(&m.tok, *prompt.last().unwrap(), &want)
+        );
+        // Without the field the same file is a raw completion: BOS + the prompt only.
+        let mut raw_ids = vec![llama::BOS as usize];
+        raw_ids.extend(m.tok.encode("ab"));
+        let mut raw = m
+            .model
+            .generate(
+                &raw_ids,
+                6,
+                &params,
+                &[llama::EOS as usize],
+                &mut Rng::new(0),
+            )
+            .unwrap();
+        if raw.last() == Some(&(llama::EOS as usize)) {
+            raw.pop();
+        }
+        let got = m.generate(&req("ab", 6, &[])).unwrap();
+        assert_eq!(
+            (got.n_tokens, got.text),
+            (
+                raw.len(),
+                continuation_text(&m.tok, *raw_ids.last().unwrap(), &raw)
+            )
+        );
+        // A file without a recognised template refuses chat.
+        let plain = imported(&llama::tiny_llama_bos_eos());
+        assert_eq!(plain.chat, None);
+        let e = plain.generate(&chat).unwrap_err().to_string();
+        assert!(e.contains("no chat template"), "{e}");
     }
 
     #[test]

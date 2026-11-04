@@ -3,7 +3,7 @@
 //! object a route returns per request, the same shape for both kinds.
 
 use crate::imported::Imported;
-use ferrum_core::{GenerativeSLM, Result, Rng, SamplingParams};
+use ferrum_core::{GenerativeSLM, InferError, Result, Rng, SamplingParams};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,6 +52,10 @@ pub(crate) struct GenRequest {
     /// `None` until the HTTP layer fills in the server default.
     #[serde(default)]
     pub(crate) repetition_penalty: Option<f32>,
+    /// Wrap the prompt in the imported model's chat template (default: a raw completion).
+    /// A Ferrum model has no chat template, so `true` is an error there.
+    #[serde(default)]
+    pub(crate) chat: bool,
     /// Set by the HTTP layer when the client disconnects; never read from the body.
     #[serde(skip)]
     pub(crate) cancel: Option<Arc<AtomicBool>>,
@@ -107,41 +111,46 @@ impl Backend {
         if g.cancelled() {
             return Ok(Value::Null);
         }
-        let (text, n_tokens) = match self {
-            #[cfg(test)]
-            Backend::Stub(st) => {
-                st.started.fetch_add(1, Ordering::SeqCst);
-                for _ in 0..g.max_tokens.unwrap_or(1) {
-                    if g.cancelled() {
-                        break;
+        let (text, n_tokens) =
+            match self {
+                #[cfg(test)]
+                Backend::Stub(st) => {
+                    st.started.fetch_add(1, Ordering::SeqCst);
+                    for _ in 0..g.max_tokens.unwrap_or(1) {
+                        if g.cancelled() {
+                            break;
+                        }
+                        st.ticks.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(5));
                     }
-                    st.ticks.fetch_add(1, Ordering::SeqCst);
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    (String::new(), 0)
                 }
-                (String::new(), 0)
-            }
-            Backend::Ferrum(m) => {
-                let params = SamplingParams {
-                    temperature: g.temperature,
-                    top_k: g.top_k,
-                    top_p: g.top_p,
-                    repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
-                    cancel: g.cancel.clone(),
-                };
-                let o = m.generate_tokens(
-                    &g.prompt,
-                    g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
-                    &g.stop,
-                    &params,
-                    &mut Rng::new(g.seed),
-                )?;
-                (o.text, o.n_tokens)
-            }
-            Backend::Imported(m) => {
-                let o = m.generate(g)?;
-                (o.text, o.n_tokens)
-            }
-        };
+                Backend::Ferrum(_) if g.chat => return Err(InferError::Format(
+                    "chat: a Ferrum model has no chat template; send the prompt without \"chat\""
+                        .into(),
+                )),
+                Backend::Ferrum(m) => {
+                    let params = SamplingParams {
+                        temperature: g.temperature,
+                        top_k: g.top_k,
+                        top_p: g.top_p,
+                        repetition_penalty: g.repetition_penalty.unwrap_or(1.0),
+                        cancel: g.cancel.clone(),
+                    };
+                    let o = m.generate_tokens(
+                        &g.prompt,
+                        g.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+                        &g.stop,
+                        &params,
+                        &mut Rng::new(g.seed),
+                    )?;
+                    (o.text, o.n_tokens)
+                }
+                Backend::Imported(m) => {
+                    let o = m.generate(g)?;
+                    (o.text, o.n_tokens)
+                }
+            };
         Ok(json!({"text": text, "n_tokens": n_tokens}))
     }
 }
@@ -172,6 +181,19 @@ mod tests {
             let g = b.generate(&req).unwrap();
             assert!(g["text"].is_string() && g["n_tokens"].as_u64() <= Some(2));
         }
+    }
+
+    #[test]
+    fn chat_is_refused_on_a_ferrum_model_and_parsed_off_by_default() {
+        let off: GenRequest = serde_json::from_value(json!({"prompt": "ab"})).unwrap();
+        assert!(!off.chat);
+        let on: GenRequest =
+            serde_json::from_value(json!({"prompt": "ab", "max_tokens": 2, "chat": true})).unwrap();
+        let e = Backend::Ferrum(model(0)).generate(&on).unwrap_err();
+        assert!(e.to_string().contains("no chat template"), "{e}");
+        assert!(
+            serde_json::from_value::<GenRequest>(json!({"prompt": "a", "chat": "yes"})).is_err()
+        );
     }
 
     #[test]

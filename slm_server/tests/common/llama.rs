@@ -100,6 +100,35 @@ pub fn tiny_llama_bos_eos() -> Vec<u8> {
     ])
 }
 
+/// Ids of the ChatML specials in [`tiny_llama_chatml`] (they replace `<f2>` and `<f3>`).
+pub const IM_START: u32 = 29;
+pub const IM_END: u32 = 30;
+
+/// [`tiny_llama_bos_eos`] with a ChatML chat template: `tokenizer.chat_template` names
+/// `<|im_start|>`, and `<|im_start|>` / `<|im_end|>` are single tokens of the vocabulary.
+/// The context is 64 tokens, so a rendered turn (about 20 tokens) is not cut.
+pub fn tiny_llama_chatml() -> Vec<u8> {
+    let mut v = letter_vocab();
+    v[IM_START as usize] = "<|im_start|>".into();
+    v[IM_END as usize] = "<|im_end|>".into();
+    tiny_llama(&[
+        ("llama.context_length", MetaValue::U32(64)),
+        ("tokenizer.ggml.bos_token_id", MetaValue::U32(BOS)),
+        ("tokenizer.ggml.eos_token_id", MetaValue::U32(EOS)),
+        ("tokenizer.ggml.add_bos_token", MetaValue::Bool(true)),
+        (
+            "tokenizer.ggml.tokens",
+            MetaValue::Array(v.into_iter().map(MetaValue::String).collect()),
+        ),
+        (
+            "tokenizer.chat_template",
+            MetaValue::String(
+                "{% for m in messages %}<|im_start|>{{ m.content }}<|im_end|>{% endfor %}".into(),
+            ),
+        ),
+    ])
+}
+
 /// [`tiny_llama`] with a SentencePiece tokenizer (`tokenizer.ggml.model = "llama"`):
 /// `a`..`z`, `▁`, `▁a`, `<f0>`..`<f3>`.
 pub fn tiny_llama_spm() -> Vec<u8> {

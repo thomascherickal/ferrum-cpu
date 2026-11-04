@@ -99,7 +99,7 @@ pub(crate) fn load(file: ModelFile) -> Result<(Backend, Info), String> {
             let tok = GgufTokenizer::from_gguf(&gguf).map_err(|e| e.to_string())?;
             let model = gguf.load_llama_prec(prec).map_err(|e| e.to_string())?;
             let info = info_for_imported(&gguf, &model, &tok, prec, sha256);
-            Ok((Backend::Imported(Imported { model, tok }), info))
+            Ok((Backend::Imported(Imported::new(model, tok, &gguf)), info))
         }
     }
 }

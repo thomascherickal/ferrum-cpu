@@ -1737,7 +1737,15 @@ load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](d
   least half a window of the most recent history (the rule of `score_rolling`). A context
   longer than the window therefore needs no cutting: the continuation is always scored given
   the most recent tokens. The log-softmax is exact (no probability floor).
-- **Generation** is a raw completion (no chat template; `run-gguf --raw`): the prompt gets
+- **Generation** is a raw completion by default (no chat template; `run-gguf --raw`). A
+  request with `"chat": true` wraps its prompt in the file's chat template, detected as
+  `run-gguf` detects it (`tokenizer.chat_template` fingerprinted as ChatML, Llama 3, Llama 2
+  `[INST]` or Zephyr, else the vocabulary of a qwen2/llama file): one user turn, ending where
+  the assistant speaks, and the template's end-of-turn token (`<|im_end|>`, `<|eot_id|>`,
+  `</s>`) stops like EOS. A file with no recognised template answers `422` (`chat: this model
+  has no chat template Ferrum recognises ...`), and so does a Ferrum model (it has none). A
+  chat prompt that is too long is cut from the left like a raw one, so the template's opening
+  tokens are the first to go. The prompt gets
   BOS only when `add_bos_token` asks for it, generation stops at the
   EOS token (not in the text, not counted) or at the first stop string (cut from the text;
   the token that completed it is counted), and every sampling field means what it means for
@@ -1754,11 +1762,11 @@ load Ferrum's own models only. Walk-through: [docs/serving-imported-models.md](d
 | `GET /v1/info` | none | `{params, context_len, vocab, quant, tokenizer, model_sha256}` |
 | `POST /v1/loglikelihood` | `{"requests":[{"context","continuation"}]}` | `{"results":[{"logprob","n_tokens","greedy"}]}` |
 | `POST /v1/loglikelihood_rolling` | `{"texts":[...]}` | `{"results":[{"logprob","n_tokens"}]}` |
-| `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed","repetition_penalty"}]}` | `{"results":[{"text","n_tokens"}]}` |
+| `POST /v1/generate` | `{"requests":[{"prompt","max_tokens","stop","temperature","top_k","top_p","seed","repetition_penalty","chat"}]}` | `{"results":[{"text","n_tokens"}]}` |
 
 `generate` defaults: `temperature` 0 (greedy), `max_tokens` 64 (or the server's
 `--max-tokens` if that is smaller), `top_k` 0, `top_p` 1, `seed` 0, `repetition_penalty` the server's `--repetition-penalty` (1, which is off,
-unless the flag says otherwise). `temperature` must be finite and at least 0, `top_p` in (0, 1], and
+unless the flag says otherwise), `chat` false (a raw completion; `true` only on an imported model with a chat template, above). `temperature` must be finite and at least 0, `top_p` in (0, 1], and
 `repetition_penalty` finite and greater than 0 (`400` otherwise: `repetition_penalty must be a positive
 number, got 0`). A request that omits the field generates exactly what it did before the field existed.
 `--repetition-penalty F` sets the value used by requests that omit it and is checked at startup the

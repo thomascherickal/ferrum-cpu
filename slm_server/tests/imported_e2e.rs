@@ -5,7 +5,7 @@
 //! otherwise).
 mod common;
 
-use common::llama::{tiny_llama, tiny_llama_bos_eos, BOS, EOS};
+use common::llama::{tiny_llama, tiny_llama_bos_eos, tiny_llama_chatml, BOS, EOS, IM_END};
 use common::{assert_graceful, http, sigint_and_wait, spawn, BIN};
 use ferrum_core::{
     Gguf, GgufBuilder, GgufTokenizer, LlamaModel, MetaValue, QKind, Rng, SamplingParams,
@@ -286,6 +286,52 @@ fn bos_follows_add_bos_token_and_an_empty_context_without_one_is_a_422() {
         }
         assert_graceful(sigint_and_wait(&mut child));
     }
+}
+
+#[test]
+fn chat_true_wraps_the_prompt_in_the_files_template_and_a_file_without_one_is_a_422() {
+    let f = File::new("chatml", &tiny_llama_chatml());
+    let r = Reference::new(&f.0, None);
+    let (mut child, _err, addr) = spawn(&f.0, &["--quant", "f32"]);
+    let got = results(
+        &addr,
+        "/v1/generate",
+        json!({"requests": [
+            {"prompt": "ab", "max_tokens": 6, "chat": true},
+            {"prompt": "ab", "max_tokens": 6},
+        ]}),
+    );
+    // The library side, as run-gguf builds a chat prompt: BOS + the rendered ChatML turn;
+    // EOS and <|im_end|> stop and are dropped.
+    let mut ids = vec![BOS as usize];
+    ids.extend(ferrum_core::chat_format::encode_segments(
+        &r.tok,
+        &ferrum_core::chat_format::render(ferrum_core::chat_format::ChatFormat::ChatMl, "ab"),
+    ));
+    let stops = [EOS as usize, IM_END as usize];
+    let mut out = r
+        .model
+        .generate(&ids, 6, &greedy(), &stops, &mut Rng::new(0))
+        .unwrap();
+    if out.last().is_some_and(|t| stops.contains(t)) {
+        out.pop();
+    }
+    let text = ferrum_core::llm_stop::continuation_text(&r.tok, *ids.last().unwrap(), &out);
+    assert_eq!(got[0], json!({"text": text, "n_tokens": out.len()}));
+    // Raw completion stays the default.
+    assert_eq!(got[1], r.generate("ab", 6, &greedy(), 0));
+    assert_graceful(sigint_and_wait(&mut child));
+
+    let f = File::new("nochat", &tiny_llama_bos_eos());
+    let (mut child, _err, addr) = spawn(&f.0, &["--quant", "f32"]);
+    let (s, v) = post(
+        &addr,
+        "/v1/generate",
+        &json!({"requests": [{"prompt": "ab", "chat": true}]}),
+    );
+    assert_eq!(s, 422, "{v}");
+    assert!(v.to_string().contains("no chat template"), "{v}");
+    assert_graceful(sigint_and_wait(&mut child));
 }
 
 #[test]

@@ -9,10 +9,11 @@ pub(crate) mod llama;
 /// The imported backend for GGUF `bytes`, at f32.
 pub(crate) fn imported(bytes: &[u8]) -> Imported {
     let g = Gguf::parse(bytes.to_vec()).unwrap();
-    Imported {
-        tok: GgufTokenizer::from_gguf(&g).unwrap(),
-        model: g.load_llama_prec(None).unwrap(),
-    }
+    Imported::new(
+        g.load_llama_prec(None).unwrap(),
+        GgufTokenizer::from_gguf(&g).unwrap(),
+        &g,
+    )
 }
 
 /// A file in the temp directory, removed on drop.
