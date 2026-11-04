@@ -598,3 +598,89 @@ fn metrics_csv_and_verbose_progress_leave_the_trained_model_bit_identical() {
     assert!(String::from_utf8_lossy(&bad.stderr).contains("cannot write"));
     assert!(!e.p("x.gguf").exists());
 }
+
+/// Spawn `train` (many one-step epochs, so it is still running when the signal lands), wait
+/// for its first output, send each of `sigs` to it, and return its output once it exits.
+#[cfg(unix)]
+fn train_and_signal(e: &Env, model: &str, extra: &[&str], sigs: &[&str]) -> Output {
+    use std::process::Stdio;
+    let (train, model) = (e.s("prep/train.txt"), e.s(model));
+    let mut a = vec!["train", &train, &model];
+    a.extend(ARCH);
+    a.extend(["--seed", "7", "--vocab", "300", "--batch", "4096"]);
+    a.extend(extra);
+    let out_file = e.p("live.out");
+    let child = Command::new(BIN)
+        .args(&a)
+        .stdout(std::fs::File::create(&out_file).unwrap())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    while std::fs::metadata(&out_file).unwrap().len() == 0 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    for s in sigs {
+        let st = Command::new("kill")
+            .args([&format!("-{s}"), &child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(st.success());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let mut o = child.wait_with_output().unwrap();
+    o.stdout = std::fs::read(&out_file).unwrap();
+    o
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_writes_a_checkpoint_exits_130_and_resume_is_bit_identical() {
+    let e = Env::new("sigint");
+    let epochs = ["--epochs", "600"];
+    e.train(
+        "full.gguf",
+        &["--vocab", "300", "--batch", "4096", "--epochs", "600"],
+    );
+
+    let ck = e.s("ck.fckp");
+    let mut a = epochs.to_vec();
+    a.extend(["--checkpoint", &ck]);
+    let o = train_and_signal(&e, "part.gguf", &a, &["INT"]);
+    let (out, err) = (
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr),
+    );
+    assert_eq!(o.status.code(), Some(130), "{out}\n{err}");
+    assert!(
+        out.contains(&format!(
+            "checkpoint written to {ck}; resume with --resume {ck}"
+        )),
+        "{out}"
+    );
+    assert!(err.contains("finishing the current step"), "{err}");
+    assert!(e.p("ck.fckp").is_file());
+
+    // Interrupted mid-run (not at the end): resuming finishes bit-identical to a clean run.
+    let mut r = epochs.to_vec();
+    r.extend(["--vocab", "300", "--batch", "4096", "--resume", &ck]);
+    e.train("resumed.gguf", &r);
+    assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("resumed.gguf")));
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_without_a_checkpoint_says_nothing_was_saved_and_a_second_one_exits_at_once() {
+    let e = Env::new("sigint2");
+    let o = train_and_signal(&e, "a.gguf", &["--epochs", "600"], &["INT"]);
+    assert_eq!(o.status.code(), Some(130));
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        out.contains("no checkpoint was configured; nothing saved"),
+        "{out}"
+    );
+
+    // Two signals in a row: still exit status 130, never a hang.
+    let o = train_and_signal(&e, "b.gguf", &["--epochs", "600"], &["INT", "INT"]);
+    assert_eq!(o.status.code(), Some(130));
+}

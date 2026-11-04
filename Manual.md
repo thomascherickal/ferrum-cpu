@@ -227,6 +227,7 @@ The dependencies as they are in each `Cargo.toml`:
 |---|---|---|
 | `unicode-general-category`, `unicode-normalization` | `ferrum_core` | The GPT-2 pre-tokenizer's `\p{L}`/`\p{N}` classes, and NFKC for `prepare --nfkc`. Both are pure Rust tables and build for `wasm32`. |
 | `sha2`, `serde_json` | `slm_cli`, `slm_server` | sha256 in `prepare` manifests and the server's `model_sha256`; `manifest.json`, `eval --json`, and the server's JSON. Hashes are correctness-critical, and a hand-written one is more code to audit. |
+| `ctrlc` | `slm_cli` binary only | Catching Ctrl-C (SIGINT) so `train` and `finetune-gguf` save a checkpoint before exiting. Safe std cannot catch a signal and the repo forbids `unsafe`; `ctrlc` 3.5.2 (MSRV 1.69) runs the handler on its own thread. Not in `ferrum_core`, `slm_server`, `slm_wasm` or `ferrum_gui`. |
 | `axum`, `tokio`, `serde` | `slm_server` only | The HTTP server. The engine does not depend on them. |
 | `wasm-bindgen` | `slm_wasm` only | Browser bindings. |
 | `tauri` and friends | `ferrum_gui` only | The desktop GUI, outside the workspace. |
@@ -812,8 +813,13 @@ settings changed since the checkpoint was written (lr 0.01 -> 0.005, ...)`, sinc
 no longer matches an uninterrupted run. A checkpoint written before these keys
 existed resumes as before and prints `note: the checkpoint predates its recorded
 training settings; ... could not be compared`.
-A hard interrupt (Ctrl-C, power cut) does not save on exit; the checkpoint on
-disk is the last periodic one.
+**Ctrl-C** (`train` and `finetune-gguf`, with a `--checkpoint`) finishes the
+current optimizer step, writes the checkpoint exactly like the stop file, prints
+`interrupted at step N: checkpoint written to <path>; resume with --resume <path>`
+and exits 130 (the shell's 128 + SIGINT). A second Ctrl-C exits 130 at once. Without
+`--checkpoint` it prints `no checkpoint was configured; nothing saved` instead. The
+resumed run is bit-identical to an uninterrupted one. SIGTERM, SIGHUP and a power cut
+are not caught: the checkpoint on disk is the last periodic one.
 
 Walk-through with a real run: [docs/resume-cancel-and-prepare.md](docs/resume-cancel-and-prepare.md).
 

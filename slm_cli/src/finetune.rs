@@ -233,7 +233,8 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 7. Save the checkpoint (weights + optimizer moments + RNG + step).
     let bytes = tr.save_checkpoint(&rng);
-    std::fs::write(out_path, &bytes).map_err(|e| format!("cannot write {out_path}: {e}"))?;
+    // Atomic: a second Ctrl-C (which exits at once) never leaves a torn checkpoint behind.
+    ferrum_core::atomic_write(out_path, &bytes).map_err(|e| e.to_string())?;
     println!(
         "\nSaved fine-tune checkpoint → {out_path} ({:.2} MB)\n  \
          run it with:  train_transformer run-gguf {gguf_path} \"<prompt>\" --resume {out_path}",
@@ -241,8 +242,8 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     );
     crate::stop::report(&stop, stopped, Some(out_path));
 
-    // 8. Optional sample generation from the fine-tuned model.
-    if args.has("sample") {
+    // 8. Optional sample generation from the fine-tuned model (not after a Ctrl-C).
+    if args.has("sample") && !crate::interrupt::is_set() {
         let prompt = tok.bos().into_iter().collect::<Vec<_>>();
         let prompt = if prompt.is_empty() {
             vec![tokens[0]]

@@ -6,7 +6,7 @@ use std::io::Write;
 /// mid-write can never leave a truncated file at `path` and an existing file stays intact until
 /// the new one is complete (`rename` replaces an existing destination on Unix and Windows).
 /// Errors name `path`; a failed write leaves no temp file behind.
-pub(crate) fn atomic_write(path: &str, bytes: &[u8]) -> Result<()> {
+pub fn atomic_write(path: &str, bytes: &[u8]) -> Result<()> {
     atomic_write_with(path, |f| f.write_all(bytes))
 }
 

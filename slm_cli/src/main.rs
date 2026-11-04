@@ -134,6 +134,10 @@ pub(crate) fn main() {
         eprintln!("error: {e}");
         std::process::exit(1);
     }
+    // A run stopped by Ctrl-C has written its checkpoint; say so with the shell's status.
+    if interrupt::is_set() {
+        std::process::exit(interrupt::EXIT_STATUS);
+    }
 }
 
 pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -167,6 +171,11 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
     preset::selected(&args)?; // an unknown --preset fails before anything else, even if the model exists
     if engine_debug(&cmd, &args) {
         ferrum_core::set_verbose(true);
+    }
+    if interrupt::wants_handler(&cmd) {
+        if let Err(e) = interrupt::install() {
+            eprintln!("warning: {e}; Ctrl-C will end the run without a checkpoint");
+        }
     }
     match cmd.as_str() {
         "train" => cmd_train(&args),

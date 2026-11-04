@@ -10,9 +10,9 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · read-only scan; no
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
 | High (feature in one front end, missing in another, user-visible) | 0 open (H1, H2, H3 closed) |
-| Medium (declared ceiling with no plan) | 6 open (M1, M2, M3, M4, M7, M10 closed; M13 closed, yarn refused; M5, M6 partly) |
+| Medium (declared ceiling with no plan) | 5 open (M1, M2, M3, M4, M7, M8, M10 closed; M13 closed, yarn refused; M5, M6 partly) |
 | Low (polish) | 14 (13 open, L2 closed) |
-| **Total** | **29** (18 open) |
+| **Total** | **29** (17 open) |
 
 No Critical finding: every Manual flag table, default, server route and server flag that was cross-checked matches the code (see "Mechanical cross-checks" below). The Critical column is empty because nothing met the bar, not because the check was skipped.
 
@@ -126,7 +126,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 | resume (train) | yes (`--resume`) | yes (`resume` checkbox, `train_tab.js:95`) | n/a | n/a | n/a |
 | resume (finetune / apply `.flck`) | yes (`finetune-gguf`, `run-gguf`, `export-gguf`, `eval-gguf --resume`) | yes (`resume` in finetune/run/export/evaluate params) | no | no | no |
 | exact mid-epoch resume | yes (train, Manual §6.6; finetune, Manual §9.2, M3 closed) | yes (same engine) | n/a | n/a | n/a |
-| cancel / stop | partial: stop file and `--max-seconds` on train/finetune; Ctrl-C kills without saving (M8) | yes: Stop for Prepare, Train, Generate, GGUF, Fine-tune, Export, Tokenize (`jobs.rs`, `cancel_job`); not Evaluate or an `ollama create` | partial: server shutdown only; no cancel on disconnect (M1) | yes (`cancel()`, `lib.rs:142`) | no |
+| cancel / stop | yes: stop file, `--max-seconds` and Ctrl-C (checkpoint, exit 130) on train/finetune | yes: Stop for Prepare, Train, Generate, GGUF, Fine-tune, Export, Tokenize (`jobs.rs`, `cancel_job`); not Evaluate or an `ollama create` | partial: server shutdown only; no cancel on disconnect (M1) | yes (`cancel()`, `lib.rs:142`) | no |
 | corpus identity (`corpus_id`) | yes (train: `train.rs:48`; finetune: `finetune.rs`, M3 closed) | yes (train: `commands/train.rs:127`; finetune: `commands/finetune.rs`) | n/a | n/a | n/a |
 | progress events | text lines (`-v`, epoch lines) | yes: `train-progress`, `finetune-progress`, `export-progress`, `prepare-progress`, `tokenize-progress`, `download-progress`, `clean-progress`, `serve-log`; none for `download_text` (L8) | no | partial: pull `next_chunk`, `tokens_generated` | no |
 | stop sequences | yes `generate --stop` and `run-gguf --stop` (repeatable) | yes Generate tab and GGUF tab (M10 closed) | yes (`stop`, 16 x 1024 B) | yes | no |

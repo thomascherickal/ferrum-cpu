@@ -134,7 +134,7 @@ Do not break these; they are the product's selling points.
   `unicode-normalization` (NFKC for `prepare`). Add no others — std only; its
   threading and matmul kernels are hand-written. Benchmarks are std-only too
   (`harness = false`, no Criterion). The other crates pull their own
-  (`slm_cli`: sha2/serde_json; `slm_server`: axum/tokio/serde/serde_json/sha2;
+  (`slm_cli`: sha2/serde_json/ctrlc; `slm_server`: axum/tokio/serde/serde_json/sha2;
   `slm_wasm`: wasm-bindgen; `ferrum_gui`: Tauri and a few helpers, see its `Cargo.toml`). A new dependency anywhere
   needs a benchmark that shows a gain (or that it replaces more code than it
   adds), a passing determinism test, a working `wasm32-unknown-unknown` build of

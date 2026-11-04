@@ -350,7 +350,7 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
 
-    if args.has("sample") {
+    if args.has("sample") && !crate::interrupt::is_set() {
         match token_input.as_mut() {
             Some((file, tok)) => {
                 print_sample_from(&slm, &crate::token_train::sample_seed(file, tok)?)?

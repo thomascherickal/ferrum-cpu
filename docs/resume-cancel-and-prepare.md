@@ -2,7 +2,7 @@
 
 # Resume exactly, refuse the wrong corpus, cancel generation, trust `prepare`
 
-Four small features, one how-to each, and the same resume rules for `finetune-gguf` (section 5). Every command and output below comes from a
+Five small features, one how-to each, and the same resume rules for `finetune-gguf` (section 6). Every command and output below comes from a
 real run on this machine with a tiny model (context 16, embed 16, 2 blocks, 2 heads,
 hidden 32, vocab 300, `--threads 1`) on a generated 300-document corpus. The paths
 are shortened to bare file names. Only what is marked "not run" was not run.
@@ -131,7 +131,29 @@ In scripts, test for the manifest before using a prepared folder:
 behind is harmless and is replaced by the next run. The DVC `prepare` stage
 tracks the manifest in git, so a changed manifest is a changed dataset.
 
-## 5. The same for `finetune-gguf`
+## 5. Stopping with Ctrl-C
+
+`train` and `finetune-gguf` catch Ctrl-C (SIGINT). The first one finishes the current
+step, writes the checkpoint like the stop file does, and exits 130; a second Ctrl-C
+exits 130 at once. Real run (a tiny model, 600 one-step epochs, SIGINT sent after 1.5 s,
+2026-11-04, `kill -INT` stands in for the keypress):
+
+```
+$ train_transformer train prep/train.txt part.gguf $A --checkpoint ck.fckp   # then Ctrl-C
+exit status: 130
+Saved 62368 bytes → part.gguf (int8 GGUF)
+interrupted at step 270: checkpoint written to ck.fckp; resume with --resume ck.fckp
+interrupt: finishing the current step, then stopping (Ctrl-C again to quit now)
+$ train_transformer train prep/train.txt resumed.gguf $A --resume ck.fckp
+$ sha256sum full.gguf resumed.gguf        # full.gguf = the same run, never interrupted
+3e2b157fac08585c...  full.gguf
+3e2b157fac08585c...  resumed.gguf
+```
+
+Without `--checkpoint` the line reads `no checkpoint was configured; nothing saved to
+resume from`. SIGTERM and SIGHUP are not caught.
+
+## 6. The same for `finetune-gguf`
 
 A `.flck` records the corpus id, the batch, `--seq`, the learning-rate settings and where
 its epoch began, so `finetune-gguf --resume` follows the same rules as `train --resume`.

@@ -94,6 +94,7 @@ pub use dataset::{
     validate_for_training, CleanOptions, CorpusStats,
 };
 pub use error::{InferError, Result};
+pub use fs_atomic::atomic_write;
 pub use gguf::{f16_to_f32, Gguf, MetaValue, NumArray, TensorInfo};
 pub use gguf_tokenizer::{GgufTokenizer, TokModel};
 pub use gguf_write::{llama_gguf_bytes, write_llama_gguf, GgufBuilder, GgufQuant};

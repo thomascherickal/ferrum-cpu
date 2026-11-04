@@ -48,10 +48,20 @@ fn condition_with(
 }
 
 /// The one-line stop report; `ckpt` is the checkpoint to resume from, if one was written.
+/// In the CLI the only cancel source is the interrupt flag, so `Cancelled` means Ctrl-C.
 fn announcement(cause: StopCause, step: u64, ckpt: Option<&str>) -> String {
-    match ckpt {
-        Some(p) => format!("stopped early at step {step}: {cause}; resume with --resume {p}"),
-        None => format!(
+    match (cause, ckpt) {
+        (StopCause::Cancelled, Some(p)) => format!(
+            "interrupted at step {step}: checkpoint written to {p}; resume with --resume {p}"
+        ),
+        (StopCause::Cancelled, None) => format!(
+            "interrupted at step {step}: no checkpoint was configured; nothing saved to resume \
+             from (pass --checkpoint to make an interrupted run resumable)"
+        ),
+        (_, Some(p)) => {
+            format!("stopped early at step {step}: {cause}; resume with --resume {p}")
+        }
+        (_, None) => format!(
             "stopped early at step {step}: {cause}; no checkpoint was configured \
              (pass --checkpoint to make a stopped run resumable)"
         ),
@@ -113,6 +123,15 @@ mod tests {
         let none = announcement(StopCause::TimeBudget, 3, None);
         assert!(none.starts_with("stopped early at step 3: time budget reached; no checkpoint"));
         assert!(none.ends_with("(pass --checkpoint to make a stopped run resumable)"));
+        assert_eq!(
+            announcement(StopCause::Cancelled, 5, Some("m.ckpt")),
+            "interrupted at step 5: checkpoint written to m.ckpt; resume with --resume m.ckpt"
+        );
+        let none = announcement(StopCause::Cancelled, 2, None);
+        assert!(
+            none.starts_with("interrupted at step 2: no checkpoint was configured; nothing saved"),
+            "{none}"
+        );
     }
 
     #[test]
