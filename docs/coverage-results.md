@@ -2,7 +2,7 @@
 
 # Coverage results
 
-One entry per `scripts/coverage.sh` run. Runs happen once a day, at noon (CLAUDE.md rule 10). Numbers are copied from the run's `target/coverage/summary.txt`.
+One entry per `scripts/coverage.sh` run. Local runs stopped on 2026-11-04: CI measures coverage on every push (CLAUDE.md rule 10); the entries below are the past local runs. Numbers are copied from the run's `target/coverage/summary.txt`.
 
 ## 2026-11-02
 
@@ -38,4 +38,4 @@ Rust files with missed lines (workspace): `slm_cli/src/tokenize.rs` 7, `slm_cli/
 
 CI floors set from this run (CLAUDE.md rule 15): Rust 99, GUI 98, JS 98, Python 100. The 100 % goal is not met yet; the per-file lists above are the work list for the next round. The causes of the remaining lines were not analysed in this run.
 
-Next run: noon 2026-11-04.
+No further local runs are scheduled (user decision, 2026-11-04); CI's `coverage` job is the gate on every push.

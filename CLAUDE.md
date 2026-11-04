@@ -54,14 +54,15 @@ skills. When the user states a new rule, add it here.
    docs listed under Conventions exist (plus `docs/coverage-results.md`, rule
    10, the tutorials of rule 14, and reports the user asks for by name:
    `docs/ferrum-capabilities.md`, `docs/gap-report.md`); add no others.
-10. **Coverage runs once a day, at noon, no more.** This limits LOCAL runs of
-    `scripts/coverage.sh`; the CI `coverage` job runs on every push as the
-    gate. Run it locally (alone, never beside tests) only in the noon slot (about 12:00, local
-    time), never on demand in between. Record every run in
-    `docs/coverage-results.md`: date, commit, the totals, and the per-file lines
-    that are not 100 %. Between runs, find gaps by reasoning from the last
-    results file and the unit tests, not by rerunning coverage. (No run on
-    2026-11-02, by the user's instruction.)
+10. **Coverage is measured by CI on every push; no local runs.** The CI
+    `coverage` job runs on every push as the gate (user decision, 2026-11-04:
+    the daily noon run of `scripts/coverage.sh` is dropped). Do not run
+    `scripts/coverage.sh` locally on a schedule or on demand; a local run is
+    for the user to ask for by name. Find gaps by reasoning from the last
+    results in `docs/coverage-results.md` and the unit tests, and read raised
+    floors from a real CI coverage job log. Past local runs stay recorded in
+    `docs/coverage-results.md` (no run on 2026-11-02, by the user's
+    instruction; the last local run was the noon run of 2026-11-03).
 11. **Run the tests and fix every failure before every commit.** The full
     `cargo test --workspace --release` (plus clippy and fmt) is green before a
     commit is made; a red or untested tree is never committed.
