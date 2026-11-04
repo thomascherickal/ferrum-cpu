@@ -1,15 +1,24 @@
 //! Single error type used by every module in ferrum_core.
+#![warn(missing_docs)]
 use std::fmt;
 
+/// Every error `ferrum_core` returns.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InferError {
+    /// A tensor had `got` elements where `expected` were needed.
     ShapeMismatch {
+        /// Elements needed.
         expected: usize,
+        /// Elements found.
         got: usize,
     },
+    /// Two shapes, sizes or lengths that must agree do not (the message says which).
     DimMismatch(String),
+    /// A rank-2 tensor was needed; this is the shape found.
     NotAMatrix(Vec<usize>),
+    /// A file or stream operation failed.
     Io(String),
+    /// A file is not in the expected format (bad GGUF, wrong kind, missing key ...).
     Format(String),
     /// Returned by the CSV loader when a value cannot be parsed.
     ParseError(String),
@@ -47,6 +56,7 @@ impl From<std::num::ParseFloatError> for InferError {
     }
 }
 
+/// `Result` with [`InferError`].
 pub type Result<T> = std::result::Result<T, InferError>;
 
 #[cfg(test)]

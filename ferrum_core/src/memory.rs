@@ -1,6 +1,7 @@
 //! Pre-load memory checks for imported GGUFs, shared by every front end that loads one (the
 //! CLI's `run-gguf`/`eval-gguf`/`export-gguf`/`finetune-gguf`, `ferrum-serve`, the GUI): the
 //! resident-size estimate, the import-precision names, available RAM and the 90 % refusal.
+#![warn(missing_docs)]
 
 use crate::gguf::Gguf;
 use crate::quant::QKind;

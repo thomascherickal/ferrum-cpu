@@ -5,19 +5,28 @@
 //! fallback when the key is absent. `render` returns text/special segments so
 //! the runner can map each special token to its exact vocab id instead of
 //! letting byte-BPE shred it. Single-turn only, by design.
+#![warn(missing_docs)]
 
 use crate::gguf_tokenizer::GgufTokenizer;
 
+/// The single-turn chat templates Ferrum recognises.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatFormat {
-    ChatMl,     // Qwen2/Qwen3 (<|im_start|> …)
-    Llama3,     // Llama-3.x header tags
-    Llama2Inst, // [INST] … [/INST]
-    Zephyr,     // TinyLlama-chat style <|user|>/<|assistant|>
+    /// Qwen2/Qwen3 (`<|im_start|>` …).
+    ChatMl,
+    /// Llama-3.x header tags.
+    Llama3,
+    /// `[INST] … [/INST]`.
+    Llama2Inst,
+    /// TinyLlama-chat style `<|user|>` / `<|assistant|>`.
+    Zephyr,
 }
 
+/// One piece of a rendered prompt.
 pub enum Segment {
+    /// Ordinary text, encoded with the tokenizer.
     Text(String),
+    /// A special token, mapped to its vocab id when the vocab has it.
     Special(&'static str),
 }
 

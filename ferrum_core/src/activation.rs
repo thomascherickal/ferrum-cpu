@@ -1,4 +1,5 @@
 //! Activation functions as a serialisable enum.
+#![warn(missing_docs)]
 use crate::error::Result;
 use crate::ops;
 use crate::tensor::Tensor;
@@ -24,12 +25,18 @@ pub fn gelu_grad(x: f32) -> f32 {
     0.5 * (1.0 + t) + 0.5 * x * (1.0 - t * t) * K * (1.0 + 3.0 * 0.044715 * x * x)
 }
 
+/// An element-wise (or, for `Softmax`, row-wise) nonlinearity of a layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Activation {
+    /// `x`, unchanged.
     Identity,
+    /// `max(x, 0)`.
     ReLU,
+    /// `1 / (1 + e^-x)`.
     Sigmoid,
+    /// `tanh(x)`.
     Tanh,
+    /// Softmax over each row of a rank-2 tensor.
     Softmax,
     /// SiLU / swish: `x · sigmoid(x)`. The gate nonlinearity in SwiGLU FFNs
     /// (Llama / Qwen / Mistral).
@@ -37,6 +44,7 @@ pub enum Activation {
 }
 
 impl Activation {
+    /// The activation applied to `input` (a new tensor of the same shape).
     pub fn apply(&self, input: &Tensor) -> Result<Tensor> {
         vprintln!("[activation::apply] {:?} on shape={:?}", self, input.shape);
         let result = match self {
@@ -61,6 +69,7 @@ impl Activation {
         Ok(result)
     }
 
+    /// The one-byte code stored in a model file; [`Activation::from_tag`] reverses it.
     pub fn tag(&self) -> u8 {
         match self {
             Activation::Identity => 0,
@@ -72,6 +81,7 @@ impl Activation {
         }
     }
 
+    /// The activation of a stored [`Activation::tag`], `None` for an unknown code.
     pub fn from_tag(t: u8) -> Option<Self> {
         match t {
             0 => Some(Activation::Identity),

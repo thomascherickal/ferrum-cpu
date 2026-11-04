@@ -4,6 +4,7 @@
 //! `println!` output throughout every module. When verbose is **off**
 //! (the default) the only overhead is a single `AtomicBool` load per
 //! call-site — branch-predicted away to nothing.
+#![warn(missing_docs)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

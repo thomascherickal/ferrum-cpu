@@ -7,6 +7,7 @@
 //! forward and backward passes see exactly the weights an int8-serialized
 //! model will run with, while the optimizer keeps updating full-precision
 //! master weights (straight-through estimator).
+#![warn(missing_docs)]
 
 /// Tensors shorter than this stay f32 both in quantized GGUF files and during
 /// QAT: biases and LayerNorm parameters are small (no size win) and
@@ -128,8 +129,11 @@ impl QKind {
 /// expanded back to a full f32 buffer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QWeight {
+    /// Rows of the matrix.
     pub rows: usize,
+    /// Columns of the matrix.
     pub cols: usize,
+    /// Int8 or int4.
     pub kind: QKind,
     /// One scale per row (length `rows`).
     pub scales: Vec<f32>,

@@ -6,6 +6,7 @@
 //! a script) fetches bytes however it likes and then calls [`clean_corpus`] /
 //! [`corpus_stats`] / [`validate_for_training`], all of which are pure string
 //! functions and fully tested.
+#![warn(missing_docs)]
 
 use crate::error::{InferError, Result};
 

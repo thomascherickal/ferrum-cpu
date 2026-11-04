@@ -50,6 +50,7 @@ impl TokenSink<'_> {
         self.tokens
     }
 
+    /// True when no id was pushed yet.
     pub fn is_empty(&self) -> bool {
         self.tokens == 0
     }

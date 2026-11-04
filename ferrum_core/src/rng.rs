@@ -1,9 +1,13 @@
 //! Seeded xorshift64* PRNG — deterministic, dependency-free.
+#![warn(missing_docs)]
+
+/// A seeded xorshift64* generator: the same seed gives the same sequence on every platform.
 pub struct Rng {
     state: u64,
 }
 
 impl Rng {
+    /// A generator for `seed` (0 is remapped to a fixed non-zero state, which xorshift needs).
     pub fn new(seed: u64) -> Self {
         let actual_seed = if seed == 0 { 0x9E3779B97F4A7C15 } else { seed };
         crate::vprintln!("[rng::Rng::new] seed={} (effective={})", seed, actual_seed);
@@ -22,6 +26,7 @@ impl Rng {
         Self { state }
     }
 
+    /// The next 64 random bits.
     pub fn next_u64(&mut self) -> u64 {
         let mut x = self.state;
         x ^= x << 13;
@@ -31,6 +36,7 @@ impl Rng {
         x.wrapping_mul(0x2545F4914F6CDD1D)
     }
 
+    /// A uniform value in `[0, 1)` (24 bits of precision).
     pub fn next_f32(&mut self) -> f32 {
         (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32
     }

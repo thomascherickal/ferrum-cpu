@@ -1,5 +1,6 @@
 //! Primitive math kernels. All raw arithmetic lives here — nothing above
 //! this module does floating-point arithmetic directly.
+#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 use crate::quant::{QKind, QWeight};
 use crate::tensor::Tensor;

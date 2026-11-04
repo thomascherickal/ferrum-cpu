@@ -10,6 +10,7 @@
 //!
 //! Output is [`write_token_file`] (one pass, atomic, ids pushed into a [`TokenSink`]); the reader
 //! is [`TokenFile`] (`Read` + `Seek` on the tensor data, no whole-file read, no mmap).
+#![warn(missing_docs)]
 
 mod reader;
 mod writer;
@@ -40,7 +41,9 @@ pub struct TokenFileMeta {
 /// What a finished token file holds.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TokenFileStats {
+    /// Ids written.
     pub tokens: u64,
+    /// Documents written (each ends with the EOS id when the tokenizer has one).
     pub documents: u64,
     /// Size of the file in bytes.
     pub bytes: u64,

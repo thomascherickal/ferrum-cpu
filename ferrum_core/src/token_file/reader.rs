@@ -122,18 +122,22 @@ impl TokenFile {
         self.tokens
     }
 
+    /// True when the file holds no ids.
     pub fn is_empty(&self) -> bool {
         self.tokens == 0
     }
 
+    /// Vocabulary size of the tokenizer the ids came from.
     pub fn vocab_size(&self) -> usize {
         self.vocab_size
     }
 
+    /// Number of documents in the file.
     pub fn documents(&self) -> u64 {
         self.documents
     }
 
+    /// The EOS id that ends each document, if the tokenizer has one.
     pub fn eos_id(&self) -> Option<u32> {
         self.eos_id
     }
