@@ -2180,7 +2180,7 @@ form values and the live hardware into an *estimate*: a time with a low-high
 range, the peak RAM, the RAM the app allows for that job, and whether it fits.
 The model is first-principles and every constant comes from a measurement on
 the reference machine (11th Gen Core i5-1135G7, 4 cores / 8 threads, release
-build), listed in the comments of `src/estimate.rs`:
+build), listed in the comments of `src/sizing/estimate.rs`:
 
 - **Training** costs about `6*M + 12*L*T*C` FLOPs per token (M = matmul
   parameters, L blocks, T context, C width) at a rate fitted to the four rows
@@ -2326,22 +2326,17 @@ the file dialogs) is unknown.
 ### 10.6 Architecture
 
 ```text
-ui/               index.html, styles.css, app.js (wires the page: Tauri bindings, the shared env, backend events, start-up), one plain-script module per area, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_budget.js (the over-budget dialog), gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, serve_tab.js, system_tab.js; common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), errors.js (reads a command error, truncates it, builds the copy-details text), escape.js, stream.js, help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page); each has a *.test.js run with plain `node` where it has logic of its own (the tab modules are tested through app_flows.test.js), sharing the dependency-free DOM stand-in testdom.js and the app loader testapp.js
-src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry
-src/serve.rs       the Serve tab: `serve_start` / `serve_stop` / `serve_status` over `slm_server::bind` (the HTTP server runs in-process), the `serve` job slot, `serve-log` events
+ui/               index.html, styles.css and logo.png (frontendDist = "ui"), and three folders:
+ui/core/          app.js (wires the page: Tauri bindings, the shared env, backend events, start-up) and the shared plain scripts, each `window.FerrumXxx.create(env)` with a `module.exports` twin for Node: shell.js (tabs, Browse, Stop buttons, terminal), common.js (toasts, field readers, formatters, loss chart, progress bars), a11y.js (tab-bar keys, modal dialog focus), settings.js (remembered form values), errors.js (reads a command error, truncates it, builds the copy-details text), escape.js, stream.js, gguf_budget.js (the over-budget dialog), help.js (the help text of every field and button, as data), tooltip.js (accessible tooltips), estimate_view.js (formats hardware and estimates), live.js (wires tooltips and estimates to the page)
+ui/tabs/          one module per tab: datasets_tab.js, prepare_tab.js, tokenize_tab.js, train_tab.js (form, pre-flight, chart), generate_tab.js, evaluate_tab.js, models_tab.js, capable_tab.js, gguf_tab.js, finetune_tab.js, runtime_tab.js (the Ollama / LM Studio block), export_tab.js, serve_tab.js, system_tab.js
+ui/tests/         the *.test.js files run with plain `node` (the tab modules are tested through app_flows.test.js), the dependency-free DOM stand-in testdom.js, the app loader testapp.js, testhtml.js, and the two pinned argument fixtures
+src/lib.rs        Tauri builder, shared state, verbose → event sink, command registry; re-exports only estimate, estimate_cmd and hardware
 src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
-src/error.rs      CmdError {code, message, hint}: the error every command returns, and the blocking-task helper
-src/jobs.rs       one running slot per kind of long job + the cancel_job command
 src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
-src/preflight.rs  the Train tab's pre-flight panel (parameter count, peak RAM, llama.cpp verdict)
-src/capable.rs    machine micro-benchmark + capability bounds
-src/hardware.rs   hardware_info: CPU, RAM and GPU detection (pure parsers, tested with fixtures)
-src/estimate.rs   pure time/RAM estimates per button (the cost model); src/estimate_cmd.rs resolves files and serves estimate_job
-src/tokenize.rs   the Train tab's Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`, progress events, cancel; `train_slm` itself accepts a token file (src/commands/train.rs)
-src/runtime_export.rs  the Export tab's Ollama / LM Studio block: `preview_runtime_export`, `export_to_runtime` over `slm_cli::runtime_export`
-src/prepare.rs    the Prepare tab: `prepare_dataset` over `slm_cli::prepare` (the CLI's pipeline), progress events, cancel
-src/datasets.rs   corpus catalog + HTTP / Hugging Face / Kaggle downloads
-src/paths.rs      validation of every file path the webview sends (no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file)
+src/sizing/       hardware.rs (hardware_info: CPU, RAM and GPU detection, pure parsers tested with fixtures), estimate.rs + estimate/tests.rs (pure time/RAM estimates per button, the cost model), estimate_cmd.rs (resolves files and serves estimate_job), preflight.rs (the Train tab's pre-flight panel: parameter count, peak RAM, llama.cpp verdict), capable.rs (machine micro-benchmark + capability bounds)
+src/data/         datasets.rs (corpus catalog + HTTP / Hugging Face / Kaggle downloads), prepare.rs (the Prepare tab: `prepare_dataset` over `slm_cli::prepare`, progress events, cancel), tokenize.rs (Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`; `train_slm` itself accepts a token file)
+src/serving/      serve.rs (the Serve tab: `serve_start` / `serve_stop` / `serve_status` over `slm_server::bind`, the HTTP server runs in-process, `serve-log` events), runtime_export.rs (the Export tab's Ollama / LM Studio block over `slm_cli::runtime_export`)
+src/infra/        error.rs (CmdError {code, message, hint} and the blocking-task helper), jobs.rs (one running slot per kind of long job + the cancel_job command), paths.rs (validation of every file path the webview sends: no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file), http.rs (the one HTTP client every download uses), progress.rs (throttled `download-progress` and Clean progress events)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)
 capabilities/     Tauri v2 permissions (event listen/unlisten + dialog open/save only)
 ```
@@ -2360,7 +2355,7 @@ few seconds:
 
 | Layer | What it checks | Where |
 |---|---|---|
-| Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/hardware.rs`, `src/estimate/tests.rs` |
+| Unit (Rust) | The GPU and `nvidia-smi` parsers against fixture text, including garbled input; the estimate model (more cores are never slower, bigger models are never faster, epochs scale linearly, too little RAM is flagged, the model reproduces the Manual §6.7 rows within 35%) | `src/sizing/hardware.rs`, `src/sizing/estimate/tests.rs` |
 | IPC (Rust, headless) | The real command registry driven through Tauri's mock runtime: argument names, `camelCase` results, events, error strings; tiny train, generate, evaluate, GGUF run, fine-tune and export end to end; a training and a fine-tune job cancelled mid-run (stopped result, loadable model, resumable checkpoint, no temp files, a second start refused); `prepare_dataset` end to end (result keys, progress events, the manifest's `args`, a held job slot refusing a second start, errors) and the GUI's output compared byte for byte with the CLI library's for the same options; tokenizing and training from the token file through IPC (the model file byte-identical to training from the text, the ids equal to `encode_docs`, errors, the pre-flight and estimates of a token file); the Ollama / LM Studio commands through IPC with fake tool scripts (preview starts nothing, refusals, the Modelfile the tool received equals the one shown, Modelfile-only, a held job slot); the Serve tab's server started on port 0 with a tiny model and called over a real `std::net::TcpStream` on 127.0.0.1 (`/health`, `/v1/info`, `/v1/generate`, 401 with and without the token, 404, the request counter, the startup banner and request lines in `serve-log`, a second start refused, stop closing the port and a restart), start-up errors (non-loopback host without a token, zero limit, missing or damaged model, a taken port) | `src/ipc_tests.rs` |
 | Integration (Rust) | `hardware::detect` and `estimate_now` with real files and models, no window | `tests/hardware.rs`, `tests/estimate.rs` |
 | Contract | The arguments the JavaScript sends are pinned in two fixture files that the Node tests regenerate-or-compare and the Rust tests deserialize into the Rust types | `ui/tests/live_params.fixture.json`, `ui/tests/command_params.fixture.json`, `tests/ui_contract.rs` |
