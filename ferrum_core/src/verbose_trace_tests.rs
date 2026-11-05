@@ -262,3 +262,22 @@ fn verbose_tracing_covers_every_layer_loss_and_optimizer() {
     assert!(!crate::is_verbose());
     assert!(count("Verbose tracing ENABLED") >= 1);
 }
+
+/// The walk above relies on its `block` fixture; these pin what the fixture builds.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_fixture_has_the_requested_shape_and_parameter_count() {
+        let (c, h) = (4, 8);
+        let tb = block(c, h, 2, 3);
+        assert_eq!(tb.context_len(), 3);
+        // ln1 + q/k/v/o + ln2 + f1 + f2: 4c² + 2ch + 9c + h.
+        assert_eq!(tb.num_params(), 4 * c * c + 2 * c * h + 9 * c + h);
+        let x = Tensor::matrix(3, c, (0..12).map(|i| i as f32 * 0.1).collect()).unwrap();
+        let y = tb.forward(&x).unwrap();
+        assert_eq!(y.shape, vec![3, c]);
+        assert!(y.data.iter().all(|v| v.is_finite()));
+    }
+}

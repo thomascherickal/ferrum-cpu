@@ -128,3 +128,94 @@ pub fn write_token_file(
     .map_err(|e| failure.take().unwrap_or(e))?;
     Ok(stats)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(vocab: usize, eos: Option<u32>) -> TokenFileMeta {
+        TokenFileMeta {
+            vocab_size: vocab,
+            eos_id: eos,
+            tokenizer_sha256: "cd".repeat(32),
+        }
+    }
+
+    fn path(name: &str) -> String {
+        let d =
+            std::env::temp_dir().join(format!("ferrum_tokwriter_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.join("w.tok.gguf").to_str().unwrap().to_string()
+    }
+
+    fn contains(hay: &[u8], needle: &str) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle.as_bytes())
+    }
+
+    #[test]
+    fn header_names_the_kind_and_writes_eos_only_when_present() {
+        let with = header_bytes(&meta(10, Some(3)), 5, 2);
+        let without = header_bytes(&meta(10, None), 5, 2);
+        for h in [&with, &without] {
+            assert!(h.starts_with(b"GGUF"));
+            assert!(contains(h, TOKEN_FILE_ARCH) && contains(h, TENSOR));
+            assert!(contains(h, &"cd".repeat(32)));
+        }
+        assert!(contains(&with, "ferrum.tokens.eos_id"));
+        assert!(!contains(&without, "ferrum.tokens.eos_id"));
+    }
+
+    /// The ids after the header are little-endian i16 for a small vocabulary and u32 above
+    /// 32768, and `stats` reports the exact file size and the document count.
+    #[test]
+    fn ids_are_stored_little_endian_in_the_vocabulary_width() {
+        for (vocab, wide) in [(300usize, false), (40_000, true)] {
+            let p = path(&format!("le{vocab}"));
+            let ids = [1u32, 299, 7, 0];
+            let stats = write_token_file(&p, &meta(vocab, Some(7)), |s| s.push(&ids)).unwrap();
+            let bytes = std::fs::read(&p).unwrap();
+            assert_eq!(stats.bytes, bytes.len() as u64);
+            assert_eq!(
+                (stats.tokens, stats.documents),
+                (4, 2),
+                "one EOS splits two documents"
+            );
+            let want: Vec<u8> = if wide {
+                ids.iter().flat_map(|i| i.to_le_bytes()).collect()
+            } else {
+                ids.iter().flat_map(|&i| (i as i16).to_le_bytes()).collect()
+            };
+            assert_eq!(bytes[bytes.len() - want.len()..], want[..], "vocab {vocab}");
+            assert_eq!(
+                bytes[..bytes.len() - want.len()],
+                header_bytes(&meta(vocab, Some(7)), 4, 2)[..],
+                "the placeholder header was rewritten with the real counts"
+            );
+        }
+    }
+
+    #[test]
+    fn bad_meta_is_rejected_before_any_file_appears() {
+        let p = path("meta");
+        let never = |_: &mut TokenSink| -> Result<()> { panic!("produce must not run") };
+        for m in [
+            meta(0, None),
+            meta(i32::MAX as usize + 1, None),
+            meta(5, Some(5)),
+        ] {
+            assert!(matches!(
+                write_token_file(&p, &m, never),
+                Err(InferError::Format(_))
+            ));
+        }
+        assert!(!std::path::Path::new(&p).exists());
+    }
+
+    #[test]
+    fn an_empty_stream_has_no_documents() {
+        let p = path("empty");
+        let stats = write_token_file(&p, &meta(10, Some(1)), |_| Ok(())).unwrap();
+        assert_eq!((stats.tokens, stats.documents), (0, 0));
+    }
+}

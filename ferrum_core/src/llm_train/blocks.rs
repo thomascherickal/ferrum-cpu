@@ -326,3 +326,113 @@ pub(super) fn block_backward(
     }
     d_x
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::LlamaModel;
+    use crate::llm_train::buffers::Buffers;
+    use crate::llm_train::params::param_data_mut;
+    use crate::llm_train::passes::forward_train;
+    use crate::llm_train::test_support::{det, tiny};
+
+    const TOKENS: [usize; 3] = [0, 1, 2];
+
+    #[test]
+    fn attn_forward_is_causal_softmax_with_grouped_kv() {
+        // 2 query heads share 1 KV head (GQA).
+        let m = tiny(4, 4, 2, 1, 6, 1);
+        let seq = 3;
+        let xn = det(seq * 4, 5);
+        let c = attn_forward(&m.cfg, &m.blocks[0].attn, &xn, seq);
+        assert_eq!(
+            (c.q.len(), c.k.len(), c.v.len()),
+            (seq * 4, seq * 2, seq * 2)
+        );
+        assert_eq!(c.probs.len(), seq * 2);
+        for (i, p) in c.probs.iter().enumerate() {
+            assert_eq!(p.len(), i / 2 + 1, "position t attends to t+1 keys");
+            assert!((p.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+        }
+        // Position 0 attends only to itself: both heads' context is the shared V row 0.
+        assert_eq!(c.ctx[0..2], c.v[0..2]);
+        assert_eq!(c.ctx[2..4], c.v[0..2]);
+        assert_eq!(attn_output(&m.blocks[0].attn, &c, seq).len(), seq * 4);
+    }
+
+    #[test]
+    fn ffn_forward_dropout_mask_is_seeded_and_scaled() {
+        let m = tiny(4, 4, 2, 2, 6, 1);
+        let (ffn, xn) = (&m.blocks[0].ffn, det(2 * 4, 9));
+        let plain = ffn_forward(&m.cfg, ffn, &xn, 2, 0.0, 1);
+        assert!(plain.mask.is_none());
+        for i in 0..plain.h.len() {
+            assert_eq!(plain.h[i], silu(plain.g[i]) * plain.u[i]);
+        }
+        let a = ffn_forward(&m.cfg, ffn, &xn, 2, 0.5, 42);
+        let b = ffn_forward(&m.cfg, ffn, &xn, 2, 0.5, 42);
+        let mask = a.mask.clone().expect("dropout > 0 records a mask");
+        assert_eq!(Some(&mask), b.mask.as_ref(), "same seed, same mask");
+        assert!(
+            mask.iter().all(|&v| v == 0.0 || v == 2.0),
+            "inverted dropout scale 1/(1-p)"
+        );
+        assert!(mask.contains(&0.0) && mask.contains(&2.0));
+        for ((h, p), m) in a.h.iter().zip(&plain.h).zip(&mask) {
+            assert_eq!(*h, p * m);
+        }
+        assert_ne!(ffn_forward(&m.cfg, ffn, &xn, 2, 0.5, 43).mask, a.mask);
+        assert_eq!(ffn_output(ffn, &a, 2).len(), 2 * 4);
+    }
+
+    /// `block_backward` against central differences of `L = Σ r ⊙ block_out` with respect
+    /// to the block input (through `tok_emb`) and three parameter tensors: the attention
+    /// norm, the query projection and the FFN gate. Runs with and without dropout (the
+    /// seeded mask is the same in every forward).
+    #[test]
+    fn block_backward_matches_finite_differences() {
+        for dropout in [0.0, 0.3] {
+            let base = tiny(4, 4, 2, 1, 6, 1);
+            let seq = TOKENS.len();
+            let r = det(seq * 4, 31);
+            let loss = |m: &LlamaModel| -> f32 {
+                let c = forward_train(m, &TOKENS, dropout, 7).unwrap();
+                c.xfinal.iter().zip(&r).map(|(a, b)| a * b).sum()
+            };
+            let cache = forward_train(&base, &TOKENS, dropout, 7).unwrap();
+            let mut g = Buffers::zeros(&base).blocks.remove(0);
+            let d_x = block_backward(
+                &base.cfg,
+                &base.blocks[0],
+                &cache.blocks[0],
+                &r,
+                seq,
+                &mut g,
+            );
+            let mut d_emb = vec![0.0f32; base.tok_emb.len()];
+            d_emb[..seq * 4].copy_from_slice(&d_x); // tokens 0,1,2 are rows 0,1,2
+                                                    // Canonical parameter indices: 0 tok_emb, 1 attn_norm, 2 wq.w, 11 gate.w.
+            for (idx, analytic) in [
+                (0, &d_emb),
+                (1, &g.attn_norm),
+                (2, &g.wq.w),
+                (11, &g.gate.w),
+            ] {
+                let n = param_data_mut(&mut tiny(4, 4, 2, 1, 6, 1))[idx].len();
+                assert_eq!(n, analytic.len(), "param {idx} length");
+                for (i, &want) in analytic.iter().enumerate() {
+                    let eps = 1e-2f32;
+                    let mut up = tiny(4, 4, 2, 1, 6, 1);
+                    param_data_mut(&mut up)[idx][i] += eps;
+                    let mut down = tiny(4, 4, 2, 1, 6, 1);
+                    param_data_mut(&mut down)[idx][i] -= eps;
+                    let num = (loss(&up) - loss(&down)) / (2.0 * eps);
+                    assert!(
+                        (num - want).abs() < 1e-2 + 1e-2 * num.abs(),
+                        "dropout {dropout} param {idx}[{i}]: numeric {num} vs analytic {want}"
+                    );
+                }
+            }
+        }
+    }
+}

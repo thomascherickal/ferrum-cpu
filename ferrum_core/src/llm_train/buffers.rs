@@ -196,3 +196,72 @@ impl Buffers {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm_train::params::param_data_ref;
+    use crate::llm_train::test_support::{lin, tiny};
+
+    fn lens(v: Vec<&[f32]>) -> Vec<usize> {
+        v.iter().map(|s| s.len()).collect()
+    }
+
+    #[test]
+    fn lin_buf_zeros_mirrors_the_layer_and_its_bias() {
+        let l = lin(3, 2, 1);
+        let b = LinBuf::zeros(&l);
+        assert_eq!((b.w.len(), b.b.len()), (6, 2));
+        assert!(b.w.iter().chain(&b.b).all(|&x| x == 0.0));
+        let nb = LinBuf::zeros(&l.into_bias_free());
+        assert_eq!(
+            (nb.w.len(), nb.b.len()),
+            (6, 0),
+            "bias-free layer has no bias buffer"
+        );
+    }
+
+    #[test]
+    fn buffers_mirror_the_parameter_layout_untied_and_tied() {
+        let mut m = tiny(5, 4, 2, 1, 6, 2);
+        let b = Buffers::zeros(&m);
+        assert_eq!(b.blocks.len(), 2);
+        assert_eq!(lens(b.slices()), lens(param_data_ref(&m)));
+        assert!(!b.lm_head.w.is_empty());
+        m.tied_head = true;
+        let t = Buffers::zeros(&m);
+        assert!(
+            t.lm_head.w.is_empty(),
+            "a tied head's gradient lives in tok_emb"
+        );
+        assert_eq!(lens(t.slices()), lens(param_data_ref(&m)));
+    }
+
+    #[test]
+    fn flat_round_trip_add_scale_and_clear() {
+        let m = tiny(5, 4, 2, 2, 6, 1);
+        let mut b = Buffers::zeros(&m);
+        let n = b.to_flat().len();
+        let flat: Vec<f32> = (0..n).map(|i| i as f32).collect();
+        b.load_flat(&flat);
+        assert_eq!(b.to_flat(), flat);
+        // slices_mut walks the same order as slices.
+        assert_eq!(
+            lens(b.slices()),
+            b.slices_mut().iter().map(|s| s.len()).collect::<Vec<_>>()
+        );
+        b.add_assign_flat(&flat);
+        assert_eq!(
+            b.to_flat(),
+            flat.iter().map(|x| 2.0 * x).collect::<Vec<_>>()
+        );
+        b.scale(0.25);
+        assert_eq!(
+            b.to_flat(),
+            flat.iter().map(|x| 0.5 * x).collect::<Vec<_>>()
+        );
+        b.clear();
+        assert!(b.to_flat().iter().all(|&x| x == 0.0));
+        assert_eq!(b.to_flat().len(), n, "clear keeps the shapes");
+    }
+}

@@ -152,3 +152,96 @@ pub(super) struct BlockCache {
     /// dropout was active for this forward; `None` means no dropout.
     pub(super) ffn_dropout: Option<Vec<f32>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shapes(b: &BlockT) -> Vec<Vec<usize>> {
+        b.params().iter().map(|p| p.data.shape.clone()).collect()
+    }
+
+    #[test]
+    fn new_shapes_every_param_in_field_order() {
+        let (c, h) = (4, 6);
+        let b = BlockT::new(c, h, 0.02, &mut Rng::new(1));
+        let (cc, ch, hc) = (vec![c, c], vec![c, h], vec![h, c]);
+        let want = vec![
+            vec![c],
+            vec![c], // ln1
+            cc.clone(),
+            vec![c],
+            cc.clone(),
+            vec![c],
+            cc.clone(),
+            vec![c],
+            cc,
+            vec![c], // q k v o
+            vec![c],
+            vec![c], // ln2
+            ch,
+            vec![h],
+            hc,
+            vec![c], // f1 f2
+        ];
+        assert_eq!(shapes(&b), want);
+        // LayerNorm gains start at 1, every bias at 0, the weights are random.
+        assert!(b
+            .ln1_g
+            .data
+            .data
+            .iter()
+            .chain(&b.ln2_g.data.data)
+            .all(|&v| v == 1.0));
+        for p in [
+            &b.ln1_b, &b.q_b, &b.k_b, &b.v_b, &b.o_b, &b.ln2_b, &b.f1_b, &b.f2_b,
+        ] {
+            assert!(p.data.data.iter().all(|&v| v == 0.0));
+        }
+        assert!(b.q_w.data.data.iter().any(|&v| v != 0.0));
+        assert_ne!(
+            b.q_w.data.data, b.k_w.data.data,
+            "each weight draws its own values"
+        );
+    }
+
+    #[test]
+    fn new_is_deterministic_for_a_seed() {
+        let a = BlockT::new(4, 8, 0.1, &mut Rng::new(9));
+        let b = BlockT::new(4, 8, 0.1, &mut Rng::new(9));
+        let c = BlockT::new(4, 8, 0.1, &mut Rng::new(10));
+        let w = |x: &BlockT| {
+            x.params()
+                .iter()
+                .map(|p| p.data.data.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(w(&a), w(&b));
+        assert_ne!(w(&a), w(&c));
+    }
+
+    #[test]
+    fn params_mut_reaches_the_same_params_as_params() {
+        let mut b = BlockT::new(2, 3, 0.1, &mut Rng::new(3));
+        for (i, p) in b.params_mut().into_iter().enumerate() {
+            p.data.data.fill(i as f32);
+        }
+        for (i, p) in b.params().iter().enumerate() {
+            assert!(p.data.data.iter().all(|&v| v == i as f32), "param {i}");
+        }
+        assert!(b.f2_b.data.data.iter().all(|&v| v == 15.0));
+    }
+
+    #[test]
+    fn weights_only_keeps_every_weight_and_drops_optimizer_state() {
+        let mut b = BlockT::new(2, 3, 0.1, &mut Rng::new(4));
+        for p in b.params_mut() {
+            p.grad.data.fill(1.0);
+        }
+        let w = b.weights_only();
+        for (orig, copy) in b.params().iter().zip(w.params()) {
+            assert_eq!(orig.data, copy.data);
+            assert!(copy.grad.data.is_empty() && copy.m.data.is_empty() && copy.v.data.is_empty());
+        }
+    }
+}

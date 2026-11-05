@@ -191,3 +191,72 @@ impl TokenFile {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token_file::{write_token_file, TokenFileMeta};
+
+    fn file(name: &str, vocab: usize, eos: Option<u32>, ids: &[u32]) -> String {
+        let d =
+            std::env::temp_dir().join(format!("ferrum_tokreader_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("r.tok.gguf").to_str().unwrap().to_string();
+        let meta = TokenFileMeta {
+            vocab_size: vocab,
+            eos_id: eos,
+            tokenizer_sha256: "ef".repeat(32),
+        };
+        write_token_file(&p, &meta, |s| s.push(ids)).unwrap();
+        p
+    }
+
+    #[test]
+    fn accessors_report_the_metadata() {
+        let p = file("acc", 50_000, Some(9), &[1, 9, 2, 9, 3]);
+        let f = TokenFile::open(&p).unwrap();
+        assert_eq!((f.len(), f.is_empty(), f.vocab_size()), (5, false, 50_000));
+        assert_eq!((f.documents(), f.eos_id()), (3, Some(9)));
+        assert_eq!(f.tokenizer_sha256(), "ef".repeat(32));
+        assert_eq!(f.width, 4);
+        let empty = TokenFile::open(&file("empty", 10, None, &[])).unwrap();
+        assert!(empty.is_empty() && empty.eos_id().is_none());
+        assert_eq!(empty.width, 2);
+    }
+
+    #[test]
+    fn read_window_decodes_both_widths_at_any_offset() {
+        for vocab in [300usize, 40_000] {
+            let ids: Vec<u32> = (0..20).map(|i| (i * 13) % 300).collect();
+            let mut f = TokenFile::open(&file(&format!("w{vocab}"), vocab, None, &ids)).unwrap();
+            let mut out = vec![99];
+            f.read_window(5, 6, &mut out).unwrap();
+            assert_eq!(out, ids[5..11], "vocab {vocab}");
+            f.read_window(20, 0, &mut out).unwrap();
+            assert!(
+                out.is_empty(),
+                "a zero-length window at the end is empty, not an error"
+            );
+        }
+    }
+
+    #[test]
+    fn read_window_past_the_end_or_overflowing_is_a_dim_mismatch() {
+        let mut f = TokenFile::open(&file("oob", 10, None, &[1, 2, 3])).unwrap();
+        let mut out = Vec::new();
+        for (start, len) in [(0, 4), (3, 1), (usize::MAX, 2)] {
+            let e = f.read_window(start, len, &mut out).unwrap_err();
+            assert!(
+                matches!(e, InferError::DimMismatch(_)),
+                "{start}+{len}: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn open_rejects_a_missing_file_and_bad_maps_to_format() {
+        assert!(TokenFile::open("/nonexistent/ferrum/none.tok.gguf").is_err());
+        assert_eq!(bad("x".into()), InferError::Format("x".into()));
+    }
+}
