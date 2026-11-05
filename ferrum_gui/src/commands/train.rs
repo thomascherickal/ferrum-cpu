@@ -314,9 +314,10 @@ fn train_inner<R: Runtime>(
     })?;
 
     let seconds = t0.elapsed().as_secs_f64();
-    save_as(&slm, &p.model_path, quant)
-        .map_err(|e| format!("cannot save model {}: {e}", p.model_path))?;
+    let saved = save_as(&slm, &p.model_path, quant);
+    // Before the `?`: a failed save must not leave the engine's verbose mode on for later jobs.
     ferrum_core::set_verbose(false);
+    saved.map_err(|e| format!("cannot save model {}: {e}", p.model_path))?;
 
     let bytes = std::fs::metadata(&p.model_path)
         .map(|m| m.len())
@@ -342,4 +343,152 @@ fn train_inner<R: Runtime>(
     };
     let _ = app.emit("train-done", result.clone());
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc_tests::{app, call, msg, tmp};
+    use serde_json::{json, Value};
+
+    /// The fields the Train tab always sends; everything else takes its default.
+    fn required() -> Value {
+        json!({
+            "method": "transformer", "corpusPath": "c.txt", "modelPath": "m.gguf",
+            "contextLen": 8, "embedDim": 8, "numHeads": 2, "numBlocks": 1, "hiddenDim": 16,
+            "epochs": 1, "lr": 0.01, "batchSize": 4, "vocabSize": 0, "seed": 1, "threads": 1,
+            "verbose": false
+        })
+    }
+
+    fn params(extra: Value) -> TrainParams {
+        let mut v = required();
+        for (k, x) in extra.as_object().unwrap() {
+            v[k] = x.clone();
+        }
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn omitted_fields_take_the_cli_defaults() {
+        let p = params(json!({}));
+        assert_eq!(p.quant, "int8", "absent quant saves int8, like --quant");
+        assert!(p.qat, "QAT is on unless the form turns it off");
+        assert_eq!(
+            (p.window_stride, p.max_tokens, p.checkpoint_every),
+            (0, 0, 0)
+        );
+        assert!(p.tokenizer_path.is_empty() && p.checkpoint_path.is_empty());
+        assert!(!p.resume && !p.force && p.val_fraction == 0.0);
+        let p = params(json!({"qat": false, "quant": "f32"}));
+        assert!(!p.qat && p.quant == "f32");
+    }
+
+    #[test]
+    fn corpus_id_only_when_a_checkpoint_is_written() {
+        let dir = tmp("train_corpus_id");
+        let corpus = dir.join("c.txt");
+        std::fs::write(&corpus, "abc").unwrap();
+        let c = corpus.to_string_lossy();
+        assert_eq!(corpus_id(&params(json!({"corpusPath": c}))), Ok(None));
+        let blank = params(json!({"corpusPath": c, "checkpointPath": "  "}));
+        assert_eq!(corpus_id(&blank), Ok(None), "a blank path is no checkpoint");
+        let with = params(json!({"corpusPath": c, "checkpointPath": "ck.fckp"}));
+        let id = corpus_id(&with).unwrap().unwrap();
+        assert_eq!(
+            Some(id),
+            slm_cli::hash::file_id(&c).ok(),
+            "the CLI's identity"
+        );
+        let gone = params(json!({"corpusPath": dir.join("none.txt"), "checkpointPath": "ck"}));
+        assert!(corpus_id(&gone)
+            .unwrap_err()
+            .starts_with("cannot read corpus "));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The CLI's token-file errors name its flags; the Train tab names its own fields instead.
+    #[test]
+    fn token_corpus_errors_speak_the_forms_language() {
+        let dir = tmp("train_token_corpus");
+        let text = "the small brown fox and the small cat ".repeat(4);
+        let s = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        std::fs::write(s("c.txt"), &text).unwrap();
+        let tok = ferrum_core::ByteBpeTokenizer::train(&text, 270).unwrap();
+        let other = ferrum_core::ByteBpeTokenizer::train("other words entirely", 260).unwrap();
+        std::fs::write(s("tok.gguf"), tok.to_gguf_bytes()).unwrap();
+        std::fs::write(s("other.gguf"), other.to_gguf_bytes()).unwrap();
+        slm_cli::tokenize::tokenize(
+            &slm_cli::tokenize::TokenizeOptions {
+                input: s("c.txt"),
+                tokenizer: s("tok.gguf"),
+                out: s("c.tok.gguf"),
+                doc_sep: ferrum_core::DOC_SEP.into(),
+                stop: ferrum_core::StopCondition::none(),
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        let open = |extra: Value| {
+            let mut e = json!({"corpusPath": s("c.tok.gguf"), "vocabSize": 270});
+            for (k, v) in extra.as_object().unwrap() {
+                e[k] = v.clone();
+            }
+            open_token_corpus(&params(e)).err()
+        };
+        let e = open(json!({"tokenizerPath": "  "})).unwrap();
+        assert!(
+            e.contains("the Tokenizer file field") && !e.contains("--tokenizer"),
+            "{e}"
+        );
+        let e = open(json!({"tokenizerPath": s("tok.gguf"), "vocabSize": 0})).unwrap();
+        assert!(
+            e.contains("Vocab 0 (character-level)") && !e.contains("--vocab"),
+            "{e}"
+        );
+        let e = open(json!({"tokenizerPath": s("other.gguf")})).unwrap();
+        assert!(
+            e.contains("run Tokenize corpus again") && !e.contains("`tokenize`"),
+            "{e}"
+        );
+        assert_eq!(open(json!({"tokenizerPath": s("tok.gguf")})), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Regression: a save that failed after training left the engine's verbose mode on.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_save_turns_verbose_off_and_each_precision_saves() {
+        let (_app, w) = app();
+        let dir = tmp("train_save");
+        let corpus = dir.join("c.txt");
+        std::fs::write(&corpus, "abc abd abe ".repeat(8)).unwrap();
+        let train = |model: &std::path::Path, quant: &str, verbose: bool| {
+            let mut p = required();
+            p["corpusPath"] = json!(corpus);
+            p["modelPath"] = json!(model);
+            p["quant"] = json!(quant);
+            p["verbose"] = json!(verbose);
+            call(&w, "train_slm", json!({ "params": p }))
+        };
+        for quant in ["int8", "int4", "f32"] {
+            let m = dir.join(format!("{quant}.gguf"));
+            train(&m, quant, false).unwrap();
+            let slm = GenerativeSLM::load(m.to_str().unwrap()).unwrap();
+            assert_eq!(slm.meta.input_dim, 8, "{quant}");
+        }
+        let locked = dir.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        let Some(_restore) = crate::test_support::restrict(&locked, 0o500, 0o700) else {
+            return; // root: the directory would still be writable
+        };
+        let e = train(&locked.join("m.gguf"), "int8", true).unwrap_err();
+        assert!(msg(&e).starts_with("cannot save model "), "{e}");
+        assert!(
+            !ferrum_core::is_verbose(),
+            "verbose mode outlived the failed job"
+        );
+        drop(_restore);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

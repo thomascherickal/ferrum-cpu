@@ -275,3 +275,36 @@ impl Drop for Restore {
         let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(self.1));
     }
 }
+
+/// The `.rs` files under `src/<group>` (recursively) that name `crate::<other>` for any of
+/// `others`, as `path: crate::other` lines: the group-layering tests' scanner. (The needle is
+/// built here, so a test that lists the groups does not match itself.)
+pub fn sources_using(group: &str, others: &[&str]) -> Vec<String> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join(group);
+    let mut files = Vec::new();
+    walk(&root, &mut files);
+    assert!(!files.is_empty(), "no sources under {}", root.display());
+    let mut hits = Vec::new();
+    for f in files {
+        let text = std::fs::read_to_string(&f).unwrap();
+        for o in others {
+            let needle = format!("crate::{o}");
+            if text.contains(&needle) {
+                hits.push(format!("{}: {needle}", f.display()));
+            }
+        }
+    }
+    hits
+}

@@ -1271,3 +1271,48 @@ fn download_progress_events_carry_the_id_bytes_and_total() {
         ]
     );
 }
+
+/// The helpers above are what every IPC test stands on; these pin their behaviour.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::Emitter;
+
+    #[test]
+    fn msg_reads_the_message_of_an_error_object() {
+        let e = json!({"code": "invalid", "message": "bad value", "hint": "fix it"});
+        assert_eq!(msg(&e), "bad value");
+        assert!(std::panic::catch_unwind(|| msg(&json!("plain")).len()).is_err());
+    }
+
+    #[test]
+    fn tmp_gives_a_fresh_empty_directory() {
+        let d = tmp("ipc_selftest");
+        std::fs::write(d.join("left-over"), "x").unwrap();
+        let again = tmp("ipc_selftest");
+        assert_eq!(d, again);
+        assert_eq!(std::fs::read_dir(&again).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(again);
+    }
+
+    #[test]
+    fn collect_and_wait_for_see_emitted_events() {
+        let (app, _w) = app();
+        let got = collect(&app, "ipc-selftest");
+        app.emit("ipc-selftest", "one").unwrap();
+        app.emit("ipc-selftest", "two").unwrap();
+        wait_for(&got, 2);
+        assert_eq!(*got.lock().unwrap(), ["\"one\"", "\"two\""]);
+    }
+
+    #[test]
+    fn handler_commands_reads_the_real_registry() {
+        let cmds = handler_commands(include_str!("lib.rs"));
+        for c in ["train_slm", "serve_status", "download_kaggle_file"] {
+            assert!(cmds.iter().any(|x| x == c), "{c} missing from {cmds:?}");
+        }
+        assert!(cmds
+            .iter()
+            .all(|c| !c.contains("::") && !c.contains(char::is_whitespace)));
+    }
+}

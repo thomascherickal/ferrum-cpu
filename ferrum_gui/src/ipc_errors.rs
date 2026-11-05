@@ -582,3 +582,51 @@ fn gguf_info_and_run_cover_files_without_a_tokenizer_and_instruct_templates() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The fixtures above shape every call in this file; these pin them to the command types.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::{FinetuneParams, GgufRunParams, TrainParams};
+
+    #[test]
+    fn param_fixtures_deserialize_into_the_command_types() {
+        let d = std::path::Path::new("/d");
+        let ft = ft_params(d, "m.gguf", "c.txt", "o.flck");
+        let p: FinetuneParams = serde_json::from_value(ft["params"].clone()).unwrap();
+        assert_eq!(p.out_path, "/d/o.flck");
+        let tr: TrainParams =
+            serde_json::from_value(train_params(d, "c.txt")["params"].clone()).unwrap();
+        assert_eq!(
+            (tr.corpus_path.as_str(), tr.model_path.as_str()),
+            ("/d/c.txt", "/d/m.gguf")
+        );
+        let run = run_params(&d.join("m.gguf"), json!({"maxNew": 9, "raw": false}));
+        let r: GgufRunParams = serde_json::from_value(run["params"].clone()).unwrap();
+        assert_eq!(
+            (r.max_new, r.raw, r.prompt.as_str()),
+            (9, false, "hi"),
+            "overrides kept the rest"
+        );
+    }
+
+    #[test]
+    fn arg_table_lists_each_command_once_with_distinct_arguments() {
+        let table = arg_table();
+        let mut names: Vec<&str> = table.iter().map(|(c, _)| *c).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), table.len(), "a command listed twice");
+        assert!(
+            names.iter().all(|n| !NO_ARGS.contains(n)),
+            "a command in both lists"
+        );
+        for (cmd, args) in &table {
+            assert!(!args.is_empty(), "{cmd} belongs in NO_ARGS");
+            let mut a: Vec<&str> = args.iter().map(|(n, _)| *n).collect();
+            a.sort_unstable();
+            a.dedup();
+            assert_eq!(a.len(), args.len(), "{cmd}: an argument listed twice");
+        }
+    }
+}
