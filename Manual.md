@@ -2630,7 +2630,9 @@ const attn = model.get_last_attention_weights();       // [heads × T × T] for 
 
 Its other methods are `predict_next` (full forward), `metadata`, `num_heads`,
 `vocab_size`, `context_len`, `num_layers`, `cached_len`, `entropy`, and
-`top_k_indices`. WASM runs single-threaded but is otherwise the same engine.
+`top_k_indices`. WASM runs single-threaded but is otherwise the same engine. An id in the `Float32Array` is rounded to the nearest integer; a negative, NaN or
+out-of-vocabulary id is an error (before 2026-11-05 a negative or NaN id silently read as
+token 0).
 
 ### 11.4 Air-gapped deployment
 

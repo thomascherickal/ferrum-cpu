@@ -104,7 +104,12 @@ impl TokenModel {
         self.cache_pos = 0;
         let mut probs = Vec::new();
         for &tok in context {
-            probs = self.feed_token(tok.round() as usize)?;
+            // `as usize` saturates: a negative or NaN id would silently become token 0.
+            let id = tok.round();
+            if id.is_nan() || id < 0.0 {
+                return Err(format!("Token id {tok} is not a non-negative number"));
+            }
+            probs = self.feed_token(id as usize)?;
         }
         Ok(probs)
     }
@@ -261,6 +266,18 @@ mod tests {
         let (_, ctx, _) = setup();
         m.prime(&ctx[..4]).unwrap();
         assert!(m.predict_next_cached(m.vocab_size()).is_err());
+    }
+
+    /// Regression (audit 2026-11-05, A1): a negative or NaN id from JS saturated to token 0.
+    #[test]
+    fn predict_next_and_prime_reject_negative_and_nan_ids() {
+        let (mut m, ctx, _) = setup();
+        for bad in [-1.0, f32::NAN] {
+            let mut c = ctx.clone();
+            c[3] = bad;
+            assert!(m.predict_next(&c).is_err(), "predict_next took {bad}");
+            assert!(m.prime(&c).is_err(), "prime took {bad}");
+        }
     }
 
     #[test]

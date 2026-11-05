@@ -395,6 +395,19 @@ behind after its `ollama serve` was killed. The `export-ollama` command, the GUI
 their docs are unchanged; they are tested with fake binaries, refusals and `--modelfile-only`
 only, so a change in Ollama itself would go unnoticed.
 
+### 7.0.20 A negative or NaN token id is refused
+
+Found by the 2026-11-05 audit (`docs/audit-report.md`, A1). `Embedding::forward` reads ids
+from an f32 tensor and casts them with `as usize`, which saturates: a negative or NaN id became
+token 0 instead of an error, and so did the same cast in the wasm `TransformerSLMModel::prime`.
+Both now refuse such an id with the error an out-of-vocabulary id already gave
+(`InferError::DimMismatch` in `ferrum_core`, a `String` error in `slm_wasm`); `-0.4` still
+rounds to token 0. No Ferrum-written path produced such ids (they come from tokenizers as
+integers), so trained models, generation and every golden are unchanged; only a caller that
+passed a negative or NaN id, which got a wrong answer before, now gets an error. Regression
+tests: `layer::embedding::tests::forward_rejects_negative_and_nan_ids` and
+`token_model::tests::predict_next_and_prime_reject_negative_and_nan_ids`.
+
 ### 7.1 Breaking changes
 
 | Change | What breaks | What to do |

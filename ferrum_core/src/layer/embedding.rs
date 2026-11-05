@@ -118,13 +118,16 @@ impl Layer for Embedding {
         let mut out_data = vec![0.0f32; batch * seq_len * out_cols];
         for b in 0..batch {
             for t in 0..seq_len {
-                let tok_idx = input.data[b * seq_len + t].round() as usize;
-                if tok_idx >= self.vocab_size {
+                let raw = input.data[b * seq_len + t].round();
+                // `as usize` saturates: a negative or NaN id would silently become token 0.
+                if raw.is_nan() || raw < 0.0 || raw as usize >= self.vocab_size {
                     return Err(InferError::DimMismatch(format!(
                         "Token index {} out of bounds for vocab_size {}",
-                        tok_idx, self.vocab_size
+                        input.data[b * seq_len + t],
+                        self.vocab_size
                     )));
                 }
+                let tok_idx = raw as usize;
                 let tok_base = tok_idx * self.embedding_dim;
                 let pos_base = t * self.embedding_dim;
                 let out_base = (b * seq_len + t) * self.embedding_dim;
@@ -253,5 +256,18 @@ mod tests {
         }
         assert!(emb.embed_one(9, 0).is_err()); // token OOB
         assert!(emb.embed_one(0, 9).is_err()); // position OOB
+    }
+
+    /// Regression (audit 2026-11-05, A1): a negative or NaN id saturated to token 0.
+    #[test]
+    fn forward_rejects_negative_and_nan_ids() {
+        let emb = Embedding::new(3, 4, 2, vec![0.0; 6], vec![0.0; 8]).unwrap();
+        for bad in [-1.0, -0.6, f32::NAN, f32::NEG_INFINITY, f32::INFINITY, 3.0] {
+            let x = Tensor::matrix(1, 2, vec![1.0, bad]).unwrap();
+            assert!(emb.forward(&x).is_err(), "id {bad} was accepted");
+        }
+        // -0.4 rounds to -0.0, which is token 0.
+        let x = Tensor::matrix(1, 2, vec![-0.4, 2.0]).unwrap();
+        assert!(emb.forward(&x).is_ok());
     }
 }
