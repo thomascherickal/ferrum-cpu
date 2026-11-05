@@ -400,9 +400,9 @@ only, so a change in Ollama itself would go unnoticed.
 Found by the 2026-11-05 audit (`docs/audit-report.md`, A1). `Embedding::forward` reads ids
 from an f32 tensor and casts them with `as usize`, which saturates: a negative or NaN id became
 token 0 instead of an error, and so did the same cast in the wasm `TransformerSLMModel::prime`.
-Both now refuse such an id with the error an out-of-vocabulary id already gave
-(`InferError::DimMismatch` in `ferrum_core`, a `String` error in `slm_wasm`); `-0.4` still
-rounds to token 0. No Ferrum-written path produced such ids (they come from tokenizers as
+Both now refuse such an id. `ferrum_core` returns the `InferError::DimMismatch` an
+out-of-vocabulary id already gave, and its message now shows the raw value. `slm_wasm` returns
+the new error "Token id … is not a non-negative number". `-0.4` still rounds to token 0. No Ferrum-written path produced such ids (they come from tokenizers as
 integers), so trained models, generation and every golden are unchanged; only a caller that
 passed a negative or NaN id, which got a wrong answer before, now gets an error. Regression
 tests: `layer::embedding::tests::forward_rejects_negative_and_nan_ids` and
