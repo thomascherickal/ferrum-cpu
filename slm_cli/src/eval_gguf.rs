@@ -89,3 +89,100 @@ pub(crate) fn cmd_eval_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error
     let stats = Stats::from_nll(-score.logprob, score.n_tokens);
     report(path, text_path, &text, &stats, seconds, args.value("json"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixtures::{letter_vocab, tiny_llama_gguf};
+    use crate::test_util::{args, err, Tmp};
+    use ferrum_core::MetaValue;
+
+    fn eval(raw: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+        cmd_eval_gguf(&args("eval-gguf", raw))
+    }
+
+    /// The scored-token count and perplexity a successful run writes to `--json`.
+    fn scored(t: &Tmp, model: &str, text: &str, extra: &[&str]) -> (u64, f64) {
+        let json = t.path("out.json");
+        let mut raw = vec![model, text, "--json", &json];
+        raw.extend_from_slice(extra);
+        eval(&raw).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&json).unwrap()).unwrap();
+        (
+            v["tokens"].as_u64().unwrap(),
+            v["perplexity"].as_f64().unwrap(),
+        )
+    }
+
+    #[test]
+    fn arguments_are_checked_before_the_model_is_opened() {
+        assert!(err(eval(&["m.gguf"])).starts_with("usage: train_transformer eval-gguf"));
+        let e = err(eval(&["m.gguf", "t.txt", "--quant", "q9"]));
+        assert_eq!(e, "--quant must be f32|int8|int4 (got 'q9')");
+        let e = err(eval(&[
+            "m.gguf",
+            "t.txt",
+            "--resume",
+            "/nonexistent/x.flck",
+        ]));
+        assert!(e.contains("does not exist"), "{e}");
+        let e = err(eval(&[
+            "m.gguf",
+            "t.txt",
+            "--json",
+            "/nonexistent/dir/o.json",
+        ]));
+        assert!(e.contains("/nonexistent/dir"), "{e}");
+    }
+
+    #[test]
+    fn the_model_must_open_and_carry_a_tokenizer() {
+        let t = Tmp::new("evalgguf_tok");
+        let text = t.write("t.txt", "abc def");
+        let e = err(eval(&[&t.path("none.gguf"), &text]));
+        assert!(e.starts_with("cannot open GGUF "), "{e}");
+        let bare = t.write("bare.gguf", tiny_llama_gguf(None, &[]));
+        assert_eq!(
+            err(eval(&[&bare, &text])),
+            "this GGUF has no tokenizer; perplexity needs one"
+        );
+    }
+
+    #[test]
+    fn window_and_text_length_are_bounded_by_the_model() {
+        let t = Tmp::new("evalgguf_ctx");
+        let model = t.write("m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+        let text = t.write("t.txt", "abc def");
+        for bad in ["1", "17"] {
+            let e = err(eval(&[&model, &text, "--ctx", bad]));
+            assert_eq!(e, format!("--ctx must be between 2 and 16 (got {bad})"));
+        }
+        let one = t.write("one.txt", "a");
+        assert!(err(eval(&[&model, &one])).starts_with("the text is too short"));
+    }
+
+    /// Every token after the first is scored; a BOS-adding tokenizer makes the first one
+    /// scorable too, and `--ctx` really changes the scoring window.
+    #[test]
+    fn scores_every_token_and_honours_bos_and_the_window() {
+        let t = Tmp::new("evalgguf_ok");
+        let model = t.write("m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+        let text = t.write("t.txt", "abcdefgh ijklmnop qrst"); // 22 letter/space tokens
+        let (n, full) = scored(&t, &model, &text, &[]);
+        assert_eq!(n, 21);
+        assert!(full.is_finite() && full > 1.0);
+        let (n4, short) = scored(&t, &model, &text, &["--ctx", "4"]);
+        assert_eq!(n4, 21);
+        assert_ne!(
+            short, full,
+            "a 4-token window sees less context than the default 16"
+        );
+        assert_eq!(scored(&t, &model, &text, &["--quant", "int8"]).0, 21);
+        let bos = [
+            ("tokenizer.ggml.bos_token_id", MetaValue::U32(27)),
+            ("tokenizer.ggml.add_bos_token", MetaValue::Bool(true)),
+        ];
+        let with_bos = t.write("bos.gguf", tiny_llama_gguf(Some(&letter_vocab()), &bos));
+        assert_eq!(scored(&t, &with_bos, &text, &[]).0, 22);
+    }
+}

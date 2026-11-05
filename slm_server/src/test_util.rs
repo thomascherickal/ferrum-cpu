@@ -55,3 +55,53 @@ pub(crate) fn model(vocab_size: usize) -> GenerativeSLM {
     )
     .unwrap()
 }
+
+/// The fixtures above are what every other unit test stands on; these pin their invariants.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ferrum_core::MetaValue;
+
+    #[test]
+    fn imported_builds_the_tiny_llama_with_its_letter_tokenizer() {
+        let m = imported(&llama::tiny_llama(&[]));
+        // "abc": three letter tokens, the first one unscored.
+        let s = m.score_rolling("abc").unwrap();
+        assert_eq!(s.n_tokens, 2);
+        assert!(s.logprob.is_finite() && s.logprob < 0.0);
+    }
+
+    #[test]
+    fn tiny_llama_takes_extra_metadata_and_another_architecture() {
+        let g = Gguf::parse(llama::tiny_llama(&[(
+            "general.architecture",
+            MetaValue::String("qwen2".into()),
+        )]))
+        .unwrap();
+        assert_eq!(g.architecture(), Some("qwen2"));
+        assert!(
+            g.meta("qwen2.block_count").is_some(),
+            "keys follow the architecture"
+        );
+        assert_eq!(llama::letter_vocab().len(), 32);
+        assert_eq!(llama::letter_vocab()[llama::BOS as usize], "<f0>");
+    }
+
+    #[test]
+    fn temp_file_holds_the_bytes_until_dropped() {
+        let f = TempFile::new("selftest.bin", b"abc");
+        let p = f.path().to_string();
+        assert_eq!(std::fs::read(&p).unwrap(), b"abc");
+        drop(f);
+        assert!(!std::path::Path::new(&p).exists());
+    }
+
+    #[test]
+    fn model_is_character_level_at_vocab_zero_and_bpe_otherwise() {
+        let chars = model(0);
+        assert!(chars.meta.tokenizer_state.is_empty());
+        assert_eq!(chars.meta.input_dim, 8, "context 8");
+        let bpe = model(270);
+        assert!(!bpe.meta.tokenizer_state.is_empty());
+    }
+}

@@ -264,3 +264,103 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 // ─────────────────────────────────────────────────────────────────────────────
 // export-gguf: re-quantize / export an imported llama/qwen2 GGUF checkpoint
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixtures::{letter_vocab, tiny_llama_gguf};
+    use crate::test_util::{args, err, Tmp};
+
+    fn finetune(raw: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+        cmd_finetune_gguf(&args("finetune-gguf", raw))
+    }
+
+    #[test]
+    fn hyperparameters_and_paths_are_checked_before_the_model_is_opened() {
+        assert!(err(finetune(&["m.gguf", "c.txt"]))
+            .starts_with("usage: train_transformer finetune-gguf"));
+        let t = Tmp::new("finetune_args");
+        let (m, c, o) = (t.path("none.gguf"), t.path("c.txt"), t.path("o.flck"));
+        let bad = |extra: &[&str]| {
+            let mut raw = vec![m.as_str(), c.as_str(), o.as_str()];
+            raw.extend_from_slice(extra);
+            err(finetune(&raw))
+        };
+        assert!(bad(&["--resume", "/nonexistent/x.flck"]).contains("does not exist"));
+        assert!(bad(&["--sample", "--temp", "-1"]).contains("--temp"));
+        assert!(bad(&["--lr", "0"]).contains("--lr"));
+        assert!(bad(&["--epochs", "0"]).contains("--epochs"));
+        assert!(bad(&["--batch", "0"]).contains("--batch must be at least 1"));
+        assert!(bad(&["--dropout", "1"]).contains("--dropout"));
+        let e = err(finetune(&[&m, &c, &m]));
+        assert!(e.contains("the output") && e.contains("the model"), "{e}");
+        assert!(bad(&[]).starts_with("cannot open GGUF "));
+        assert!(
+            !std::path::Path::new(&o).exists(),
+            "nothing written on an error"
+        );
+    }
+
+    #[test]
+    fn the_corpus_must_fill_one_window_capped_at_the_context() {
+        let t = Tmp::new("finetune_seq");
+        let model = t.write("m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+        let bare = t.write("bare.gguf", tiny_llama_gguf(None, &[]));
+        let corpus = t.write("c.txt", "abcdefghij"); // 10 tokens, context 16
+        let out = t.path("o.flck");
+        let e = err(finetune(&[&bare, &corpus, &out]));
+        assert_eq!(e, "this GGUF has no tokenizer; text fine-tuning needs one");
+        let e = err(finetune(&[&model, &corpus, &out, "--seq", "1000"]));
+        assert!(
+            e.starts_with("corpus has 10 tokens but --seq is 16;"),
+            "{e}"
+        );
+        let one = t.write("one.txt", "a");
+        let e = err(finetune(&[&model, &one, &out, "--seq", "1"]));
+        assert!(e.starts_with("corpus has 1 tokens but --seq is 2;"), "{e}");
+    }
+
+    /// One epoch on the stub model writes a checkpoint that a resumed run and `run-gguf` accept.
+    #[test]
+    fn writes_a_checkpoint_that_resumes_and_runs() {
+        let t = Tmp::new("finetune_ok");
+        let model = t.write("m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+        let corpus = t.write("c.txt", "abc abc abc abc abc abc");
+        let out = t.path("o.flck");
+        let common = ["--batch", "2", "--seq", "6", "--threads", "1"];
+        let mut raw = vec![
+            model.as_str(),
+            corpus.as_str(),
+            out.as_str(),
+            "--epochs",
+            "1",
+        ];
+        raw.extend_from_slice(&common);
+        finetune(&raw).unwrap();
+        let first = std::fs::read(&out).unwrap();
+        assert!(!first.is_empty());
+        let out2 = t.path("o2.flck");
+        let mut raw = vec![
+            model.as_str(),
+            corpus.as_str(),
+            out2.as_str(),
+            "--epochs",
+            "2",
+        ];
+        raw.extend_from_slice(&common);
+        raw.extend_from_slice(&["--resume", &out, "--warmup", "2"]);
+        finetune(&raw).unwrap();
+        assert_ne!(
+            std::fs::read(&out2).unwrap(),
+            first,
+            "the resumed run trained further"
+        );
+        crate::run_gguf::cmd_run_gguf(&args(
+            "run-gguf",
+            &[
+                &model, "abc", "--resume", &out2, "--max", "2", "--temp", "0",
+            ],
+        ))
+        .unwrap();
+    }
+}

@@ -18,3 +18,25 @@ async fn main() {
         std::process::exit(1);
     }
 }
+
+/// `main` maps `start`'s result to the exit status: these pin the three outcomes it relies on.
+#[cfg(test)]
+mod tests {
+    use super::start;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn help_and_version_succeed_and_bad_arguments_fail() {
+        assert_eq!(start(&args(&["--version"]), async {}).await, Ok(()));
+        assert_eq!(start(&args(&["--help"]), async {}).await, Ok(()));
+        let e = start(&args(&["--bogus"]), async {}).await.unwrap_err();
+        assert!(e.contains("--bogus"), "{e}");
+        let e = start(&args(&["--model", "/nonexistent/ferrum/m.gguf"]), async {})
+            .await
+            .unwrap_err();
+        assert!(e.contains("/nonexistent/ferrum/m.gguf"), "{e}");
+    }
+}

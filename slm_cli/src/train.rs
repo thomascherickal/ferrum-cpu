@@ -360,3 +360,126 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::{args, err, micro_model, Tmp, MICRO};
+
+    fn train(raw: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+        cmd_train(&args("train", raw))
+    }
+
+    #[test]
+    fn arguments_are_checked_before_training() {
+        assert!(err(train(&["c.txt"])).starts_with("usage: train_transformer train "));
+        assert!(err(train(&[
+            "c.txt",
+            "m.gguf",
+            "--resume",
+            "/nonexistent/x.fckp"
+        ]))
+        .contains("does not exist"));
+        let t = Tmp::new("train_args");
+        let corpus = t.write("c.txt", "abc abc abc");
+        let m = t.path("m.gguf");
+        let bad = |extra: &[&str]| {
+            let mut raw = vec![corpus.as_str(), m.as_str()];
+            raw.extend_from_slice(extra);
+            err(train(&raw))
+        };
+        assert_eq!(
+            bad(&["--quant", "q4"]),
+            "--quant must be int8|int4|f32 (got 'q4')"
+        );
+        assert!(bad(&["--lr", "0"]).contains("--lr"));
+        assert!(bad(&["--dropout", "1.5"]).contains("--dropout"));
+        assert!(bad(&["--tokens", "-5"]).contains("--tokens"));
+        assert!(bad(&["--epochs", "0"]).contains("--epochs"));
+        assert!(bad(&["--batch", "0"]).contains("--batch"));
+        assert!(bad(&["--metrics-csv", &m]).contains("--metrics-csv"));
+        assert!(bad(&["--metrics-csv", "/nonexistent/dir/m.csv"]).contains("/nonexistent/dir"));
+        // (With the corpus as the model path, `cmd_train` would load the existing file instead.)
+        let a = args("train", &[]);
+        let e = err(train_and_save("abc abc", &corpus, &corpus, &a));
+        assert!(
+            e.contains("the model output") && e.contains("the corpus"),
+            "{e}"
+        );
+        assert!(
+            !std::path::Path::new(&m).exists(),
+            "nothing written on an error"
+        );
+        assert!(err(train(&[&t.path("none.txt"), &m])).starts_with("cannot read corpus "));
+    }
+
+    #[test]
+    fn trains_saves_each_precision_and_skips_an_existing_model() {
+        let t = Tmp::new("train_ok");
+        let model = micro_model(&t, "m.gguf");
+        let slm = GenerativeSLM::load(&model).unwrap();
+        assert_eq!(slm.meta.input_dim, 8, "--context reached the model");
+        let int8 = std::fs::read(&model).unwrap();
+        let corpus = t.path("m.gguf.txt");
+        // The model exists: train loads it and writes nothing.
+        let mut raw = vec![corpus.as_str(), model.as_str()];
+        raw.extend_from_slice(&MICRO);
+        raw.push("--sample");
+        train(&raw).unwrap();
+        assert_eq!(std::fs::read(&model).unwrap(), int8);
+        // --force retrains (here with another seed, so the weights differ).
+        raw.extend_from_slice(&["--force", "--seed", "2"]);
+        train(&raw).unwrap();
+        assert_ne!(std::fs::read(&model).unwrap(), int8);
+        for quant in ["f32", "int4"] {
+            let mut r = raw.clone();
+            r.extend_from_slice(&["--quant", quant]);
+            train(&r).unwrap();
+            assert_eq!(
+                GenerativeSLM::load(&model).unwrap().meta.input_dim,
+                8,
+                "{quant}"
+            );
+        }
+        print_sample(&slm, "abc abd").unwrap();
+    }
+
+    #[test]
+    fn trains_from_a_token_file_with_its_tokenizer() {
+        let t = Tmp::new("train_tokens");
+        let text = "the small brown fox and the small cat ".repeat(6);
+        let corpus = t.write("c.txt", &text);
+        let tok = t.write(
+            "tok.gguf",
+            ByteBpeTokenizer::train(&text, 280).unwrap().to_gguf_bytes(),
+        );
+        let file = t.path("c.tok.gguf");
+        slm_cli::tokenize::tokenize(
+            &slm_cli::tokenize::TokenizeOptions {
+                input: corpus,
+                tokenizer: tok.clone(),
+                out: file.clone(),
+                doc_sep: ferrum_core::DOC_SEP.into(),
+                stop: ferrum_core::StopCondition::none(),
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        let model = t.path("m.gguf");
+        let micro: Vec<&str> = MICRO
+            .iter()
+            .copied()
+            .filter(|f| *f != "--vocab" && *f != "0")
+            .collect();
+        let mut raw = vec![file.as_str(), model.as_str()];
+        raw.extend_from_slice(&micro);
+        assert!(err(train(&raw)).contains("needs --tokenizer"));
+        raw.extend_from_slice(&["--tokenizer", &tok, "--sample"]);
+        train(&raw).unwrap();
+        let slm = GenerativeSLM::load(&model).unwrap();
+        let vocab = ByteBpeTokenizer::from_gguf_bytes(&std::fs::read(&tok).unwrap())
+            .unwrap()
+            .vocab_size();
+        assert_eq!(slm.meta.output_dim, vocab, "the token file's vocabulary");
+    }
+}

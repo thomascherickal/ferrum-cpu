@@ -233,3 +233,57 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 // ─────────────────────────────────────────────────────────────────────────────
 // finetune-gguf: fine-tune an imported llama/qwen2 GGUF on a text corpus
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixtures::{letter_vocab, tiny_llama_gguf};
+    use crate::test_util::{args, err, Tmp};
+
+    fn run(raw: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+        cmd_run_gguf(&args("run-gguf", raw))
+    }
+
+    #[test]
+    fn arguments_are_checked_before_the_model_is_opened() {
+        assert!(err(run(&[])).starts_with("usage: train_transformer run-gguf"));
+        // The model path does not exist: each error below must come first.
+        let m = "/nonexistent/ferrum/m.gguf";
+        assert_eq!(
+            err(run(&[m, "--ids", "1 x 3"])),
+            "--ids: 'x' is not a token id"
+        );
+        assert_eq!(
+            err(run(&[m, "--quant", "q9"])),
+            "--quant must be int4|int8|f32 (got 'q9')"
+        );
+        assert!(err(run(&[m, "--resume", "/nonexistent/c.flck"])).contains("does not exist"));
+        assert!(err(run(&[m, "--temp", "-1"])).contains("--temp"));
+        assert!(err(run(&[m])).starts_with("cannot open GGUF "));
+    }
+
+    #[test]
+    fn a_model_without_tokenizer_needs_ids_and_takes_no_text_stops() {
+        let t = Tmp::new("rungguf_bare");
+        let bare = t.write("bare.gguf", tiny_llama_gguf(None, &[]));
+        assert_eq!(
+            err(run(&[&bare, "--stop", "x"])),
+            "--stop needs a tokenizer; this GGUF has none (stop on token ids is not offered)"
+        );
+        assert!(err(run(&[&bare, "hello"])).starts_with("this GGUF has no tokenizer; pass --ids"));
+        assert!(err(run(&[&bare, "--ids", ""])).starts_with("empty prompt"));
+        run(&[&bare, "--ids", "1 2 3", "--max", "3", "--temp", "0"]).unwrap();
+    }
+
+    #[test]
+    fn text_prompts_generate_at_every_precision_and_an_empty_one_is_refused() {
+        let t = Tmp::new("rungguf_text");
+        let model = t.write("m.gguf", tiny_llama_gguf(Some(&letter_vocab()), &[]));
+        assert!(err(run(&[&model])).starts_with("empty prompt"));
+        for quant in ["int4", "int8", "f32"] {
+            run(&[&model, "abc", "--quant", quant, "--max", "3", "--temp", "0"]).unwrap();
+        }
+        // --stop with a tokenizer, and more tokens than the context holds.
+        run(&[&model, "abc", "--stop", "zz", "--max", "40", "--temp", "0"]).unwrap();
+    }
+}

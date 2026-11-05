@@ -89,6 +89,93 @@ mod usage;
 mod util;
 mod validate;
 
+/// The integration tests' synthetic tiny-llama GGUF builder, reused as the stub model of the
+/// subcommand modules' unit tests (as `slm_server/src/test_util.rs` does).
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod test_fixtures;
+
+/// Helpers shared by the subcommand modules' unit tests.
+#[cfg(test)]
+mod test_util {
+    use crate::args::{spec_for, Args};
+
+    /// `raw` parsed exactly as `train_transformer <cmd> raw...` would parse it.
+    pub(crate) fn args(cmd: &str, raw: &[&str]) -> Args {
+        let raw: Vec<String> = raw.iter().map(|s| s.to_string()).collect();
+        Args::parse_for(cmd, &raw, spec_for(cmd).unwrap()).unwrap()
+    }
+
+    /// The error text of a command that must fail.
+    pub(crate) fn err<T>(r: Result<T, Box<dyn std::error::Error>>) -> String {
+        match r {
+            Ok(_) => panic!("expected an error"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// A fresh scratch directory under the system temp dir, removed on drop.
+    pub(crate) struct Tmp(std::path::PathBuf);
+
+    impl Tmp {
+        pub(crate) fn new(tag: &str) -> Self {
+            let d = std::env::temp_dir().join(format!("ferrum_cli_{tag}_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Self(d)
+        }
+        /// The path of `name` inside the directory.
+        pub(crate) fn path(&self, name: &str) -> String {
+            self.0.join(name).to_string_lossy().into_owned()
+        }
+        /// Write `bytes` to `name` and return its path.
+        pub(crate) fn write(&self, name: &str, bytes: impl AsRef<[u8]>) -> String {
+            let p = self.path(name);
+            std::fs::write(&p, bytes).unwrap();
+            p
+        }
+    }
+
+    /// The flags of a micro model (context 8, embed 8, one block, one epoch, characters): the
+    /// smallest model `train` builds, the stub for the commands that need a Ferrum model.
+    pub(crate) const MICRO: [&str; 18] = [
+        "--context",
+        "8",
+        "--embed",
+        "8",
+        "--heads",
+        "2",
+        "--blocks",
+        "1",
+        "--hidden",
+        "16",
+        "--epochs",
+        "1",
+        "--vocab",
+        "0",
+        "--threads",
+        "1",
+        "--seed",
+        "1",
+    ];
+
+    /// Train the micro model on a short corpus into `t/name` and return its path.
+    pub(crate) fn micro_model(t: &Tmp, name: &str) -> String {
+        let corpus = t.write(&format!("{name}.txt"), "abc abd abe ".repeat(8));
+        let model = t.path(name);
+        let mut raw = vec![corpus.as_str(), model.as_str()];
+        raw.extend_from_slice(&MICRO);
+        crate::train::cmd_train(&args("train", &raw)).unwrap();
+        model
+    }
+
+    impl Drop for Tmp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
 use crate::args::*;
 use crate::cmd_prepare::cmd_prepare;
 use crate::cmd_tokenize::cmd_tokenize;
@@ -208,6 +295,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::is_closed_stdout;
+    use super::test_util::{args, err, Tmp};
 
     #[test]
     fn closed_stdout_messages_by_platform() {
@@ -222,5 +310,19 @@ mod tests {
         ] {
             assert_eq!(is_closed_stdout(msg), want, "{msg}");
         }
+    }
+
+    #[test]
+    fn test_util_parses_like_the_binary_and_cleans_up() {
+        let a = args("eval", &["m.gguf", "t.txt", "--json", "o.json"]);
+        assert_eq!(a.positional, ["m.gguf", "t.txt"]);
+        assert_eq!(a.value("json"), Some("o.json"));
+        assert_eq!(err::<()>(Err("boom".into())), "boom");
+        let t = Tmp::new("selftest");
+        let p = t.write("x.txt", "hi");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "hi");
+        let dir = std::path::PathBuf::from(t.path(""));
+        drop(t);
+        assert!(!dir.exists(), "the scratch directory is removed on drop");
     }
 }

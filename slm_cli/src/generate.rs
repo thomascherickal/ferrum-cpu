@@ -113,3 +113,128 @@ pub(crate) fn generate_text(
         Ok(slm.generate_with(seed_text, num_chars, &params, &mut rng)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::{args, err, micro_model, Tmp};
+
+    fn text(slm: &GenerativeSLM, raw: &[&str]) -> String {
+        generate_text(slm, "ab", &args("generate", raw)).unwrap()
+    }
+
+    #[test]
+    fn commands_check_their_arguments_first() {
+        assert!(err(cmd_run(&args("run", &["c.txt", "m.gguf"])))
+            .starts_with("usage: train_transformer run "));
+        assert!(err(cmd_generate(&args("generate", &["m.gguf"])))
+            .starts_with("usage: train_transformer generate "));
+        let e = err(cmd_generate(&args(
+            "generate",
+            &["/nonexistent/m.gguf", "hi", "--temp", "-1"],
+        )));
+        assert!(
+            e.contains("--temp"),
+            "sampling flags fail before the load: {e}"
+        );
+        let e = err(cmd_generate(&args(
+            "generate",
+            &["/nonexistent/m.gguf", "hi"],
+        )));
+        assert!(
+            e.starts_with("cannot load model /nonexistent/m.gguf"),
+            "{e}"
+        );
+        let e = err(cmd_run(&args(
+            "run",
+            &["c.txt", "m.gguf", "hi", "--top-p", "2"],
+        )));
+        assert!(e.contains("--top-p"), "{e}");
+        let e = err(cmd_run(&args(
+            "run",
+            &["c.txt", "m.gguf", "hi", "--resume", "/nonexistent/x.fckp"],
+        )));
+        assert!(e.contains("does not exist"), "{e}");
+    }
+
+    #[test]
+    fn run_refuses_a_token_file_and_reuses_an_existing_model() {
+        let t = Tmp::new("generate_run");
+        let model = micro_model(&t, "m.gguf");
+        let before = std::fs::read(&model).unwrap();
+        // A GGUF as the corpus is a token file: `run` needs text.
+        let e = err(cmd_run(&args("run", &[&model, &t.path("x.gguf"), "ab"])));
+        assert!(e.contains("is a token file"), "{e}");
+        let corpus = t.write("c.txt", "abc abd abe ".repeat(8));
+        cmd_run(&args("run", &[&corpus, &model, "ab", "--chars", "5"])).unwrap();
+        assert_eq!(
+            std::fs::read(&model).unwrap(),
+            before,
+            "an existing model is loaded, not retrained"
+        );
+        cmd_generate(&args(
+            "generate",
+            &[&model, "a", "b", "--chars", "3", "--stream"],
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn generate_text_is_seeded_and_streaming_returns_the_same_text() {
+        let t = Tmp::new("generate_text");
+        let slm = GenerativeSLM::load(&micro_model(&t, "m.gguf")).unwrap();
+        for path in [
+            vec!["--chars", "12", "--gen-seed", "5"],
+            vec!["--max-tokens", "12", "--gen-seed", "5"],
+        ] {
+            let a = text(&slm, &path);
+            assert!(a.starts_with("ab") && a.len() > 2, "{a:?}");
+            assert_eq!(a, text(&slm, &path), "same --gen-seed, same text");
+            let mut streamed = path.clone();
+            streamed.push("--stream");
+            assert_eq!(text(&slm, &streamed), a, "{path:?}");
+        }
+    }
+
+    #[test]
+    fn stop_strings_end_the_text_and_are_excluded() {
+        let t = Tmp::new("generate_stop");
+        let slm = GenerativeSLM::load(&micro_model(&t, "m.gguf")).unwrap();
+        let free = text(
+            &slm,
+            &["--max-tokens", "30", "--gen-seed", "3", "--temp", "0"],
+        );
+        // Stop on a character the free run produced: the stopped text is a strict prefix.
+        let stop = free[2..].chars().next().unwrap().to_string();
+        let cut = text(
+            &slm,
+            &[
+                "--max-tokens",
+                "30",
+                "--gen-seed",
+                "3",
+                "--temp",
+                "0",
+                "--stop",
+                &stop,
+            ],
+        );
+        assert!(!cut[2..].contains(&stop), "{cut:?} still holds {stop:?}");
+        assert!(
+            free.starts_with(&cut) && cut.len() < free.len(),
+            "{cut:?} vs {free:?}"
+        );
+        let mut streamed = vec![
+            "--max-tokens",
+            "30",
+            "--gen-seed",
+            "3",
+            "--temp",
+            "0",
+            "--stop",
+            &stop,
+        ];
+        streamed.push("--stream");
+        assert_eq!(text(&slm, &streamed), cut);
+    }
+}
