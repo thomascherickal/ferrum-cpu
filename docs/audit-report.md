@@ -56,7 +56,7 @@ and the rest of L11.
 | A4 | Low | Docs: Status snapshot | One Tests cell gave two current counts for `ferrum_gui`: "`ferrum_gui` has **211**" and, further on, "**205** `ferrum_gui` backend tests pass". The run on 2026-11-05 gave 211. | **Fixed in this report's commit**: the second count is now worded as the count at H1. |
 | A5 | Low | Docs: gap-report totals | The Total row said **29**, but the tables hold 3 High, 13 Medium and 14 Low rows, which is 30. L14 was added without updating the total. | **Fixed in this report's commit**: the total now counts the rows, including the rows this audit adds. |
 | A6 | Low | Rule 19: unit test per file | These `src/` files have no unit test of their own:<br>• `ferrum_core`: `layer/matmul.rs`, `train_transformer/param.rs`, `train_transformer/block.rs`, `train_transformer/kernels.rs`, `llm_train/blocks.rs`, `llm_train/buffers.rs`<br>• `slm_cli` binary modules: `eval_gguf.rs`, `finetune.rs`, `generate.rs`, `run_gguf.rs`, `train.rs`, `usage.rs`, `token_train.rs`<br>• `ferrum_gui`: `commands/train.rs`, `run.rs`<br>Other tests do exercise them: the whole-network finite-difference check in `train_transformer/test_support.rs`, the `llm_train` gradient tests, the binary e2e tests in `slm_cli/tests/`, and the GUI IPC tests. Not counted: `token_file/reader.rs` and `writer.rs` (covered by `token_file/tests.rs`), the `test_support.rs` files, and the re-export-only `mod.rs`, `main.rs` and `lib.rs`. | **Partly fixed in `6b19605`**: unit tests added for `layer/matmul.rs` (both helpers against a plain loop, below and above the pool threshold, bit-exact; empty dimensions) and `train_transformer/param.rs` (constructors, `weights_only`, `zero_grad`, AdamW decay skips rank-1 params). **Open:** the other files. Next step: a unit test per file where the logic is local, for example `kernels::ln_bwd` against finite differences, the `buffers.rs` shapes, and `usage.rs` text that names every subcommand. |
-| A7 | Low | Docs: CLAUDE.md Layout | The `docs/` row does not list `docs/gui-tooltips.md` (a rule-14 tutorial) or `docs/coverage-results.md` (rule 10). The `scripts/` row does not list `coverage.sh`. This report, `docs/audit-report.md`, is in neither the Layout table nor rule 9's list of allowed docs. | **Open**: CLAUDE.md is the user's rule file, so the agent did not edit it. Next step, needing the user's approval: add the four names, and add `docs/audit-report.md` to rule 9. |
+| A7 | Low | Docs: CLAUDE.md Layout | The `docs/` row does not list `docs/gui-tooltips.md` (a rule-14 tutorial) or `docs/coverage-results.md` (rule 10). The `scripts/` row does not list `coverage.sh`. This report, `docs/audit-report.md`, is in neither the Layout table nor rule 9's list of allowed docs. | **Fixed in `d0669da`**: the four names are in the Layout table and `docs/audit-report.md` is in rule 9 (the user asked for this report on 2026-11-05). The audit agent had left it open because CLAUDE.md is the user's rule file. |
 
 ## What passed clean
 
@@ -102,8 +102,8 @@ and the rest of L11.
 | | Count |
 |---|---|
 | Findings | 7 (High 0, Medium 1, Low 6) |
-| Fixed | 5 (A1 to A5) |
+| Fixed | 6 (A1 to A5, A7) |
 | Partly fixed | 1 (A6) |
-| Open | 1 (A7), plus the open rest of A6 |
+| Open | the open rest of A6 (L15, 13 files) |
 | Tests added | 7: 1 + 1 regression tests (A1), 2 `matmul` and 3 `param` unit tests (A6) |
 | Suite after the changes | **1311 passed, 0 failed, 2 ignored** (`cargo test --workspace --release --no-fail-fast`, 7 more than 1304); `ferrum_gui` 211 passed; clippy (workspace and wasm32), fmt, doc and the wasm32 build clean |
