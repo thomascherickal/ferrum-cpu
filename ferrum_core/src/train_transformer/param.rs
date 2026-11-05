@@ -56,3 +56,56 @@ impl Param {
         adam.step(t, &mut self.data, &self.grad, &mut self.m, &mut self.v)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constructors_shape_the_buffers() {
+        let p = Param::constant(vec![2, 3], 0.5);
+        assert_eq!(p.data.data, vec![0.5; 6]);
+        assert_eq!(
+            (p.grad.shape.clone(), p.m.shape.clone(), p.v.shape.clone()),
+            (vec![2, 3], vec![2, 3], vec![2, 3])
+        );
+        assert!(p
+            .grad
+            .data
+            .iter()
+            .chain(&p.m.data)
+            .chain(&p.v.data)
+            .all(|&x| x == 0.0));
+        let r = Param::randn(vec![4], 0.1, &mut Rng::new(7));
+        assert_eq!(r.data.data.len(), 4);
+        assert!(Param::new(vec![2, 2], vec![1.0; 3]).is_err());
+    }
+
+    #[test]
+    fn weights_only_keeps_data_and_drops_the_rest() {
+        let mut p = Param::constant(vec![2, 2], 1.5);
+        p.grad.data.fill(3.0);
+        let w = p.weights_only();
+        assert_eq!(w.data.data, p.data.data);
+        assert!(w.grad.data.is_empty() && w.m.data.is_empty() && w.v.data.is_empty());
+        p.zero_grad();
+        assert!(p.grad.data.iter().all(|&g| g == 0.0));
+    }
+
+    /// AdamW decay applies to matrices only: with a zero gradient, a rank-2 param shrinks
+    /// and a rank-1 param (bias, LayerNorm gain) does not move.
+    #[test]
+    fn weight_decay_skips_rank_one_params() {
+        let adam = Adam::with_weight_decay(0.1, 0.5);
+        let mut matrix = Param::constant(vec![2, 2], 1.0);
+        let mut vector = Param::constant(vec![4], 1.0);
+        matrix.step(&adam, 1).unwrap();
+        vector.step(&adam, 1).unwrap();
+        assert!(
+            matrix.data.data.iter().all(|&x| x < 1.0),
+            "{:?}",
+            matrix.data.data
+        );
+        assert_eq!(vector.data.data, vec![1.0; 4]);
+    }
+}
