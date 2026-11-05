@@ -126,13 +126,13 @@ mod tests {
             "/nonexistent/x.flck",
         ]));
         assert!(e.contains("does not exist"), "{e}");
-        let e = err(eval(&[
-            "m.gguf",
-            "t.txt",
-            "--json",
-            "/nonexistent/dir/o.json",
-        ]));
-        assert!(e.contains("/nonexistent/dir"), "{e}");
+        // A path below a regular file can be created on no OS (a root-relative
+        // "/nonexistent/dir" can on a Windows admin runner).
+        let t = Tmp::new("evalgguf_badjson");
+        let blocker = t.write("blocker", "x");
+        let json = format!("{blocker}/dir/o.json");
+        let e = err(eval(&["m.gguf", "t.txt", "--json", &json]));
+        assert!(e.contains("blocker"), "{e}");
     }
 
     #[test]

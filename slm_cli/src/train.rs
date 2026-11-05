@@ -398,7 +398,10 @@ mod tests {
         assert!(bad(&["--epochs", "0"]).contains("--epochs"));
         assert!(bad(&["--batch", "0"]).contains("--batch"));
         assert!(bad(&["--metrics-csv", &m]).contains("--metrics-csv"));
-        assert!(bad(&["--metrics-csv", "/nonexistent/dir/m.csv"]).contains("/nonexistent/dir"));
+        // Below a regular file: uncreatable on every OS (see eval_gguf's test).
+        let blocker = t.write("blocker", "x");
+        let under_file = format!("{blocker}/dir/m.csv");
+        assert!(bad(&["--metrics-csv", &under_file]).contains("blocker"));
         // (With the corpus as the model path, `cmd_train` would load the existing file instead.)
         let a = args("train", &[]);
         let e = err(train_and_save("abc abc", &corpus, &corpus, &a));
