@@ -120,8 +120,9 @@ pub use parallel::num_threads;
 pub use quant::{fake_quantize_int8, QKind, QWeight, QUANT_MIN_LEN};
 pub use rng::Rng;
 pub use slm::{
-    Evaluation, GenStream, Generation, GenerativeSLM, SamplingParams, Score, StopReason,
-    TransformerConfig, ValidationConfig, ValidationProgress,
+    stream_text_to_token_file, Evaluation, GenStream, Generation, GenerativeSLM, SamplingParams,
+    Score, StopReason, TransformerConfig, ValidationConfig, ValidationProgress,
+    STREAM_CORPUS_THRESHOLD,
 };
 pub use stop::{StopCause, StopCondition};
 pub use tensor::Tensor;

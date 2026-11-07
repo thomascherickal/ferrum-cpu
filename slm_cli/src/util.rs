@@ -19,6 +19,25 @@ pub(crate) fn read_corpus(path: &str) -> Result<String, Box<dyn std::error::Erro
     Ok(corpus)
 }
 
+/// Read up to `max_bytes` from `path` (truncated cleanly at a UTF-8 char boundary) so `--sample`
+/// can pick a seed from a disk-streamed text corpus without loading the whole file into RAM.
+pub(crate) fn read_corpus_prefix(
+    path: &str,
+    max_bytes: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let f = std::fs::File::open(path).map_err(|e| format!("cannot read corpus {path}: {e}"))?;
+    let mut buf = Vec::with_capacity(max_bytes.min(1 << 16));
+    f.take(max_bytes as u64)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("cannot read corpus {path}: {e}"))?;
+    let valid = match std::str::from_utf8(&buf) {
+        Ok(s) => s,
+        Err(e) => std::str::from_utf8(&buf[..e.valid_up_to()]).unwrap_or(""),
+    };
+    Ok(valid.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,6 +65,21 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(e.starts_with("cannot read corpus "), "{e}");
+        let multi = d.join("multi.txt");
+        std::fs::write(&multi, "hello🌸world").unwrap();
+        // Cut inside the 4-byte emoji: `read_corpus_prefix` truncates cleanly at the char boundary.
+        assert_eq!(
+            read_corpus_prefix(multi.to_str().unwrap(), 7).unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            read_corpus_prefix(multi.to_str().unwrap(), 64).unwrap(),
+            "hello🌸world"
+        );
+        assert!(read_corpus_prefix(d.join("nope.txt").to_str().unwrap(), 16)
+            .unwrap_err()
+            .to_string()
+            .starts_with("cannot read corpus "));
         let _ = std::fs::remove_dir_all(&d);
     }
 }

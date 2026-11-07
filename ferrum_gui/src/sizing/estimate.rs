@@ -590,6 +590,10 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
         Err(e) => return none(d, &format!("This model is too large to train: {e}")),
     };
     let val = f64::from(p.val_fraction).clamp(0.0, 0.5);
+    let stream_text = p.corpus_tokens.is_none()
+        && p.vocab_size >= 256
+        && p.corpus_bytes
+            .is_some_and(|b| b >= ferrum_core::STREAM_CORPUS_THRESHOLD);
     let (corpus, tokens) = match p.corpus_tokens {
         Some(t) => {
             d.note(format!(
@@ -602,6 +606,12 @@ fn train(mut d: Draft, p: &JobParams, speed: f64) -> Estimate {
                 d.note("Corpus not found yet: assuming 100 KB of text.");
                 100_000
             }) as f64;
+            if stream_text {
+                d.note(format!(
+                    "Large BPE text corpus ({:.1} MB >= 8 MB): streamed directly from disk through a temporary token file so RAM does not grow with the corpus size.",
+                    corpus / 1e6
+                ));
+            }
             (corpus, corpus / bytes_per_token(p.vocab_size) * (1.0 - val))
         }
     };

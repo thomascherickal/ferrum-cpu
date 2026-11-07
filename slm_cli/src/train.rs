@@ -6,11 +6,25 @@ use crate::validate::*;
 use ferrum_core::{ByteBpeTokenizer, GenerativeSLM, Rng, TokenFile, ValidationConfig};
 use std::time::Instant;
 
-/// What `train` learns from: text held in memory, or a token file streamed from disk (with the
-/// tokenizer it was made with).
+/// What `train` learns from: text held in memory, a large text file streamed from disk, or a
+/// pre-tokenized file streamed from disk (with the tokenizer it was made with).
 pub(crate) enum Input<'a> {
     Text(&'a str),
+    DiskText(&'a std::path::Path),
     Tokens(&'a mut TokenFile, &'a ByteBpeTokenizer),
+}
+
+/// True when `corpus_path` is a BPE text file whose byte size is at least `threshold`, so it
+/// should be streamed from disk instead of loaded into RAM.
+pub(crate) fn should_stream_text_corpus(
+    corpus_path: &str,
+    vocab_size: usize,
+    threshold: u64,
+) -> bool {
+    vocab_size >= 256
+        && std::fs::metadata(corpus_path)
+            .map(|m| m.is_file() && m.len() >= threshold)
+            .unwrap_or(false)
 }
 
 /// Train a transformer SLM on `corpus` (QAT, int8) and save it to
@@ -98,6 +112,10 @@ pub(crate) fn train_and_save_input(
     let mut rng = Rng::new(seed);
     let corpus_desc = match &input {
         Input::Text(c) => format!("{} chars", c.chars().filter(|&ch| ch != '\r').count()),
+        Input::DiskText(p) => format!(
+            "{} bytes, streamed from disk",
+            std::fs::metadata(p).map_or(0, |m| m.len())
+        ),
         Input::Tokens(f, _) => format!(
             "{} tokens, {} documents, streamed from disk",
             f.len(),
@@ -119,7 +137,7 @@ pub(crate) fn train_and_save_input(
     let tok_desc = match &input {
         Input::Tokens(_, tok) => format!("byte-level BPE (vocab {})", tok.vocab_size()),
         Input::Text(_) if cfg.vocab_size == 0 => "character-level".to_string(),
-        Input::Text(_) => format!("byte-level BPE (vocab {})", cfg.vocab_size),
+        Input::Text(_) | Input::DiskText(_) => format!("byte-level BPE (vocab {})", cfg.vocab_size),
     };
     println!(
         "  Context : {}   Embed: {}   Hidden: {}",
@@ -217,6 +235,21 @@ pub(crate) fn train_and_save_input(
         )?,
         (Input::Text(corpus), None) => GenerativeSLM::train_transformer_config_threaded(
             corpus,
+            &cfg,
+            threads,
+            &mut rng,
+            &mut on_epoch,
+        )?,
+        (Input::DiskText(path), Some(val)) => GenerativeSLM::train_transformer_from_path_validated(
+            path,
+            &cfg,
+            threads,
+            &val,
+            &mut rng,
+            &mut on_val,
+        )?,
+        (Input::DiskText(path), None) => GenerativeSLM::train_transformer_from_path(
+            path,
             &cfg,
             threads,
             &mut rng,
@@ -325,7 +358,13 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let model_path = &args.positional[1];
     // A GGUF corpus is a pre-tokenized file (see `tokenize`); detected by content, not extension.
     let tokens = ferrum_core::is_gguf_file(corpus_path);
-    let corpus = if tokens {
+    let stream_disk = !tokens
+        && should_stream_text_corpus(
+            corpus_path,
+            args.config().vocab_size,
+            ferrum_core::STREAM_CORPUS_THRESHOLD,
+        );
+    let corpus = if tokens || stream_disk {
         String::new()
     } else {
         read_corpus(corpus_path)?
@@ -346,6 +385,13 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         slm
     } else if let Some((file, tok)) = token_input.as_mut() {
         train_and_save_input(Input::Tokens(file, tok), corpus_path, model_path, args)?
+    } else if stream_disk {
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(corpus_path)),
+            corpus_path,
+            model_path,
+            args,
+        )?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
@@ -354,6 +400,10 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         match token_input.as_mut() {
             Some((file, tok)) => {
                 print_sample_from(&slm, &crate::token_train::sample_seed(file, tok)?)?
+            }
+            None if stream_disk => {
+                let prefix = read_corpus_prefix(corpus_path, 4096)?;
+                print_sample(&slm, &prefix)?
             }
             None => print_sample(&slm, &corpus)?,
         }
@@ -484,5 +534,52 @@ mod tests {
             .unwrap()
             .vocab_size();
         assert_eq!(slm.meta.output_dim, vocab, "the token file's vocabulary");
+    }
+
+    #[test]
+    fn streams_bpe_text_corpus_from_disk_and_matches_in_memory_weights() {
+        let t = Tmp::new("train_disk_text");
+        let text = "the small brown fox and the small cat ".repeat(8);
+        let corpus = t.write("c.txt", &text);
+        assert!(should_stream_text_corpus(&corpus, 280, 10));
+        assert!(!should_stream_text_corpus(&corpus, 0, 10));
+        assert!(!should_stream_text_corpus(&corpus, 280, u64::MAX));
+        assert!(!should_stream_text_corpus(&t.path("nope.txt"), 280, 10));
+
+        let micro_bpe: Vec<&str> = MICRO
+            .iter()
+            .copied()
+            .filter(|f| *f != "--vocab" && *f != "0")
+            .chain(["--vocab", "280"])
+            .collect();
+        let mem_model = t.path("mem.gguf");
+        let disk_model = t.path("disk.gguf");
+        let a_mem = args("train", &micro_bpe);
+        train_and_save_input(Input::Text(&text), &corpus, &mem_model, &a_mem).unwrap();
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(&corpus)),
+            &corpus,
+            &disk_model,
+            &a_mem,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(&mem_model).unwrap(),
+            std::fs::read(&disk_model).unwrap()
+        );
+
+        // Also test validated DiskText branch.
+        let mut val_raw = micro_bpe.clone();
+        val_raw.extend_from_slice(&["--val", "0.2"]);
+        let a_val = args("train", &val_raw);
+        let val_model = t.path("disk_val.gguf");
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(&corpus)),
+            &corpus,
+            &val_model,
+            &a_val,
+        )
+        .unwrap();
+        assert!(std::path::Path::new(&val_model).exists());
     }
 }

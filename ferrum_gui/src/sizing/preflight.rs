@@ -125,6 +125,16 @@ pub fn preflight(p: &JobParams, hw: &HardwareInfo, bench: Option<&Throughput>) -
             vocab: p.corpus_vocab.unwrap_or(0),
             ram_scales_with_corpus: false,
             note: "Token file: the ids stay on disk and only the current minibatch's windows are read, so the RAM figure does not depend on how large the corpus is.".into(),
+        }).or_else(|| {
+            let bytes = p.corpus_bytes.filter(|&b| p.vocab_size >= 256 && b >= ferrum_core::STREAM_CORPUS_THRESHOLD)?;
+            let est_tokens = (bytes as f64 / crate::sizing::estimate::bytes_per_token(p.vocab_size)).round() as u64;
+            Some(CorpusInfo {
+                tokens: est_tokens,
+                documents: 0,
+                vocab: p.vocab_size,
+                ram_scales_with_corpus: false,
+                note: "Large text corpus (≥ 8 MB): streamed directly from disk through a temporary token file so RAM does not grow with the corpus size.".into(),
+            })
         }),
         problems,
     };
@@ -327,8 +337,15 @@ mod tests {
         );
         // The llama.cpp verdict follows the file's vocabulary: it is BPE, so it runs.
         assert!(bad.llama_cpp.runs);
-        // Text corpora have no corpus card.
+        // Small text corpora (< 8 MiB) have no corpus card; large BPE text corpora (>= 8 MiB)
+        // report that they are streamed from disk.
         assert!(preflight(&defaults(), &hw(None), None).corpus.is_none());
+        let mut big_text = defaults();
+        big_text.corpus_bytes = Some(ferrum_core::STREAM_CORPUS_THRESHOLD + 1024);
+        let big_pf = preflight(&big_text, &hw(Some(8_000)), None);
+        let big_c = big_pf.corpus.unwrap();
+        assert!(!big_c.ram_scales_with_corpus);
+        assert!(big_c.note.contains("streamed directly from disk"));
     }
 
     #[test]

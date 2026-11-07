@@ -31,27 +31,129 @@ impl ByteBpeTokenizer {
     /// adjacent pair. Stops early when no adjacent pair occurs at least twice.
     /// `vocab_size` below 257 is an error (256 bytes + EOS are irreducible).
     pub fn train(corpus: &str, vocab_size: usize) -> Result<Self> {
+        Self::train_from_docs(std::iter::once(Ok(corpus)), vocab_size)
+    }
+
+    /// [`train`](Self::train) that understands document separators: they are
+    /// removed before learning merges, and `train` already reserves [`TOK_EOS`]
+    /// (the last id), so the total vocabulary is still `vocab_size`. Identical
+    /// to `train` when the corpus has no separator.
+    pub fn train_with_docs(corpus: &str, vocab_size: usize) -> Result<Self> {
+        Self::train(&corpus.replace(DOC_SEP, ""), vocab_size)
+    }
+
+    /// Learn BPE merges from a stream of document texts without holding the
+    /// whole corpus in memory. Pre-tokenized chunks never merge across each
+    /// other or across document boundaries, so only the frequency table of
+    /// distinct chunks is kept in RAM.
+    pub fn train_from_docs<'a, I>(docs: I, vocab_size: usize) -> Result<Self>
+    where
+        I: IntoIterator<Item = Result<&'a str>>,
+    {
         if vocab_size <= BASE_VOCAB {
             return Err(InferError::DimMismatch(format!(
                 "vocab_size {vocab_size} < {} (byte base vocabulary + EOS)",
                 BASE_VOCAB + 1
             )));
         }
-        let mut tok = Self::byte_level();
-        // Pre-tokenized chunks never merge across each other, so identical
-        // chunks behave identically: train on each distinct chunk once,
-        // weighted by its frequency.
-        let mut freq: HashMap<&str, i64> = HashMap::new();
-        for c in pretokenize(corpus) {
-            *freq.entry(c).or_insert(0) += 1;
+        let mut freq: HashMap<String, i64> = HashMap::new();
+        let mut total_bytes = 0usize;
+        for doc in docs {
+            let doc = doc?;
+            total_bytes += doc.len();
+            for part in doc.split(DOC_SEP) {
+                for c in pretokenize(part) {
+                    if let Some(n) = freq.get_mut(c) {
+                        *n += 1;
+                    } else {
+                        freq.insert(c.to_owned(), 1);
+                    }
+                }
+            }
         }
+        Self::train_from_word_counts(freq, total_bytes, vocab_size)
+    }
+
+    /// Learn BPE merges by streaming `reader` (splitting on `\n\n` or [`DOC_SEP`]
+    /// boundaries, or flushing after 64 KiB at a safe newline boundary) so a
+    /// multi-gigabyte text file can train a tokenizer in bounded memory while
+    /// preserving multi-newline runs across lines.
+    pub fn train_from_reader<R: std::io::BufRead>(
+        mut reader: R,
+        vocab_size: usize,
+    ) -> Result<Self> {
+        if vocab_size <= BASE_VOCAB {
+            return Err(InferError::DimMismatch(format!(
+                "vocab_size {vocab_size} < {} (byte base vocabulary + EOS)",
+                BASE_VOCAB + 1
+            )));
+        }
+        let mut freq: HashMap<String, i64> = HashMap::new();
+        let mut total_bytes = 0usize;
+        let mut buf = String::new();
+        let mut line = String::new();
+        let mut add_chunk = |text: &str| {
+            for part in text.split(DOC_SEP) {
+                for c in pretokenize(part) {
+                    if let Some(count) = freq.get_mut(c) {
+                        *count += 1;
+                    } else {
+                        freq.insert(c.to_owned(), 1);
+                    }
+                }
+            }
+        };
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line)?;
+            if n == 0 {
+                if !buf.is_empty() {
+                    add_chunk(&buf);
+                }
+                break;
+            }
+            total_bytes += n;
+            buf.push_str(&line);
+            // Flush once the buffer exceeds 64 KiB and does not end in whitespace
+            // (or when `line` contains `DOC_SEP`), so whitespace runs across lines
+            // stay intact until followed by a non-whitespace line.
+            if buf.len() >= (1 << 16) && !line.trim_end_matches(['\r', '\n']).is_empty() {
+                // Keep the trailing newline in the next buffer so a blank line
+                // following this line still groups `\n\n` together.
+                let split = if buf.ends_with('\n') {
+                    buf.len() - 1
+                } else {
+                    buf.len()
+                };
+                add_chunk(&buf[..split]);
+                buf.drain(..split);
+            }
+        }
+        Self::train_from_word_counts(freq, total_bytes, vocab_size)
+    }
+
+    /// Learn BPE merges by streaming `path` from disk via [`train_from_reader`](Self::train_from_reader).
+    pub fn train_from_file(path: &std::path::Path, vocab_size: usize) -> Result<Self> {
+        let f = std::fs::File::open(path)?;
+        Self::train_from_reader(std::io::BufReader::with_capacity(1 << 20, f), vocab_size)
+    }
+
+    fn train_from_word_counts(
+        freq: HashMap<String, i64>,
+        total_bytes: usize,
+        vocab_size: usize,
+    ) -> Result<Self> {
+        let mut tok = Self::byte_level();
+        // Sort by byte sequence so word indices are deterministic regardless of
+        // whether `freq` was populated from one string or many streamed chunks.
         let mut words: Vec<(Vec<u32>, i64)> = freq
             .into_iter()
-            .map(|(c, f)| (c.bytes().map(u32::from).collect(), f))
+            .map(|(c, f)| (c.into_bytes().into_iter().map(u32::from).collect(), f))
             .collect();
+        words.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         vprintln!(
             "[tokenizer::train] corpus={} bytes, {} distinct chunks, target vocab={}",
-            corpus.len(),
+            total_bytes,
             words.len(),
             vocab_size
         );
@@ -144,14 +246,6 @@ impl ByteBpeTokenizer {
             tok.merges.len()
         );
         Ok(tok)
-    }
-
-    /// [`train`](Self::train) that understands document separators: they are
-    /// removed before learning merges, and `train` already reserves [`TOK_EOS`]
-    /// (the last id), so the total vocabulary is still `vocab_size`. Identical
-    /// to `train` when the corpus has no separator.
-    pub fn train_with_docs(corpus: &str, vocab_size: usize) -> Result<Self> {
-        Self::train(&corpus.replace(DOC_SEP, ""), vocab_size)
     }
 }
 
@@ -316,5 +410,39 @@ mod tests {
         assert_eq!(t.unk_id(), None);
         assert_eq!(t.bos_id(), None);
         assert!(!t.encode("<|endoftext|>").contains(&t.eos_id().unwrap()));
+    }
+
+    #[test]
+    fn streaming_reader_and_file_match_in_memory_training() {
+        let corpus = format!(
+            "{}\n\n{}\n\n{}",
+            docs_corpus(),
+            "the quick brown fox jumps over the lazy dog.\n".repeat(1600),
+            "another line\n\n<|endoftext|>and another doc"
+        );
+        let mem = ByteBpeTokenizer::train_with_docs(&corpus, 290).unwrap();
+        let rdr = ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(corpus.as_bytes()), 290)
+            .unwrap();
+        assert_eq!(mem.encode_state(), rdr.encode_state());
+
+        let docs: Vec<&str> = corpus.split(DOC_SEP).collect();
+        let from_docs =
+            ByteBpeTokenizer::train_from_docs(docs.iter().copied().map(Ok), 290).unwrap();
+        assert_eq!(mem.encode_state(), from_docs.encode_state());
+
+        let path =
+            std::env::temp_dir().join(format!("ferrum_bpe_stream_{}.txt", std::process::id()));
+        std::fs::write(&path, &corpus).unwrap();
+        let file_tok = ByteBpeTokenizer::train_from_file(&path, 290).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(mem.encode_state(), file_tok.encode_state());
+
+        assert!(ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(b"abc"), 256).is_err());
+        assert!(ByteBpeTokenizer::train_from_docs(std::iter::once(Ok("abc")), 256).is_err());
+        assert!(ByteBpeTokenizer::train_from_file(
+            std::path::Path::new("/nonexistent/ferrum/bpe.txt"),
+            300
+        )
+        .is_err());
     }
 }

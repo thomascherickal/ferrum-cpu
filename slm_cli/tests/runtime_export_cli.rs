@@ -157,7 +157,24 @@ fn answers(host: &str) -> bool {
 }
 
 fn lms_tool() -> Option<PathBuf> {
-    require_or_skip(tool("FERRUM_LMS", "lms", ".lmstudio/bin/lms"))
+    if std::env::var("FERRUM_SKIP_LMSTUDIO").ok().as_deref() == Some("1") {
+        eprintln!("skip: lm-studio (FERRUM_SKIP_LMSTUDIO=1)");
+        return None;
+    }
+    let lms = require_or_skip(tool("FERRUM_LMS", "lms", ".lmstudio/bin/lms"))?;
+    let probe = Command::new(&lms).args(["ls", "--json"]).output();
+    match probe {
+        Ok(out) if out.status.success() => Some(lms),
+        Ok(out) => {
+            let msg = format!(
+                "lms daemon is not reachable ({}): {}",
+                lms.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+            require_or_skip(Err(msg))
+        }
+        Err(e) => require_or_skip(Err(format!("cannot run {}: {e}", lms.display()))),
+    }
 }
 
 /// A path with a space in it, pointing at the model.

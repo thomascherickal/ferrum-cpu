@@ -187,13 +187,19 @@ fn train_inner<R: Runtime>(
         return Err("learning rate must be a positive number".into());
     }
     // A GGUF corpus is a token file (`tokenize`), detected by content like the CLI does: it is
-    // streamed from disk instead of read here.
+    // streamed from disk instead of read here. Large BPE text files (>= 8 MiB) are also streamed
+    // from disk through a temporary TokenFile so training never needs the full corpus in RAM.
     let mut token_input = if ferrum_core::is_gguf_file(&p.corpus_path) {
         Some(open_token_corpus(&p)?)
     } else {
         None
     };
-    let corpus = if token_input.is_some() {
+    let stream_disk = token_input.is_none()
+        && p.vocab_size >= 256
+        && std::fs::metadata(&p.corpus_path)
+            .map(|m| m.is_file() && m.len() >= ferrum_core::STREAM_CORPUS_THRESHOLD)
+            .unwrap_or(false);
+    let corpus = if token_input.is_some() || stream_disk {
         String::new()
     } else {
         let corpus = std::fs::read_to_string(&p.corpus_path)
@@ -277,8 +283,8 @@ fn train_inner<R: Runtime>(
                 val_fraction: p.val_fraction,
                 patience: p.patience,
             };
-            match (token_input.as_mut(), p.val_fraction > 0.0) {
-                (Some((file, tok)), true) => GenerativeSLM::train_transformer_tokens_validated(
+            match (token_input.as_mut(), stream_disk, p.val_fraction > 0.0) {
+                (Some((file, tok)), _, true) => GenerativeSLM::train_transformer_tokens_validated(
                     file,
                     tok,
                     &cfg,
@@ -287,10 +293,25 @@ fn train_inner<R: Runtime>(
                     &mut rng,
                     |v| progress(v.epoch, v.train_loss),
                 ),
-                (Some((file, tok)), false) => GenerativeSLM::train_transformer_tokens(
+                (Some((file, tok)), _, false) => GenerativeSLM::train_transformer_tokens(
                     file, tok, &cfg, p.threads, &mut rng, progress,
                 ),
-                (None, true) => GenerativeSLM::train_transformer_config_validated(
+                (None, true, true) => GenerativeSLM::train_transformer_from_path_validated(
+                    std::path::Path::new(&p.corpus_path),
+                    &cfg,
+                    p.threads,
+                    &val,
+                    &mut rng,
+                    |v| progress(v.epoch, v.train_loss),
+                ),
+                (None, true, false) => GenerativeSLM::train_transformer_from_path(
+                    std::path::Path::new(&p.corpus_path),
+                    &cfg,
+                    p.threads,
+                    &mut rng,
+                    progress,
+                ),
+                (None, false, true) => GenerativeSLM::train_transformer_config_validated(
                     &corpus,
                     &cfg,
                     p.threads,
@@ -298,7 +319,7 @@ fn train_inner<R: Runtime>(
                     &mut rng,
                     |v| progress(v.epoch, v.train_loss),
                 ),
-                (None, false) => GenerativeSLM::train_transformer_config_threaded(
+                (None, false, false) => GenerativeSLM::train_transformer_config_threaded(
                     &corpus, &cfg, p.threads, &mut rng, progress,
                 ),
             }

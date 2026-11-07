@@ -23,12 +23,28 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let corpus = read_corpus(corpus_path)?;
+    let stream_disk = should_stream_text_corpus(
+        corpus_path,
+        args.config().vocab_size,
+        ferrum_core::STREAM_CORPUS_THRESHOLD,
+    );
+    let corpus = if stream_disk {
+        String::new()
+    } else {
+        read_corpus(corpus_path)?
+    };
 
     let slm = if std::path::Path::new(model_path).exists() && !args.has("force") {
         let slm = GenerativeSLM::load(model_path)?;
         println!("Loaded saved weights from {model_path} — no retraining needed.\n");
         slm
+    } else if stream_disk {
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(corpus_path)),
+            corpus_path,
+            model_path,
+            args,
+        )?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };

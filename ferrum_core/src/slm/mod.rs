@@ -14,6 +14,7 @@ mod stream;
 mod test_support;
 mod token_stream;
 mod train;
+mod train_disk;
 mod train_tokens;
 mod training_loop;
 
@@ -24,6 +25,7 @@ pub use self::sampling::SamplingParams;
 pub(crate) use self::sampling::{argmax_first, sample_with_params};
 pub use self::scoring::{Evaluation, Score};
 pub use self::token_stream::GenStream;
+pub use self::train_disk::{stream_text_to_token_file, STREAM_CORPUS_THRESHOLD};
 
 use crate::error::{InferError, Result};
 use crate::meta::{ModelMetadata, Normalizer, TaskType};
