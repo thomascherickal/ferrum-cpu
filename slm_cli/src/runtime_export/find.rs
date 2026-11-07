@@ -82,6 +82,22 @@ pub fn find_tool(
     )
 }
 
+/// File names tried per `PATH` directory: `name`, plus `name.exe` on Windows.
+fn candidate_names(name: &str, windows: bool) -> Vec<String> {
+    let mut v = vec![name.to_string()];
+    if windows {
+        v.push(format!("{name}.exe"));
+    }
+    v
+}
+
+fn scan_path(path_var: &OsStr, name: &str, windows: bool) -> Option<PathBuf> {
+    let names = candidate_names(name, windows);
+    std::env::split_paths(path_var)
+        .flat_map(|d| names.iter().map(move |n| d.join(n)))
+        .find(|c| c.is_file())
+}
+
 pub(super) fn find_tool_in(
     flag: Option<&str>,
     env_val: Option<&str>,
@@ -92,11 +108,7 @@ pub(super) fn find_tool_in(
 ) -> Result<PathBuf, String> {
     let from_flag = flag.map(PathBuf::from);
     let from_env = env_val.map(PathBuf::from);
-    let from_path = path_var.and_then(|p| {
-        std::env::split_paths(p)
-            .map(|d| d.join(name))
-            .find(|c| c.is_file())
-    });
+    let from_path = path_var.and_then(|p| scan_path(p, name, cfg!(windows)));
     let candidates = [
         from_flag.clone(),
         from_env.clone(),
@@ -246,6 +258,23 @@ mod tests {
             let e = runnable_summary(&p).err().unwrap();
             assert!(e.contains("cannot read GGUF"), "{e}");
         }
+    }
+
+    #[test]
+    fn candidate_names_adds_exe_only_on_windows() {
+        assert_eq!(candidate_names("lms", false), ["lms"]);
+        assert_eq!(candidate_names("lms", true), ["lms", "lms.exe"]);
+    }
+
+    /// Regression (M16): a PATH holding only `ollama.exe` must be found on Windows.
+    #[test]
+    fn scan_path_finds_exe_when_windows() {
+        let d = tmp("exe_scan");
+        let exe = d.join("ollama.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        let pv = std::ffi::OsString::from(&d);
+        assert_eq!(scan_path(&pv, "ollama", true), Some(exe));
+        assert_eq!(scan_path(&pv, "ollama", false), None);
     }
 
     #[cfg(unix)] // needs a /bin/sh fake tool; skipped on Windows

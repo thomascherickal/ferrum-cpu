@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `b798b5b (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `c134baf (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,8 +338,8 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **88,079** lines (108,839 total across 394 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,518** pure code lines | 265 Rust files (79,621 total physical lines) |
+| **Total Tracked Code Lines** | **88,100** lines (108,868 total across 394 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,541** pure code lines | 265 Rust files (79,650 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -352,7 +352,7 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,193 | 9,443 | 4,985 | 79,621 | 74.0% |
+| **Rust (.rs)** | 265 | 65,214 | 9,447 | 4,989 | 79,650 | 74.0% |
 | **Markdown (.md)** | 31 | 11,933 | 1,413 | 3,008 | 16,354 | 13.5% |
 | **JavaScript (.js)** | 55 | 7,214 | 688 | 544 | 8,446 | 8.2% |
 | **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.2% |
@@ -362,19 +362,19 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 | **JSON (.json)** | 7 | 451 | 0 | 0 | 451 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.3% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **394** | **88,079** | **11,792** | **8,968** | **108,839** | **100.0%** |
+| **Total Repository** | **394** | **88,100** | **11,796** | **8,972** | **108,868** | **100.0%** |
 
 ### Rust Crate Breakdown
 
 | Crate Name | Purpose / Role | Files | Code Lines | Comments | Blank Lines | Total Lines | Unsafe Blocks |
 |---|---|---|---|---|---|---|---|
 | **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE | 116 | 32,413 | 4,273 | 2,492 | 39,178 | **0** (`forbid`) |
-| **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,153 | 845 | 895 | 14,893 | **0** (`forbid`) |
+| **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
 | **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 12,162 | 1,135 | 823 | 14,120 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **265** | **67,518** | **7,118** | **4,985** | **79,621** | **0** |
+| **Total Rust** | **Workspace & GUI** | **265** | **67,541** | **7,120** | **4,989** | **79,650** | **0** |
 
 ### Test Coverage & Verification
 
