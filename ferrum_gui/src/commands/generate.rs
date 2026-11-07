@@ -167,7 +167,10 @@ pub async fn generate_slm<R: Runtime>(
 fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Result<String, String> {
     sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?; // fail before the model loads
     checked_path("model path", &p.model_path, true)?;
-    let slm = crate::infra::fmt_err(GenerativeSLM::load(&p.model_path), &format!("cannot load model {}", p.model_path))?;
+    let slm = crate::infra::fmt_err(
+        GenerativeSLM::load(&p.model_path),
+        &format!("cannot load model {}", p.model_path),
+    )?;
 
     ferrum_core::set_verbose(p.verbose);
     let cancelled = || job.cancelled();

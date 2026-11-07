@@ -202,11 +202,16 @@ fn train_inner<R: Runtime>(
     let corpus = if token_input.is_some() || stream_disk {
         String::new()
     } else {
-        let corpus = crate::infra::fmt_err(std::fs::read_to_string(&p.corpus_path), &format!("cannot read corpus {}", p.corpus_path))?;
+        let corpus = crate::infra::fmt_err(
+            std::fs::read_to_string(&p.corpus_path),
+            &format!("cannot read corpus {}", p.corpus_path),
+        )?;
         if corpus.trim().is_empty() {
             return Err(format!("corpus {} is empty", p.corpus_path));
         }
-        if let Err(e) = validate_for_training(&corpus, p.context_len) { return Err(e.to_string()); }
+        if let Err(e) = validate_for_training(&corpus, p.context_len) {
+            return Err(e.to_string());
+        }
         corpus
     };
 
@@ -502,7 +507,10 @@ mod tests {
         let _restore = crate::test_support::restrict(&locked, 0o500, 0o700);
         let e = train(&locked.join("m.gguf"), "int8", true);
         assert!(_restore.is_none() || msg(&e.unwrap_err()).starts_with("cannot save model "));
-        assert!(!ferrum_core::is_verbose(), "verbose mode outlived the failed job");
+        assert!(
+            !ferrum_core::is_verbose(),
+            "verbose mode outlived the failed job"
+        );
         drop(_restore);
         let _ = std::fs::remove_dir_all(dir);
     }

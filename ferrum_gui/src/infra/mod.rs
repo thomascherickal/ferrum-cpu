@@ -16,7 +16,10 @@ pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Format an `Err(e)` as `"{prefix}: {e}"` without creating a per-call closure.
-pub(crate) fn fmt_err<T, E: std::fmt::Display>(res: Result<T, E>, prefix: &str) -> Result<T, String> {
+pub(crate) fn fmt_err<T, E: std::fmt::Display>(
+    res: Result<T, E>,
+    prefix: &str,
+) -> Result<T, String> {
     match res {
         Ok(v) => Ok(v),
         Err(e) => Err(format!("{prefix}: {e}")),

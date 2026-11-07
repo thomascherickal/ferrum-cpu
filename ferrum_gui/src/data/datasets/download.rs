@@ -75,7 +75,9 @@ pub(super) fn download_to_file(
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("URL must start with http:// or https://".to_string());
     }
-    if let Some(p) = dest.parent().filter(|p| !p.as_os_str().is_empty()) { crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?; }
+    if let Some(p) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
+        crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?;
+    }
     let mut req = http_agent().get(url);
     if let Some(c) = basic {
         req = req.set("Authorization", &basic_auth_header(&c.username, &c.key));
@@ -110,9 +112,15 @@ pub(super) fn stream_to_dest(
     part_name.push(".part");
     let part = PathBuf::from(part_name);
     let result = (|| {
-        let mut file = crate::infra::fmt_err(std::fs::File::create(&part), &format!("cannot create {part:?}"))?;
+        let mut file = crate::infra::fmt_err(
+            std::fs::File::create(&part),
+            &format!("cannot create {part:?}"),
+        )?;
         let tap = Tap::new(reader, total, &mut *progress);
-        let n = crate::infra::fmt_err(std::io::copy(&mut tap.take(cap + 1), &mut file), "write failed")?;
+        let n = crate::infra::fmt_err(
+            std::io::copy(&mut tap.take(cap + 1), &mut file),
+            "write failed",
+        )?;
         if n > cap {
             return Err(format!("download exceeds the {cap} byte limit"));
         }

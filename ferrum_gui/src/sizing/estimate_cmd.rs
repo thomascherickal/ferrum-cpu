@@ -121,10 +121,25 @@ pub fn resolve(kind: JobKind, p: &mut JobParams) {
             p.corpus_vocab = Some(vocab);
         }
     }
-    if kind == JobKind::Evaluate && is_imported(&p.model_path) { p.gguf = gguf_facts(&p.model_path); }
-    else if matches!(kind, JobKind::Generate | JobKind::Evaluate | JobKind::ModelInfo | JobKind::RuntimeExport | JobKind::Serve) { p.slm = slm_facts(&p.model_path); }
-    else if matches!(kind, JobKind::GgufRun | JobKind::GgufFinetune | JobKind::GgufExport | JobKind::GgufInfo) { p.gguf = gguf_facts(&p.model_path); }
-    else if matches!(kind, JobKind::Prepare | JobKind::Tokenize) { p.input_bytes = input_bytes(p).or(p.input_bytes); }
+    if kind == JobKind::Evaluate && is_imported(&p.model_path) {
+        p.gguf = gguf_facts(&p.model_path);
+    } else if matches!(
+        kind,
+        JobKind::Generate
+            | JobKind::Evaluate
+            | JobKind::ModelInfo
+            | JobKind::RuntimeExport
+            | JobKind::Serve
+    ) {
+        p.slm = slm_facts(&p.model_path);
+    } else if matches!(
+        kind,
+        JobKind::GgufRun | JobKind::GgufFinetune | JobKind::GgufExport | JobKind::GgufInfo
+    ) {
+        p.gguf = gguf_facts(&p.model_path);
+    } else if matches!(kind, JobKind::Prepare | JobKind::Tokenize) {
+        p.input_bytes = input_bytes(p).or(p.input_bytes);
+    }
 }
 
 /// Window-free core of [`estimate_job`]: live hardware, resolved files, no Tauri state.

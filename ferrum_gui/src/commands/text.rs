@@ -202,8 +202,16 @@ fn clean_text_with(
 #[tauri::command]
 pub fn save_corpus(text: String, path: String) -> Result<usize, CmdError> {
     checked_path("output file path", &path, false)?;
-    if let Some(p) = Path::new(&path).parent().filter(|p| !p.as_os_str().is_empty()) { crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?; }
-    crate::infra::fmt_err(std::fs::write(&path, text.as_bytes()), &format!("cannot write {path}"))?;
+    if let Some(p) = Path::new(&path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?;
+    }
+    crate::infra::fmt_err(
+        std::fs::write(&path, text.as_bytes()),
+        &format!("cannot write {path}"),
+    )?;
     Ok(text.len())
 }
 
@@ -215,7 +223,10 @@ pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, 
     let cap = max_bytes.unwrap_or(16 * 1024 * 1024) as u64;
     let file = crate::infra::fmt_err(std::fs::File::open(&path), &format!("cannot read {path}"))?;
     let mut data = Vec::new();
-    crate::infra::fmt_err(file.take(cap).read_to_end(&mut data), &format!("cannot read {path}"))?;
+    crate::infra::fmt_err(
+        file.take(cap).read_to_end(&mut data),
+        &format!("cannot read {path}"),
+    )?;
     Ok(String::from_utf8_lossy(&data).into_owned())
 }
 
@@ -445,7 +456,12 @@ mod tests {
             std::fs::create_dir(&ro).unwrap();
             let _restore = crate::test_support::restrict(&ro, 0o500, 0o700);
             let p = ro.join("out.txt").to_str().unwrap().into();
-            assert!(_restore.is_none() || save_corpus("x".into(), p).unwrap_err().contains("cannot write"));
+            assert!(
+                _restore.is_none()
+                    || save_corpus("x".into(), p)
+                        .unwrap_err()
+                        .contains("cannot write")
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

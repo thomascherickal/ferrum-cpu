@@ -150,7 +150,10 @@ fn display_url(addr: SocketAddr) -> String {
 
 /// The last `serve-log` line of a server that ended.
 fn stopped_line<E: std::fmt::Display>(result: Result<(), E>) -> String {
-    match result { Ok(()) => "ferrum-serve: stopped".to_string(), Err(e) => format!("ferrum-serve: stopped with an error: {e}") }
+    match result {
+        Ok(()) => "ferrum-serve: stopped".to_string(),
+        Err(e) => format!("ferrum-serve: stopped with an error: {e}"),
+    }
 }
 
 /// Wait up to `wait` for the server task to end; cut it off when a request keeps it busy.
@@ -231,7 +234,12 @@ pub fn serve_stop(state: State<'_, AppState>) -> Result<ServeStatus, CmdError> {
     let Running { stop, task, .. } = r;
     let _ = stop.send(());
     wait_for_end(&task, STOP_WAIT)?;
-    Ok(ServeStatus { running: false, url: None, requests, auth: false })
+    Ok(ServeStatus {
+        running: false,
+        url: None,
+        requests,
+        auth: false,
+    })
 }
 
 /// Is a server running, where, and how many requests has it answered.

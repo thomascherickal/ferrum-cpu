@@ -146,7 +146,10 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    match tauri::async_runtime::spawn_blocking(f).await { Ok(res) => res.map_err(CmdError::from), Err(e) => Err(CmdError::from(format!("task error: {e}"))) }
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(res) => res.map_err(CmdError::from),
+        Err(e) => Err(CmdError::from(format!("task error: {e}"))),
+    }
 }
 
 /// [`blocking`] for work that cannot fail.

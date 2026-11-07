@@ -232,7 +232,13 @@ pub fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport,
         // can be empty (→ cores = 0 → all GFLOP-derived bounds collapse to 0).
         sys.refresh_cpu_all();
         sys.refresh_memory();
-        let cpu = sys.cpus().first().map(|c| c.brand().trim()).filter(|s| !s.is_empty()).unwrap_or("unknown CPU").to_string();
+        let cpu = sys
+            .cpus()
+            .first()
+            .map(|c| c.brand().trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown CPU")
+            .to_string();
         (
             cpu,
             sys.cpus().len(),
@@ -258,11 +264,10 @@ fn record_bench(
     trusted: bool,
 ) {
     if trusted {
-        *crate::infra::lock(slot) =
-            Some(crate::sizing::estimate::Throughput {
-                gemm_single_gflops: gemm_single,
-                mem_bw_gbps: bw_bytes_per_s / 1e9,
-            });
+        *crate::infra::lock(slot) = Some(crate::sizing::estimate::Throughput {
+            gemm_single_gflops: gemm_single,
+            mem_bw_gbps: bw_bytes_per_s / 1e9,
+        });
     }
 }
 

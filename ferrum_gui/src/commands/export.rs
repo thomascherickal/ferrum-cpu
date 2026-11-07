@@ -92,7 +92,10 @@ pub(crate) fn do_export(
     let resume = p.resume.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
     progress(&format!("opening {} (streamed)…", p.model_path));
-    let g = crate::infra::fmt_err(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
+    let g = crate::infra::fmt_err(
+        Gguf::open(&p.model_path),
+        &format!("cannot open {}", p.model_path),
+    )?;
 
     // Memory guard. Two transient peaks, not additive: applying a checkpoint
     // allocates grads + both Adam moments (≈4× the f32 model — freed before the
@@ -110,7 +113,14 @@ pub(crate) fn do_export(
         ": f32 model + output buffer"
     };
     let hint = "pick a smaller output type or tick 'Export anyway'";
-    ram_guard("peak memory", detail, est, available_memory_bytes(), p.force, hint)?;
+    ram_guard(
+        "peak memory",
+        detail,
+        est,
+        available_memory_bytes(),
+        p.force,
+        hint,
+    )?;
 
     check()?;
     let t0 = std::time::Instant::now();
@@ -120,15 +130,24 @@ pub(crate) fn do_export(
 
     if let Some(ckpt) = resume {
         progress(&format!("applying {ckpt}…"));
-        let bytes = crate::infra::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        let bytes = crate::infra::fmt_err(
+            std::fs::read(ckpt),
+            &format!("cannot read checkpoint {ckpt}"),
+        )?;
         let mut tr = crate::infra::fmt_err(LlamaTrainer::new(model), "cannot wrap model")?;
-        crate::infra::fmt_err(tr.load_checkpoint_from_vec(bytes), "cannot apply checkpoint")?;
+        crate::infra::fmt_err(
+            tr.load_checkpoint_from_vec(bytes),
+            "cannot apply checkpoint",
+        )?;
         model = tr.model;
         check()?;
     }
 
     progress(&format!("encoding + writing ({})…", p.quant));
-    crate::infra::fmt_err(ferrum_core::write_llama_gguf(&model, &g, quant, &p.out_path), "export failed")?;
+    crate::infra::fmt_err(
+        ferrum_core::write_llama_gguf(&model, &g, quant, &p.out_path),
+        "export failed",
+    )?;
 
     // Per-type summary, read back from the written file (also proves it
     // re-opens as valid GGUF).

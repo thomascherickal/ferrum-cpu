@@ -271,12 +271,22 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     } else {
         parse_quant(&p.quant)?
     };
-    let g = crate::infra::fmt_err(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
+    let g = crate::infra::fmt_err(
+        Gguf::open(&p.model_path),
+        &format!("cannot open {}", p.model_path),
+    )?;
 
     // Memory guard before the (potentially large) load.
     let est = gguf_resident_bytes(&g, prec);
     let hint = "choose a smaller quant or enable 'load anyway'";
-    ram_guard("resident memory", "", est, available_memory_bytes(), p.force, hint)?;
+    ram_guard(
+        "resident memory",
+        "",
+        est,
+        available_memory_bytes(),
+        p.force,
+        hint,
+    )?;
 
     let tok = GgufTokenizer::from_gguf(&g).ok();
     let text_stops = parse_stops(&p.stop);
@@ -289,9 +299,15 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
-        let bytes = crate::infra::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        let bytes = crate::infra::fmt_err(
+            std::fs::read(ckpt),
+            &format!("cannot read checkpoint {ckpt}"),
+        )?;
         let mut tr = crate::infra::fmt_err(LlamaTrainer::new(model), "cannot wrap model")?;
-        crate::infra::fmt_err(tr.load_checkpoint_from_vec(bytes), &format!("cannot apply checkpoint {ckpt}"))?;
+        crate::infra::fmt_err(
+            tr.load_checkpoint_from_vec(bytes),
+            &format!("cannot apply checkpoint {ckpt}"),
+        )?;
         model = tr.model;
     }
 

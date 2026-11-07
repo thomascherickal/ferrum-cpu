@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `71a52cb (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `0525955 (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,8 +338,8 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **87,898** lines (108,672 total across 396 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,346** pure code lines | 265 Rust files (79,449 total physical lines) |
+| **Total Tracked Code Lines** | **98,768** lines (121,379 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,518** pure code lines | 265 Rust files (79,621 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -352,17 +352,17 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,021 | 9,443 | 4,985 | 79,449 | 74.0% |
-| **Markdown (.md)** | 32 | 11,919 | 1,419 | 3,016 | 16,354 | 13.6% |
-| **JavaScript (.js)** | 55 | 7,214 | 688 | 544 | 8,446 | 8.2% |
-| **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.2% |
-| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.9% |
-| **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
-| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.6% |
-| **JSON (.json)** | 8 | 456 | 0 | 0 | 456 | 0.5% |
-| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.3% |
+| **Rust (.rs)** | 265 | 65,193 | 9,443 | 4,985 | 79,621 | 66.0% |
+| **Markdown (.md)** | 107 | 17,434 | 2,092 | 4,179 | 23,705 | 17.7% |
+| **JavaScript (.js)** | 55 | 7,214 | 688 | 544 | 8,446 | 7.3% |
+| **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
+| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
+| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.8% |
+| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
+| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
+| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **396** | **87,898** | **11,798** | **8,976** | **108,672** | **100.0%** |
+| **Total Repository** | **478** | **98,768** | **12,472** | **10,139** | **121,379** | **100.0%** |
 
 ### Rust Crate Breakdown
 
@@ -372,9 +372,9 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,153 | 845 | 895 | 14,893 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
-| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 11,990 | 1,135 | 823 | 13,948 | **0** (`forbid`) |
+| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 12,162 | 1,135 | 823 | 14,120 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **265** | **67,346** | **7,118** | **4,985** | **79,449** | **0** |
+| **Total Rust** | **Workspace & GUI** | **265** | **67,518** | **7,118** | **4,985** | **79,621** | **0** |
 
 ### Test Coverage & Verification
 
