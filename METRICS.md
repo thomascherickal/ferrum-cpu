@@ -1,6 +1,6 @@
 # Ferrum SLM Studio — Comprehensive Software & Repository Metrics Report
 
-_Generated: 2026-11-07 · Commit: `961da34 (2026-11-07)` · Branch: `main` · Total Commits: 424_
+_Generated: 2026-11-07 · Commit: `351841f (2026-11-07)` · Branch: `main` · Total Commits: 425_
 
 This report provides comprehensive software engineering metrics, source code breakdown, test coverage measurements, safety invariants, memory bounds, and architectural characteristics for the Ferrum SLM engine and GUI.
 
@@ -31,7 +31,7 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
 | **Rust (.rs)** | 265 | 64,771 | 9,440 | 4,985 | 79,196 | 65.9% |
-| **Markdown (.md, .MD)** | 107 | 17,377 | 2,085 | 4,161 | 23,623 | 17.7% |
+| **Markdown (.md, .md)** | 107 | 17,377 | 2,085 | 4,161 | 23,623 | 17.7% |
 | **JavaScript (.js)** | 55 | 7,207 | 687 | 543 | 8,437 | 7.3% |
 | **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
 | **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
@@ -131,17 +131,17 @@ The GUI supports two distinct operational modes dynamically toggled via `#uiMode
 
 ## 8. Documentation Naming Audit
 
-All project documentation files strictly adhere to uppercase naming with hyphens (`*.MD`):
+All project documentation files strictly adhere to uppercase naming with hyphens (`*.md`):
 
 | File Path | Status | Verification Check |
 |---|---|---|
-| `METRICS.MD` | Tracked | Valid uppercase markdown file |
-| `STATUS.MD` | Tracked | Valid uppercase markdown file |
-| `MANUAL.MD` | Tracked | Valid uppercase markdown file |
-| `README.MD` | Tracked | Valid uppercase markdown file |
-| `AGENTS.MD` | Tracked | Valid uppercase markdown file |
-| `AUDIT.MD` | Tracked | Valid uppercase markdown file |
-| `docs/*.MD` | 100% Standardized | Verified 0 lowercase `.md` files in git index |
+| `METRICS.md` | Tracked | Valid uppercase markdown file |
+| `STATUS.md` | Tracked | Valid uppercase markdown file |
+| `MANUAL.md` | Tracked | Valid uppercase markdown file |
+| `README.md` | Tracked | Valid uppercase markdown file |
+| `AGENTS.md` | Tracked | Valid uppercase markdown file |
+| `AUDIT.md` | Tracked | Valid uppercase markdown file |
+| `docs/*.md` | 100% Standardized | Verified 0 lowercase `.md` files in git index |
 
 ---
 
@@ -149,4 +149,4 @@ All project documentation files strictly adhere to uppercase naming with hyphens
 
 To ensure this document remains continuously up to date:
 - Run `./scripts/update_metrics.sh` before every commit or whenever code metrics shift.
-- A git pre-commit hook automatically executes this script and stages `METRICS.MD`.
+- A git pre-commit hook automatically executes this script and stages `METRICS.md`.

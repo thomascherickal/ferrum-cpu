@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/update_metrics.sh - generates full codebase and software metrics for METRICS.MD
+# scripts/update_metrics.sh - generates full codebase and software metrics for METRICS.md
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,7 +19,7 @@ latest_commit = subprocess.check_output(['git', 'log', '-1', '--format=%h (%cd)'
 # 2. Per-language LOC
 langs = {
     'Rust (.rs)': ['.rs'],
-    'Markdown (.md, .MD)': ['.md', '.MD'],
+    'Markdown (.md, .md)': ['.md', '.md'],
     'JavaScript (.js)': ['.js'],
     'JSON (.json)': ['.json'],
     'Python (.py)': ['.py'],
@@ -232,17 +232,17 @@ The GUI supports two distinct operational modes dynamically toggled via `#uiMode
 
 ## 8. Documentation Naming Audit
 
-All project documentation files strictly adhere to uppercase naming with hyphens (`*.MD`):
+All project documentation files strictly adhere to uppercase naming with hyphens (`*.md`):
 
 | File Path | Status | Verification Check |
 |---|---|---|
-| `METRICS.MD` | Tracked | Valid uppercase markdown file |
-| `STATUS.MD` | Tracked | Valid uppercase markdown file |
-| `MANUAL.MD` | Tracked | Valid uppercase markdown file |
-| `README.MD` | Tracked | Valid uppercase markdown file |
-| `AGENTS.MD` | Tracked | Valid uppercase markdown file |
-| `AUDIT.MD` | Tracked | Valid uppercase markdown file |
-| `docs/*.MD` | 100% Standardized | Verified 0 lowercase `.md` files in git index |
+| `METRICS.md` | Tracked | Valid uppercase markdown file |
+| `STATUS.md` | Tracked | Valid uppercase markdown file |
+| `MANUAL.md` | Tracked | Valid uppercase markdown file |
+| `README.md` | Tracked | Valid uppercase markdown file |
+| `AGENTS.md` | Tracked | Valid uppercase markdown file |
+| `AUDIT.md` | Tracked | Valid uppercase markdown file |
+| `docs/*.md` | 100% Standardized | Verified 0 lowercase `.md` files in git index |
 
 ---
 
@@ -250,11 +250,11 @@ All project documentation files strictly adhere to uppercase naming with hyphens
 
 To ensure this document remains continuously up to date:
 - Run `./scripts/update_metrics.sh` before every commit or whenever code metrics shift.
-- A git pre-commit hook automatically executes this script and stages `METRICS.MD`.
+- A git pre-commit hook automatically executes this script and stages `METRICS.md`.
 """)
 
-with open('METRICS.MD', 'w', encoding='utf-8') as fp:
+with open('METRICS.md', 'w', encoding='utf-8') as fp:
     fp.write('\n'.join(report_parts))
 
-print("METRICS.MD successfully updated.")
+print("METRICS.md successfully updated.")
 PYEOF

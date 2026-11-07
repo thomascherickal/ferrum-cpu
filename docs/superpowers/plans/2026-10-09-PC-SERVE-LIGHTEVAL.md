@@ -19,7 +19,7 @@
 - Rust: `axum 0.8`, `tokio 1` (rt-multi-thread, macros, net, signal, sync), `serde 1`, `serde_json 1`, `sha2 0.11`; dev: `tower 0.5` (util), `http-body-util 0.1`.
 - Python 3.12: `lighteval==0.13.0`, `xxhash<4`, CPU torch.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` (§6). Phase 0 plan: `docs/superpowers/plans/2026-10-09-P0-SHARED-SURFACES.MD`.
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.md` (§6). Phase 0 plan: `docs/superpowers/plans/2026-10-09-P0-SHARED-SURFACES.md`.
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 - Bind `127.0.0.1` by default. Enforce limits **before** any model compute: body size (default 8 MiB), batch length (default 64), per-text characters (default 65,536). Return `413` for an oversized body and `400` for other limit or validation failures, both with `{"error": "..."}`. Model errors return `422`.
 - LightEval pinned to **0.13.0**, plus `xxhash<4` (xxhash 4.x crashes the details logger). In `FerrumModel`, do not call `super().__init__()` (raises `TypeError` in 0.13.0). Set `self._cache = SampleCache(config)` directly. Leave `loglikelihood_rolling` **un-cached** (0.13.0's PERPLEXITY cache drops results).
 - Python is not in CI (torch is heavy). The stdlib `unittest` must run without LightEval installed by skipping cleanly. The real smoke run is part of this phase's gate.
-- Do not edit `README.MD`, `MANUAL.MD`, `STATUS.MD` (Phase 2).
+- Do not edit `README.md`, `MANUAL.md`, `STATUS.md` (Phase 2).
 - Models are GGUF (`.gguf`). Every feature lands with its unit tests in the same commit.
 - Each Rust commit passes `cargo test --workspace --release`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`.
 

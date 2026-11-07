@@ -2,7 +2,7 @@
 
 # Phase 0 — Shared Surfaces Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Runs after `2026-10-09-P0G-GGUF-ONLY.MD`** (models are GPT-2-compatible GGUF; FFN is GELU; the LM head has no bias).
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Runs after `2026-10-09-P0G-GGUF-ONLY.md`** (models are GPT-2-compatible GGUF; FFN is GELU; the LM head has no bias).
 
 **Goal:** Land the interfaces every later workstream depends on: a public scoring API, `evaluate()` rebuilt on it, EOS document boundaries, a token-budgeted multi-stop generation API, and a strict CLI parser.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Rust 2021, std only for this phase.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` (§4.1–§4.3; `generate_tokens` from §4.4 is pulled forward here because `slm_server` needs it).
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.md` (§4.1–§4.3; `generate_tokens` from §4.4 is pulled forward here because `slm_server` needs it).
 
 ## Global Constraints
 

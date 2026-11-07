@@ -44,8 +44,8 @@ The commands are written for Linux (they use `sha256sum`, `md5sum`, and `timeout
 9. [Benchmarking](#9-benchmarking)
 10. [The Rust library API](#10-the-rust-library-api)
 
-For the full flag reference see [Manual §6.2](MANUAL.MD#62-command-line-reference); for what
-the numbers mean see [Manual §8](MANUAL.MD#8-evaluating-a-model).
+For the full flag reference see [Manual §6.2](MANUAL.md#62-command-line-reference); for what
+the numbers mean see [Manual §8](MANUAL.md#8-evaluating-a-model).
 
 ---
 
@@ -217,7 +217,7 @@ which is what `info` printed.
 
 **You need.** Sample 1's prerequisites. To run DVC itself, also Python 3.10 or newer.
 
-**Not run for this document.** DVC is installed in the project venv, not on `PATH` (`which dvc` finds nothing; `.venv/bin/dvc --version` printed `3.67.1` on 2026-11-04, after the venv was recreated for the broken-shebang fault in [Status §5](STATUS.MD#5-known-issues)), but no `dvc` command below was run for this document and no DVC output is shown. Step 4 was run: it checks the files from Sample 1 against `dvc.lock`, which was written by a real `dvc repro` (commit `b28aef8` regenerated it from a full repro).
+**Not run for this document.** DVC is installed in the project venv, not on `PATH` (`which dvc` finds nothing; `.venv/bin/dvc --version` printed `3.67.1` on 2026-11-04, after the venv was recreated for the broken-shebang fault in [Status §5](STATUS.md#5-known-issues)), but no `dvc` command below was run for this document and no DVC output is shown. Step 4 was run: it checks the files from Sample 1 against `dvc.lock`, which was written by a real `dvc repro` (commit `b28aef8` regenerated it from a full repro).
 
 **Steps.**
 
@@ -296,7 +296,7 @@ cat metrics/val.json metrics/test.json
 - All seven files match, including the model and tokenizer that Sample 1 trained. Training is deterministic, so the same inputs, flags, and `--threads` give the same bytes.
 - `dvc.lock` records the hash of every input and output. It is committed; `data/` and `models/` are not, and there is no DVC remote.
 - The `seconds` field in the metrics files is the time of the DVC run, so it differs from the time you measure. Everything else in them matches Sample 5.
-- The data-parallel trainer splits each batch across `--threads` workers (auto = the core count), and a different worker count trains different weights. The pipeline therefore pins it (`train.threads: 8` in `params.yaml`, passed as `--threads 8`), so this lock file reproduces on any machine ([Manual §6.8](MANUAL.MD#68-multi-threading-and-determinism)). This machine has 8 logical CPUs, which is why the pinned value equals what auto picked here.
+- The data-parallel trainer splits each batch across `--threads` workers (auto = the core count), and a different worker count trains different weights. The pipeline therefore pins it (`train.threads: 8` in `params.yaml`, passed as `--threads 8`), so this lock file reproduces on any machine ([Manual §6.8](MANUAL.md#68-multi-threading-and-determinism)). This machine has 8 logical CPUs, which is why the pinned value equals what auto picked here.
 - `eval/lighteval/dvc.yaml` holds the opt-in `lighteval` stage, kept out of the root pipeline so a plain `dvc repro` does not need the LightEval environment (Sample 8).
 
 ---
@@ -583,7 +583,7 @@ error: checkpoint samples/does-not-exist.fckp does not exist (--resume needs an 
 exit=1
 ```
 
-4. Train from a pre-tokenized file, for corpora larger than RAM ([Manual §6.11](MANUAL.MD#611-corpora-larger-than-ram-tokenize-and-token-files)). A three-document corpus shows the equivalence first. The first `train` creates the tokenizer; `tokenize` streams the text into a `ferrum-tokens` GGUF holding the ids `train` would see; `train` on that file streams windows from disk. The two models must be the same bytes.
+4. Train from a pre-tokenized file, for corpora larger than RAM ([Manual §6.11](MANUAL.md#611-corpora-larger-than-ram-tokenize-and-token-files)). A three-document corpus shows the equivalence first. The first `train` creates the tokenizer; `tokenize` streams the text into a `ferrum-tokens` GGUF holding the ids `train` would see; `train` on that file streams windows from disk. The two models must be the same bytes.
 
 ```bash
 mkdir -p samples/tokens
@@ -873,7 +873,7 @@ FERRUM_NUM_THREADS=8 train_transformer generate models/slm.gguf "Once upon a tim
 - `--max-tokens` is a token budget. `--chars` is a character count. Either, or `--stop`, ignores the other.
 - Generation past the context window works: the cache is rebuilt from the last half window once per half window of new tokens.
 - Identical hashes show that thread count does not change results.
-- This model is 500K parameters trained for six minutes. It writes fluent-looking sentences that do not hold together (the sampled text above wanders). That is expected at this size ([Manual §17](MANUAL.MD#17-limits-an-honest-critique)).
+- This model is 500K parameters trained for six minutes. It writes fluent-looking sentences that do not hold together (the sampled text above wanders). That is expected at this size ([Manual §17](MANUAL.md#17-limits-an-honest-critique)).
 
 ---
 
@@ -1000,7 +1000,7 @@ Model "ferrum-tiny" unloaded.
 
 `max_tokens` 17 gives the 16 tokens of Parts A to C plus a final `.`; LM Studio's first 16 tokens equal them. Newer LM Studio versions reject a POST without the `Content-Type` header. `repeat_penalty` 1.0 matters because LM Studio's default (1.1) changes the text. `lms ls --json` entries carry `modelKey` and `path`; that is what the `python3` line reads, and what `export-lmstudio` reads.
 
-**Part E. One-command exports.** Both commands accept only Ferrum's own `gpt2` models: they refuse a GGUF that llama.cpp cannot run (a character-level or tabular model), and an imported llama GGUF (write its Modelfile by hand, Manual §9.5), before they start any tool. They find the tools as described in [Manual §9.5](MANUAL.MD#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio), or take `--bin`. The Ollama export talks to the server from Part C, because `OLLAMA_HOST` is still exported.
+**Part E. One-command exports.** Both commands accept only Ferrum's own `gpt2` models: they refuse a GGUF that llama.cpp cannot run (a character-level or tabular model), and an imported llama GGUF (write its Modelfile by hand, Manual §9.5), before they start any tool. They find the tools as described in [Manual §9.5](MANUAL.md#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio), or take `--bin`. The Ollama export talks to the server from Part C, because `OLLAMA_HOST` is still exported.
 
 ```bash
 train_transformer export-ollama models/slm.gguf ferrum-export --modelfile-only samples/ferrum-export.Modelfile
@@ -1031,7 +1031,7 @@ One day, they were playing, and the park to play with the tir and befish. They p
 Sue was very happy and laughed. They thanked the ball for the ball and had a lot. They played on the ball and played with the ball together. They played together, and had fun together every day.
 ```
 
-`export-lmstudio` was not run for this sample (the manual commands of Part D were). `export-lmstudio` end to end was last run on 2026-10-25: the development ledger's battery of that day records `runtime_export_cli 7 passed` under `FERRUM_REQUIRE_RUNTIMES=1`, and the file had 7 tests then (at `48be9e9`), `export_lmstudio_then_generate` among them; no output of that run is kept in the repository, and it has not been re-run since (not at the current commit; nothing was run against the LM Studio daemon after it) ([Status §5](STATUS.MD#5-known-issues)). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
+`export-lmstudio` was not run for this sample (the manual commands of Part D were). `export-lmstudio` end to end was last run on 2026-10-25: the development ledger's battery of that day records `runtime_export_cli 7 passed` under `FERRUM_REQUIRE_RUNTIMES=1`, and the file had 7 tests then (at `48be9e9`), `export_lmstudio_then_generate` among them; no output of that run is kept in the repository, and it has not been re-run since (not at the current commit; nothing was run against the LM Studio daemon after it) ([Status §5](STATUS.md#5-known-issues)). Its refusal path does not touch LM Studio, so it can be shown. Exporting a character-level model (`train ... --vocab 0`) fails for both commands before any tool is used:
 
 ```bash
 train_transformer train data/prepared/val.txt samples/char.gguf --vocab 0 --context 16 --embed 32 \
@@ -1167,7 +1167,7 @@ $ python3 eval/lighteval/summarize.py eval/lighteval/out/results metrics/lightev
 }
 ```
 
-The second is the full run (no `--max-samples`, all 1,423 test documents), recorded in the work log when it finished on 2026-10-25 (the log is not part of the repository) and kept in [Manual §9.8](MANUAL.MD#98-evaluating-with-lighteval). Its raw output was not kept, so only the summary numbers survive:
+The second is the full run (no `--max-samples`, all 1,423 test documents), recorded in the work log when it finished on 2026-10-25 (the log is not part of the repository) and kept in [Manual §9.8](MANUAL.md#98-evaluating-with-lighteval). Its raw output was not kept, so only the summary numbers survive:
 
 | Task | Metrics | Value |
 |---|---|---|
@@ -1288,7 +1288,7 @@ threads = 8   (FERRUM_NUM_THREADS = unset)
 | 1024² | 42.0 | 14.2 | 3.0× |
 | 2048² | 40.3 | 13.6 | 3.0× |
 
-The benchmark gained a block of the reference model's own matmul shapes (the fused QKV projection, MLP up and down, the LM head, and four sequences at once), which are small enough for per-call overhead to show. Matmuls of 20 million multiply-adds or more (here the 512² and larger squares) now run on scoped threads that borrow their operands instead of copying them for the worker pool ([Manual §2.2.1](MANUAL.MD#221-what-is-used-and-what-was-tried-and-not-kept)). The first two blocks of the third of three runs of that build (same machine, 2026-10-27, a browser and an IDE open, so the rates are below the 2026-10-26 ones above); the median of three interleaved runs against the previous build was 4.95 ms before and 4.20 ms after for 512², and unchanged within noise for the other rows:
+The benchmark gained a block of the reference model's own matmul shapes (the fused QKV projection, MLP up and down, the LM head, and four sequences at once), which are small enough for per-call overhead to show. Matmuls of 20 million multiply-adds or more (here the 512² and larger squares) now run on scoped threads that borrow their operands instead of copying them for the worker pool ([Manual §2.2.1](MANUAL.md#221-what-is-used-and-what-was-tried-and-not-kept)). The first two blocks of the third of three runs of that build (same machine, 2026-10-27, a browser and an IDE open, so the rates are below the 2026-10-26 ones above); the median of three interleaved runs against the previous build was 4.95 ms before and 4.20 ms after for 512², and unchanged within noise for the other rows:
 
 ```text
 threads = 8   (FERRUM_NUM_THREADS = unset)
@@ -1363,7 +1363,7 @@ Generation is compared per kilobyte of output because the start-of-review CLI co
 **The program.**
 
 ```rust
-//! Train, score, generate, save, and load with the library. SAMPLES.MD §10 runs it:
+//! Train, score, generate, save, and load with the library. SAMPLES.md §10 runs it:
 //! `cargo run --release -p ferrum_core --example library_tour`
 
 #![forbid(unsafe_code)]

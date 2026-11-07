@@ -2,7 +2,7 @@
 
 # Phase 0-G — GGUF Everywhere, FINF Removed Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Run this plan before `2026-10-09-P0-SHARED-SURFACES.MD`.**
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Run this plan before `2026-10-09-P0-SHARED-SURFACES.md`.**
 
 **Goal:** Every file Ferrum writes is GGUF v3. Ferrum's own BPE transformer SLMs are `gpt2`-architecture GGUFs that run unmodified in llama.cpp, Ollama, and LM Studio, down to ~0.1M parameters. That covers trained models (f32, int8, int4), training checkpoints (`.fckp` and `.flck` contents), and the reusable BPE tokenizer file. The FINF format and its code are deleted. Every crate forbids `unsafe` code.
 
@@ -13,7 +13,7 @@
 
 **Tech Stack:** Rust 2021, the in-crate GGUF reader/writer (`gguf.rs`, `gguf_write.rs`).
 
-**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` §4.0 (added for this change).
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.md` §4.0 (added for this change).
 
 ## Global Constraints
 

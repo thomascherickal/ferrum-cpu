@@ -2,7 +2,7 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-**Layout: single-context.** One `CONTEXT.md` and `docs/adr/` at the repo root. Note: `GLOSSARY.MD` is a beginner-facing guide to LLM/SLM terms, not the agent `CONTEXT.md` — don't treat it as the project's domain glossary.
+**Layout: single-context.** One `CONTEXT.md` and `docs/adr/` at the repo root. Note: `GLOSSARY.md` is a beginner-facing guide to LLM/SLM terms, not the agent `CONTEXT.md` — don't treat it as the project's domain glossary.
 
 ## Before exploring, read these
 

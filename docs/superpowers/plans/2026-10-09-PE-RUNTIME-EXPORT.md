@@ -14,7 +14,7 @@
 
 **Tech Stack:** Rust std; the Ollama and LM Studio (`lms`) CLIs.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` §4.0, plus the amendment "one-command export".
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.md` §4.0, plus the amendment "one-command export".
 
 ## Global Constraints
 

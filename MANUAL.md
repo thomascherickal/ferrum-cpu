@@ -7,14 +7,14 @@ principles for readers who have never trained a model. It then walks through
 preparing data, training, generating, evaluating, running external models, the
 GUI, and deployment. It ends with the complete reference.
 
-For a one-page overview and installation, see [README.MD](README.MD). For
-executed walk-throughs with real output, see [SAMPLES.MD](SAMPLES.MD). For what
-is implemented, tested, and planned, see [STATUS.MD](STATUS.MD).
+For a one-page overview and installation, see [README.md](README.md). For
+executed walk-throughs with real output, see [SAMPLES.md](SAMPLES.md). For what
+is implemented, tested, and planned, see [STATUS.md](STATUS.md).
 
 **How to read it.**
 
 - New to all of this? Read Part I in order, then §6.10, a complete worked
-  walkthrough, and try [SAMPLES.MD](SAMPLES.MD).
+  walkthrough, and try [SAMPLES.md](SAMPLES.md).
 - Know the basics already? Go to Part II and read only the chapter for the
   task in front of you.
 - Integrating the library? Part III is the reference.
@@ -236,14 +236,14 @@ Three matmul or threading crates were benchmarked against the hand-written
 kernel and worker pool on the 507,552-parameter reference model. None is in
 the tree. All rows are the median of three runs of `scripts/bench_slm.sh` and
 `cargo bench --bench gemm` at 8 threads on the machine in
-[Samples §9](SAMPLES.MD#9-benchmarking), measured on 2026-10-24 with the low-memory
+[Samples §9](SAMPLES.md#9-benchmarking), measured on 2026-10-24 with the low-memory
 build settings (`CARGO_PROFILE_RELEASE_LTO=off`, 16 codegen units).
 
 | Candidate | Train tokens/s | Eval s | Generate ms/token | GEMM 2048³ GFLOP/s | Outcome |
 |---|---:|---:|---:|---:|---|
 | Starting point: previous kernel, hand-written pool | 6,726 | 1.63 | 0.292 | 35.2 | |
 | `rayon` pool instead of the hand-written pool | 6,836 (+1.6%) | 1.49 | 0.293 | 33.0 | Rejected: no gain. |
-| `ndarray` (`matrixmultiply` backend) | 9,429 (+40%) | 1.44 | 0.459 | 176.9 | Not adopted: it clears the 10% bar but makes generation 57% slower, and it would be the engine's first dependency on the hot path. A hybrid (`ndarray` for large matmuls, own kernel for single-token decode) gave 9,036 (+34%) at 0.301 ms/token. Whether to take it is an open decision ([Status §6](STATUS.MD#6-roadmap)). |
+| `ndarray` (`matrixmultiply` backend) | 9,429 (+40%) | 1.44 | 0.459 | 176.9 | Not adopted: it clears the 10% bar but makes generation 57% slower, and it would be the engine's first dependency on the hot path. A hybrid (`ndarray` for large matmuls, own kernel for single-token decode) gave 9,036 (+34%) at 0.301 ms/token. Whether to take it is an open decision ([Status §6](STATUS.md#6-roadmap)). |
 | `faer` | 8,368 (+24%) | 1.50 | 0.235 | 158.2 | Rejected: it failed the thread-count determinism rule. |
 | **A 4×8 register tile in the existing kernel (kept)** | **8,056 (+20%)** | 1.48 | 0.304 | 49.8 | Kept. Safe `std` Rust, and bit-identical results to the kernel it replaced. |
 
@@ -435,7 +435,7 @@ chat_format             chat-template detection and rendering for instruct model
 
 Any UTF-8 text file is a corpus. For a good one, use `prepare`: a repeatable,
 streaming cleaner and splitter that records exactly what it did
-([Samples §3](SAMPLES.MD#3-cleaning-your-own-corpus) runs it on a deliberately messy input).
+([Samples §3](SAMPLES.md#3-cleaning-your-own-corpus) runs it on a deliberately messy input).
 The same cleaning steps are available as library functions, in the GUI's
 **Datasets** tab for a quick single-file clean, and in its **Prepare** tab, which
 runs this command's code ([§10.3](#103-the-tabs)).
@@ -516,7 +516,7 @@ describes a complete set. A crash or a failed rename between the renames can
 leave a mix of old and new split files, but then there is no manifest: treat an
 output folder without one as unfinished and run `prepare` again.
 
-Tutorial: [docs/RESUME-CANCEL-AND-PREPARE.MD](docs/RESUME-CANCEL-AND-PREPARE.MD).
+Tutorial: [docs/RESUME-CANCEL-AND-PREPARE.md](docs/RESUME-CANCEL-AND-PREPARE.md).
 
 If the hashes in two manifests match, the inputs and outputs are byte-identical.
 DVC tracks `manifest.json` in git (not in the DVC cache), so a change in the
@@ -821,7 +821,7 @@ and exits 130 (the shell's 128 + SIGINT). A second Ctrl-C exits 130 at once. Wit
 resumed run is bit-identical to an uninterrupted one. SIGTERM, SIGHUP and a power cut
 are not caught: the checkpoint on disk is the last periodic one.
 
-Walk-through with a real run: [docs/RESUME-CANCEL-AND-PREPARE.MD](docs/RESUME-CANCEL-AND-PREPARE.MD).
+Walk-through with a real run: [docs/RESUME-CANCEL-AND-PREPARE.md](docs/RESUME-CANCEL-AND-PREPARE.md).
 
 **Stopping on purpose.** `--max-seconds 3600` stops after the optimizer step
 that crosses the budget (fractions are fine). The same happens when the file
@@ -898,7 +898,7 @@ Throughput is
 measured; the presets are reasonable defaults, not tuned optima. A GPU is never
 used, so a small discrete GPU (for example, a 2 GB MX330) adds nothing.
 
-For estimates across other RAM sizes and processors (Intel i3/i5/i7, Ryzen, Snapdragon), see the [capability report](docs/FERRUM-CAPABILITIES.MD); only this machine was measured.
+For estimates across other RAM sizes and processors (Intel i3/i5/i7, Ryzen, Snapdragon), see the [capability report](docs/FERRUM-CAPABILITIES.md); only this machine was measured.
 
 ### 6.8 Multi-threading and determinism
 
@@ -986,9 +986,9 @@ For full control, drive `TransformerNet` directly ([§12.3](#123-training-primit
 ### 6.10 A worked walkthrough
 
 This uses a few sentences as the corpus, which is enough to see the pipeline
-end to end. Real models want megabytes ([Samples §1](SAMPLES.MD#1-quick-start-a-500k-slm-on-tinystories)
+end to end. Real models want megabytes ([Samples §1](SAMPLES.md#1-quick-start-a-500k-slm-on-tinystories)
 trains a real one). Every output below is from a real run
-([Samples](SAMPLES.MD) lists the machine).
+([Samples](SAMPLES.md) lists the machine).
 
 ```bash
 cargo build -p slm_cli --release
@@ -1124,7 +1124,7 @@ train_transformer train train.tok.gguf model.gguf --tokenizer tok.gguf --tokens 
 gives with the same flags, seed and `--threads` (same window order, same RNG draws,
 serial and threaded, with checkpoint resume and a token budget; tests compare the
 model bytes, per-epoch losses and final checkpoint, and
-[Samples §4](SAMPLES.MD#4-training-controls) shows the sha256 of both). Nothing
+[Samples §4](SAMPLES.md#4-training-controls) shows the sha256 of both). Nothing
 else about training changes: the DVC outputs do not move.
 
 **The file.** A token file is GGUF v3 (`general.architecture = ferrum-tokens`),
@@ -1159,7 +1159,7 @@ truncated file fails when it is opened.
 - Windows are read straight from the file, so a corpus much larger than RAM trains
   at the speed of the page cache and disk. On a corpus that fits (20 MB) no cost
   from streaming was measurable, and peak memory fell by the size of the text and
-  the ids ([Samples §4](SAMPLES.MD#4-training-controls)); a corpus much larger than
+  the ids ([Samples §4](SAMPLES.md#4-training-controls)); a corpus much larger than
   RAM was not run on this machine.
 
 Library: `ferrum_core::write_token_file`, `TokenFile`,
@@ -1174,7 +1174,7 @@ train_transformer generate <model.gguf> <seed text> [--chars N] [--max-tokens N]
                            [--top-k N] [--top-p F] [--repetition-penalty F] [--stop S]... [--stream]
 ```
 
-`run` takes the same flags after its training flags. [Samples §6](SAMPLES.MD#6-generation)
+`run` takes the same flags after its training flags. [Samples §6](SAMPLES.md#6-generation)
 runs each of them.
 
 | Flag | Default | Meaning |
@@ -1247,7 +1247,7 @@ held-back stop-string prefix is dropped. `Generation.cancelled` says so, and
 `stream_next` returns `None`. A cancelled run draws no further random numbers,
 and with the flag unset (or `None`, the default) output is bit-identical to a
 run without it. It is a plain flag, not a clock, so it also works in the wasm
-build (tutorial: [docs/RESUME-CANCEL-AND-PREPARE.MD](docs/RESUME-CANCEL-AND-PREPARE.MD)):
+build (tutorial: [docs/RESUME-CANCEL-AND-PREPARE.md](docs/RESUME-CANCEL-AND-PREPARE.md)):
 
 ```rust
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
@@ -1290,7 +1290,7 @@ println!("ppl {:.3}  bits/token {:.3}  CE {:.3} nats  ({} predictions)",
 - **Every token is scored.** The first token is conditioned on a start
   position (BOS, which is the EOS id), so `num_predictions` equals the token
   count. Earlier versions skipped the first window, so perplexities from before
-  this change are not comparable ([Status §7](STATUS.MD#7-backward-compatibility)).
+  this change are not comparable ([Status §7](STATUS.md#7-backward-compatibility)).
 - Texts longer than the context window use sliding windows with stride
   `context_len / 2`. Each token is scored exactly once, with at least
   `context_len / 2` tokens of history (except in the first window).
@@ -1310,8 +1310,8 @@ println!("ppl {:.3}  bits/token {:.3}  CE {:.3} nats  ({} predictions)",
 **Speed.** Evaluation runs one padded forward pass per window instead of one
 pass per token. On the 507,552-parameter reference model it scores a 30 KB
 held-out file in about 1.5 s; the 1.1 MB test split of the default corpus takes
-about a minute ([Samples §5](SAMPLES.MD#5-evaluation) and
-[§9](SAMPLES.MD#9-benchmarking)).
+about a minute ([Samples §5](SAMPLES.md#5-evaluation) and
+[§9](SAMPLES.md#9-benchmarking)).
 
 ### 8.2 Other checks
 
@@ -1320,7 +1320,7 @@ about a minute ([Samples §5](SAMPLES.MD#5-evaluation) and
 | **Seed fidelity** | `generate(seed, …)` always starts with `seed`. If not, the file is corrupt. |
 | **Tokenizer compression** | `text.len() / tok.encode(text).len()` bytes per token; higher packs more text per step |
 | **Size** | `to_bytes()` (f32) vs `to_bytes_quantized()` (int8, ≈4×) vs `to_bytes_quantized_int4()` (≈8×). Matrices whose row length is not a multiple of 32 stay f32, so ratios are slightly below 4×/8×. |
-| **Quantization fidelity** | An int8 file reloads bit-identically to the QAT model that trained it, so `evaluate()` gives the same numbers before and after saving. int4's grid is coarser ([Samples §5](SAMPLES.MD#5-evaluation)). |
+| **Quantization fidelity** | An int8 file reloads bit-identically to the QAT model that trained it, so `evaluate()` gives the same numbers before and after saving. int4's grid is coarser ([Samples §5](SAMPLES.md#5-evaluation)). |
 | **Speed** | `time train_transformer generate …`; compare `FERRUM_NUM_THREADS=1` vs auto. Outputs are identical, only wall-clock changes. |
 | **Reproducibility** | Same seed, same output; reloaded model matches in-memory model; same corpus and vocab give the same BPE merges. |
 | **Standard benchmarks** | LightEval through `ferrum-serve` ([§9.8](#98-evaluating-with-lighteval)) |
@@ -1481,7 +1481,7 @@ batch is split across the threads; the memory cap above can lower `--threads`, a
 banner line says so. A `.flck` written before these keys existed still resumes as before
 (a checkpoint from inside an epoch starts a fresh epoch, so the result differs slightly)
 and prints `note: the checkpoint predates its recorded corpus, epoch and training settings;
-...`. Walk-through: [docs/RESUME-CANCEL-AND-PREPARE.MD](docs/RESUME-CANCEL-AND-PREPARE.MD) §5.
+...`. Walk-through: [docs/RESUME-CANCEL-AND-PREPARE.md](docs/RESUME-CANCEL-AND-PREPARE.md) §5.
 
 ### 9.3 Exporting (`export-gguf`)
 
@@ -1566,7 +1566,7 @@ this. Versions the commands were verified with:
 | LM Studio | 0.4.18 (llama.cpp-linux-x86_64-avx2 2.23.1) | `lms import`, `lms load`, `/v1/completions` |
 
 A stock GPT-2 124M Q8_0 GGUF gave identical 16-token greedy output in all three
-tools, which fixed the method. [Samples §7](SAMPLES.MD#7-serving-and-running-your-model-in-llamacpp-ollama-and-lm-studio)
+tools, which fixed the method. [Samples §7](SAMPLES.md#7-serving-and-running-your-model-in-llamacpp-ollama-and-lm-studio)
 runs every command below on the reference model.
 
 **llama.cpp**
@@ -1715,7 +1715,7 @@ available memory comes from Linux's `/proc/meminfo`, so on other systems the gua
 length and vocabulary, `quant` as the precision it computes at (`int4`, `int8` or `f32`, the
 `--quant` it was loaded with; for a Ferrum model it stays the saved file's quantization), and
 `tokenizer` as `bpe` or `spm`. The browser bindings (`slm_wasm`, [§11.3](#113-in-the-browser-webassembly))
-load Ferrum's own models only. Walk-through: [docs/SERVING-IMPORTED-MODELS.MD](docs/SERVING-IMPORTED-MODELS.MD).
+load Ferrum's own models only. Walk-through: [docs/SERVING-IMPORTED-MODELS.md](docs/SERVING-IMPORTED-MODELS.md).
 
 **Imported models: tokens and windows.**
 
@@ -1887,7 +1887,7 @@ choose another directory.
 | `arc:easy` | Science questions | accuracy |
 
 A 500K-parameter model will score near chance on `arc:easy` (25% for four
-choices). That is expected. [Samples §8](SAMPLES.MD#8-testing-with-lighteval)
+choices). That is expected. [Samples §8](SAMPLES.md#8-testing-with-lighteval)
 shows a real run of the reference model.
 
 `FerrumModel` reads the server address from `FERRUM_URL` (default
@@ -2052,7 +2052,7 @@ those.
 | **Export** | Re-quantize or export a (fine-tuned) GGUF with phase-by-phase progress and a per-type summary. A second block runs a Ferrum `gpt2` model in **Ollama** or **LM Studio** (the code of `export-ollama` / `export-lmstudio`): *Show Modelfile and commands*, *Export to Ollama*, *Import into LM Studio*, *Write Modelfile only*; see *Running in Ollama and LM Studio* below |
 | **Serve** | Run the `ferrum-serve` HTTP server ([§9.7](#97-serving-ferrum-serve)) for one model inside the app: model, host, port, request limits and an optional bearer token; **Start server** / **Stop**, the real address, a request counter and the server log; see *Serving a model* below |
 | **System** | Per-core CPU, memory, and Ferrum's thread count (also as top-bar gauges) |
-| **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](STATUS.MD#5-known-issues)). |
+| **Capable** | A 1–2 s micro-benchmark that estimates the parameter ranges this machine can load, train, fine-tune, and run. Treat the numbers as rough upper bounds ([Status §5](STATUS.md#5-known-issues)). |
 | **Engine log** (docked) | The engine's `--verbose` trace, streamed live when *Verbose* is ticked |
 
 **Preparing a dataset.** The Prepare tab's `prepare_dataset` command calls
@@ -2236,7 +2236,7 @@ their tip shows on hover only (their text is also linked by
 `aria-describedby`). The hardware line's tip ends with the full current line,
 which the top bar may cut short. How to add a tip, and the exact list of exempt
 elements (options, inline text, wrappers), is in the tutorial
-[docs/GUI-TOOLTIPS.MD](docs/GUI-TOOLTIPS.MD).
+[docs/GUI-TOOLTIPS.md](docs/GUI-TOOLTIPS.md).
 
 **Live estimates on every button.** A button's tooltip also says what it does
 and an *estimated time* and *RAM need* computed by `estimate_job` from your
@@ -2926,7 +2926,7 @@ All numbers were measured on this project on 11th Gen Intel(R) Core(TM) i5-1135G
 settings (no LTO, 16 codegen units), CPU only, with the desktop session running, so
 treat them as indicative; a shipped build and an idle machine are somewhat faster.
 The logs behind them, and the earlier builds used for the before and after
-comparison, are described in [Samples §9](SAMPLES.MD#9-benchmarking).
+comparison, are described in [Samples §9](SAMPLES.md#9-benchmarking).
 
 ### 13.1 Determinism (verified)
 
@@ -3160,7 +3160,7 @@ thread counts.
 
 **Will my old models load?** No. FINF `.bin` files, `FCKP` checkpoints, and
 old tokenizer files no longer load (deliberate; retrain). See
-[Status §7](STATUS.MD#7-backward-compatibility).
+[Status §7](STATUS.md#7-backward-compatibility).
 
 **Where did the tabular trainer and the web playground go?** The tabular
 trainer is in `../ferrum-ml`. The old one-hot web playground is archived in

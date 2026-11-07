@@ -2,15 +2,15 @@
 
 # Completing ferrum-cpu: Coverage, Gaps, Roadmap — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.MD working rule 2): subagent-driven means strictly sequential, never parallel.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.md working rule 2): subagent-driven means strictly sequential, never parallel.
 
-**Goal:** Take ferrum-cpu from "feature-complete for 0.3.0 with 98.19 % line coverage" to "every module in `STATUS.MD` §6 either shipped or explicitly declined, 100 % line coverage gated in CI, and a functional (real binary) plus integration test for every user-facing surface".
+**Goal:** Take ferrum-cpu from "feature-complete for 0.3.0 with 98.19 % line coverage" to "every module in `STATUS.md` §6 either shipped or explicitly declined, 100 % line coverage gated in CI, and a functional (real binary) plus integration test for every user-facing surface".
 
-**Architecture:** Four phases. **Phase 0** builds the measuring stick (one coverage script, a CI gate that ratchets). **Phase 1** closes the 524 missed lines file by file, deleting dead code where a missed line is unreachable. **Phase 2** closes the known-issue gaps that `STATUS.MD` §5 and the `ponytail:` markers name. **Phase 3** lists the roadmap features (`STATUS.MD` §6.2) at interface-and-test level. Each one gets its own detailed plan, written just before it runs, because each is a subsystem of its own (writing-plans scope rule).
+**Architecture:** Four phases. **Phase 0** builds the measuring stick (one coverage script, a CI gate that ratchets). **Phase 1** closes the 524 missed lines file by file, deleting dead code where a missed line is unreachable. **Phase 2** closes the known-issue gaps that `STATUS.md` §5 and the `ponytail:` markers name. **Phase 3** lists the roadmap features (`STATUS.md` §6.2) at interface-and-test level. Each one gets its own detailed plan, written just before it runs, because each is a subsystem of its own (writing-plans scope rule).
 
 **Tech Stack:** Rust 2021 (MSRV 1.87, stable toolchain), `cargo-llvm-cov` (installed, `~/.cargo/bin/cargo-llvm-cov`), Node 24 built-in test coverage (`node --test --experimental-test-coverage`, verified working on `ferrum_gui/ui/escape.test.js`), Python stdlib `trace`.
 
-**Spec:** There is no separate design doc. The sources are `STATUS.MD` (§4 implemented, §5 known issues, §6 roadmap, §7 compatibility), the `CLAUDE.MD` hard constraints, and the baseline measured below. Read `STATUS.MD` §5–§6 before any Phase 2 or 3 task.
+**Spec:** There is no separate design doc. The sources are `STATUS.md` (§4 implemented, §5 known issues, §6 roadmap, §7 compatibility), the `CLAUDE.md` hard constraints, and the baseline measured below. Read `STATUS.md` §5–§6 before any Phase 2 or 3 task.
 
 ## Baseline (measured 2026-11-02 on this machine, `master` at `5108c26`)
 
@@ -31,20 +31,20 @@ Under llvm-cov, 1,088 tests pass and 2 are ignored, against 1,090 in the normal 
 
 ## Global Constraints
 
-Copied from `CLAUDE.MD`. Every task's requirements include these.
+Copied from `CLAUDE.md`. Every task's requirements include these.
 
 - **GGUF only.** Every file Ferrum writes is GGUF v3. A new file kind is a new GGUF kind, never a custom binary format. BPE SLMs stay `general.architecture = "gpt2"` and keep running in llama.cpp.
 - **`ferrum_core` has two external dependencies** (`unicode-general-category`, `unicode-normalization`). Add no others. Benchmarks are std-only (`harness = false`). A new dependency anywhere needs four things: a benchmark gain (or more code replaced than added), a passing determinism test, a working `wasm32-unknown-unknown` build of `ferrum_core`, and `cargo deny check`. **Any task that needs a new dependency stops and asks the user** (see "Decisions for the user").
 - **`#![forbid(unsafe_code)]`** in every crate root. No SIMD intrinsics, and no direct call to a dependency's `unsafe fn`.
 - **Deterministic at any thread count.** Results are bit-identical under any `FERRUM_NUM_THREADS`. The data-parallel trainer is the one documented exception. `cargo test -p slm_cli --release --test determinism` must pass after every kernel or trainer change.
 - **WASM-portable.** `ferrum_core` and `slm_wasm` build for `wasm32-unknown-unknown`, with no threads or fs on that path.
-- **Backward compatibility.** `TransformerConfig` (and `SamplingParams`) grow by new fields plus `Default`. The positional `train_transformer*` functions keep stride 1 and their exact results. Record every compat change in `STATUS.MD` §7.
+- **Backward compatibility.** `TransformerConfig` (and `SamplingParams`) grow by new fields plus `Default`. The positional `train_transformer*` functions keep stride 1 and their exact results. Record every compat change in `STATUS.md` §7.
 - **Scoring semantics.** `evaluate()`/`--val` use `score_rolling`, `temperature == 0` is exact argmax, and `<|endoftext|>` is always reserved.
 - **Low-memory machine (15 GB).** Prefix every cargo command with `CARGO_BUILD_JOBS=3 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`. Run one cargo command at a time, and **never run `llvm-cov` together with tests**.
 - **Stay inside the project.** Scratch files go in the session scratchpad. Tools are installed with `--root <scratchpad>`, never into `~/.cargo` or `~/.cache`.
-- **One commit per completed feature.** A feature is complete when it has tests, a green full suite, docs, and `STATUS.MD` (snapshot, test counts, known issues, roadmap, §7) updated in the same commit. Use Conventional subjects. Push after every green suite, fast-forward merge to `master`, no PRs, no merge commits.
+- **One commit per completed feature.** A feature is complete when it has tests, a green full suite, docs, and `STATUS.md` (snapshot, test counts, known issues, roadmap, §7) updated in the same commit. Use Conventional subjects. Push after every green suite, fast-forward merge to `master`, no PRs, no merge commits.
 - **No invented output.** Every number written into a doc comes from a run on this machine. Say plainly what was not run.
-- **Docs are fixed:** `README.MD`, `MANUAL.MD`, `STATUS.MD`, `SAMPLES.MD`, `GLOSSARY.MD`, `docs/SLM-EDGE-USE-CASES.MD`. Add no others. (Plans under `docs/superpowers/plans/` are agent records, as this file is.)
+- **Docs are fixed:** `README.md`, `MANUAL.md`, `STATUS.md`, `SAMPLES.md`, `GLOSSARY.md`, `docs/SLM-EDGE-USE-CASES.md`. Add no others. (Plans under `docs/superpowers/plans/` are agent records, as this file is.)
 - **New CLI flags** go in the per-subcommand `*_FLAGS` tables in `slm_cli/src/args.rs`.
 - **Deliberate simplifications** are marked `// ponytail:`, naming the ceiling and the upgrade path.
 - **`ferrum_gui` is outside the workspace.** Build and test it from `ferrum_gui/`. Use `node --check` for every `ui/*.js`. After changing what the UI sends, refresh the fixtures with `UPDATE_FIXTURE=1 node ui/live.test.js` and `UPDATE_FIXTURE=1 node ui/app_flows.test.js`.
@@ -82,7 +82,7 @@ These are the failure modes most likely to bite, with no current test. Each line
 
 **Files:**
 - Create: `scripts/coverage.sh`, `tests/tests/test_coverage_script.rs`
-- Modify: `.github/workflows/ci.yml` (new job `coverage`), `CLAUDE.MD` (Commands block), `MANUAL.MD` §13.6 (Reproducing), `STATUS.MD` (header branch, §1 snapshot, §9 metrics)
+- Modify: `.github/workflows/ci.yml` (new job `coverage`), `CLAUDE.md` (Commands block), `MANUAL.md` §13.6 (Reproducing), `STATUS.md` (header branch, §1 snapshot, §9 metrics)
 
 **Interfaces:**
 - Produces: `scripts/coverage.sh [--rust|--gui|--js|--py|--all] [--fail-under N]`. It writes `target/coverage/{summary.txt,missing.txt,gui-summary.txt,js.txt,py.txt}` and exits non-zero when lines fall below N (default `100`). Later tasks run `scripts/coverage.sh --rust --fail-under 100`.
@@ -99,7 +99,7 @@ These are the failure modes most likely to bite, with no current test. Each line
   - `--py` runs `trace`.
   - `--all` runs them in sequence, never in parallel.
 - [ ] **Step 4: Run the tests.** They PASS.
-- [ ] **Step 5: Measure the unmeasured baselines.** Run `scripts/coverage.sh --gui --fail-under 0`, then `--js --fail-under 0`, then `--py --fail-under 0`, one at a time. Copy the four totals into `STATUS.MD` §9 as measured on that date. These numbers fix the size of Tasks 1.5 and 1.6.
+- [ ] **Step 5: Measure the unmeasured baselines.** Run `scripts/coverage.sh --gui --fail-under 0`, then `--js --fail-under 0`, then `--py --fail-under 0`, one at a time. Copy the four totals into `STATUS.md` §9 as measured on that date. These numbers fix the size of Tasks 1.5 and 1.6.
 - [ ] **Step 6: Add the CI job `coverage`** (ubuntu, `taiki-e/install-action` for `cargo-llvm-cov`). The floor is set from the **first CI run** of this job, not from the local 98.19 %, because some covered lines depend on the environment:
   - `loader/gpt2.rs:632-633` runs only when `.ferrum-dev` exists.
   - Tool-gated runtime branches depend on whether the tools are installed.
@@ -107,7 +107,7 @@ These are the failure modes most likely to bite, with no current test. Each line
   - `memory.rs` and GUI hardware detection read `/proc` and `/sys`.
 
   Run the job once with `--fail-under 0`, then set the floor to its reported total, rounded down. Tasks 1.1–1.4 raise the floor in their own commits, and Task 1.4 sets it to 100. Add the JS gate at its measured floor too. **A Phase 1 task is done when the CI `coverage` job passes at the new floor**, not when the local script does.
-- [ ] **Step 7: Fix the stale `STATUS.MD` header.** It names branch `feat/finish-remaining`. The work is on `master`. Correct the header and §1 "Date and branch"/"Commits" rows.
+- [ ] **Step 7: Fix the stale `STATUS.md` header.** It names branch `feat/finish-remaining`. The work is on `master`. Correct the header and §1 "Date and branch"/"Commits" rows.
 - [ ] **Step 8: Run the full suite**, then the coverage script on its own. Commit `build(coverage): coverage script and a ratcheting CI gate`.
 
 ---
@@ -211,7 +211,7 @@ Its size is set by Task 0.1 Step 5. Do not start before that number exists.
 
 - [ ] Work file by file from `target/coverage/gui-missing.txt`, using the same loop as above. Headless IPC tests use Tauri's mock runtime (`tauri` feature `test`, already a dev-dependency).
 - [ ] **Command matrix guard:** add the test `every_command_has_an_ipc_test` in `ferrum_gui/src/ipc_tests.rs`. It reads the `generate_handler!` list in `lib.rs` (the same source `ui/commands.test.js` uses) and asserts that each command name occurs in an IPC test.
-- [ ] Add `scripts/coverage.sh --gui --fail-under 100` to the CI `gui` job. Run the GUI checks from CLAUDE.MD Commands. Commit `test(gui): 100 % backend line coverage, gated in CI`.
+- [ ] Add `scripts/coverage.sh --gui --fail-under 100` to the CI `gui` job. Run the GUI checks from CLAUDE.md Commands. Commit `test(gui): 100 % backend line coverage, gated in CI`.
 
 ### Task 1.6: UI JavaScript and Python to 100 %
 
@@ -221,14 +221,14 @@ Its size is set by Task 0.1 Step 5. Do not start before that number exists.
 
 ---
 
-## Phase 2 — Known-issue gaps (STATUS.MD §5, `ponytail:` markers)
+## Phase 2 — Known-issue gaps (STATUS.md §5, `ponytail:` markers)
 
 Every task here changes behaviour. Each task writes three kinds of test:
 - **unit**, in the module
 - **functional**, through the real binary or the IPC path
 - **integration**, across crates, in `tests/tests/` when more than one crate is involved
 
-Each task also updates `STATUS.MD` §5 (remove or rewrite the issue), §7 if a format changes, and the matching `MANUAL.MD` section.
+Each task also updates `STATUS.md` §5 (remove or rewrite the issue), §7 if a format changes, and the matching `MANUAL.md` section.
 
 ### Task 2.1: Exact mid-epoch resume
 
@@ -240,10 +240,10 @@ The marker is `ferrum_core/src/slm/training_loop.rs:187`: "a resumed run reshuff
 - Produces: a new checkpoint key `ferrum.ckpt.epoch_rng` (u64 array, the RNG state at the start of the current epoch). A checkpoint without it resumes as today, with the reshuffle and a note. This is backward compatible; record it in §7.
 
 - [ ] Unit: `checkpoint_roundtrips_epoch_rng`, and `old_checkpoint_without_epoch_rng_still_loads`, which uses a checkpoint written by the current code and committed as test bytes.
-- [ ] Integration: `resume_mid_epoch_is_bit_identical`, in `test_tiny_library.rs`. Train N steps with a checkpoint at step N/2 + 3 (not an epoch boundary), resume, and compare the model bytes with an uninterrupted run, both serial and with `threads = 2`. Add `resume_mid_epoch_is_bit_identical_from_token_file` next to it: `train tokens.gguf` shuffles its windows in `train_transformer/source.rs`, and `STATUS.MD` claims token-file training is bit-identical to in-memory training across a resume.
+- [ ] Integration: `resume_mid_epoch_is_bit_identical`, in `test_tiny_library.rs`. Train N steps with a checkpoint at step N/2 + 3 (not an epoch boundary), resume, and compare the model bytes with an uninterrupted run, both serial and with `threads = 2`. Add `resume_mid_epoch_is_bit_identical_from_token_file` next to it: `train tokens.gguf` shuffles its windows in `train_transformer/source.rs`, and `STATUS.md` claims token-file training is bit-identical to in-memory training across a resume.
 - [ ] Implement it: store the epoch-start RNG state. On resume, regenerate that epoch's permutation and skip the `partial` windows already done. Remove the `ponytail:` marker.
 - [ ] Functional: extend the resume case in `slm_cli/tests/tiny_e2e.rs` to compare the sha256 of the interrupted and the uninterrupted model.
-- [ ] Docs: `STATUS.MD` §5 row "Resume may not replay…" goes, §7 gains a note, and `MANUAL.MD` §6.6 changes. Commit `feat(train): exact mid-epoch resume`.
+- [ ] Docs: `STATUS.md` §5 row "Resume may not replay…" goes, §7 gains a note, and `MANUAL.md` §6.6 changes. Commit `feat(train): exact mid-epoch resume`.
 
 ### Task 2.2: Corpus identity in checkpoints
 
@@ -271,7 +271,7 @@ The marker is `ferrum_gui/src/commands/generate.rs:131`: the GUI cancels by `res
   - `no_cancel_flag_is_bit_identical_to_today` (same text and same RNG draws as `generate_tokens` on the tiny BPE and char models)
 - [ ] GUI: replace `catch_unwind`/`resume_unwind` in `run_generation` with the flag. The existing IPC cancel tests must pass unchanged. Remove the marker.
 - [ ] Server (optional consumer): none now. Note it in Manual §9.7 as possible.
-- [ ] Struct literals: run `grep -rn 'SamplingParams {' --include=*.rs .` over the workspace, `ferrum_gui` and `../ferrum-ml`. Confirm that `SamplingParams` implements `Default` (it derives only `Clone, Debug, PartialEq` today, `slm/sampling.rs:17`, so check its constructors). Then fix every literal that lacks `..Default::default()` in this commit, and record it in `STATUS.MD` §7 if it is a public break.
+- [ ] Struct literals: run `grep -rn 'SamplingParams {' --include=*.rs .` over the workspace, `ferrum_gui` and `../ferrum-ml`. Confirm that `SamplingParams` implements `Default` (it derives only `Clone, Debug, PartialEq` today, `slm/sampling.rs:17`, so check its constructors). Then fix every literal that lacks `..Default::default()` in this commit, and record it in `STATUS.md` §7 if it is a public break.
 - [ ] Wasm: `Slm::start`/`next_chunk` go through `stream_next`. Build `slm_wasm` for wasm32 and run the Node `wasm-bindgen-test` suite (6 passed). The cancel check reads only the `AtomicBool`, never the clock (`Instant::now` traps on `wasm32-unknown-unknown`). That is why this hook is a plain flag and not a `StopCondition`.
 - [ ] Commit `feat(generate): cooperative cancel in every decode loop`.
 
@@ -294,14 +294,14 @@ The marker is `slm_cli/src/prepare/mod.rs:340`.
 
 ### Task 2.6: Docs that run
 
-- [ ] Re-run every command in `SAMPLES.MD` that the 2026-11-02 path move touched (§7 Ollama/LM Studio output paths), paste the real output, and mark anything not re-run.
+- [ ] Re-run every command in `SAMPLES.md` that the 2026-11-02 path move touched (§7 Ollama/LM Studio output paths), paste the real output, and mark anything not re-run.
 - [ ] Commit `docs(samples): re-run after the directory move`.
 
 ---
 
-## Phase 3 — Roadmap modules (STATUS.MD §6.2)
+## Phase 3 — Roadmap modules (STATUS.md §6.2)
 
-Each item below is a subsystem. **Before starting one, write its own plan** with this skill, using the item below as its spec seed. Each one lands under the same rules: unit, functional and integration tests, 100 % on the new lines (the gate enforces it), and docs plus `STATUS.MD` in the commit. They are ordered by dependency.
+Each item below is a subsystem. **Before starting one, write its own plan** with this skill, using the item below as its spec seed. Each one lands under the same rules: unit, functional and integration tests, 100 % on the new lines (the gate enforces it), and docs plus `STATUS.md` in the commit. They are ordered by dependency.
 
 | # | Module | Files (main) | Interface seed | Tests that prove it |
 |---|---|---|---|---|

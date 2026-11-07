@@ -15,7 +15,7 @@ reproducible, servable, and testable with a standard harness:
 3. Add a DVC-driven data pipeline: fetch → prepare (clean) → train → eval.
 4. Add an HTTP inference endpoint (`slm_server`, axum) and a Hugging Face
    LightEval module that evaluates Ferrum models through it.
-5. Write `SAMPLES.MD`: 10 detailed, actually-executed walk-throughs.
+5. Write `SAMPLES.md`: 10 detailed, actually-executed walk-throughs.
 6. **GGUF only** (amendment): the FINF format is removed. Every file Ferrum writes — models, training
    checkpoints, tokenizer files — is GGUF. Ferrum's own trained SLMs are **GPT-2-architecture GGUFs
    that run unmodified in llama.cpp, Ollama, and LM Studio** (§4.0).
@@ -35,11 +35,11 @@ loads the prepared train split whole); OpenAI-compatible routes; a DVC remote.
 | Defects | Fix all: #1–#5 Important and all Minor |
 | Corpus | TinyStories V2 (GPT-4) validation file, pinned (§5.4) |
 | Dependencies | Zero-dependency constraint dropped; crates admitted on measured gain |
-| Samples | New top-level `SAMPLES.MD`, 10 samples, every command executed |
+| Samples | New top-level `SAMPLES.md`, 10 samples, every command executed |
 | File formats | GGUF only; FINF removed (breaking: old `.bin` files stop loading; committed ones converted) |
 | Model architecture | Ferrum's own Transformer becomes GPT-2-compatible (GELU FFN, no LM-head bias, GPT-2 pre-tokenizer + byte-to-unicode vocab); saved as `gpt2` GGUF in F32/F16/Q8_0/Q4_0 |
 | Compatibility target | llama.cpp, Ollama, LM Studio run Ferrum GGUFs; verified by automated tests against installed binaries |
-| Runtime export | One-command export: `export-ollama`, `export-lmstudio` (Unsloth Studio dropped) — plan `2026-10-09-PE-RUNTIME-EXPORT.MD` |
+| Runtime export | One-command export: `export-ollama`, `export-lmstudio` (Unsloth Studio dropped) — plan `2026-10-09-PE-RUNTIME-EXPORT.md` |
 | Runtime tests | Ollama + LM Studio installed on the dev machine; runtime tests skip when a tool is absent unless `FERRUM_REQUIRE_RUNTIMES=1` (then fail); a CI job installs pinned llama.cpp b11521 + Ollama v0.40.2 and runs them required (LM Studio needs its desktop app, so it is required locally before release, not in CI) |
 | Unsafe | `#![forbid(unsafe_code)]` in every crate (`deny` only where a third-party proc macro forces it) |
 
@@ -78,7 +78,7 @@ loads the prepared train split whole); OpenAI-compatible routes; a DVC remote.
 - **Non-transformer models** (Ferrum-ML tabular MLPs) are GGUF with `general.architecture = "ferrum"` (the generic layer-list codec; also used for character-level models)
   (generic layer list) — GGUF, but not runnable in llama.cpp, which has no MLP-classifier architecture.
 - Exact key names, tensor shapes, and the pre-tokenizer regex are pinned from llama.cpp's source in
-  plan `2026-10-09-P0G-GGUF-ONLY.MD`.
+  plan `2026-10-09-P0G-GGUF-ONLY.md`.
 
 ### 4.1 Scoring API (Phase 0; the shared interface)
 
@@ -120,7 +120,7 @@ impl GenerativeSLM {
   that value; document the −27.63 per-token floor.
 - `evaluate()` and training `--val` are re-implemented on `score_rolling`
   (defect #1). Perplexity now covers every token after the first instead of
-  skipping the first window; record this in `STATUS.MD` §7.
+  skipping the first window; record this in `STATUS.md` §7.
 - Character-level models: an unknown character is an error in `score*`
   (not a silent id 0); `evaluate()` reports the count of unknown characters.
 
@@ -163,7 +163,7 @@ impl GenerativeSLM {
    no slower (less code is a gain in itself). Verify wasm32 behaviour.
 4. The `gemm` bench may move to Criterion.
 5. `deny.toml` updated so `cargo deny check` passes with the new crates.
-6. Docs: ReadMe pitch, Manual §2, Status, `CLAUDE.MD` hard-constraints list.
+6. Docs: ReadMe pitch, Manual §2, Status, `CLAUDE.md` hard-constraints list.
 
 ### 4.6 Minor fixes (Phase 1, agent A)
 
@@ -280,9 +280,9 @@ Pinned to **lighteval 0.13.0** (Python ≥ 3.10).
   Default tasks: `ferrum_heldout`, `tinystories_cloze`, a `blimp` subset, `arc:easy`;
   `--wikitext` adds `wikitext:103:document_level`.
 
-## 7. Workstream D — `SAMPLES.MD` and docs (Phase 2)
+## 7. Workstream D — `SAMPLES.md` and docs (Phase 2)
 
-`SAMPLES.MD`, 10 samples. Each has: goal, prerequisites, exact commands,
+`SAMPLES.md`, 10 samples. Each has: goal, prerequisites, exact commands,
 **real** output excerpts captured while writing, and what to look at.
 
 1. Quick start: train a 500K SLM on TinyStories; sizing a config to a parameter target
@@ -298,8 +298,8 @@ Pinned to **lighteval 0.13.0** (Python ≥ 3.10).
 
 Also: ReadMe (pitch, layout table with `slm_server`, docs list), Manual
 (§2, corpus prep with `prepare`, eval, serving chapter pointer), Status
-(snapshot, issues, roadmap, metrics, §7 compat), `CLAUDE.MD`/`AGENTS.MD`
-(constraints, layout, commands, docs list incl. `SAMPLES.MD`).
+(snapshot, issues, roadmap, metrics, §7 compat), `CLAUDE.md`/`AGENTS.md`
+(constraints, layout, commands, docs list incl. `SAMPLES.md`).
 
 ## 8. Testing and CI
 
