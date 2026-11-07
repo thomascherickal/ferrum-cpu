@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `dc626e9 (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `3aa281c (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,7 +338,7 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **92,967** lines (113,763 total across 398 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Total Tracked Code Lines** | **98,965** lines (121,608 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
 | **Rust Codebase Volume** | **67,603** pure code lines | 265 Rust files (79,719 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
@@ -352,17 +352,17 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,272 | 9,456 | 4,991 | 79,719 | 70.2% |
-| **Markdown (.md)** | 31 | 11,974 | 1,419 | 3,012 | 16,405 | 12.9% |
-| **JavaScript (.js)** | 55 | 7,250 | 694 | 545 | 8,489 | 7.8% |
-| **JSON (.json)** | 11 | 5,172 | 0 | 0 | 5,172 | 5.6% |
-| **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.1% |
-| **HTML (.html)** | 2 | 795 | 0 | 34 | 829 | 0.9% |
-| **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
+| **Rust (.rs)** | 265 | 65,272 | 9,456 | 4,991 | 79,719 | 66.0% |
+| **Markdown (.md)** | 107 | 17,502 | 2,095 | 4,182 | 23,779 | 17.7% |
+| **JavaScript (.js)** | 55 | 7,250 | 694 | 545 | 8,489 | 7.3% |
+| **JSON (.json)** | 13 | 5,616 | 0 | 0 | 5,616 | 5.7% |
+| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
+| **HTML (.html)** | 2 | 795 | 0 | 34 | 829 | 0.8% |
+| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
 | **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **398** | **92,967** | **11,817** | **8,979** | **113,763** | **100.0%** |
+| **Total Repository** | **478** | **98,965** | **12,494** | **10,149** | **121,608** | **100.0%** |
 
 ### Rust Crate Breakdown
 
