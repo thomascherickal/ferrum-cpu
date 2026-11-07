@@ -44,7 +44,11 @@ pub(crate) fn install() -> Result<Arc<AtomicBool>, String> {
     let flag = Arc::new(AtomicBool::new(false));
     let h = flag.clone();
     // ctrlc runs this on its own thread, not in signal context, so printing and exiting is safe.
-    let _ = ctrlc::set_handler(move || if handle_interrupt(&h) { std::process::exit(EXIT_STATUS); });
+    let _ = ctrlc::set_handler(move || {
+        if handle_interrupt(&h) {
+            std::process::exit(EXIT_STATUS);
+        }
+    });
     Ok(FLAG.get_or_init(|| flag).clone())
 }
 

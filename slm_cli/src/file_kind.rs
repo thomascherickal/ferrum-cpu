@@ -149,7 +149,9 @@ mod tests {
     fn a_tokenizer_file_reports_its_vocab_and_merges() {
         let tok = ByteBpeTokenizer::byte_level();
         let p = file("tok", &tok.to_gguf_bytes());
-        let FileKind::Other(o) = detect(&p).unwrap() else { return; };
+        let FileKind::Other(o) = detect(&p).unwrap() else {
+            return;
+        };
         assert_eq!(o.architecture, "ferrum-tokenizer");
         assert_eq!(o.version, 3);
         assert!(o.kind.contains("--tokenizer"), "{}", o.kind);
@@ -166,7 +168,9 @@ mod tests {
     #[test]
     fn a_fine_tune_checkpoint_is_named_and_a_damaged_checkpoint_is_an_error() {
         let p = file("flck", &with_arch(Some("ferrum-llama-checkpoint")));
-        let FileKind::Other(o) = detect(&p).unwrap() else { return; };
+        let FileKind::Other(o) = detect(&p).unwrap() else {
+            return;
+        };
         assert!(o.kind.contains("run-gguf --resume") && o.fields.is_empty());
         let _ = std::fs::remove_file(p);
         // A header that claims to be a checkpoint but lacks its keys, and the same for
@@ -184,7 +188,9 @@ mod tests {
         let net = TransformerNet::new(30, 8, 16, 2, 48, 1, &mut r).unwrap();
         let bytes = net.save_checkpoint(&r);
         let p = file("ck", &bytes);
-        let FileKind::Other(o) = detect(&p).unwrap() else { panic!(); };
+        let FileKind::Other(o) = detect(&p).unwrap() else {
+            panic!();
+        };
         assert_eq!(o.architecture, "ferrum-checkpoint");
         let _ = std::fs::remove_file(p);
 
@@ -194,12 +200,13 @@ mod tests {
             eos_id: Some(1),
             tokenizer_sha256: "sha".into(),
         };
-        ferrum_core::token_file::write_token_file(
-            tp.to_str().unwrap(),
-            &meta,
-            |w| w.push(&[1, 2, 3]),
-        ).unwrap();
-        let FileKind::Other(to) = detect(tp.to_str().unwrap()).unwrap() else { panic!(); };
+        ferrum_core::token_file::write_token_file(tp.to_str().unwrap(), &meta, |w| {
+            w.push(&[1, 2, 3])
+        })
+        .unwrap();
+        let FileKind::Other(to) = detect(tp.to_str().unwrap()).unwrap() else {
+            panic!();
+        };
         assert_eq!(to.architecture, "ferrum-tokens");
         let _ = std::fs::remove_file(tp);
     }

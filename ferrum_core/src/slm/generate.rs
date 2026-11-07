@@ -419,7 +419,9 @@ mod tests {
             .unwrap();
         assert!(out.starts_with(seed));
         let n = out.chars().count();
-        let stopped = slm.generate_until(seed, 40, "t", &params, &mut Rng::new(3)).unwrap();
+        let stopped = slm
+            .generate_until(seed, 40, "t", &params, &mut Rng::new(3))
+            .unwrap();
         assert!(stopped.ends_with('t'));
         assert!(n == seed.chars().count() + 40 || out.ends_with(' '));
         // Deterministic.
@@ -888,7 +890,9 @@ mod tests {
     fn generate_continuation_returns_only_continuation() {
         let slm = tiny_bpe_slm();
         let mut rng = Rng::new(42);
-        let cont = slm.generate_continuation("the cat", 10, 0.0, &mut rng).unwrap();
+        let cont = slm
+            .generate_continuation("the cat", 10, 0.0, &mut rng)
+            .unwrap();
         assert!(!cont.starts_with("the cat"));
         assert!(!cont.is_empty());
     }
@@ -928,9 +932,8 @@ mod tests {
                             for seed in seeds {
                                 for n in [0usize, 1, 5] {
                                     let ctx = format!("{name} {params:?} seed={seed:?} n={n}");
-                                    let out = slm
-                                        .generate_with(seed, n, &params, &mut rng)
-                                        .expect(&ctx);
+                                    let out =
+                                        slm.generate_with(seed, n, &params, &mut rng).expect(&ctx);
                                     assert!(out.starts_with(seed), "{ctx}: {out:?}");
                                     assert!(
                                         out.chars().count() <= seed.chars().count() + n,

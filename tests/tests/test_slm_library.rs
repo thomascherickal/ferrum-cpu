@@ -444,8 +444,7 @@ fn test_evaluate_works_for_char_and_bpe() {
 
     let mut rng = Rng::new(13);
     let transformer =
-        GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 6, 0.01, 16, 0, &mut rng)
-            .unwrap();
+        GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 6, 0.01, 16, 0, &mut rng).unwrap();
     let bpe = GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 6, 0.01, 16, 300, &mut rng)
         .unwrap();
 
@@ -467,8 +466,8 @@ fn test_evaluate_survives_gguf_roundtrip() {
     // A reloaded model must score identically to the in-memory one.
     let corpus = "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc";
     let mut rng = Rng::new(7);
-    let slm = GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 2, 0.01, 8, 0, &mut rng)
-        .unwrap();
+    let slm =
+        GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 2, 0.01, 8, 0, &mut rng).unwrap();
 
     let before = slm.evaluate(corpus).unwrap();
     let reloaded = GenerativeSLM::from_bytes(&slm.to_bytes_quantized().unwrap()).unwrap();

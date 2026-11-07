@@ -138,7 +138,9 @@ mod tests {
             assert!(info.params > 0);
         }
         // The Ferrum path holds the very bytes of the file.
-        if let ModelFile::Ferrum(b) = open(bpe.path(), None, false, None).unwrap() { assert_eq!(b, std::fs::read(bpe.path()).unwrap()); }
+        if let ModelFile::Ferrum(b) = open(bpe.path(), None, false, None).unwrap() {
+            assert_eq!(b, std::fs::read(bpe.path()).unwrap());
+        }
     }
 
     #[test]
@@ -205,6 +207,9 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         assert_eq!(sha256_file(f.path()).unwrap(), want);
-        if let ModelFile::Imported { sha256, prec, .. } = open(f.path(), None, false, None).unwrap() { assert_eq!((sha256, prec), (want, None)); }
+        if let ModelFile::Imported { sha256, prec, .. } = open(f.path(), None, false, None).unwrap()
+        {
+            assert_eq!((sha256, prec), (want, None));
+        }
     }
 }

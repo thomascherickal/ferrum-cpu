@@ -85,7 +85,11 @@ pub fn tokenize_files(
     .map_err(|e| {
         let text = e.to_string();
         // The library wraps the callback's message; a stop keeps its own plain text.
-        if text.ends_with(CANCELLED) { CANCELLED.to_string() } else { text }
+        if text.ends_with(CANCELLED) {
+            CANCELLED.to_string()
+        } else {
+            text
+        }
     })?;
     Ok((stats.tokens, stats.documents, bytes_in, stats.bytes))
 }
@@ -285,7 +289,14 @@ mod tests {
 
     #[test]
     fn errors_name_the_problem_and_a_stop_writes_nothing() {
-        dummy_progress(TokenizeProgress { file: 0, files: 0, path: String::new(), bytes_done: 0, bytes_total: 0, tokens: 0 });
+        dummy_progress(TokenizeProgress {
+            file: 0,
+            files: 0,
+            path: String::new(),
+            bytes_done: 0,
+            bytes_total: 0,
+            tokens: 0,
+        });
         let d = tmp("errors");
         let docs = docs(4);
         let text = d.join("c.txt");
@@ -295,13 +306,19 @@ mod tests {
 
         let mut missing = options(&d, &text);
         missing.tokenizer = d.join("nope.gguf").to_string_lossy().into();
-        assert!(tokenize(&missing, &mut dummy_progress).unwrap_err().starts_with("cannot read tokenizer "));
+        assert!(tokenize(&missing, &mut dummy_progress)
+            .unwrap_err()
+            .starts_with("cannot read tokenizer "));
         let mut same = options(&d, &text);
         same.out = same.input.clone();
-        assert!(tokenize(&same, &mut dummy_progress).unwrap_err().contains("are the same file"));
+        assert!(tokenize(&same, &mut dummy_progress)
+            .unwrap_err()
+            .contains("are the same file"));
         let empty = d.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
-        assert!(tokenize(&options(&d, &empty), &mut dummy_progress).unwrap_err().starts_with("no files found under"));
+        assert!(tokenize(&options(&d, &empty), &mut dummy_progress)
+            .unwrap_err()
+            .starts_with("no files found under"));
         let mut unwrite = options(&d, &text);
         unwrite.out = "/nonexistent_dir_12345/out.tokens".into();
         assert!(tokenize(&unwrite, &mut dummy_progress).is_err());

@@ -661,7 +661,11 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let srv = tokio::spawn(async move {
-            let _ = axum::serve(l, r).with_graceful_shutdown(async { let _ = rx.await; }).await;
+            let _ = axum::serve(l, r)
+                .with_graceful_shutdown(async {
+                    let _ = rx.await;
+                })
+                .await;
         });
         let long = 400; // 400 ticks of 5 ms = 2 s if nothing cancels it
         let c = post_gen(addr, long);
@@ -692,7 +696,11 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let srv = tokio::spawn(async move {
-            let _ = axum::serve(l, r).with_graceful_shutdown(async { let _ = rx.await; }).await;
+            let _ = axum::serve(l, r)
+                .with_graceful_shutdown(async {
+                    let _ = rx.await;
+                })
+                .await;
         });
         let mut c = post_gen(addr, 5);
         let mut buf = [0u8; 12];

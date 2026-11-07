@@ -984,7 +984,7 @@ mod tests {
     fn write_checkpoint_fails_on_unwritable_path() {
         let mut rng = Rng::new(1);
         let net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng).unwrap();
-        let res = super::write_checkpoint("/dev/null/impossible/ckpt.ferrum", &net, &mut rng);
+        let res = super::write_checkpoint("/dev/null/impossible/ckpt.ferrum", &net, &rng);
         assert!(res.is_err());
     }
 }

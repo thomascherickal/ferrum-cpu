@@ -116,8 +116,14 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
-        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
-        crate::util::fmt_err(ferrum_core::apply_checkpoint_weights(&mut model, bytes), &format!("cannot apply checkpoint {ckpt}"))?;
+        let bytes = crate::util::fmt_err(
+            std::fs::read(ckpt),
+            &format!("cannot read checkpoint {ckpt}"),
+        )?;
+        crate::util::fmt_err(
+            ferrum_core::apply_checkpoint_weights(&mut model, bytes),
+            &format!("cannot apply checkpoint {ckpt}"),
+        )?;
         eprintln!("  applied fine-tuned checkpoint {ckpt}");
     }
 
@@ -191,7 +197,14 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
             &text_stops,
         )
     });
-    let out_ids = model.generate_until(&prompt_ids, max_new, &params, &stops, &mut rng, &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)))?;
+    let out_ids = model.generate_until(
+        &prompt_ids,
+        max_new,
+        &params,
+        &stops,
+        &mut rng,
+        &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
+    )?;
     let dt = t1.elapsed().as_secs_f32();
 
     // stdout carries only the generated text, so `run-gguf ... > out.txt` is clean.
@@ -273,7 +286,10 @@ mod tests {
             run(&[&model, "abc", "--quant", quant, "--max", "3", "--temp", "0"]).unwrap();
         }
         // --stop with a tokenizer, and more tokens than the context holds.
-        run(&[&model, "abc", "--stop", "zz", "--max", "40", "--temp", "0", "--raw"]).unwrap();
+        run(&[
+            &model, "abc", "--stop", "zz", "--max", "40", "--temp", "0", "--raw",
+        ])
+        .unwrap();
 
         let e = crate::memory::with_available_memory_override(10, || err(run(&[&model, "abc"])));
         assert!(e.contains("resident memory"));

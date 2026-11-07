@@ -371,7 +371,10 @@ mod tests {
         for id in ids {
             let bytes = tok.token_bytes(id).expect("every id has bytes");
             let has_both = bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',');
-            assert!(!has_both, "token {id} spans letter and punctuation: {bytes:?}");
+            assert!(
+                !has_both,
+                "token {id} spans letter and punctuation: {bytes:?}"
+            );
         }
     }
 
@@ -435,7 +438,11 @@ mod tests {
         assert!(ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(b"abc"), 256).is_err());
         assert!(ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(b""), 300).is_ok());
         assert!(ByteBpeTokenizer::train_from_docs(std::iter::once(Ok("abc")), 256).is_err());
-        assert!(ByteBpeTokenizer::train_from_docs(vec![Err(InferError::Format("boom".into()))], 300).is_err());
+        assert!(ByteBpeTokenizer::train_from_docs(
+            vec![Err(InferError::Format("boom".into()))],
+            300
+        )
+        .is_err());
         assert!(ByteBpeTokenizer::train_from_file(
             std::path::Path::new("/nonexistent/ferrum/bpe.txt"),
             300

@@ -247,12 +247,21 @@ pub(crate) fn train_and_save_input(
             &mut rng,
             &mut on_epoch,
         )?,
-        (Input::DiskText(path), Some(val)) => {
-            GenerativeSLM::train_transformer_from_path_validated(path, &cfg, threads, &val, &mut rng, &mut on_val)?
-        }
-        (Input::DiskText(path), None) => {
-            GenerativeSLM::train_transformer_from_path(path, &cfg, threads, &mut rng, &mut on_epoch)?
-        }
+        (Input::DiskText(path), Some(val)) => GenerativeSLM::train_transformer_from_path_validated(
+            path,
+            &cfg,
+            threads,
+            &val,
+            &mut rng,
+            &mut on_val,
+        )?,
+        (Input::DiskText(path), None) => GenerativeSLM::train_transformer_from_path(
+            path,
+            &cfg,
+            threads,
+            &mut rng,
+            &mut on_epoch,
+        )?,
         (Input::Tokens(file, tok), Some(val)) => GenerativeSLM::train_transformer_tokens_validated(
             file,
             tok,
@@ -359,11 +368,7 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     // A GGUF corpus is a pre-tokenized file (see `tokenize`); detected by content, not extension.
     let tokens = ferrum_core::is_gguf_file(corpus_path);
     let stream_disk = !tokens
-        && should_stream_text_corpus(
-            corpus_path,
-            args.config().vocab_size,
-            stream_threshold(),
-        );
+        && should_stream_text_corpus(corpus_path, args.config().vocab_size, stream_threshold());
     let corpus = if tokens || stream_disk {
         String::new()
     } else {
@@ -386,7 +391,12 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some((file, tok)) = token_input.as_mut() {
         train_and_save_input(Input::Tokens(file, tok), corpus_path, model_path, args)?
     } else if stream_disk {
-        train_and_save_input(Input::DiskText(std::path::Path::new(corpus_path)), corpus_path, model_path, args)?
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(corpus_path)),
+            corpus_path,
+            model_path,
+            args,
+        )?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
@@ -589,6 +599,12 @@ mod tests {
         // Coverage for save failure and missing corpus with checkpoint
         let bad_out = "/dev/null/impossible.gguf";
         assert!(train_and_save_input(Input::Text(&text), &corpus, bad_out, &a_mem).is_err());
-        assert!(train(&["/dev/null/missing.txt", disk_model.as_str(), "--checkpoint", &t.path("c.ckpt")]).is_err());
+        assert!(train(&[
+            "/dev/null/missing.txt",
+            disk_model.as_str(),
+            "--checkpoint",
+            &t.path("c.ckpt")
+        ])
+        .is_err());
     }
 }

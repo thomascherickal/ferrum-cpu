@@ -61,7 +61,17 @@ impl GenerativeSLM {
     {
         let tc = describe(tokens, tok, cfg.context_len)?;
         let mut net = prepare_net(cfg, tc.vocab_size, rng)?;
-        run_training(&mut net, tokens, cfg, resolve_threads(threads), rng, &mut |_, ep, loss| { progress_callback(ep, loss); Ok(true) })?;
+        run_training(
+            &mut net,
+            tokens,
+            cfg,
+            resolve_threads(threads),
+            rng,
+            &mut |_, ep, loss| {
+                progress_callback(ep, loss);
+                Ok(true)
+            },
+        )?;
         Self::build_transformer_slm(&net, &tc)
     }
 

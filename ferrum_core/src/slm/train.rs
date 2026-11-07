@@ -404,7 +404,6 @@ fn legacy_config(
 
 #[cfg(test)]
 mod tests {
-    use crate::InferError;
     use crate::rng::Rng;
     use crate::slm::config::{TransformerConfig, ValidationConfig};
     use crate::slm::corpus::{tokenize_for_lm, tokenize_for_lm_cfg};
@@ -413,6 +412,7 @@ mod tests {
     use crate::slm::test_support::{ignore_progress, ignore_validation, t5_cfg, tiny_bpe_slm};
     use crate::slm::GenerativeSLM;
     use crate::tokenizer::ByteBpeTokenizer;
+    use crate::InferError;
 
     #[test]
     fn validated_training_refuses_zero_epochs() {
@@ -430,7 +430,9 @@ mod tests {
             &mut rng,
             crate::slm::test_support::ignore_validation,
         );
-        assert!(matches!(res, Err(InferError::DimMismatch(msg)) if msg.contains("training ran zero epochs")));
+        assert!(
+            matches!(res, Err(InferError::DimMismatch(msg)) if msg.contains("training ran zero epochs"))
+        );
     }
 
     #[test]

@@ -24,14 +24,17 @@ pub use info::{info_for, Info};
 pub use limits::Limits;
 pub use serve::{bind, Bound, RequestLog};
 
-pub(crate) fn str_err<T, E: std::fmt::Display>(res: Result<T, E,>) -> Result<T, String> {
+pub(crate) fn str_err<T, E: std::fmt::Display>(res: Result<T, E>) -> Result<T, String> {
     match res {
         Ok(v) => Ok(v),
         Err(e) => Err(e.to_string()),
     }
 }
 
-pub(crate) fn fmt_err<T, E: std::fmt::Display>(res: Result<T, E>, prefix: &str) -> Result<T, String> {
+pub(crate) fn fmt_err<T, E: std::fmt::Display>(
+    res: Result<T, E>,
+    prefix: &str,
+) -> Result<T, String> {
     match res {
         Ok(v) => Ok(v),
         Err(e) => Err(format!("{prefix}: {e}")),
@@ -47,6 +50,9 @@ mod tests {
         assert_eq!(str_err::<i32, &str>(Ok(1)), Ok(1));
         assert_eq!(str_err::<i32, &str>(Err("boom")), Err("boom".into()));
         assert_eq!(fmt_err::<i32, &str>(Ok(1), "p"), Ok(1));
-        assert_eq!(fmt_err::<i32, &str>(Err("boom"), "p"), Err("p: boom".into()));
+        assert_eq!(
+            fmt_err::<i32, &str>(Err("boom"), "p"),
+            Err("p: boom".into())
+        );
     }
 }

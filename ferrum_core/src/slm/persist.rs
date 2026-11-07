@@ -149,7 +149,10 @@ impl GenerativeSLM {
 
 /// Create the parent directories of `model_path`, then write `bytes` atomically.
 fn write_model(model_path: &str, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = std::path::Path::new(model_path).parent().filter(|p| !p.as_os_str().is_empty()) {
+    if let Some(parent) = std::path::Path::new(model_path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(parent)?;
     }
     crate::fs_atomic::atomic_write(model_path, bytes)
@@ -369,11 +372,13 @@ mod tests {
             ..TransformerConfig::default()
         };
         let mut rng = Rng::new(1);
-        let (slm1, loaded) = GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
+        let (slm1, loaded) =
+            GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
         assert!(!loaded);
         assert!(p.exists());
 
-        let (slm2, loaded) = GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
+        let (slm2, loaded) =
+            GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
         assert!(loaded);
         assert_eq!(slm1.to_bytes().unwrap(), slm2.to_bytes().unwrap());
         let _ = std::fs::remove_dir_all(&dir);

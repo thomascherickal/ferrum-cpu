@@ -87,7 +87,10 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     }
 
     println!("Writing {out_path}  (--quant {quant_name})…");
-    crate::util::fmt_err(ferrum_core::write_llama_gguf(&model, &g, quant, out_path), "export failed")?;
+    crate::util::fmt_err(
+        ferrum_core::write_llama_gguf(&model, &g, quant, out_path),
+        "export failed",
+    )?;
 
     // Per-type tensor summary, read back from the written file — this both
     // shows what was actually emitted (block-alignment fallbacks appear as
@@ -158,7 +161,12 @@ mod tests {
         let model = t.write("m.gguf", crate::test_fixtures::tiny_llama_gguf(None, &[]));
         let out = t.path("out.gguf");
         let e = crate::memory::with_available_memory_override(10, || {
-            let a = crate::args::Args::parse_for("export-gguf", &[model.clone(), out], crate::args::spec_for("export-gguf").unwrap()).unwrap();
+            let a = crate::args::Args::parse_for(
+                "export-gguf",
+                &[model.clone(), out],
+                crate::args::spec_for("export-gguf").unwrap(),
+            )
+            .unwrap();
             cmd_export_gguf(&a).unwrap_err().to_string()
         });
         assert!(e.contains("peak memory"));

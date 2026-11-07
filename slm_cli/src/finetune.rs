@@ -48,7 +48,10 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 1. Open + f32-load the base model (training needs full-precision masters).
     println!("Opening {gguf_path} (streamed)…");
-    let g = crate::util::fmt_err(Gguf::open(gguf_path), &format!("cannot open GGUF {gguf_path}"))?;
+    let g = crate::util::fmt_err(
+        Gguf::open(gguf_path),
+        &format!("cannot open GGUF {gguf_path}"),
+    )?;
     println!(
         "  GGUF v{}   architecture = {}",
         g.version,
@@ -89,14 +92,20 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     );
 
     // 2. Read + tokenize the corpus.
-    let text = crate::util::fmt_err(std::fs::read_to_string(corpus_path), &format!("cannot read corpus {corpus_path}"))?;
+    let text = crate::util::fmt_err(
+        std::fs::read_to_string(corpus_path),
+        &format!("cannot read corpus {corpus_path}"),
+    )?;
     let mut tokens: Vec<usize> = Vec::new();
     if let Some(bos) = tok.prefix_bos() {
         tokens.push(bos);
     }
     tokens.extend(tok.encode(&text));
     // The corpus identity the checkpoint records and a resume checks.
-    let corpus_id = crate::util::fmt_err(slm_cli::hash::file_id(corpus_path), &format!("cannot read corpus {corpus_path}"))?;
+    let corpus_id = crate::util::fmt_err(
+        slm_cli::hash::file_id(corpus_path),
+        &format!("cannot read corpus {corpus_path}"),
+    )?;
     println!("  corpus: {} chars → {} tokens", text.len(), tokens.len());
 
     // 3. Hyperparameters.
@@ -139,8 +148,14 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 5. Resume optimizer state if requested (continues where a prior run stopped).
     let mut rng = if let Some(ckpt) = args.value("resume") {
-        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
-        let r = crate::util::fmt_err(tr.load_checkpoint_from_vec(bytes), &format!("cannot resume from {ckpt}"))?;
+        let bytes = crate::util::fmt_err(
+            std::fs::read(ckpt),
+            &format!("cannot read checkpoint {ckpt}"),
+        )?;
+        let r = crate::util::fmt_err(
+            tr.load_checkpoint_from_vec(bytes),
+            &format!("cannot resume from {ckpt}"),
+        )?;
         println!("  resumed from {ckpt} at step {}", tr.step_count());
         r
     } else {
@@ -357,12 +372,21 @@ mod tests {
         .unwrap();
         crate::eval_gguf::cmd_eval_gguf(&args(
             "eval-gguf",
-            &[&model, &corpus, "--resume", &out2, "--quant", "int8", "--ctx", "6"],
+            &[
+                &model, &corpus, "--resume", &out2, "--quant", "int8", "--ctx", "6",
+            ],
         ))
         .unwrap();
         crate::export::cmd_export_gguf(&args(
             "export-gguf",
-            &[&model, &t.path("exp.gguf"), "--resume", &out2, "--quant", "f32"],
+            &[
+                &model,
+                &t.path("exp.gguf"),
+                "--resume",
+                &out2,
+                "--quant",
+                "f32",
+            ],
         ))
         .unwrap();
 
@@ -372,7 +396,19 @@ mod tests {
 
         // No tokenizer refusal
         let no_tok = t.write("no_tok.gguf", tiny_llama_gguf(None, &[]));
-        let e = err(finetune(&[&no_tok, &corpus, &out, "--epochs", "1", "--batch", "2", "--seq", "6", "--threads", "1"]));
+        let e = err(finetune(&[
+            &no_tok,
+            &corpus,
+            &out,
+            "--epochs",
+            "1",
+            "--batch",
+            "2",
+            "--seq",
+            "6",
+            "--threads",
+            "1",
+        ]));
         assert!(e.contains("this GGUF has no tokenizer"), "{e}");
 
         // Thread capping note

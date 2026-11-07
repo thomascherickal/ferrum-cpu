@@ -41,22 +41,24 @@ static BYTES_CHAR: OnceLock<Vec<u8>> = OnceLock::new();
 /// A tiny BPE model, f32 or int8, as the library and as bytes.
 pub fn trained(quantized: bool) -> (GenerativeSLM, Vec<u8>) {
     let cell = if quantized { &BYTES_INT8 } else { &BYTES_F32 };
-    let bytes = cell.get_or_init(|| {
-        let m = train(280);
-        if quantized {
-            m.to_bytes_quantized().unwrap()
-        } else {
-            m.to_bytes().unwrap()
-        }
-    }).clone();
+    let bytes = cell
+        .get_or_init(|| {
+            let m = train(280);
+            if quantized {
+                m.to_bytes_quantized().unwrap()
+            } else {
+                m.to_bytes().unwrap()
+            }
+        })
+        .clone();
     (GenerativeSLM::from_bytes(&bytes).unwrap(), bytes)
 }
 
 /// A tiny character-level model (`vocab_size == 0`), f32.
 pub fn trained_char() -> (GenerativeSLM, Vec<u8>) {
-    let bytes = BYTES_CHAR.get_or_init(|| {
-        train(0).to_bytes().unwrap()
-    }).clone();
+    let bytes = BYTES_CHAR
+        .get_or_init(|| train(0).to_bytes().unwrap())
+        .clone();
     (GenerativeSLM::from_bytes(&bytes).unwrap(), bytes)
 }
 

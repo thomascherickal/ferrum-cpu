@@ -221,7 +221,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    fn noop_doc(_: &[u8], _: u64) -> Result<(), String> { Ok(()) }
+    fn noop_doc(_: &[u8], _: u64) -> Result<(), String> {
+        Ok(())
+    }
 
     #[test]
     fn callback_errors_and_missing_files_propagate() {
@@ -285,7 +287,9 @@ mod tests {
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&d);
         // ponytail: a process that bypasses permissions (root) reads the directory anyway.
-        if let Err(e) = r { assert!(e.to_string().contains("cannot read ") && e.to_string().contains("locked")); }
+        if let Err(e) = r {
+            assert!(e.to_string().contains("cannot read ") && e.to_string().contains("locked"));
+        }
     }
 
     #[test]

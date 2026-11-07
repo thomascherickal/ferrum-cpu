@@ -105,9 +105,11 @@ impl Bound {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), String> {
-        crate::str_err(axum::serve(self.listener, self.router)
-            .with_graceful_shutdown(shutdown)
-            .await)
+        crate::str_err(
+            axum::serve(self.listener, self.router)
+                .with_graceful_shutdown(shutdown)
+                .await,
+        )
     }
 }
 

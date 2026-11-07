@@ -63,8 +63,14 @@ pub(crate) fn cmd_eval_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error
     eprintln!("Loading weights…");
     let mut model = crate::util::fmt_err(g.load_llama_prec(prec), "cannot load model")?;
     if let Some(ckpt) = resume {
-        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
-        crate::util::fmt_err(ferrum_core::apply_checkpoint_weights(&mut model, bytes), &format!("cannot apply checkpoint {ckpt}"))?;
+        let bytes = crate::util::fmt_err(
+            std::fs::read(ckpt),
+            &format!("cannot read checkpoint {ckpt}"),
+        )?;
+        crate::util::fmt_err(
+            ferrum_core::apply_checkpoint_weights(&mut model, bytes),
+            &format!("cannot apply checkpoint {ckpt}"),
+        )?;
         eprintln!("  applied fine-tuned checkpoint {ckpt}");
     }
     let max_window = model.cfg.context_len;

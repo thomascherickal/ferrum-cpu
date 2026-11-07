@@ -195,7 +195,9 @@ mod tests {
         }
     }
 
-    fn never_run(_: &mut TokenSink) -> Result<()> { Ok(()) }
+    fn never_run(_: &mut TokenSink) -> Result<()> {
+        Ok(())
+    }
 
     #[test]
     fn bad_meta_is_rejected_before_any_file_appears() {
@@ -208,7 +210,10 @@ mod tests {
             meta(i32::MAX as usize + 1, None),
             meta(5, Some(5)),
         ] {
-            assert!(matches!(write_token_file(&p, &m, never_run), Err(InferError::Format(_))));
+            assert!(matches!(
+                write_token_file(&p, &m, never_run),
+                Err(InferError::Format(_))
+            ));
         }
         assert!(!std::path::Path::new(&p).exists());
     }

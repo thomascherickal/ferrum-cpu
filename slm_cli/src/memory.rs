@@ -1,8 +1,6 @@
 //! Memory estimates and budgets for `run-gguf`, `finetune-gguf` and `export-gguf`.
 
-pub(crate) use ferrum_core::memory::{
-    memory_error, resident_bytes as estimate_resident_bytes,
-};
+pub(crate) use ferrum_core::memory::{memory_error, resident_bytes as estimate_resident_bytes};
 
 #[cfg(test)]
 thread_local! {

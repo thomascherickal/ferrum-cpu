@@ -60,7 +60,8 @@ static TINY_MODEL_BYTES: OnceLock<Vec<u8>> = OnceLock::new();
 /// The tiny reference config trained on a repetitive story so its distribution is peaked.
 fn tiny_model() -> GenerativeSLM {
     let bytes = TINY_MODEL_BYTES.get_or_init(|| {
-        let story = "The cat sat on the mat. It's 2024, isn't it?  Yes!\n<|endoftext|>\n".repeat(30);
+        let story =
+            "The cat sat on the mat. It's 2024, isn't it?  Yes!\n<|endoftext|>\n".repeat(30);
         let cfg = TransformerConfig {
             context_len: 32,
             embed_dim: 32,
@@ -99,7 +100,18 @@ fn llama_complete(dir: &Path, model: &Path, prompt: &str, n: usize) -> String {
         assert!(st.success(), "llama-completion failed on {model:?}");
         std::fs::read_to_string(&out_file).unwrap()
     };
-    let text = (0..2).map(|_| run()).max_by_key(|t| t.len()).unwrap();
+    // Up to 5 runs, stopping at the first that printed more than the echoed prompt (a dropped
+    // tail seen on 2026-11-07 hit both of two runs in about 1 of 4 suite runs).
+    let mut text = run();
+    for _ in 1..5 {
+        if text.len() > prompt.len() + "[end of text]".len() {
+            break;
+        }
+        let again = run();
+        if again.len() > text.len() {
+            text = again;
+        }
+    }
     text.replace("[end of text]", "")
         .strip_prefix(prompt)
         .unwrap_or_else(|| panic!("llama output does not echo the prompt: {text:?}"))

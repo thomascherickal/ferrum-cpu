@@ -39,7 +39,12 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         println!("Loaded saved weights from {model_path} — no retraining needed.\n");
         slm
     } else if stream_disk {
-        train_and_save_input(Input::DiskText(std::path::Path::new(corpus_path)), corpus_path, model_path, args)?
+        train_and_save_input(
+            Input::DiskText(std::path::Path::new(corpus_path)),
+            corpus_path,
+            model_path,
+            args,
+        )?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
@@ -180,7 +185,11 @@ mod tests {
         assert!(e.contains("is a token file"), "{e}");
         let corpus = t.write("c.txt", "abc abd abe ".repeat(8));
         cmd_run(&args("run", &[&corpus, &model, "ab", "--chars", "5"])).unwrap();
-        cmd_run(&args("run", &[&corpus, &model, "ab", "--chars", "5", "--stream"])).unwrap();
+        cmd_run(&args(
+            "run",
+            &[&corpus, &model, "ab", "--chars", "5", "--stream"],
+        ))
+        .unwrap();
         assert_eq!(
             std::fs::read(&model).unwrap(),
             before,
@@ -194,7 +203,11 @@ mod tests {
 
         let disk_model = t.path("disk_run.gguf");
         std::env::set_var("FERRUM_STREAM_THRESHOLD", "10");
-        cmd_run(&args("run", &[&corpus, &disk_model, "ab", "--vocab", "280", "--chars", "5"])).unwrap();
+        cmd_run(&args(
+            "run",
+            &[&corpus, &disk_model, "ab", "--vocab", "280", "--chars", "5"],
+        ))
+        .unwrap();
         std::env::remove_var("FERRUM_STREAM_THRESHOLD");
         assert!(std::path::Path::new(&disk_model).exists());
     }

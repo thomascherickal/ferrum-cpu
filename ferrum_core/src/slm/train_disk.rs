@@ -88,7 +88,9 @@ fn encode_reader_docs<R: BufRead>(
         line.clear();
         let n = reader.read_line(&mut line)?;
         if n == 0 {
-            if !buf.is_empty() { emit_segment(&buf)?; }
+            if !buf.is_empty() {
+                emit_segment(&buf)?;
+            }
             break;
         }
         buf.push_str(&line);
@@ -123,7 +125,9 @@ pub fn stream_text_to_token_file(
     } else {
         let tok = ByteBpeTokenizer::train_from_file(corpus_path, cfg.vocab_size)?;
         if !cfg.tokenizer_path.is_empty() {
-            if let Some(parent) = tok_path.parent().filter(|p| !p.as_os_str().is_empty()) { std::fs::create_dir_all(parent)?; }
+            if let Some(parent) = tok_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)?;
+            }
             crate::fs_atomic::atomic_write(&cfg.tokenizer_path, &tok.to_gguf_bytes())?;
         }
         tok

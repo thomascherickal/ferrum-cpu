@@ -38,7 +38,9 @@ pub fn detect(
     template: Option<&str>,
     arch: Option<&str>,
     has_token: impl Fn(&str) -> bool,
-) -> Option<ChatFormat> { detect_dyn(template, arch, &has_token) }
+) -> Option<ChatFormat> {
+    detect_dyn(template, arch, &has_token)
+}
 
 fn detect_dyn(
     template: Option<&str>,

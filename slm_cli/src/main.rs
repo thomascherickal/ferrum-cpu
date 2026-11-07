@@ -200,12 +200,17 @@ fn is_closed_stdout(msg: &str) -> bool {
         .any(|m| msg.contains(m))
 }
 
-fn stdout_panic_hook(info: &std::panic::PanicHookInfo<'_>, fallback: &dyn Fn(&std::panic::PanicHookInfo<'_>)) {
+fn stdout_panic_hook(
+    info: &std::panic::PanicHookInfo<'_>,
+    fallback: &dyn Fn(&std::panic::PanicHookInfo<'_>),
+) {
     let msg = info
         .payload()
         .downcast_ref::<String>()
         .map_or("", |s| s.as_str());
-    if is_closed_stdout(msg) { std::process::exit(0); }
+    if is_closed_stdout(msg) {
+        std::process::exit(0);
+    }
     fallback(info);
 }
 
