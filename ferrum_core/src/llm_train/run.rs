@@ -16,13 +16,19 @@ use crate::rng::Rng;
 pub struct FinetuneRun {
     /// `sha256:<hex>` of the corpus file (`ferrum.ckpt.corpus_id`), if known.
     pub corpus_id: Option<String>,
+    /// Sequences per optimizer step (values below 1 are treated as 1).
     pub batch: usize,
     /// Window length (capped at the model's context, at least 2).
     pub seq: usize,
+    /// Learning rate (the peak rate when warmup is on).
     pub lr: f32,
+    /// Warmup steps of the cosine schedule; `0` keeps a fixed learning rate.
     pub warmup: u64,
+    /// Global-norm gradient-clipping threshold; a value of `0` or less disables clipping.
     pub clip: f32,
+    /// Decoupled (AdamW) weight-decay coefficient.
     pub weight_decay: f32,
+    /// FFN-hidden dropout probability during training.
     pub dropout: f32,
 }
 

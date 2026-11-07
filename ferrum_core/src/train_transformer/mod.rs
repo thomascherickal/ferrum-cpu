@@ -4,6 +4,7 @@
 //! struct (`TransformerNet`) that exports to an inference `Sequential` whose
 //! layers (`Embedding`, `TransformerBlock`, `LayerNorm`, `Linear`) serialize
 //! to GGUF and run in WASM.
+#![warn(missing_docs)]
 
 mod backward;
 mod block;
@@ -106,6 +107,7 @@ pub struct TransformerNet {
 }
 
 impl TransformerNet {
+    /// Build a freshly initialised net (GPT-style init, std 0.02, LayerNorm gains 1). Fails with `DimMismatch` if `embed_dim` is not divisible by `num_heads`, any size is zero, or the sizes fail the size check.
     pub fn new(
         vocab_size: usize,
         context_len: usize,
@@ -163,10 +165,12 @@ impl TransformerNet {
         })
     }
 
+    /// Vocabulary size (rows of the token embedding).
     pub fn vocab_size(&self) -> usize {
         self.vocab_size
     }
 
+    /// Context length (rows of the positional embedding; the longest window the net sees).
     pub fn context_len(&self) -> usize {
         self.context_len
     }
@@ -177,6 +181,7 @@ impl TransformerNet {
         self.qat = enabled;
     }
 
+    /// Whether int8 QAT is enabled.
     pub fn qat_enabled(&self) -> bool {
         self.qat
     }
@@ -187,6 +192,7 @@ impl TransformerNet {
         self.grad_clip = max_norm;
     }
 
+    /// The global-norm gradient-clipping threshold, or `None` when clipping is off.
     pub fn grad_clip(&self) -> Option<f32> {
         self.grad_clip
     }
@@ -198,6 +204,7 @@ impl TransformerNet {
         self.lr_schedule = schedule;
     }
 
+    /// The active learning-rate schedule, or `None` when the fixed rate is used.
     pub fn lr_schedule(&self) -> Option<crate::optim::LrSchedule> {
         self.lr_schedule
     }
@@ -213,6 +220,7 @@ impl TransformerNet {
         self.weight_decay = weight_decay;
     }
 
+    /// The decoupled (AdamW) weight-decay coefficient.
     pub fn weight_decay(&self) -> f32 {
         self.weight_decay
     }
@@ -223,6 +231,7 @@ impl TransformerNet {
         self.dropout = p.clamp(0.0, 0.95);
     }
 
+    /// The FFN-hidden dropout probability used in training forward passes.
     pub fn dropout(&self) -> f32 {
         self.dropout
     }
@@ -233,6 +242,7 @@ impl TransformerNet {
         self.window_stride = stride.clamp(1, self.context_len);
     }
 
+    /// The training-window stride.
     pub fn window_stride(&self) -> usize {
         self.window_stride
     }

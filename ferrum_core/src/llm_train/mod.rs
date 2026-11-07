@@ -34,6 +34,7 @@
 //! on small models. It does **not** make training a 1B model on a CPU feasible —
 //! that stays bounded by compute and RAM (see Manual.md §13.5). It adds
 //! the missing capability (gradients + a real optimizer), not a claim about scale.
+#![warn(missing_docs)]
 
 mod blocks;
 mod buffers;
@@ -61,6 +62,7 @@ use crate::optim::{Adam, LrSchedule};
 /// Wraps an f32 [`LlamaModel`] and fine-tunes it by next-token cross-entropy
 /// with AdamW. See the module docs for the full feature set.
 pub struct LlamaTrainer {
+    /// The model being fine-tuned; its weights are updated in place.
     pub model: LlamaModel,
     grads: Buffers,
     m: Buffers,
@@ -117,6 +119,7 @@ impl LlamaTrainer {
         self.adam.lr = lr;
     }
 
+    /// The base learning rate currently set on the optimizer.
     pub fn lr(&self) -> f32 {
         self.adam.lr
     }
@@ -127,6 +130,7 @@ impl LlamaTrainer {
         self.weight_decay = wd;
     }
 
+    /// The decoupled weight-decay coefficient.
     pub fn weight_decay(&self) -> f32 {
         self.weight_decay
     }
@@ -137,6 +141,7 @@ impl LlamaTrainer {
         self.grad_clip = max_norm;
     }
 
+    /// The global-norm gradient-clipping threshold, or `None` when clipping is off.
     pub fn grad_clip(&self) -> Option<f32> {
         self.grad_clip
     }
@@ -147,6 +152,7 @@ impl LlamaTrainer {
         self.lr_schedule = schedule;
     }
 
+    /// The active learning-rate schedule, or `None` when the fixed rate is used.
     pub fn lr_schedule(&self) -> Option<LrSchedule> {
         self.lr_schedule
     }
@@ -157,6 +163,7 @@ impl LlamaTrainer {
         self.dropout = p.clamp(0.0, 0.95);
     }
 
+    /// The FFN-hidden dropout probability used in training forward passes.
     pub fn dropout(&self) -> f32 {
         self.dropout
     }
@@ -168,6 +175,7 @@ impl LlamaTrainer {
         self.qat = enabled;
     }
 
+    /// Whether int8 quantization-aware training is enabled.
     pub fn qat_enabled(&self) -> bool {
         self.qat
     }

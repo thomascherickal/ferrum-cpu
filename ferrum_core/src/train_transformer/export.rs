@@ -52,6 +52,7 @@ impl TransformerNet {
         snapped.to_inference()
     }
 
+    /// Export the net as an inference `Sequential` (embedding, blocks, final LayerNorm, head) from the current f32 weights, without int8 snapping.
     pub fn to_inference(&self) -> Result<Sequential> {
         let mut m = Sequential::new();
         m.push(Box::new(Embedding::new(

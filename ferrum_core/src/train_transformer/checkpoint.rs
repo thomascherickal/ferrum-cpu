@@ -9,12 +9,19 @@ use crate::train_transformer::TransformerNet;
 /// (Not the corpus, learning rate or seed: a checkpoint stores none of those.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CheckpointInfo {
+    /// Vocabulary size.
     pub vocab: usize,
+    /// Context length.
     pub context: usize,
+    /// Embedding width.
     pub embed: usize,
+    /// Number of attention heads.
     pub heads: usize,
+    /// FFN hidden width.
     pub hidden: usize,
+    /// Number of Transformer blocks.
     pub blocks: usize,
+    /// Optimizer steps applied so far.
     pub step: u64,
 }
 

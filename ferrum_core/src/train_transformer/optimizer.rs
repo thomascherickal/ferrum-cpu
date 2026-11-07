@@ -84,6 +84,7 @@ impl TransformerNet {
         v
     }
 
+    /// Zero every parameter's gradient.
     pub fn zero_grad(&mut self) {
         self.tok_emb.zero_grad();
         self.pos_emb.zero_grad();

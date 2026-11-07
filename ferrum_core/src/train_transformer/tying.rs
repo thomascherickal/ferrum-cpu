@@ -14,6 +14,7 @@ impl TransformerNet {
         }
     }
 
+    /// Whether the LM head is tied to the token embedding.
     pub fn weight_tying(&self) -> bool {
         self.tie_weights
     }
