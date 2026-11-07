@@ -27,8 +27,11 @@ use std::sync::Arc;
 pub struct SamplingParams {
     /// Softmax temperature; `<= 0` selects greedy argmax decoding.
     pub temperature: f32,
+    /// Keep only the `top_k` most likely tokens (`0` disables).
     pub top_k: usize,
+    /// Nucleus cutoff: smallest token set whose cumulative probability reaches it (`1.0` disables).
     pub top_p: f32,
+    /// Penalty applied to recently seen tokens (`1.0` disables).
     pub repetition_penalty: f32,
     /// Cooperative cancel flag, checked once per token (`None`: never cancelled).
     pub cancel: Option<Arc<AtomicBool>>,

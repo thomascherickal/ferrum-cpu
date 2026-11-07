@@ -26,6 +26,7 @@
 //! Quantization: matrices whose GGML row length is a multiple of 32 are
 //! stored as Q8_0 / Q4_0 when requested; vectors are always F32. The pre-GGUF
 //! `.bin` model format is no longer readable.
+#![warn(missing_docs)]
 
 mod consistency;
 mod decode;
@@ -99,6 +100,7 @@ pub fn from_vec(bytes: Vec<u8>) -> Result<(Sequential, Normalizer, ModelMetadata
     from_gguf_vec(bytes)
 }
 
+/// Serialize the model, normalizer and metadata to a GGUF file at `path` (f32 matrices).
 pub fn save(model: &Sequential, norm: &Normalizer, meta: &ModelMetadata, path: &str) -> Result<()> {
     std::fs::write(path, to_bytes(model, norm, meta)?)?;
     Ok(())
@@ -126,6 +128,7 @@ pub fn save_quantized_int4(
     Ok(())
 }
 
+/// Read the GGUF file at `path` and rebuild the model, normalizer and metadata.
 pub fn load(path: &str) -> Result<(Sequential, Normalizer, ModelMetadata)> {
     from_gguf(&std::fs::read(path)?)
 }

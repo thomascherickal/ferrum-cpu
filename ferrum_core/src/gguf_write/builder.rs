@@ -36,6 +36,7 @@ impl Default for GgufBuilder {
 }
 
 impl GgufBuilder {
+    /// An empty builder with no metadata or tensors and the default GGUF alignment.
     pub fn new() -> Self {
         Self {
             metadata: Vec::new(),
@@ -44,11 +45,14 @@ impl GgufBuilder {
         }
     }
 
+    /// Append a metadata key/value pair; written in call order.
     pub fn meta(&mut self, key: &str, val: MetaValue) -> &mut Self {
         self.metadata.push((key.to_string(), val));
         self
     }
 
+    /// Append a tensor of the given dims, GGML type id and raw encoded bytes.
+    /// Panics if a tensor with the same name was already added.
     pub fn tensor(&mut self, name: &str, dims: &[u64], ggml_type: u32, data: Vec<u8>) -> &mut Self {
         // Duplicate names would parse (readers resolve first-match) but the
         // file would be malformed; this is a caller bug, so refuse it (a real assert: it
@@ -66,6 +70,7 @@ impl GgufBuilder {
         self
     }
 
+    /// Serialize the header, metadata, tensor infos and aligned data into a GGUF v3 file.
     pub fn into_bytes(self) -> Vec<u8> {
         let mut o = Vec::new();
         // Header.

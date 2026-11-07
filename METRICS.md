@@ -1,6 +1,6 @@
 # Ferrum SLM Studio — Comprehensive Software & Repository Metrics Report
 
-_Generated: 2026-11-07 · Commit: `b008cdc (2026-11-07)` · Branch: `main` · Total Commits: 442_
+_Generated: 2026-11-07 · Commit: `ac992ef (2026-11-07)` · Branch: `main` · Total Commits: 443_
 
 This report provides comprehensive software engineering metrics, source code breakdown, test coverage measurements, safety invariants, memory bounds, and architectural characteristics for the Ferrum SLM engine and GUI.
 
@@ -12,8 +12,8 @@ This report provides comprehensive software engineering metrics, source code bre
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **88,721** lines (109,649 total across 396 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,986** pure code lines | 265 Rust files (80,202 total physical lines) |
+| **Total Tracked Code Lines** | **88,721** lines (109,686 total across 396 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,990** pure code lines | 265 Rust files (80,239 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -30,7 +30,7 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 267 | 65,633 | 9,556 | 5,013 | 80,202 | 74.0% |
+| **Rust (.rs)** | 267 | 65,633 | 9,593 | 5,013 | 80,239 | 74.0% |
 | **Markdown (.md)** | 31 | 11,975 | 1,419 | 3,012 | 16,406 | 13.5% |
 | **JavaScript (.js)** | 55 | 7,343 | 701 | 548 | 8,592 | 8.3% |
 | **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.2% |
@@ -40,7 +40,7 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 | **JSON (.json)** | 7 | 460 | 0 | 0 | 460 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.3% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **396** | **88,721** | **11,924** | **9,004** | **109,649** | **100.0%** |
+| **Total Repository** | **396** | **88,721** | **11,961** | **9,004** | **109,686** | **100.0%** |
 
 ---
 
@@ -50,13 +50,13 @@ The Ferrum engine is split across independent modular crates enforcing separatio
 
 | Crate Name | Purpose / Role | Files | Code Lines | Comments | Blank Lines | Total Lines | Unsafe Blocks |
 |---|---|---|---|---|---|---|---|
-| **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE, loss & optimizer | 116 | 32,417 | 4,315 | 2,492 | 39,224 | **0** (`forbid`) |
+| **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE, loss & optimizer | 116 | 32,421 | 4,348 | 2,492 | 39,261 | **0** (`forbid`) |
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, runtime-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`, `/v1/chat/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker execution | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
 | **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, job queue, sizing) | 49 | 12,603 | 1,176 | 847 | 14,626 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, hostile input, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **267** | **67,986** | **7,203** | **5,013** | **80,202** | **0** |
+| **Total Rust** | **Workspace & GUI** | **267** | **67,990** | **7,236** | **5,013** | **80,239** | **0** |
 
 ---
 

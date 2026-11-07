@@ -40,14 +40,17 @@ impl ByteBpeTokenizer {
         self.special_id(TOK_BOS)
     }
 
+    /// Id of the end-of-sequence special token, if registered.
     pub fn eos_id(&self) -> Option<usize> {
         self.special_id(TOK_EOS)
     }
 
+    /// Id of the padding special token, if registered.
     pub fn pad_id(&self) -> Option<usize> {
         self.special_id(TOK_PAD)
     }
 
+    /// Id of the unknown special token, if registered.
     pub fn unk_id(&self) -> Option<usize> {
         self.special_id(TOK_UNK)
     }

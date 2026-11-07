@@ -24,6 +24,7 @@ pub struct Generation {
     /// Tokens generated (including the one that completed a stop string; EOS
     /// itself is not counted).
     pub n_tokens: usize,
+    /// Why generation ended.
     pub stop_reason: StopReason,
     /// The `cancel` flag of [`SamplingParams`] ended the generation: `text` is
     /// what was produced (and streamed) before it, and `stop_reason` is

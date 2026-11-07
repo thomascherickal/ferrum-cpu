@@ -1,4 +1,5 @@
 //! Generic offline Edge Generative SLM Library Engine.
+#![warn(missing_docs)]
 
 mod cached;
 mod config;
@@ -35,8 +36,11 @@ use std::sync::{Arc, Mutex};
 
 /// Unified Causal Small Language Model (SLM) for off-grid edge generative AI.
 pub struct GenerativeSLM {
+    /// The trained network.
     pub model: Sequential,
+    /// The input normalizer fitted at training time.
     pub norm: Normalizer,
+    /// Task type, tokenizer state and other model metadata.
     pub meta: ModelMetadata,
     /// The BPE tokenizer parsed from `meta.tokenizer_state`, built once.
     tokenizer: TokenizerCache,

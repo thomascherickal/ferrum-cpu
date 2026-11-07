@@ -14,6 +14,7 @@
 //! let ids = tok.encode("lowest");
 //! assert_eq!(tok.decode(&ids), "lowest");
 //! ```
+#![warn(missing_docs)]
 
 mod encode;
 mod gguf_io;
@@ -54,12 +55,16 @@ pub struct ByteBpeTokenizer {
 }
 
 /// Conventional names for the four standard special tokens (K3).
+/// Name of the beginning-of-sequence special token.
 pub const TOK_BOS: &str = "<bos>";
 
+/// Name of the end-of-sequence special token.
 pub const TOK_EOS: &str = "<|endoftext|>";
 
+/// Name of the padding special token.
 pub const TOK_PAD: &str = "<pad>";
 
+/// Name of the unknown special token.
 pub const TOK_UNK: &str = "<unk>";
 
 /// Document separator used by prepared corpora (`train_transformer prepare`)
@@ -88,6 +93,7 @@ impl ByteBpeTokenizer {
             .collect();
     }
 
+    /// Total number of token ids: base bytes, merges and special tokens.
     pub fn vocab_size(&self) -> usize {
         self.vocab.len()
     }

@@ -7,14 +7,23 @@ use crate::gguf::{
 /// The on-disk GGUF tensor type the writer should emit for weight matrices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GgufQuant {
+    /// 32-bit float (unquantized).
     F32,
+    /// 16-bit float.
     F16,
+    /// 8-bit blocks of 32 with one scale.
     Q8_0,
+    /// 8-bit blocks of 32 with scale and sum.
     Q8_1,
+    /// 4-bit blocks of 32 with one scale.
     Q4_0,
+    /// 4-bit blocks of 32 with scale and minimum.
     Q4_1,
+    /// 4-bit K-quant super-blocks.
     Q4K,
+    /// 5-bit K-quant super-blocks.
     Q5K,
+    /// 6-bit K-quant super-blocks.
     Q6K,
 }
 

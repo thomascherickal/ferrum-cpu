@@ -148,7 +148,9 @@ impl Default for ValidationConfig {
 /// Per-epoch report from validation-aware training (T5).
 #[derive(Clone, Debug)]
 pub struct ValidationProgress {
+    /// The epoch this report is for.
     pub epoch: usize,
+    /// Training loss for the epoch.
     pub train_loss: f32,
     /// Held-out evaluation for this epoch.
     pub val: Evaluation,
