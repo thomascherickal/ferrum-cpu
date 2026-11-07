@@ -6,13 +6,13 @@ Date 2026-11-05 · commit audited `c7f34e8` (`main`, clean tree) · work on bran
 `audit-2026-11-05` (not pushed, not merged).
 
 The user asked for this report by name: "Check the repo for gaps and errors. Add tests to
-cover them if found and create a report." Items that `docs/gap-report.md` already records as
+cover them if found and create a report." Items that `docs/GAP-REPORT.MD` already records as
 open by choice were not reported again: M5, M6 (LM Studio), M9, M11, M12, the M13 residue
 and the rest of L11.
 
 ## Method
 
-1. **Build health.** Every check in the CLAUDE.md Commands section was run on the untouched
+1. **Build health.** Every check in the CLAUDE.MD Commands section was run on the untouched
    tree, one cargo command at a time, with `CARGO_BUILD_JOBS=3
    CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`.
 2. **Test gaps (rules 19 and 20).**
@@ -29,15 +29,15 @@ and the rest of L11.
      truncated model files, a directory given as a model, and `prepare` with bad fractions.
      The script looked for exit 101, `panicked at` and timeouts.
 3. **Docs against code.**
-   - Checked every flag in the `slm_cli/src/args.rs` tables against `Manual.md`, in both
+   - Checked every flag in the `slm_cli/src/args.rs` tables against `MANUAL.MD`, in both
      directions.
    - Checked the server flags and routes against Manual §9.7.
-   - Checked the Status.md test counts and commit count against real runs.
+   - Checked the STATUS.MD test counts and commit count against real runs.
    - Ran a script over every relative link and `#anchor` in the tracked `*.md` files
      (`docs/superpowers/` excluded).
    - Checked that every `src/…rs` and `ui/…` path named in the docs exists.
    - Checked that every test name the docs quote exists.
-   - Checked the CLAUDE.md Layout table against the tree.
+   - Checked the CLAUDE.MD Layout table against the tree.
 4. **Scripts and CI.**
    - Ran `bash -n` on every script and read each one.
    - Grepped `.github/workflows/*.yml` for removed files, old `ui/` paths and Ollama
@@ -55,8 +55,8 @@ and the rest of L11.
 | A3 | Low | Docs: Status §4 | The G9, G8 and G17 rows named `src/jobs.rs`, `src/preflight.rs` and `src/paths.rs`. | **Fixed in `f47cb9a`**: they now name `src/infra/jobs.rs`, `src/sizing/preflight.rs` and `src/infra/paths.rs`. |
 | A4 | Low | Docs: Status snapshot | One Tests cell gave two current counts for `ferrum_gui`: "`ferrum_gui` has **211**" and, further on, "**205** `ferrum_gui` backend tests pass". The run on 2026-11-05 gave 211. | **Fixed in this report's commit**: the second count is now worded as the count at H1. |
 | A5 | Low | Docs: gap-report totals | The Total row said **29**, but the tables hold 3 High, 13 Medium and 14 Low rows, which is 30. L14 was added without updating the total. | **Fixed in this report's commit**: the total now counts the rows, including the rows this audit adds. |
-| A6 | Low | Rule 19: unit test per file | These `src/` files have no unit test of their own:<br>• `ferrum_core`: `layer/matmul.rs`, `train_transformer/param.rs`, `train_transformer/block.rs`, `train_transformer/kernels.rs`, `llm_train/blocks.rs`, `llm_train/buffers.rs`<br>• `slm_cli` binary modules: `eval_gguf.rs`, `finetune.rs`, `generate.rs`, `run_gguf.rs`, `train.rs`, `usage.rs`, `token_train.rs`<br>• `ferrum_gui`: `commands/train.rs`, `run.rs`<br>Other tests do exercise them: the whole-network finite-difference check in `train_transformer/test_support.rs`, the `llm_train` gradient tests, the binary e2e tests in `slm_cli/tests/`, and the GUI IPC tests. Not counted: `token_file/reader.rs` and `writer.rs` (covered by `token_file/tests.rs`), the `test_support.rs` files, and the re-export-only `mod.rs`, `main.rs` and `lib.rs`. | **Partly fixed in `6b19605`**: unit tests added for `layer/matmul.rs` (both helpers against a plain loop, below and above the pool threshold, bit-exact; empty dimensions) and `train_transformer/param.rs` (constructors, `weights_only`, `zero_grad`, AdamW decay skips rank-1 params). **Closed in `ff7dcc3`, `1a53c42` and `47af81a`** (2026-11-05): every `src` file now holds its own `#[cfg(test)]` module, 27 files in all, because the scan also counted the re-export `mod.rs`, `lib.rs` and `main.rs` files and the test-only helper files left out above. 56 workspace tests (26 `ferrum_core`, among them `kernels::ln_bwd`, the attention backward and the Llama block backward against finite differences and the `buffers.rs` layout; 25 `slm_cli`, among them `usage.rs` naming every command and flag; 5 `slm_server`) and 22 `ferrum_gui` tests. The one exception is `ferrum_gui/build.rs`: a build script is not a test target, so a test inside it would never run; the `desktop` cfg it sets is asserted from `run.rs`. The work found one bug, fixed with a regression test: a failed save in the GUI's Train tab left verbose mode on (`Status.md` §7.0.21). |
-| A7 | Low | Docs: CLAUDE.md Layout | The `docs/` row does not list `docs/gui-tooltips.md` (a rule-14 tutorial) or `docs/coverage-results.md` (rule 10). The `scripts/` row does not list `coverage.sh`. This report, `docs/audit-report.md`, is in neither the Layout table nor rule 9's list of allowed docs. | **Fixed in `d0669da`**: the four names are in the Layout table and `docs/audit-report.md` is in rule 9 (the user asked for this report on 2026-11-05). The audit agent had left it open because CLAUDE.md is the user's rule file. |
+| A6 | Low | Rule 19: unit test per file | These `src/` files have no unit test of their own:<br>• `ferrum_core`: `layer/matmul.rs`, `train_transformer/param.rs`, `train_transformer/block.rs`, `train_transformer/kernels.rs`, `llm_train/blocks.rs`, `llm_train/buffers.rs`<br>• `slm_cli` binary modules: `eval_gguf.rs`, `finetune.rs`, `generate.rs`, `run_gguf.rs`, `train.rs`, `usage.rs`, `token_train.rs`<br>• `ferrum_gui`: `commands/train.rs`, `run.rs`<br>Other tests do exercise them: the whole-network finite-difference check in `train_transformer/test_support.rs`, the `llm_train` gradient tests, the binary e2e tests in `slm_cli/tests/`, and the GUI IPC tests. Not counted: `token_file/reader.rs` and `writer.rs` (covered by `token_file/tests.rs`), the `test_support.rs` files, and the re-export-only `mod.rs`, `main.rs` and `lib.rs`. | **Partly fixed in `6b19605`**: unit tests added for `layer/matmul.rs` (both helpers against a plain loop, below and above the pool threshold, bit-exact; empty dimensions) and `train_transformer/param.rs` (constructors, `weights_only`, `zero_grad`, AdamW decay skips rank-1 params). **Closed in `ff7dcc3`, `1a53c42` and `47af81a`** (2026-11-05): every `src` file now holds its own `#[cfg(test)]` module, 27 files in all, because the scan also counted the re-export `mod.rs`, `lib.rs` and `main.rs` files and the test-only helper files left out above. 56 workspace tests (26 `ferrum_core`, among them `kernels::ln_bwd`, the attention backward and the Llama block backward against finite differences and the `buffers.rs` layout; 25 `slm_cli`, among them `usage.rs` naming every command and flag; 5 `slm_server`) and 22 `ferrum_gui` tests. The one exception is `ferrum_gui/build.rs`: a build script is not a test target, so a test inside it would never run; the `desktop` cfg it sets is asserted from `run.rs`. The work found one bug, fixed with a regression test: a failed save in the GUI's Train tab left verbose mode on (`STATUS.MD` §7.0.21). |
+| A7 | Low | Docs: CLAUDE.MD Layout | The `docs/` row does not list `docs/GUI-TOOLTIPS.MD` (a rule-14 tutorial) or `docs/COVERAGE-RESULTS.MD` (rule 10). The `scripts/` row does not list `coverage.sh`. This report, `docs/AUDIT-REPORT.MD`, is in neither the Layout table nor rule 9's list of allowed docs. | **Fixed in `d0669da`**: the four names are in the Layout table and `docs/AUDIT-REPORT.MD` is in rule 9 (the user asked for this report on 2026-11-05). The audit agent had left it open because CLAUDE.MD is the user's rule file. |
 
 ## What passed clean
 
@@ -105,6 +105,6 @@ and the rest of L11.
 | Fixed | 7 (A1 to A7; A6 in three follow-up commits) |
 | Partly fixed | 0 |
 | Open | none (`ferrum_gui/build.rs` cannot hold an executed test, see A6) |
-| Tests added | 7 in the audit: 1 + 1 regression tests (A1), 2 `matmul` and 3 `param` unit tests (A6); then 56 workspace and 22 `ferrum_gui` tests closing A6, one of them the regression test of `Status.md` §7.0.21 |
+| Tests added | 7 in the audit: 1 + 1 regression tests (A1), 2 `matmul` and 3 `param` unit tests (A6); then 56 workspace and 22 `ferrum_gui` tests closing A6, one of them the regression test of `STATUS.MD` §7.0.21 |
 | Suite after the changes | **1311 passed, 0 failed, 2 ignored** (`cargo test --workspace --release --no-fail-fast`, 7 more than 1304); `ferrum_gui` 211 passed; clippy (workspace and wasm32), fmt, doc and the wasm32 build clean |
 | Suite after closing A6 | **1367 passed, 0 failed, 2 ignored** (56 more than 1311); `ferrum_gui` **233 passed** (22 more than 211), its fmt and clippy clean, `node --check` and the 19 `ui/tests` pass; workspace fmt and clippy clean; doc and the wasm32 build not re-run (no change outside `#[cfg(test)]` code there, except the `usage.rs` text constant and the GUI fix) |

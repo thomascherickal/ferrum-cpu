@@ -2,7 +2,7 @@
 
 # Coverage results
 
-One entry per `scripts/coverage.sh` run. Local runs stopped on 2026-11-04: CI measures coverage on every push (CLAUDE.md rule 10); the entries below are the past local runs. Numbers are copied from the run's `target/coverage/summary.txt`.
+One entry per `scripts/coverage.sh` run. Local runs stopped on 2026-11-04: CI measures coverage on every push (CLAUDE.MD rule 10); the entries below are the past local runs. Numbers are copied from the run's `target/coverage/summary.txt`.
 
 ## 2026-11-02
 
@@ -36,6 +36,6 @@ Rust files with missed lines (workspace): `slm_cli/src/tokenize.rs` 7, `slm_cli/
 
 `ferrum_gui` files with missed lines: `commands/gguf.rs` 12, `evaluate.rs` 10, `commands/export.rs` 9, `commands/text.rs` 7, `datasets.rs` 5, `capable.rs` 5, `commands/train.rs` 4, `test_support.rs` 3, `serve.rs` 3, `jobs.rs` 3, `estimate_cmd.rs` 3, `commands/generate.rs` 3, `hardware.rs` 2, `preflight.rs` 1, `paths.rs` 1, `ipc_errors.rs` 1, `error.rs` 1, `commands/system.rs` 1, `commands/mod.rs` 1, `commands/finetune.rs` 1.
 
-CI floors set from this run (CLAUDE.md rule 15): Rust 99, GUI 98, JS 98, Python 100. The 100 % goal is not met yet; the per-file lists above are the work list for the next round. The causes of the remaining lines were not analysed in this run.
+CI floors set from this run (CLAUDE.MD rule 15): Rust 99, GUI 98, JS 98, Python 100. The 100 % goal is not met yet; the per-file lists above are the work list for the next round. The causes of the remaining lines were not analysed in this run.
 
 No further local runs are scheduled (user decision, 2026-11-04); CI's `coverage` job is the gate on every push.

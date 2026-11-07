@@ -1,25 +1,25 @@
 <p align="center"><img src="../../assets/logo.png" width="96" alt="Ferrum logo"></p>
 
-# Phase 2 — Merge, Samples.md, Docs, Verification Implementation Plan
+# Phase 2 — Merge, SAMPLES.MD, Docs, Verification Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Merge workstreams A, B and C, apply the post-merge fix-ups, write `Samples.md` (10 executed walk-throughs), bring every doc in line with the new behaviour, run the full verification battery, and finish the branch.
+**Goal:** Merge workstreams A, B and C, apply the post-merge fix-ups, write `SAMPLES.MD` (10 executed walk-throughs), bring every doc in line with the new behaviour, run the full verification battery, and finish the branch.
 
-**Architecture:** Docs only, plus three small post-merge code fix-ups (`--quant` in DVC, the real param count in `slm_server`, and the docs list in `CLAUDE.md`/`AGENTS.md`).
+**Architecture:** Docs only, plus three small post-merge code fix-ups (`--quant` in DVC, the real param count in `slm_server`, and the docs list in `CLAUDE.MD`/`AGENTS.MD`).
 
 **Tech Stack:** Markdown; the CLI, `ferrum-serve`, DVC (`.venv`), LightEval (`eval/lighteval/.venv`).
 
-**Spec:** `docs/superpowers/specs/2026-10-09-dataops-serve-eval-design.md` (§7, §8, §10). Plans: `2026-10-09-p0-shared-surfaces.md`, `-pA-engine.md`, `-pB-dataops.md`, `-pC-serve-lighteval.md`.
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` (§7, §8, §10). Plans: `2026-10-09-P0-SHARED-SURFACES.MD`, `-pA-engine.md`, `-pB-dataops.md`, `-pC-serve-lighteval.md`.
 
 ## Global Constraints
 
 - **Full unit-test coverage (user requirement, 2026-10-09):** every function you add or change gets unit tests written with it, in the same commit. Cover every branch, error path and edge case (empty input, boundaries, invalid input). Measure with `cargo llvm-cov --release -p <crate> --summary-only` (and `--html` for detail). Every new or changed line must be covered; justify any line that cannot be (e.g. `main()`'s process exit) in the report. Reviewers check this per function.
 
-- Every command shown in `Samples.md` is executed while writing it, and the output excerpts are pasted from that run. No invented numbers. Where output is long, show the meaningful lines and mark cuts with `…`.
-- Docs style: plain English and short sentences, matching `ReadMe.md` and `Manual.md`. Tables for reference material. No marketing adjectives.
-- Keep the docs set to `ReadMe.md`, `Manual.md`, `Status.md`, `Samples.md`, and `glossary.md`. Update `CLAUDE.md`'s docs rule to list `Samples.md`.
-- `CLAUDE.md` and `AGENTS.md` stay identical (`cp CLAUDE.md AGENTS.md`).
+- Every command shown in `SAMPLES.MD` is executed while writing it, and the output excerpts are pasted from that run. No invented numbers. Where output is long, show the meaningful lines and mark cuts with `…`.
+- Docs style: plain English and short sentences, matching `README.MD` and `MANUAL.MD`. Tables for reference material. No marketing adjectives.
+- Keep the docs set to `README.MD`, `MANUAL.MD`, `STATUS.MD`, `SAMPLES.MD`, and `GLOSSARY.MD`. Update `CLAUDE.MD`'s docs rule to list `SAMPLES.MD`.
+- `CLAUDE.MD` and `AGENTS.MD` stay identical (`cp CLAUDE.MD AGENTS.MD`).
 - Each commit passes the full battery (Task 5 Step 1).
 
 ## Review Focus
@@ -27,7 +27,7 @@
 1. A reader on a fresh clone with no DVC or Python installed — Sample 1 must work with only Rust. → Task 3 Sample 1 uses only `cargo` plus a `curl` of the pinned file.
 2. A reader on another machine — throughput numbers will differ. → every benchmark table states the machine (`lscpu | grep "Model name"`, core count) and date.
 3. Copy-paste of multi-line commands — no shell prompts (`$`) in command blocks, line continuations with `\`. → Task 3 checklist.
-4. Version drift in LightEval — `Samples.md` pins `lighteval==0.13.0` and names the two workarounds. → Sample 8.
+4. Version drift in LightEval — `SAMPLES.MD` pins `lighteval==0.13.0` and names the two workarounds. → Sample 8.
 5. Stale claims in the old docs (zero dependencies, QAT int4, `--tie` saving, `-v` advice, O(context) per token, `clean_corpus` lowercase, eval cost) — every one corrected. → Task 4 grep checklist.
 
 ---
@@ -99,10 +99,10 @@ Also collect the baseline-vs-final speed numbers from the Phase 1A commit messag
 
 ---
 
-### Task 3: Write `Samples.md`
+### Task 3: Write `SAMPLES.MD`
 
 **Files:**
-- Create: `Samples.md`
+- Create: `SAMPLES.MD`
 
 Structure: a title, a one-paragraph intro, a contents list, then ten `## N. Title` sections. Each section has these sub-parts in this order:
 - **Goal** (one sentence)
@@ -163,31 +163,31 @@ Run every block from the repo root on the machine in `$S/facts/machine.txt`, and
 - [ ] **Commit**
 
 ```bash
-git add Samples.md ferrum_core/examples/library_tour.rs .gitignore
-git commit -m "docs: Samples.md — 10 executed walk-throughs (train, eval, serve, LightEval, bench)
+git add SAMPLES.MD ferrum_core/examples/library_tour.rs .gitignore
+git commit -m "docs: SAMPLES.MD — 10 executed walk-throughs (train, eval, serve, LightEval, bench)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: Update ReadMe, Manual, Status, CLAUDE.md/AGENTS.md
+### Task 4: Update ReadMe, Manual, Status, CLAUDE.MD/AGENTS.MD
 
 - [ ] **FINF → GGUF everywhere:** every mention of FINF, `.bin` model files, the `.fckp`/`.flck` binary formats, and `tok.bpe` becomes GGUF (`.gguf`). Status §7 records the breaking change. ReadMe's pitch says Ferrum's own models run in llama.cpp, Ollama, and LM Studio. It also says Ferrum-ML's tabular models are GGUF but not runnable there, because llama.cpp has no MLP-classifier architecture.
-- [ ] **ReadMe.md:**
+- [ ] **README.MD:**
   - Rewrite the pitch: Ferrum is pure Rust and CPU-only; replace the "No dependencies" row with one naming the crates actually kept and why.
-  - Add `slm_server` and `eval/lighteval` to the layout table, and `Samples.md` to Documentation.
+  - Add `slm_server` and `eval/lighteval` to the layout table, and `SAMPLES.MD` to Documentation.
   - Add `prepare`, DVC and `ferrum-serve` lines to "Building and testing".
-- [ ] **Manual.md:**
+- [ ] **MANUAL.MD:**
   - §2: rewrite "what zero dependencies buys" as "what few dependencies buy", covering the trade-off and the kept crates.
   - §5 corpus prep: document `prepare` and the manifest.
   - §6.2 CLI reference: add the new flags (`--quant`, `--debug`, `-v` meaning, generate flags, `eval --json`).
   - §7 generation cost: one re-prime per `context_len/2` tokens.
   - Eval section: every token is scored, plus speed.
-  - Add a short serving and LightEval chapter that points to `Samples.md` §7–8.
+  - Add a short serving and LightEval chapter that points to `SAMPLES.MD` §7–8.
   - Fix the `--tie` text: shared weights during training, and a tied GGUF omits `output.weight` (llama.cpp reuses `token_embd`), so the file shrinks by `vocab × embed` weights.
   - Fix the `clean_corpus` lowercase default.
-- [ ] **Status.md:**
+- [ ] **STATUS.MD:**
   - Snapshot: date 2026-10-09, branch, test counts from `$S/facts/tests.txt`.
   - Known issues: remove the fixed items; keep the honest remaining ones (whole-file training corpus, `--tie` on-disk size, server serializes requests, LightEval 0.13.0 workarounds).
   - Roadmap.
@@ -198,16 +198,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     - `-v` on train no longer floods
     - CLI rejects unknown flags
   - §9 metrics: the before/after numbers.
-- [ ] **CLAUDE.md:**
+- [ ] **CLAUDE.MD:**
   - Hard constraints: replace the zero-dependency bullet with "dependencies need a measured reason" and the kept crates.
   - Layout: add `slm_server`, `eval/lighteval`, DVC files.
   - Commands: `prepare`, `dvc repro`, `ferrum-serve`, the Python unittest.
-  - Docs rule: include `Samples.md`.
-  - Then run `cp CLAUDE.md AGENTS.md`.
+  - Docs rule: include `SAMPLES.MD`.
+  - Then run `cp CLAUDE.MD AGENTS.MD`.
 - [ ] **Stale-claim sweep.** This must return nothing still false:
 
 ```bash
-grep -n -i -E "finf|\.bin\b|relu|zero[- ]dep|no external|std[- ]only|int8/int4 quantization-aware|O\(context\) per token|lowercases|--verbose.*per-epoch|saves vocab" ReadMe.md Manual.md Status.md CLAUDE.md ferrum_core/src/lib.rs ferrum_core/Cargo.toml slm_cli/src/main.rs
+grep -n -i -E "finf|\.bin\b|relu|zero[- ]dep|no external|std[- ]only|int8/int4 quantization-aware|O\(context\) per token|lowercases|--verbose.*per-epoch|saves vocab" README.MD MANUAL.MD STATUS.MD CLAUDE.MD ferrum_core/src/lib.rs ferrum_core/Cargo.toml slm_cli/src/main.rs
 ```
 
 Review each hit and fix it or confirm it is still true. In particular, `ferrum_core/Cargo.toml`'s description says "Zero-dependency" and `lib.rs`/`main.rs` module docs say "zero external dependencies".
@@ -215,8 +215,8 @@ Review each hit and fix it or confirm it is still true. In particular, `ferrum_c
 - [ ] **Commit**
 
 ```bash
-git add ReadMe.md Manual.md Status.md CLAUDE.md AGENTS.md ferrum_core slm_cli
-git commit -m "docs: ReadMe/Manual/Status/CLAUDE.md for dataops, serving, LightEval, deps
+git add README.MD MANUAL.MD STATUS.MD CLAUDE.MD AGENTS.MD ferrum_core slm_cli
+git commit -m "docs: ReadMe/Manual/Status/CLAUDE.MD for dataops, serving, LightEval, deps
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```

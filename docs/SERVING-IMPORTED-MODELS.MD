@@ -4,7 +4,7 @@
 
 `ferrum-serve` serves imported `llama` and `qwen2` GGUFs (SmolLM2, Qwen2.5, ...) on the
 same five routes it uses for Ferrum's own models. The reference is
-[Manual §9.7](../Manual.md#97-serving-ferrum-serve). Every command and output below
+[Manual §9.7](../MANUAL.MD#97-serving-ferrum-serve). Every command and output below
 comes from a real run on this machine on 2026-11-03, with SmolLM2-135M (Q8_0, 145 MB).
 The model path is shortened to `smollm2-135m-q8_0.gguf`, and the JSON is printed the
 way the server sent it.

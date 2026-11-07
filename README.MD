@@ -18,19 +18,19 @@ Raspberry Pi, or in a browser tab.
 Ferrum keeps its dependencies few. The engine, `ferrum_core`, is `std`-only
 apart from two pure-Rust Unicode tables, and a crate is admitted anywhere only
 where a measurement shows a gain (see the table below and
-[Manual §2](Manual.md#2-why-rust-and-what-few-dependencies-buy)). It is built
+[Manual §2](MANUAL.MD#2-why-rust-and-what-few-dependencies-buy)). It is built
 for small models. It is not a runtime for frontier LLMs.
 
 | Property | What it means |
 |---|---|
-| **Few dependencies, each with a reason** | `ferrum_core` has two (`unicode-general-category` and `unicode-normalization`, pure-Rust tables) and hand-writes its threading and matmul kernels. The CLI adds `sha2` and `serde_json`, the server `axum`/`tokio`/`serde`, the browser crate `wasm-bindgen`, and the GUI Tauri plus a few helper crates. A crate is admitted only if it is faster on a benchmark and keeps results deterministic and `wasm32` builds working. `rayon`, `ndarray`, and `faer` were measured and none is in the tree ([Manual §2.2.1](Manual.md#221-what-is-used-and-what-was-tried-and-not-kept)). |
+| **Few dependencies, each with a reason** | `ferrum_core` has two (`unicode-general-category` and `unicode-normalization`, pure-Rust tables) and hand-writes its threading and matmul kernels. The CLI adds `sha2` and `serde_json`, the server `axum`/`tokio`/`serde`, the browser crate `wasm-bindgen`, and the GUI Tauri plus a few helper crates. A crate is admitted only if it is faster on a benchmark and keeps results deterministic and `wasm32` builds working. `rayon`, `ndarray`, and `faer` were measured and none is in the tree ([Manual §2.2.1](MANUAL.MD#221-what-is-used-and-what-was-tried-and-not-kept)). |
 | **CPU only, deterministic** | Every matmul splits across a worker pool. Training, generation, and evaluation give bit-for-bit identical results at any pool size on one platform (override with `FERRUM_NUM_THREADS`), and a test enforces this. Across operating systems the last float bits can differ (the bits recorded on Linux did not match on macOS and Windows in CI). One knob changes the trained weights: the number of data-parallel training workers, `--threads` (auto = the core count). Fix it to reproduce a run on another machine of the same platform. |
 | **GGUF only** | Every file Ferrum writes is GGUF v3: models, training checkpoints, tokenizer files, and pre-tokenized corpora. The old FINF `.bin` format is removed. |
 | **Runs in llama.cpp, Ollama, and LM Studio** | A trained BPE SLM is a `gpt2`-architecture GGUF. The same file gives the same greedy continuation in Ferrum and in llama.cpp (a test checks this). Models can be as small as about 0.1M parameters. |
 | **Quantization-aware** | QAT simulates GGUF Q8_0 exactly, so an int8 file reloads bit-identical to the model you trained. int4 (Q4_0) export is a lossy option. |
 | **Byte-level BPE with a GPT-2 pre-tokenizer** | Any UTF-8 text round-trips. llama.cpp tokenizes prompts exactly as Ferrum does. `<|endoftext|>` is always a reserved special token. |
 | **A real data pipeline** | `train_transformer prepare` cleans, dedups, and splits a corpus and writes a hash manifest. DVC reproduces fetch, prepare, train, and eval from `params.yaml`. |
-| **Corpora larger than RAM** | `train_transformer tokenize` writes a pre-tokenized GGUF token file (2 bytes per token); `train tokens.gguf` streams windows from disk and gives the same model, bit for bit, as training on the text ([Manual §6.11](Manual.md#611-corpora-larger-than-ram-tokenize-and-token-files)). |
+| **Corpora larger than RAM** | `train_transformer tokenize` writes a pre-tokenized GGUF token file (2 bytes per token); `train tokens.gguf` streams windows from disk and gives the same model, bit for bit, as training on the text ([Manual §6.11](MANUAL.MD#611-corpora-larger-than-ram-tokenize-and-token-files)). |
 | **Serving and standard evaluation** | `ferrum-serve` exposes log-likelihood and generation over HTTP for Ferrum models and imported Llama/Qwen GGUFs, on loopback by default, with an optional bearer token (`FERRUM_TOKEN`) that a non-loopback bind requires. A LightEval module evaluates Ferrum models through it. |
 | **Llama/Qwen GGUF in and out** | Import Llama/Qwen checkpoints, run them, fine-tune them with AdamW, and export them back to GGUF. |
 
@@ -66,13 +66,13 @@ tokenizer. Only BPE transformer SLMs run there.
 | `dvc.yaml`, `params.yaml`, `dvc.lock` | DVC pipeline | fetch, prepare, train, eval (and an opt-in `lighteval` stage in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | shell | `fetch.sh` (pinned download with sha256 check), `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh` |
 | `tests` | integration tests | Cross-crate integration and regression tests, including the llama.cpp/LM Studio compatibility test |
-| `ferrum_gui` | Tauri app (built separately) | **Ferrum SLM Studio**, a desktop GUI; see [Manual §10](Manual.md#10-the-gui-ferrum-slm-studio) |
+| `ferrum_gui` | Tauri app (built separately) | **Ferrum SLM Studio**, a desktop GUI; see [Manual §10](MANUAL.MD#10-the-gui-ferrum-slm-studio) |
 
 `ferrum_gui` is deliberately **outside** the Cargo workspace because it needs
 heavy system WebView libraries. Build it from its own directory.
 
 **Sibling folders.** Two folders next to this repository hold code that used
-to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
+to live here (see [Status §2](STATUS.MD#2-the-2026-10-03-restructuring)):
 
 - `../ferrum-ml` holds the machine-learning demos that are not about SLMs: a
   tabular MLP classifier/regressor, its CSV loader, ten datasets, pretrained
@@ -89,12 +89,12 @@ to live here (see [Status §2](Status.md#2-the-2026-10-03-restructuring)):
 | Requirement | Version | Notes |
 |---|---|---|
 | Rust + Cargo | 1.87 or newer, edition 2021 | Install via [rustup](https://rustup.rs). The dependency tree needs 1.85 (`sha2`), and the code uses `is_multiple_of`, stable since 1.87. Built and tested with 1.96.0; older toolchains are untested. |
-| OS | Linux (x86_64 gated in CI; aarch64 also tested), macOS, Windows or Windows-on-Arm (built and tested by a non-gating CI job that is green on all of them, see [Status §5](Status.md#5-known-issues)) | Pure CPU code; the RAM guard (it refuses a run that would not fit) works on Linux only |
+| OS | Linux (x86_64 gated in CI; aarch64 also tested), macOS, Windows or Windows-on-Arm (built and tested by a non-gating CI job that is green on all of them, see [Status §5](STATUS.MD#5-known-issues)) | Pure CPU code; the RAM guard (it refuses a run that would not fit) works on Linux only |
 | `curl` | any | Only for `scripts/fetch.sh` (Samples 1 and 2) |
 | GNU coreutils | Linux | The samples use `sha256sum`, `md5sum`, and `timeout`; they are written for Linux |
 | Python 3.10+ | optional | Only for DVC and LightEval (Samples 2 and 8) |
 | `wasm32-unknown-unknown` | optional | Only for browser builds (`slm_wasm`) |
-| WebView system libraries | optional | Only for the desktop GUI; see [Manual §10.2](Manual.md#102-building-and-launching) |
+| WebView system libraries | optional | Only for the desktop GUI; see [Manual §10.2](MANUAL.MD#102-building-and-launching) |
 | llama.cpp, Ollama, LM Studio | optional | Only to run Ferrum models there (Sample 7) |
 
 You need only Rust to train, evaluate, generate, and serve. DVC and Python are
@@ -125,7 +125,7 @@ ferrum_core = { git = "https://github.com/thomascherickal/Ferrum" }
 ```
 
 `ferrum_core` forbids `unsafe` code. Its dependencies are the few listed in
-[Manual §2](Manual.md#2-why-rust-and-what-few-dependencies-buy); `cargo deny check`
+[Manual §2](MANUAL.MD#2-why-rust-and-what-few-dependencies-buy); `cargo deny check`
 covers their licences.
 
 ---
@@ -160,9 +160,9 @@ train_transformer info     models/slm.gguf
 Interrupted? Add `--checkpoint run.fckp --checkpoint-every 500` to the training
 command, then repeat the same command with `--resume run.fckp`. To stop on
 purpose, pass `--max-seconds N` or create the file `<model>.stop`; the run
-checkpoints and exits cleanly ([Manual §6.6](Manual.md#66-validation-checkpoints-and-resuming)).
-[Samples.md](Samples.md) walks through every step with real output, and
-[Manual §6](Manual.md#6-training-an-slm) explains every flag.
+checkpoints and exits cleanly ([Manual §6.6](MANUAL.MD#66-validation-checkpoints-and-resuming)).
+[SAMPLES.MD](SAMPLES.MD) walks through every step with real output, and
+[Manual §6](MANUAL.MD#6-training-an-slm) explains every flag.
 
 The CLI is strict. An unknown flag, a value that does not parse, or a missing
 `--resume` file stops the command with an error that names the problem, and so
@@ -180,7 +180,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dataops.txt
 
 Edit `params.yaml` and run `dvc repro` again to rerun only the stages that
 changed. Training is deterministic, so the same inputs give the same
-`models/slm.gguf` on any machine of the same platform (the lock hashes were recorded on Linux x86_64; other operating systems can differ in the last float bits): the pipeline pins the data-parallel shard count (`train.threads` in `params.yaml`; [Manual §6.8](Manual.md#68-multi-threading-and-determinism)).
+`models/slm.gguf` on any machine of the same platform (the lock hashes were recorded on Linux x86_64; other operating systems can differ in the last float bits): the pipeline pins the data-parallel shard count (`train.threads` in `params.yaml`; [Manual §6.8](MANUAL.MD#68-multi-threading-and-determinism)).
 
 ### Use the library
 
@@ -213,7 +213,7 @@ train_transformer export-gguf   smollm2-135m.gguf tuned.gguf --resume tuned.flck
 ```
 
 Supported architectures are `llama` and `qwen2`. See
-[Manual §9](Manual.md#9-gguf-ferrum-models-other-runtimes-serving-and-external-models).
+[Manual §9](MANUAL.MD#9-gguf-ferrum-models-other-runtimes-serving-and-external-models).
 
 ---
 
@@ -238,12 +238,12 @@ Each tool is found from a `--bin` flag (export commands), then the env var
 install location (`~/.local/opt/llama.cpp-b11521`, `~/.local/bin/ollama`,
 `~/.lmstudio/bin/lms`).
 The exact commands, and what to expect from each tool, are in
-[Samples.md §7](Samples.md#7-serving-and-running-your-model-in-llamacpp-ollama-and-lm-studio)
-and [Manual §9.5](Manual.md#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio).
+[SAMPLES.MD §7](SAMPLES.MD#7-serving-and-running-your-model-in-llamacpp-ollama-and-lm-studio)
+and [Manual §9.5](MANUAL.MD#95-running-ferrum-models-in-llamacpp-ollama-and-lm-studio).
 
 Serve a model over HTTP with `ferrum-serve --model models/slm.gguf` and
-evaluate it with LightEval: [Manual §9.7](Manual.md#97-serving-ferrum-serve) and
-[Manual §9.8](Manual.md#98-evaluating-with-lighteval).
+evaluate it with LightEval: [Manual §9.7](MANUAL.MD#97-serving-ferrum-serve) and
+[Manual §9.8](MANUAL.MD#98-evaluating-with-lighteval).
 
 ---
 
@@ -262,10 +262,10 @@ GPU makes no difference because Ferrum never uses it.
 | Fine-tune an imported GGUF (full AdamW, f32) | about 135M comfortably; 0.5B is tight |
 
 The sizes come from short runs of four configurations, after the speed work in
-this release ([Manual §6.7](Manual.md#67-sizing-a-run-for-your-machine)). A
+this release ([Manual §6.7](MANUAL.MD#67-sizing-a-run-for-your-machine)). A
 TinyStories-class model (1–3M parameters on about 470M tokens) is a 2–4 day
-job. The [capability report](docs/ferrum-capabilities.md) estimates what 8 to 128 GB machines and recent Intel, Ryzen and Snapdragon processors can do. [Manual §6.7](Manual.md#67-sizing-a-run-for-your-machine) has the throughput
-table, and [Status §3](Status.md#3-capability-assessment) has the assessment.
+job. The [capability report](docs/FERRUM-CAPABILITIES.MD) estimates what 8 to 128 GB machines and recent Intel, Ryzen and Snapdragon processors can do. [Manual §6.7](MANUAL.MD#67-sizing-a-run-for-your-machine) has the throughput
+table, and [Status §3](STATUS.MD#3-capability-assessment) has the assessment.
 
 Two reference sizes are used in the docs:
 
@@ -277,7 +277,7 @@ Two reference sizes are used in the docs:
 `--vocab N` is a ceiling: a small corpus supplies fewer BPE merges, and `train`
 then prints `vocab: 282 (requested 512, limited by the corpus)`. The counts
 above assume a corpus large enough to fill the vocabulary, as the TinyStories
-reference does ([Manual §6.2](Manual.md#6-training-an-slm)).
+reference does ([Manual §6.2](MANUAL.MD#6-training-an-slm)).
 
 ---
 
@@ -285,10 +285,10 @@ reference does ([Manual §6.2](Manual.md#6-training-an-slm)).
 
 | Document | Read it for |
 |---|---|
-| **[Manual.md](Manual.md)** | Everything about *using* Ferrum, from first principles through corpus preparation, training, generation, evaluation, the GGUF format, running in other runtimes, DVC, serving, LightEval, the GUI, and deployment, to the API reference, benchmarks, FAQ, and an honest critique |
-| **[Samples.md](Samples.md)** | Ten executed walk-throughs with real commands and output: quick start, DVC, data cleaning, training controls, evaluation, generation, serving and other runtimes, LightEval, benchmarking, and the library API |
-| **[Status.md](Status.md)** | Where the project stands: what is implemented and tested, known issues, the roadmap, the history, and the backward-compatibility record (§7) |
-| **[glossary.md](glossary.md)** | A beginner's guide to LLM terms |
+| **[MANUAL.MD](MANUAL.MD)** | Everything about *using* Ferrum, from first principles through corpus preparation, training, generation, evaluation, the GGUF format, running in other runtimes, DVC, serving, LightEval, the GUI, and deployment, to the API reference, benchmarks, FAQ, and an honest critique |
+| **[SAMPLES.MD](SAMPLES.MD)** | Ten executed walk-throughs with real commands and output: quick start, DVC, data cleaning, training controls, evaluation, generation, serving and other runtimes, LightEval, benchmarking, and the library API |
+| **[STATUS.MD](STATUS.MD)** | Where the project stands: what is implemented and tested, known issues, the roadmap, the history, and the backward-compatibility record (§7) |
+| **[GLOSSARY.MD](GLOSSARY.MD)** | A beginner's guide to LLM terms |
 | `cargo doc -p ferrum_core --open` | Rustdoc for every public item |
 
 ---

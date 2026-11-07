@@ -52,7 +52,7 @@ resumes, but the rest of its partly finished epoch is reshuffled: the run ends c
 to, not identical with, an uninterrupted one, and it prints a line starting
 `note: the checkpoint (step N) predates ferrum.ckpt.epoch_rng`. Not run here: no
 old-format checkpoint exists on this machine; the behaviour is covered by a unit
-test in `ferrum_core`. See [Manual section 6](../Manual.md) (training and resume).
+test in `ferrum_core`. See [Manual section 6](../MANUAL.MD) (training and resume).
 
 ## 2. What the corpus identity refuses, and how to resume
 
@@ -107,7 +107,7 @@ println!("\ncancelled: {}", g.cancelled);
 ```
 
 Not compiled or run in this tutorial (it needs a loaded `slm`); it is the snippet
-from [Manual section 7](../Manual.md), and the signature was checked against
+from [Manual section 7](../MANUAL.MD), and the signature was checked against
 `ferrum_core/src/slm/generate.rs`. The behaviour (before the first token, after k
 tokens, mid multi-byte character, held-back stop text, no-flag bit-identity) is
 unit-tested in `ferrum_core`.

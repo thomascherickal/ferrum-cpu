@@ -4,11 +4,11 @@ A pure-Rust engine for training, running, serving, and evaluating small causal
 Transformer language models (SLMs) on the CPU, plus GGUF import, fine-tuning,
 and export for Llama/Qwen checkpoints. Ferrum's own SLMs are GPT-2-architecture
 GGUF files that run in llama.cpp, Ollama, and LM Studio. Overview in
-`ReadMe.md`, usage in `Manual.md`, walk-throughs in `Samples.md`, current state
-/ known issues / roadmap / compatibility record in `Status.md`.
+`README.MD`, usage in `MANUAL.MD`, walk-throughs in `SAMPLES.MD`, current state
+/ known issues / roadmap / compatibility record in `STATUS.MD`.
 
-> `AGENTS.md` is a symlink to `CLAUDE.md`, so the two cannot drift. Edit
-> `CLAUDE.md` only; never replace the symlink with a regular file.
+> `AGENTS.MD` is a symlink to `CLAUDE.MD`, so the two cannot drift. Edit
+> `CLAUDE.MD` only; never replace the symlink with a regular file.
 
 ## Working rules
 
@@ -49,20 +49,20 @@ skills. When the user states a new rule, add it here.
    resolving the remaining Minor review findings in one polish commit first.
 8. **`ferrum_gui` is outside the workspace.** Build and test it from its crate
    dir; use `node --check` for the UI JavaScript.
-9. **Docs stay in sync with the code.** Update `Status.md` (snapshot, test
+9. **Docs stay in sync with the code.** Update `STATUS.MD` (snapshot, test
    counts, known issues, roadmap, section 7) in the feature's commit. Only the
-   docs listed under Conventions exist (plus `docs/coverage-results.md`, rule
+   docs listed under Conventions exist (plus `docs/COVERAGE-RESULTS.MD`, rule
    10, the tutorials of rule 14, and reports the user asks for by name:
-   `docs/ferrum-capabilities.md`, `docs/gap-report.md`, `docs/audit-report.md`
+   `docs/FERRUM-CAPABILITIES.MD`, `docs/GAP-REPORT.MD`, `docs/AUDIT-REPORT.MD`
    (asked for on 2026-11-05)); add no others.
 10. **Coverage is measured by CI on every push; no local runs.** The CI
     `coverage` job runs on every push as the gate (user decision, 2026-11-04:
     the daily noon run of `scripts/coverage.sh` is dropped). Do not run
     `scripts/coverage.sh` locally on a schedule or on demand; a local run is
     for the user to ask for by name. Find gaps by reasoning from the last
-    results in `docs/coverage-results.md` and the unit tests, and read raised
+    results in `docs/COVERAGE-RESULTS.MD` and the unit tests, and read raised
     floors from a real CI coverage job log. Past local runs stay recorded in
-    `docs/coverage-results.md` (no run on 2026-11-02, by the user's
+    `docs/COVERAGE-RESULTS.MD` (no run on 2026-11-02, by the user's
     instruction; the last local run was the noon run of 2026-11-03).
 11. **Run the tests and fix every failure before every commit.** The full
     `cargo test --workspace --release` (plus clippy and fmt) is green before a
@@ -81,8 +81,8 @@ skills. When the user states a new rule, add it here.
 
 15. **Coverage floor.** The CI coverage floors stay in the 95 %+ range and are
     raised toward 100 % as measured runs allow; reach 100 % wherever possible.
-    A floor is only raised to a value a real run has met. (`GEMINI.md` is a
-    symlink to this file, like `AGENTS.md`.)
+    A floor is only raised to a value a real run has met. (`GEMINI.MD` is a
+    symlink to this file, like `AGENTS.MD`.)
 
 16. **Ask only when there is no clear choice.** When a question has a
     **Recommended** option, take it without asking. Ask the user only when no
@@ -91,7 +91,7 @@ skills. When the user states a new rule, add it here.
     Recommended option or ruled on a detail, say so in one line. Subagents
     report real doubts back (NEEDS_CONTEXT) and the controller relays them
     only under this same test. (This replaces the earlier "ask, never assume"
-    rule of 2026-11-03; `GEMINI.md` and `AGENTS.md` are symlinks to this file,
+    rule of 2026-11-03; `GEMINI.MD` and `AGENTS.MD` are symlinks to this file,
     so the rule applies to all three.)
 
 17. **Hand-off file, and the 98 % trigger.** After every agent result (and at
@@ -160,7 +160,7 @@ Do not break these; they are the product's selling points.
   needs a benchmark that shows a gain (or that it replaces more code than it
   adds), a passing determinism test, a working `wasm32-unknown-unknown` build of
   `ferrum_core`, and `cargo deny check`. `rayon`, `ndarray`, and `faer` were
-  measured and not adopted (`Manual.md` §2.2.1).
+  measured and not adopted (`MANUAL.MD` §2.2.1).
 - **`#![forbid(unsafe_code)]`** in every crate root, including examples,
   benches, and build scripts. A repo-wide test (`test_no_unsafe`) scans for
   `unsafe`. No SIMD intrinsics. Never call a dependency's `unsafe fn` directly.
@@ -181,7 +181,7 @@ Do not break these; they are the product's selling points.
   aarch64, macOS (Apple silicon), Windows and Windows-on-Arm run only the
   `portable` job (build + test, not a required gate; green on all four runners
   in CI run 41691008924 after two red runs that found real bugs, see
-  `Status.md` §5 and §7.0.13). Some behaviour is Linux-only: the
+  `STATUS.MD` §5 and §7.0.13). Some behaviour is Linux-only: the
   RAM guard reads `/proc/meminfo`, and the Linux-recorded bit goldens do not
   hold elsewhere. Do not claim a platform works until its CI job is green, and nothing has run on physical macOS, Windows or Snapdragon hardware.
 - **WASM-portable.** `ferrum_core` and `slm_wasm` must compile and run for
@@ -190,7 +190,7 @@ Do not break these; they are the product's selling points.
 - **Backward compatibility.** `TransformerConfig` is extended with new fields +
   `Default`; callers use `..TransformerConfig::default()`. The positional
   `train_transformer*` functions keep stride 1 and their exact results. Record
-  any compat change in `Status.md` §7. FINF files do not load (deliberate).
+  any compat change in `STATUS.MD` §7. FINF files do not load (deliberate).
 - **Tests first.** Every feature lands with its unit tests in the same commit
   (Working rules 1 and 5).
 - **Scoring semantics.** `evaluate()` and `--val` use `score_rolling`, which
@@ -201,7 +201,7 @@ Do not break these; they are the product's selling points.
 
 | Path | What |
 |---|---|
-| `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs`. `token_file/` (the `ferrum-tokens` writer and streaming reader) is a small directory too. `dataset` (cleaning), `ckpt`, `meta`, `ops`, `parallel`, `quant` and `llm` are single files. `examples/library_tour.rs` is the program behind `Samples.md` §10. |
+| `ferrum_core/` | The engine library; everything calls into it. The large modules are directories (`slm/`, `train_transformer/`, `loader/`, `gguf/`, `gguf_write/`, `llm_train/`, `layer/`, `tokenizer/`): `mod.rs` re-exports the public API, submodules hold one concern each with its own tests, shared fixtures live in a `#[cfg(test)] test_support.rs`. `token_file/` (the `ferrum-tokens` writer and streaming reader) is a small directory too. `dataset` (cleaning), `ckpt`, `meta`, `ops`, `parallel`, `quant` and `llm` are single files. `examples/library_tour.rs` is the program behind `SAMPLES.MD` §10. |
 | `slm_cli/` | Binary `train_transformer`: train, run, generate, eval, info, prepare, tokenize, run-gguf, eval-gguf, finetune-gguf, export-gguf, export-ollama, export-lmstudio. It is also a library (`src/lib.rs`: `slm_cli::prepare`, the prepare pipeline with progress and cancel, `slm_cli::runtime_export`, the Ollama / LM Studio export, and `slm_cli::tokenize` / `token_corpus`, the token-file writer and opener) that `ferrum_gui` depends on by path, so front ends share the logic instead of copying it (it lives here, not in `ferrum_core`, because it needs `sha2`/`serde_json`). `tests/tokenize_cli.rs` and `tests/token_train_cli.rs` cover token files; `tests/tiny_e2e.rs` and `tests/tiny_gguf_e2e.rs` drive the BPE pipeline and the imported-GGUF fine-tune/export path end to end through the real binary with tiny models |
 | `slm_server/` | Binary `ferrum-serve` (axum): `/health`, `/v1/info`, `/v1/loglikelihood`, `/v1/loglikelihood_rolling`, `/v1/generate`, for Ferrum models and imported `llama`/`qwen2` GGUFs (`load.rs` picks the kind by `general.architecture` and runs the RAM guard, `backend.rs` dispatches, `imported.rs` holds the `LlamaModel` path). It is also a library: `bind` (exposure guard, model load, socket bind; real address, startup banner, request counter and log) then `Bound::serve`, which the binary and `ferrum_gui`'s Serve tab share. `tests/tiny_http_e2e.rs` serves a tiny model from the real binary, `tests/imported_e2e.rs` a synthetic tiny llama (and SmolLM2-135M when `.ferrum-dev/models/` has it) |
 | `slm_wasm/` | wasm-bindgen browser bindings (`Slm` text API, `TransformerSLMModel` token-id model); native-callable logic in `text.rs` and `token_model.rs` (`lib.rs` is one-line forwards, excluded from coverage), unit tests compare it with the library; `demo/` is the browser demo page + Web Worker with dependency-free Node tests (`node slm_wasm/demo/*.test.js`); `tests/node.rs` is the `wasm-bindgen-test` suite (wasm32 only, runs on CI) |
@@ -209,7 +209,7 @@ Do not break these; they are the product's selling points.
 | `dvc.yaml`, `params.yaml`, `dvc.lock`, `.dvc/` | fetch → prepare → train → eval (the `lighteval` stage is opt-in in `eval/lighteval/dvc.yaml`) |
 | `scripts/` | `fetch.sh`, `bench_slm.sh`, `build_wasm.sh`, `verify_runtimes.sh`, `coverage.sh` (local line coverage, only when the user asks, rule 10) |
 | `tests/` | Cross-crate integration/regression tests (`tests/tests/*.rs`), incl. `test_runtime_compat.rs` and `test_tiny_library.rs` (tiny-model library end to end) `test_bench_script.rs` (`scripts/bench_slm.sh` path handling) and `test_cli_matrix.rs` (every subcommand has a binary test, every server route an HTTP e2e test) |
-| `docs/` | `ferrum-capabilities.md` (capability estimates by RAM tier and processor), `gap-report.md` (functionality gaps and the front-end parity matrix), `resume-cancel-and-prepare.md` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `serving-imported-models.md` (tutorial: serving an imported Llama/Qwen GGUF with `ferrum-serve`), `SLM-edge-use-cases.md` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), `audit-report.md` (the 2026-11-05 audit: method, findings, what passed and what was not run), `gui-tooltips.md` (the GUI tooltip texts and their guard), `coverage-results.md` (the record of past local coverage runs), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
+| `docs/` | `FERRUM-CAPABILITIES.MD` (capability estimates by RAM tier and processor), `GAP-REPORT.MD` (functionality gaps and the front-end parity matrix), `RESUME-CANCEL-AND-PREPARE.MD` (tutorial: exact resume, corpus identity, cancel, the prepare commit marker), `SERVING-IMPORTED-MODELS.MD` (tutorial: serving an imported Llama/Qwen GGUF with `ferrum-serve`), `SLM-EDGE-USE-CASES.MD` (a standalone article on what small language models do on edge devices; it makes no claims about Ferrum), `AUDIT-REPORT.MD` (the 2026-11-05 audit: method, findings, what passed and what was not run), `GUI-TOOLTIPS.MD` (the GUI tooltip texts and their guard), `COVERAGE-RESULTS.MD` (the record of past local coverage runs), plus the agent-skill config in `docs/agents/` and the plans/specs in `docs/superpowers/` |
 | `ferrum_gui/` | Tauri app "Ferrum SLM Studio" — **excluded from the workspace**. `src/` is grouped by concern: `commands/` (the Tauri commands per tab), `sizing/` (hardware, estimates, pre-flight, Capable), `data/` (datasets, prepare, tokenize), `serving/` (serve, runtime_export), `infra/` (error, http, jobs, paths, progress); dependencies point `commands` -> `sizing`/`data`/`serving` -> `infra`, and code names the group (`crate::infra::error`); `lib.rs` re-exports only the public `estimate`, `estimate_cmd` and `hardware` as `ferrum_gui_lib::x`; `ui/` holds `index.html`, `styles.css`, `logo.png` and the folders `core/`, `tabs/`, `tests/` (see Commands); `src/serving/serve.rs` runs the `slm_server` library in-process for the Serve tab; `docs/assets/logo.png` is the source of every bundle icon (`cargo tauri icon docs/assets/logo.png -o <dir>`; `icons/icon.svg` is legacy); `.github/workflows/release.yml` builds the Linux AppImage and deb (tags `v*` and `workflow_dispatch`, draft release on a tag) |
 
 This repo's directory is `ferrum-cpu` inside the workspace folder `ferrum`
@@ -310,11 +310,11 @@ won't catch JS errors; `node --check` is the gate. Tabs are generic: a
   the parser rejects anything not listed.
 - Deliberate simplifications are marked with a `// ponytail:` comment naming the
   ceiling and the upgrade path.
-- Docs are `ReadMe.md`, `Manual.md`, `Status.md`, `Samples.md`, and
-  `glossary.md`, plus the article `docs/SLM-edge-use-cases.md`. Don't add other top-level docs; update `Status.md` (snapshot,
+- Docs are `README.MD`, `MANUAL.MD`, `STATUS.MD`, `SAMPLES.MD`, and
+  `GLOSSARY.MD`, plus the article `docs/SLM-EDGE-USE-CASES.MD`. Don't add other top-level docs; update `STATUS.MD` (snapshot,
   test counts, known issues, roadmap, §7 compatibility) when shipping a
-  feature. Every command in `Samples.md` is executed and its output pasted from
-  the run; no invented numbers. `glossary.md` is a beginner-facing guide to LLM
+  feature. Every command in `SAMPLES.MD` is executed and its output pasted from
+  the run; no invented numbers. `GLOSSARY.MD` is a beginner-facing guide to LLM
   terms, not a domain glossary for agents.
 - Git: solo repo, linear history; see Working rules 1 and 7. Each commit builds
   and passes its tests on its own. Conventional-style subjects
@@ -324,12 +324,12 @@ won't catch JS errors; `node --check` is the gate. Tabs are generic: a
 
 ### Issue tracker
 
-GitHub Issues via the `gh` CLI; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+GitHub Issues via the `gh` CLI; external PRs are not a triage surface. See `docs/agents/ISSUE-TRACKER.MD`.
 
 ### Triage labels
 
-Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/TRIAGE-LABELS.MD`.
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/DOMAIN.MD`.

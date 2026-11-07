@@ -2,20 +2,20 @@
 
 # Closing Remaining Functionality & Front-End Parity Gaps — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.md working rule 2): subagent-driven means strictly sequential, never parallel.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.MD working rule 2): subagent-driven means strictly sequential, never parallel.
 
-**Goal:** Close the user-visible front-end parity and functionality gaps identified in the 2026-11-07 repository analysis (`docs/gap-report.md` H4, H5, M14, M15, M16, L17, plus M5/L11 residue), bringing `ferrum_gui`, `slm_cli`, and `slm_server` to full parity without violating any `CLAUDE.md` hard constraint.
+**Goal:** Close the user-visible front-end parity and functionality gaps identified in the 2026-11-07 repository analysis (`docs/GAP-REPORT.MD` H4, H5, M14, M15, M16, L17, plus M5/L11 residue), bringing `ferrum_gui`, `slm_cli`, and `slm_server` to full parity without violating any `CLAUDE.MD` hard constraint.
 
-**Architecture:** Seven independent, modular tasks ordered by user impact. Each task touches a single concern, adds unit + functional + integration tests (per rules 12, 13, 19, 20), refreshes GUI IPC fixtures where applicable, updates `Manual.md` and `Status.md` in the same commit, and passes the full workspace and `ferrum_gui` test suites before committing (rules 1, 5, 11).
+**Architecture:** Seven independent, modular tasks ordered by user impact. Each task touches a single concern, adds unit + functional + integration tests (per rules 12, 13, 19, 20), refreshes GUI IPC fixtures where applicable, updates `MANUAL.MD` and `STATUS.MD` in the same commit, and passes the full workspace and `ferrum_gui` test suites before committing (rules 1, 5, 11).
 
 **Tech Stack:** Rust 2021 (MSRV 1.87, `#![forbid(unsafe_code)]`), Tauri v2 mock-runtime IPC tests (`ferrum_gui`), dependency-free vanilla ES modules (`ferrum_gui/ui/`), Node 24 test suite (`ferrum_gui/ui/tests/*.test.js`).
 
 **Spec & Sources:**
-- `docs/gap-report.md` (2026-11-07 update: H4, H5, M5, M14, M15, M16, L11, L17)
-- `Status.md` (§5 known issues, §6.2 roadmap, §7 compatibility)
-- Companion UX plan: `docs/superpowers/plans/2026-11-07-gui-beginner-advanced-mode.md` (covers H5's Beginner/Advanced mode and guided workflow in detail; Task 2 below covers the backend/CLI preset sharing and optional train flags).
+- `docs/GAP-REPORT.MD` (2026-11-07 update: H4, H5, M5, M14, M15, M16, L11, L17)
+- `STATUS.MD` (§5 known issues, §6.2 roadmap, §7 compatibility)
+- Companion UX plan: `docs/superpowers/plans/2026-11-07-GUI-BEGINNER-ADVANCED-MODE.MD` (covers H5's Beginner/Advanced mode and guided workflow in detail; Task 2 below covers the backend/CLI preset sharing and optional train flags).
 
-## Global Constraints (from `CLAUDE.md`)
+## Global Constraints (from `CLAUDE.MD`)
 
 - **GGUF only** for all persisted artifacts.
 - **`ferrum_core` has two external dependencies** (`unicode-general-category`, `unicode-normalization`); add no others.
@@ -37,7 +37,7 @@
 - Modify: `ferrum_gui/ui/tabs/serve_tab.js`
 - Modify: `ferrum_gui/ui/core/help.js` (add tooltip entries for `svQuant`, `svRepPenalty`, `svForce`)
 - Modify: `ferrum_gui/src/ipc_tests.rs`, `ferrum_gui/ui/tests/app_flows.test.js`, `ferrum_gui/ui/tests/settings.test.js`
-- Modify: `docs/gui-tooltips.md`, `Manual.md` §10.3, `Status.md` §5
+- Modify: `docs/GUI-TOOLTIPS.MD`, `MANUAL.MD` §10.3, `STATUS.MD` §5
 
 **Interfaces:**
 - Extend `ServeParams` in `ferrum_gui/src/serving/serve.rs` with `#[serde(default)]` fields so existing callers remain backward-compatible:
@@ -65,7 +65,7 @@
   - `cd ferrum_gui && UPDATE_FIXTURE=1 node ui/tests/app_flows.test.js`
   - `for f in $(find ui -name '*.js'); do node --check "$f" || exit 1; done && for t in ui/tests/*.test.js; do node "$t" || exit 1; done`
   - `CARGO_BUILD_JOBS=3 cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt -- --check`
-- [ ] **Step 6: Update `Manual.md` §10.3, `docs/gui-tooltips.md`, and `Status.md` §5.** Commit: `feat(gui): expose quant, repetition penalty, and force on the Serve tab`.
+- [ ] **Step 6: Update `MANUAL.MD` §10.3, `docs/GUI-TOOLTIPS.MD`, and `STATUS.MD` §5.** Commit: `feat(gui): expose quant, repetition penalty, and force on the Serve tab`.
 
 ---
 
@@ -79,7 +79,7 @@
 - Modify: `ferrum_gui/ui/index.html` (`#trPreset` select, `#trMaxSeconds`, `#trMetricsCsv`)
 - Modify: `ferrum_gui/ui/tabs/train_tab.js`, `ferrum_gui/ui/core/help.js`
 - Modify: `ferrum_gui/src/ipc_tests.rs`, `ferrum_gui/ui/tests/app_flows.test.js`
-- Modify: `Manual.md` §10.3, `docs/gui-tooltips.md`, `Status.md` §5
+- Modify: `MANUAL.MD` §10.3, `docs/GUI-TOOLTIPS.MD`, `STATUS.MD` §5
 
 **Interfaces:**
 - In `slm_cli::preset`:
@@ -104,7 +104,7 @@
 - [ ] **Step 2: Add `max_seconds` and `metrics_csv` to `TrainParams`** in `ferrum_gui/src/commands/train.rs`, wiring `max_seconds` into `StopCondition` and `metrics_csv` into `TransformerConfig.metrics_csv` (validated with `paths::clean` and writable-parent check). Add unit and IPC tests (`train_slm_writes_metrics_csv`, `train_slm_rejects_zero_max_seconds`).
 - [ ] **Step 3: Add `#trPreset`, `#trMaxSeconds`, and `#trMetricsCsv`** to `ferrum_gui/ui/index.html` and wire `trPreset` in `ferrum_gui/ui/tabs/train_tab.js` so choosing `tiny`, `small`, or `medium` populates `trContext`, `trEmbed`, `trHeads`, `trBlocks`, `trHidden`, `trVocab`, and `trLr` and calls `schedulePreflight()`, while editing any of those 7 inputs switches `trPreset` to `custom`.
 - [ ] **Step 4: Add help entries in `ferrum_gui/ui/core/help.js`**, refresh fixtures (`UPDATE_FIXTURE=1`), and run all workspace + `ferrum_gui` Rust and Node tests.
-- [ ] **Step 5: Update `Manual.md` §10.3, `docs/gui-tooltips.md`, and `Status.md` §5.** Commit: `feat(gui): add model size presets, max-seconds, and metrics-csv to Train tab`.
+- [ ] **Step 5: Update `MANUAL.MD` §10.3, `docs/GUI-TOOLTIPS.MD`, and `STATUS.MD` §5.** Commit: `feat(gui): add model size presets, max-seconds, and metrics-csv to Train tab`.
 
 ---
 
@@ -119,14 +119,14 @@
 - Modify: `ferrum_gui/ui/index.html` (add `#ftVerbose` in `#panel-finetune` and `#exVerbose` in `#panel-export`)
 - Modify: `ferrum_gui/ui/tabs/finetune_tab.js`, `ferrum_gui/ui/tabs/export_tab.js`, `ferrum_gui/ui/core/help.js`
 - Modify: `ferrum_gui/src/ipc_tests.rs`, `ferrum_gui/ui/tests/app_flows.test.js`
-- Modify: `Manual.md` §9.2 & §10.3, `docs/gui-tooltips.md`, `Status.md` §5 & §7
+- Modify: `MANUAL.MD` §9.2 & §10.3, `docs/GUI-TOOLTIPS.MD`, `STATUS.MD` §5 & §7
 
 **Steps:**
 - [ ] **Step 1: Write a regression test** in `ferrum_gui/src/commands/finetune.rs` (`finetune_respects_add_bos_token_false`) using a tiny GGUF fixture with `tokenizer.ggml.add_bos_token = false` and `bos_token_id = 1`: assert that the checkpoint saved by `finetune_inner` can be resumed by the CLI `finetune-gguf --resume` (same window count and corpus id).
 - [ ] **Step 2: Change `tok.bos()` to `tok.prefix_bos()`** in `ferrum_gui/src/commands/finetune.rs:130`.
 - [ ] **Step 3: Add `#ftVerbose` and `#exVerbose` checkboxes** to `ferrum_gui/ui/index.html`, wire them in `finetune_tab.js` and `export_tab.js`, and add tooltip entries in `help.js`.
 - [ ] **Step 4: Refresh fixtures (`UPDATE_FIXTURE=1`) and run all tests** (workspace + `ferrum_gui` + Node).
-- [ ] **Step 5: Record the BOS alignment in `Status.md` §5 (closing the open BOS item) and §7.** Commit: `fix(gui): align fine-tune BOS handling with CLI and expose verbose toggles`.
+- [ ] **Step 5: Record the BOS alignment in `STATUS.MD` §5 (closing the open BOS item) and §7.** Commit: `fix(gui): align fine-tune BOS handling with CLI and expose verbose toggles`.
 
 ---
 
@@ -139,7 +139,7 @@
 - Modify: `ferrum_gui/ui/index.html` (`#panel-gguf`: add `#ggufStream` checkbox and `#ggufProgress` progress bar)
 - Modify: `ferrum_gui/ui/tabs/gguf_tab.js`, `ferrum_gui/ui/core/help.js`
 - Modify: `ferrum_gui/src/ipc_tests.rs`, `ferrum_gui/ui/tests/app_flows.test.js`
-- Modify: `Manual.md` §10.3, `docs/gui-tooltips.md`, `Status.md` §5
+- Modify: `MANUAL.MD` §10.3, `docs/GUI-TOOLTIPS.MD`, `STATUS.MD` §5
 
 **Interfaces:**
 - Emit `gguf-fragment` events `{ text: String, generated: usize, budget: usize }` from the per-token decode loop in `run_gguf` (throttled or per UTF-8 boundary, matching `generate.rs`).
@@ -150,17 +150,17 @@
 - [ ] **Step 2: Implement per-token streaming callback in `ferrum_gui/src/commands/gguf.rs`** (respecting `StopMatcher` holdback so held-back partial stop strings are never emitted prematurely).
 - [ ] **Step 3: Add `#ggufStream` and `#ggufProgress`** in `ferrum_gui/ui/index.html` and wire `listen('gguf-fragment', ...)` in `ferrum_gui/ui/tabs/gguf_tab.js`.
 - [ ] **Step 4: Add help entry in `help.js`, refresh fixtures, and run all tests.**
-- [ ] **Step 5: Update `Manual.md` §10.3, `docs/gui-tooltips.md`, and `Status.md` §5.** Commit: `feat(gui): stream tokens and progress live on the GGUF tab`.
+- [ ] **Step 5: Update `MANUAL.MD` §10.3, `docs/GUI-TOOLTIPS.MD`, and `STATUS.MD` §5.** Commit: `feat(gui): stream tokens and progress live on the GGUF tab`.
 
 ---
 
 ## Task 5: Windows `.exe` Tool Discovery in `runtime_export` (Gap M16)
 
-**Problem:** `slm_cli/src/runtime_export.rs` (`find_tool`, lines 79–105) searches `PATH` directories for bare `name` (`"ollama"` or `"lms"`). On Windows (`cfg!(windows)` or when `PATHEXT`/`.exe` applies), binaries on `PATH` are named `ollama.exe` and `lms.exe`, so `PATH` lookup misses them unless `--bin`, `FERRUM_OLLAMA`/`FERRUM_LMS`, or the fallback `%LOCALAPPDATA%` path hits (`Status.md` §7.0.13).
+**Problem:** `slm_cli/src/runtime_export.rs` (`find_tool`, lines 79–105) searches `PATH` directories for bare `name` (`"ollama"` or `"lms"`). On Windows (`cfg!(windows)` or when `PATHEXT`/`.exe` applies), binaries on `PATH` are named `ollama.exe` and `lms.exe`, so `PATH` lookup misses them unless `--bin`, `FERRUM_OLLAMA`/`FERRUM_LMS`, or the fallback `%LOCALAPPDATA%` path hits (`STATUS.MD` §7.0.13).
 
 **Files:**
 - Modify: `slm_cli/src/runtime_export.rs`
-- Modify: `Status.md` §5 & §7.0.13
+- Modify: `STATUS.MD` §5 & §7.0.13
 
 **Interfaces:**
 - Extract a pure helper `fn find_in_path_dirs(name: &str, path_var: &OsStr, is_windows: bool) -> Option<PathBuf>` so unit tests on Linux can test both `is_windows = false` and `is_windows = true` deterministically without needing a Windows host.
@@ -172,23 +172,23 @@
   - `find_in_path_dirs_prefers_exe_over_bare_file_on_windows`
 - [ ] **Step 2: Implement `find_in_path_dirs`** and call it from `find_tool` with `cfg!(windows)`.
 - [ ] **Step 3: Run `cargo test -p slm_cli --release` and full workspace checks.**
-- [ ] **Step 4: Update `Status.md` §7.0.13.** Commit: `fix(cli): check .exe suffix when scanning PATH for ollama and lms on Windows`.
+- [ ] **Step 4: Update `STATUS.MD` §7.0.13.** Commit: `fix(cli): check .exe suffix when scanning PATH for ollama and lms on Windows`.
 
 ---
 
 ## Task 6: Narrow `dvc.yaml` Source Dependencies (Gap M5 Residue)
 
-**Problem:** `dvc.yaml` lists the entire `ferrum_core/src` and `slm_cli/src` directories as dependencies of the `prepare`, `train`, and `eval` stages. Consequently, any comment, doc, or unrelated module edit in `ferrum_core/src` or `slm_cli/src` marks `dvc.lock` stale (`docs/gap-report.md` M5).
+**Problem:** `dvc.yaml` lists the entire `ferrum_core/src` and `slm_cli/src` directories as dependencies of the `prepare`, `train`, and `eval` stages. Consequently, any comment, doc, or unrelated module edit in `ferrum_core/src` or `slm_cli/src` marks `dvc.lock` stale (`docs/GAP-REPORT.MD` M5).
 
 **Files:**
 - Modify: `dvc.yaml`, `dvc.lock`
 - Modify: `tests/tests/` (or `slm_cli/tests/`): add a test verifying every `deps:` path in `dvc.yaml` exists in the repository.
-- Modify: `Manual.md` §9.9, `Status.md` §5
+- Modify: `MANUAL.MD` §9.9, `STATUS.MD` §5
 
 **Steps:**
 - [ ] **Step 1: Write a test** (`dvc_yaml_deps_exist_in_repo`) that parses `deps:` entries from `dvc.yaml` and asserts every referenced file/directory exists.
 - [ ] **Step 2: Narrow `dvc.yaml` stage `deps:`** to the specific modules each stage uses (e.g., `prepare` depends on `ferrum_core/src/dataset.rs`, `slm_cli/src/prepare/`, `slm_cli/src/cmd_prepare.rs`, `scripts/fetch.sh`, `data/raw/tiny_shakespeare.txt`), and refresh `dvc.lock` for `prepare` with `XDG_CACHE_HOME`/`XDG_CONFIG_HOME`/`XDG_DATA_HOME` pointed inside the session scratchpad (rule 3).
-- [ ] **Step 3: Run workspace tests and update `Status.md` §5 and `docs/gap-report.md` M5.** Commit: `build(dvc): narrow stage source dependencies in dvc.yaml`.
+- [ ] **Step 3: Run workspace tests and update `STATUS.MD` §5 and `docs/GAP-REPORT.MD` M5.** Commit: `build(dvc): narrow stage source dependencies in dvc.yaml`.
 
 ---
 
@@ -198,11 +198,11 @@
 
 **Files:**
 - Modify: Remaining `ferrum_core/src/**/*.rs` modules and `ferrum_core/src/lib.rs` (enable `#![warn(missing_docs)]` at crate root once all submodules pass).
-- Modify: `Status.md` §5, `docs/gap-report.md` L11
+- Modify: `STATUS.MD` §5, `docs/GAP-REPORT.MD` L11
 
 **Steps:**
 - [ ] **Step 1: Document public items module-by-module**, adding `#![warn(missing_docs)]` to each completed module (`ckpt`, `meta`, `gguf_tokenizer`, `llm`, `layer`, `tokenizer`, `gguf`, `gguf_write`, `loader`, `slm`, `train_transformer`, `llm_train`).
 - [ ] **Step 2: Promote `#![warn(missing_docs)]` to `ferrum_core/src/lib.rs`** and remove redundant inner attributes.
 - [ ] **Step 3: Verify with `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`** and `cargo test --workspace --release` (ensuring any new doc-tests compile and pass).
-- [ ] **Step 4: Update `Status.md` and `docs/gap-report.md` L11.** Commit: `docs(core): document all public items and enable warn(missing_docs) crate-wide`.
+- [ ] **Step 4: Update `STATUS.MD` and `docs/GAP-REPORT.MD` L11.** Commit: `docs(core): document all public items and enable warn(missing_docs) crate-wide`.
 

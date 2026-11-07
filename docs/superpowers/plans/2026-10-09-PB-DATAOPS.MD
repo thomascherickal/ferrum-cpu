@@ -10,7 +10,7 @@
 
 **Tech Stack:** Rust 2021; `unicode-normalization 0.1` (ferrum_core), `sha2 0.11` and `serde_json 1` (slm_cli); DVC `3.67.1` in a repo-local `.venv`; bash + curl + sha256sum.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-dataops-serve-eval-design.md` (§5). Phase 0 plan: `docs/superpowers/plans/2026-10-09-p0-shared-surfaces.md`.
+**Spec:** `docs/superpowers/specs/2026-10-09-DATAOPS-SERVE-EVAL-DESIGN.MD` (§5). Phase 0 plan: `docs/superpowers/plans/2026-10-09-P0-SHARED-SURFACES.MD`.
 
 ## Global Constraints
 
@@ -25,7 +25,7 @@
   - sha256 `6874bae9a4c1a4e7edcf0e53b86c17817e9cf881fc75ff2368da457b80c0585d`
   - licence CDLA-Sharing-1.0, never committed
 - New flags go in `const` tables via the Phase 0 parser (`Kind`, `Spec`, `Args::{value, get, get_all, has}`).
-- Do not edit `ReadMe.md`, `Manual.md`, `Status.md` (Phase 2).
+- Do not edit `README.MD`, `MANUAL.MD`, `STATUS.MD` (Phase 2).
 - All model and tokenizer files are GGUF (`.gguf`). Every feature lands with its unit tests in the same commit. No `unsafe` code.
 - Each commit passes `cargo test --workspace --release`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo build -p slm_wasm --target wasm32-unknown-unknown --release`.
 

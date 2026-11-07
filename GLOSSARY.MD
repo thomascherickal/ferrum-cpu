@@ -78,7 +78,7 @@ laptop CPU, a phone, or a Raspberry Pi. There is no official cutoff; the term
 usually covers models from a few million up to a few billion parameters.
 SLMs trade breadth of knowledge for speed, low cost, privacy (data stays on
 the device), and the ability to specialise well on a narrow task.
-**In Ferrum:** the whole project is an SLM engine; see `ReadMe.md`.
+**In Ferrum:** the whole project is an SLM engine; see `README.MD`.
 
 ### Foundation Model
 A large model trained on broad data that serves as a starting point for many
@@ -886,7 +886,7 @@ format.
 ### FINF
 Ferrum's former own model format: weights, metadata, and tokenizer in one `.bin`
 file. It is removed: Ferrum now writes GGUF for everything.
-**In Ferrum:** nothing reads it any more; see `Status.md` §7.
+**In Ferrum:** nothing reads it any more; see `STATUS.MD` §7.
 
 ### ONNX
 "Open Neural Network Exchange": a format for moving models between frameworks
