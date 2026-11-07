@@ -1,13 +1,18 @@
 //! The fundamental data structure: a flat `Vec<f32>` with a shape.
+#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 
 #[derive(Clone, Debug, PartialEq)]
+/// A dense row-major tensor: a flat `Vec<f32>` plus its shape.
 pub struct Tensor {
+    /// Dimension sizes; their product equals `data.len()`.
     pub shape: Vec<usize>,
+    /// Elements in row-major order.
     pub data: Vec<f32>,
 }
 
 impl Tensor {
+    /// Build a tensor, failing with `ShapeMismatch` if the shape's product differs from `data.len()`.
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self> {
         let expected: usize = shape.iter().product();
         if expected != data.len() {
@@ -19,6 +24,7 @@ impl Tensor {
         Ok(Self { shape, data })
     }
 
+    /// A tensor of the given shape filled with `0.0`.
     pub fn zeros(shape: Vec<usize>) -> Self {
         let n = shape.iter().product();
         Self {
@@ -27,10 +33,12 @@ impl Tensor {
         }
     }
 
+    /// A `rows x cols` matrix; fails if `data.len() != rows * cols`.
     pub fn matrix(rows: usize, cols: usize, data: Vec<f32>) -> Result<Self> {
         Self::new(vec![rows, cols], data)
     }
 
+    /// A rank-1 tensor holding `data`.
     pub fn vector(data: Vec<f32>) -> Self {
         let n = data.len();
         Self {
@@ -39,18 +47,22 @@ impl Tensor {
         }
     }
 
+    /// A `1 x n` matrix from `data`.
     pub fn row(data: Vec<f32>) -> Result<Self> {
         let n = data.len();
         Self::matrix(1, n, data)
     }
 
+    /// Total number of elements.
     pub fn numel(&self) -> usize {
         self.data.len()
     }
+    /// Number of dimensions.
     pub fn rank(&self) -> usize {
         self.shape.len()
     }
 
+    /// `(rows, cols)` of a rank-2 tensor; fails with `NotAMatrix` otherwise.
     pub fn matrix_dims(&self) -> Result<(usize, usize)> {
         match self.shape.as_slice() {
             [r, c] => Ok((*r, *c)),
@@ -58,14 +70,17 @@ impl Tensor {
         }
     }
 
+    /// Element at row `r`, column `c` of a matrix (panics when out of range or not rank 2).
     pub fn at(&self, r: usize, c: usize) -> f32 {
         self.data[r * self.shape[1] + c]
     }
 
+    /// A copy of the data under a new shape; fails if the element count differs.
     pub fn reshape(&self, shape: Vec<usize>) -> Result<Tensor> {
         Tensor::new(shape, self.data.clone())
     }
 
+    /// A new tensor of the same shape with `f` applied to every element.
     pub fn map<F: Fn(f32) -> f32>(&self, f: F) -> Tensor {
         Tensor {
             shape: self.shape.clone(),

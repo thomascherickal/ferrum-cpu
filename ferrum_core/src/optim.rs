@@ -1,5 +1,6 @@
 //! SGD with optional momentum. Stateless — each trainable layer owns its
 //! own velocity buffers and calls `step` once per parameter tensor.
+#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;
@@ -47,16 +48,21 @@ pub fn clip_grad_norm(grads: &mut [&mut Tensor], max_norm: f32) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// SGD with optional momentum; holds only the hyper-parameters.
 pub struct Sgd {
+    /// Learning rate.
     pub lr: f32,
+    /// Momentum coefficient; `0.0` disables the velocity term.
     pub momentum: f32,
 }
 
 impl Sgd {
+    /// Plain SGD (momentum `0.0`) with learning rate `lr`.
     pub fn new(lr: f32) -> Self {
         vprintln!("[optim::Sgd::new] lr={}", lr);
         Self { lr, momentum: 0.0 }
     }
+    /// SGD with learning rate `lr` and momentum coefficient `m`.
     pub fn with_momentum(lr: f32, m: f32) -> Self {
         vprintln!("[optim::Sgd::with_momentum] lr={}, momentum={}", lr, m);
         Self { lr, momentum: m }
@@ -127,10 +133,15 @@ pub enum LrDecay {
 /// independent of how the optimizer is driven.
 #[derive(Clone, Copy, Debug)]
 pub struct LrSchedule {
+    /// Peak learning rate, reached at the end of warmup.
     pub base_lr: f32,
+    /// Learning rate the decay settles at.
     pub min_lr: f32,
+    /// Number of linear-warmup steps.
     pub warmup_steps: u64,
+    /// Step at which decay reaches `min_lr`.
     pub total_steps: u64,
+    /// Decay shape after warmup.
     pub decay: LrDecay,
 }
 
@@ -194,10 +205,15 @@ impl LrSchedule {
 /// which is what distinguishes AdamW from naive L2 regularization.
 #[derive(Clone, Copy, Debug)]
 pub struct Adam {
+    /// Learning rate.
     pub lr: f32,
+    /// Decay rate of the first-moment estimate.
     pub beta1: f32,
+    /// Decay rate of the second-moment estimate.
     pub beta2: f32,
+    /// Small constant added to the denominator for numerical stability.
     pub eps: f32,
+    /// Decoupled (AdamW) weight-decay coefficient; `0.0` is plain Adam.
     pub weight_decay: f32,
 }
 

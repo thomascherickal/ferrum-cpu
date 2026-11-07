@@ -20,6 +20,7 @@
 //! and attaches a single leading space to the following word. For typical
 //! prompts this matches; for exotic whitespace it can differ. Where exactness
 //! matters, the CLI also accepts explicit token IDs (`--ids`).
+#![warn(missing_docs)]
 
 use crate::error::{InferError, Result};
 use crate::gguf::{Gguf, MetaValue};
@@ -220,12 +221,15 @@ impl GgufTokenizer {
         })
     }
 
+    /// The tokenizer family declared by the file (`tokenizer.ggml.model`).
     pub fn model(&self) -> TokModel {
         self.model
     }
+    /// Number of entries in the vocabulary.
     pub fn vocab_size(&self) -> usize {
         self.tokens.len()
     }
+    /// The beginning-of-sequence token id, if the file defines one.
     pub fn bos(&self) -> Option<usize> {
         self.bos.map(|x| x as usize)
     }
@@ -235,6 +239,7 @@ impl GgufTokenizer {
     pub fn prefix_bos(&self) -> Option<usize> {
         self.bos().filter(|_| self.add_bos)
     }
+    /// The end-of-sequence token id, if the file defines one.
     pub fn eos(&self) -> Option<usize> {
         self.eos.map(|x| x as usize)
     }

@@ -1,34 +1,42 @@
 //! Sequential model: an ordered pipeline of layers.
+#![warn(missing_docs)]
 use crate::error::Result;
 use crate::layer::Layer;
 use crate::tensor::Tensor;
 use crate::verbose;
 
+/// An ordered pipeline of boxed [`Layer`]s applied one after another.
 pub struct Sequential {
     layers: Vec<Box<dyn Layer>>,
 }
 
 impl Sequential {
+    /// An empty pipeline.
     pub fn new() -> Self {
         Self { layers: Vec::new() }
     }
 
+    /// Builder form of [`Sequential::push`]: append a layer and return `self`.
     pub fn with(mut self, l: Box<dyn Layer>) -> Self {
         vprintln!("[model::Sequential::with] Adding layer: {}", l.name());
         self.layers.push(l);
         self
     }
+    /// Append a layer at the end of the pipeline.
     pub fn push(&mut self, l: Box<dyn Layer>) {
         vprintln!("[model::Sequential::push] Adding layer: {}", l.name());
         self.layers.push(l);
     }
 
+    /// Number of layers.
     pub fn len(&self) -> usize {
         self.layers.len()
     }
+    /// `true` when the pipeline has no layers.
     pub fn is_empty(&self) -> bool {
         self.layers.is_empty()
     }
+    /// The layers in execution order.
     pub fn layers(&self) -> &[Box<dyn Layer>] {
         &self.layers
     }
@@ -40,6 +48,7 @@ impl Sequential {
         self.layers.iter().map(|l| l.num_params()).sum()
     }
 
+    /// Run `input` through every layer in order and return the final output.
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
         vprintln!(
             "[model::Sequential::forward] input shape={:?}, {} layers",
@@ -62,6 +71,7 @@ impl Sequential {
         Ok(cur)
     }
 
+    /// One line per layer (index and name) under a header giving the layer count.
     pub fn summary(&self) -> String {
         let mut s = format!("Sequential ({} layers)\n", self.layers.len());
         for (i, l) in self.layers.iter().enumerate() {
