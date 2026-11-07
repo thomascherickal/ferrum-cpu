@@ -138,6 +138,10 @@ Before the tips were written, the guard listed 143 offenders on the page:
 - 31 controls whose help text was under 30 words, among them all 12 tabs.
 - 112 elements with no tip at all.
 
+The Serve tab's Expert-mode controls `svQuant`, `svRepPenalty` and `svForce`
+(2026-11-07, H4) have help entries in `help.js` (each over 30 words, the same
+rules as above); `svForce` ends in `Force`, so settings never remember it.
+
 ## 5. Tests that cover the component
 
 - `ui/tests/tooltip.test.js` covers:

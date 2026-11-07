@@ -120,7 +120,10 @@
     "maxChars": 65536,
     "maxBody": 8388608,
     "maxTokens": 4096,
-    "token": "0123456789abcdef0123456789abcdef0123456789abcdef"
+    "token": "0123456789abcdef0123456789abcdef0123456789abcdef",
+    "quant": "int8",
+    "repetitionPenalty": 1,
+    "force": false
   },
   "tokenize_corpus": {
     "input": "/d/corpus",

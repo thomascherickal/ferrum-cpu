@@ -739,6 +739,24 @@
       how: "A request that asks for more is refused. Generating is slow on a CPU, so a lower value keeps each answer quick.",
       beginner: "A token is a small piece of a word. 4096 tokens is several pages of text; small models rarely stay sensible that long.",
     },
+    svQuant: {
+      title: "Precision (imported GGUF)",
+      what: "How the weights of an imported Llama or Qwen GGUF are held in memory while the server runs: int8 (the default), int4 or f32. Ferrum's own models load as saved and ignore it.",
+      how: "int4 needs the least RAM, about half of int8, and f32 keeps the original precision at four times the memory of int8. It is the same as the --quant flag of ferrum-serve and is locked while the server runs.",
+      beginner: "Quantization rounds each number to fewer bits, like saving a photo at lower quality: smaller and faster, slightly less accurate.",
+    },
+    svRepPenalty: {
+      title: "Repetition penalty",
+      what: "The default repetition penalty of generate requests: a number above 0 that makes tokens already used less likely. 1 means off; a request may still send its own value.",
+      how: "Values a little above 1, such as 1.1 to 1.3, reduce loops in generated text; much higher values make the text erratic. It is the same as --repetition-penalty of ferrum-serve.",
+      beginner: "A small model can get stuck repeating itself. This setting nudges it to pick new words, like a friend who says you already said that.",
+    },
+    svForce: {
+      title: "Load even if it may exceed available RAM",
+      what: "Skips the safety check that refuses to load an imported GGUF estimated to use more than 90 percent of your free RAM. It is the same as --force of ferrum-serve.",
+      how: "If the estimate is right, the computer will start swapping to disk (very slow) or the load fails. Only tick it if you know the estimate is too pessimistic.",
+      beginner: "RAM is the computer's fast working memory. A model that does not fit in RAM makes the whole machine crawl.",
+    },
     svToken: {
       title: "Bearer token",
       what: "A secret word that clients must send in an Authorization header (Bearer, then the token) with every request except GET /health. Leave it empty to turn the check off, which is only allowed on this machine.",

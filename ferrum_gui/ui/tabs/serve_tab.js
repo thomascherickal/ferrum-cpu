@@ -6,7 +6,7 @@
   const MAX_LOG_LINES = 500;
   const POLL_MS = 1000;
   // Every control that only matters before the server starts; locked while it runs.
-  const FORM_IDS = ["svModel", "svModelBrowse", "svHost", "svPort", "svMaxBatch", "svMaxChars", "svMaxBody", "svMaxTokens", "svToken", "svGenToken"];
+  const FORM_IDS = ["svModel", "svModelBrowse", "svHost", "svPort", "svMaxBatch", "svMaxChars", "svMaxBody", "svMaxTokens", "svQuant", "svRepPenalty", "svForce", "svToken", "svGenToken"];
 
   // A curl command that asks the server for a few tokens. A token is never written into it: the
   // command reads $FERRUM_TOKEN, so the copied text can be pasted or shared safely.
@@ -24,7 +24,7 @@
   }
 
   function create(env) {
-    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqStr, errText, busy } = env;
+    const { $, doc, invoke, toast, setErr, clearErr, reqInt, reqNum, reqStr, errText, busy } = env;
     const E = global.FerrumErrors;
     let running = false;
     let timer = null;
@@ -94,6 +94,9 @@
           maxBody: reqInt("svMaxBody", "Max request body"),
           maxTokens: reqInt("svMaxTokens", "Max tokens"),
           token: token === "" ? null : token,
+          quant: $("svQuant").value,
+          repetitionPenalty: reqNum("svRepPenalty", "Repetition penalty"),
+          force: $("svForce").checked,
         };
       } catch (e) { setErr("errServe", e); return; }
       $("svStatus").textContent = "loading the model…";

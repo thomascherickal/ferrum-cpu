@@ -1077,7 +1077,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     await a.click("svStart");
     const sent = a.of("serve_start")[0].args.params;
     captured.serve_start = sent;
-    assert.deepStrictEqual(sent, { modelPath: "/m/m.gguf", host: "127.0.0.1", port: 0, maxBatch: 64, maxChars: 65536, maxBody: 8388608, maxTokens: 4096, token });
+    assert.deepStrictEqual(sent, { modelPath: "/m/m.gguf", host: "127.0.0.1", port: 0, maxBatch: 64, maxChars: 65536, maxBody: 8388608, maxTokens: 4096, token, quant: "int8", repetitionPenalty: 1, force: false });
     assert.strictEqual(a.$("errServe").textContent, "");
     assert.strictEqual(a.$("svUrl").textContent, "http://127.0.0.1:41234");
     assert.ok(!a.$("svRunning").classList.contains("hidden") && !a.$("svStop").classList.contains("hidden"));
@@ -1115,8 +1115,14 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
 
     // No token: the example has no Authorization header, and sends token: null.
     a.set("svToken", "");
+    a.set("svQuant", "f32");
+    a.set("svRepPenalty", "1.15");
+    a.$("svForce").checked = true;
     await a.click("svStart");
-    assert.strictEqual(a.of("serve_start")[1].args.params.token, null);
+    const second = a.of("serve_start")[1].args.params;
+    assert.strictEqual(second.token, null);
+    assert.deepStrictEqual([second.quant, second.repetitionPenalty, second.force], ["f32", 1.15, true]);
+    assert.ok(a.$("svQuant").disabled && a.$("svRepPenalty").disabled && a.$("svForce").disabled, "locked while running");
     assert.ok(!a.$("svCurl").textContent.includes("Authorization"));
 
     // The server dies by itself: the next poll unlocks the form and says so.

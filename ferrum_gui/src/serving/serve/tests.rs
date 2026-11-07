@@ -87,6 +87,49 @@ fn the_form_is_checked_like_the_cli_and_becomes_the_servers_config() {
 }
 
 #[test]
+fn quant_force_and_repetition_penalty_reach_the_servers_config() {
+    use ferrum_core::QKind;
+    let dir = tmp("serve_expert");
+    let model = dir.join("m.gguf");
+    std::fs::write(&model, b"x").unwrap();
+    let m = model.to_string_lossy().into_owned();
+    // Defaults match `ferrum-serve`: int8, no force, penalty 1.0.
+    let c = validate(form(&m)).unwrap();
+    assert_eq!((c.quant, c.force), (Some(QKind::Int8), false));
+    assert_eq!(c.limits.repetition_penalty, 1.0);
+    for (q, want) in [
+        ("int4", Some(QKind::Int4)),
+        (" INT8 ", Some(QKind::Int8)),
+        ("f32", None),
+        ("", Some(QKind::Int8)),
+    ] {
+        let mut p = form(&m);
+        p.quant = Some(q.into());
+        assert_eq!(validate(p).unwrap().quant, want, "{q:?}");
+    }
+    let mut p = form(&m);
+    p.quant = Some("int2".into());
+    assert!(validate(p).unwrap_err().contains("quant must be"));
+    let mut p = form(&m);
+    p.force = true;
+    p.repetition_penalty = 1.15;
+    p.quant = Some("int4".into());
+    let c = validate(p).unwrap();
+    assert!(c.force);
+    assert_eq!(c.quant, Some(QKind::Int4));
+    assert_eq!(c.limits.repetition_penalty, 1.15);
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut p = form(&m);
+        p.repetition_penalty = bad;
+        assert!(
+            validate(p).unwrap_err().contains("repetition penalty"),
+            "{bad}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn every_validation_message_has_a_useful_error_code() {
     use crate::infra::error::classify;
     for (msg, code) in [

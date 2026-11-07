@@ -2122,7 +2122,11 @@ helper crates to the GUI's lockfile (`tokio`, `hyper` and `tower` were there thr
 model at a time (the `serve` job slot: a second **Start server** fails at once with "a model server
 is already running"). The form is the CLI's: model, host (default `127.0.0.1`), port (`0` picks a
 free one and the real address is shown), `--max-batch`, `--max-chars`, `--max-body`, `--max-tokens`
-(each at least 1) and an optional bearer token. A host other than `127.0.0.1`, `::1` or
+(each at least 1) and an optional bearer token. Expert mode adds three fields that mirror `ferrum-serve`
+(2026-11-07, H4): **Precision** (`--quant int4|int8|f32`, default int8, imported Llama/Qwen GGUFs only),
+**Repetition penalty** (`--repetition-penalty`, finite and above 0, default 1) and **Load even if it may
+exceed available RAM** (`--force`, skips the RAM guard of an imported GGUF; never remembered between
+sessions). A host other than `127.0.0.1`, `::1` or
 `localhost` is refused without a token, as on the command line; the CLI's
 `--allow-unauthenticated` has no button, so the app never serves an open port to the network.
 **Generate** fills the token field with 48 hex digits from the webview's `crypto.getRandomValues`

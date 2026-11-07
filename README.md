@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `5bffbeb (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `dc626e9 (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,8 +338,8 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **98,860** lines (121,490 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,541** pure code lines | 265 Rust files (79,650 total physical lines) |
+| **Total Tracked Code Lines** | **92,967** lines (113,763 total across 398 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,603** pure code lines | 265 Rust files (79,719 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -352,17 +352,17 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,214 | 9,447 | 4,989 | 79,650 | 66.0% |
-| **Markdown (.md)** | 107 | 17,496 | 2,094 | 4,181 | 23,771 | 17.7% |
-| **JavaScript (.js)** | 55 | 7,223 | 694 | 545 | 8,462 | 7.3% |
-| **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
-| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
-| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.8% |
-| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
+| **Rust (.rs)** | 265 | 65,272 | 9,456 | 4,991 | 79,719 | 70.2% |
+| **Markdown (.md)** | 31 | 11,974 | 1,419 | 3,012 | 16,405 | 12.9% |
+| **JavaScript (.js)** | 55 | 7,250 | 694 | 545 | 8,489 | 7.8% |
+| **JSON (.json)** | 11 | 5,172 | 0 | 0 | 5,172 | 5.6% |
+| **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.1% |
+| **HTML (.html)** | 2 | 795 | 0 | 34 | 829 | 0.9% |
+| **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
 | **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **478** | **98,860** | **12,484** | **10,146** | **121,490** | **100.0%** |
+| **Total Repository** | **398** | **92,967** | **11,817** | **8,979** | **113,763** | **100.0%** |
 
 ### Rust Crate Breakdown
 
@@ -372,9 +372,9 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
-| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 12,162 | 1,135 | 823 | 14,120 | **0** (`forbid`) |
+| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 12,224 | 1,140 | 825 | 14,189 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **265** | **67,541** | **7,120** | **4,989** | **79,650** | **0** |
+| **Total Rust** | **Workspace & GUI** | **265** | **67,603** | **7,125** | **4,991** | **79,719** | **0** |
 
 ### Test Coverage & Verification
 

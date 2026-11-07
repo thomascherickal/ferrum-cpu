@@ -46,6 +46,19 @@ pub struct ServeParams {
     /// Bearer token; blank or absent means no authentication (loopback only).
     #[serde(default)]
     pub token: Option<String>,
+    /// Imported-GGUF precision, `int4 | int8 | f32` (`ferrum-serve --quant`); blank = int8.
+    #[serde(default)]
+    pub quant: Option<String>,
+    /// Skip the RAM guard for an imported GGUF (`--force`).
+    #[serde(default)]
+    pub force: bool,
+    /// Default repetition penalty of `/v1/generate` (`--repetition-penalty`), finite and above 0.
+    #[serde(default = "default_penalty")]
+    pub repetition_penalty: f32,
+}
+
+fn default_penalty() -> f32 {
+    Limits::default().repetition_penalty
 }
 
 /// What the tab shows about the server.
@@ -110,6 +123,18 @@ fn validate(p: ServeParams) -> Result<Config, String> {
             return Err(format!("{name} must be at least 1 (got 0)"));
         }
     }
+    let quant = match p.quant.as_deref().map(str::trim).filter(|q| !q.is_empty()) {
+        // Same parser as the CLI and `commands::parse_quant`; `serving` may not depend on `commands`.
+        Some(q) => ferrum_core::memory::import_precision(&q.to_lowercase())
+            .ok_or_else(|| format!("quant must be int4 | int8 | f32 (got '{q}')"))?,
+        None => Config::default().quant,
+    };
+    if !(p.repetition_penalty.is_finite() && p.repetition_penalty > 0.0) {
+        return Err(format!(
+            "repetition penalty must be a positive number (got {})",
+            p.repetition_penalty
+        ));
+    }
     let token = p.token.filter(|t| !t.is_empty());
     if let Some(t) = &token {
         if t.chars().any(|c| c.is_whitespace() || c.is_control()) {
@@ -130,11 +155,12 @@ fn validate(p: ServeParams) -> Result<Config, String> {
             max_chars: p.max_chars,
             max_body: p.max_body,
             max_tokens: p.max_tokens,
-            ..Limits::default()
+            repetition_penalty: p.repetition_penalty,
         },
         token,
         allow_unauthenticated: false,
-        ..Config::default()
+        quant,
+        force: p.force,
     })
 }
 

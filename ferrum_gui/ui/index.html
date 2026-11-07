@@ -635,6 +635,17 @@
         <label>Max request body (bytes) <input type="number" id="svMaxBody" value="8388608" min="1" step="1" /></label>
         <label>Max tokens per generation <input type="number" id="svMaxTokens" value="4096" min="1" step="1" /></label>
       </div>
+      <div class="grid adv-only">
+        <label>Precision (imported GGUF)
+          <select id="svQuant">
+            <option value="int8">int8 (default)</option>
+            <option value="int4">int4 (smallest)</option>
+            <option value="f32">f32 (largest)</option>
+          </select>
+        </label>
+        <label>Repetition penalty <input type="number" id="svRepPenalty" value="1" min="0.05" max="10" step="0.05" /></label>
+      </div>
+      <label class="chk adv-only"><input type="checkbox" id="svForce" /> Load even if it may exceed available RAM</label>
       <div class="row">
         <label>Bearer token (optional on this machine) <input type="password" id="svToken" autocomplete="off" spellcheck="false" /></label>
         <button class="ghost" id="svGenToken">Generate</button>
