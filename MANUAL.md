@@ -2012,7 +2012,7 @@ cargo tauri build    # installers / binaries for this OS
 `cargo tauri build` writes the bundles under `ferrum_gui/target/release/bundle/`;
 see [§10.5](#105-platform-support) for what each platform needs and for the
 release workflow. The icons are generated from the logo, `docs/assets/logo.png`
-(512x512; `icons/icon.svg` is the older vector source, kept): `cargo tauri icon ../docs/assets/logo.png -o <dir>`, then copy the files that
+(512x512; the older `icons/icon.svg` was removed on 2026-11-07; `ui/favicon.ico` is the favicon): `cargo tauri icon ../docs/assets/logo.png -o <dir>`, then copy the files that
 `tauri.conf.json` lists (`ui/tests/icons.test.js` checks them).
 
 **Snap-polluted environments.** Launching from a terminal inside a snap app

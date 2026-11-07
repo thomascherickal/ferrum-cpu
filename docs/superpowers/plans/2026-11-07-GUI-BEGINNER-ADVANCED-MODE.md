@@ -4,6 +4,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **One agent at a time** (CLAUDE.md working rule 2): subagent-driven means strictly sequential, never parallel.
 
+> **Status (reconciled 2026-11-07):** Tasks 1-3 are implemented in `92988f2`; Task 4 is partial. Before executing, diff each task against the code and tick only what is missing (the checkboxes below were not updated). Also still to do: `docs/GUI-TOOLTIPS.md` and `help.js` entries for `uiMode`, `btnToggleLog`, `trPreset`, `btnGo*`, and a real click-test.
+
 **Goal:** Make `ferrum_gui` ("Ferrum SLM Studio") immediately approachable for first-time AI/SLM users by introducing a persistent **Beginner / Advanced** mode switch, model size presets (`Tiny`, `Small`, `Medium`, `Custom`), curated Beginner tabs and forms, guided "Next step" workflow calls-to-action, a collapsible Engine log dock, and mode-aware tooltips—while preserving 100 % of existing power-user controls in Advanced mode and keeping every existing HTML, CSP, accessibility, tooltip, and IPC fixture test green.
 
 **Architecture:**

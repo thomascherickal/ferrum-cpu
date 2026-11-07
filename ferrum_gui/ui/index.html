@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ferrum SLM Studio</title>
+  <link rel="icon" href="favicon.ico" sizes="any" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- ── Top bar ─────────────────────────────────────────────────────────── -->
   <header id="topbar">
     <div class="brand">
-      <img data-tip="The Ferrum logo. Ferrum SLM Studio is the desktop front end of the Ferrum engine: it trains, runs, evaluates, fine-tunes, exports and serves small language models, and every job runs on this computer's CPU; no GPU is used." src="logo.png" alt="Ferrum" width="28" height="28" />
       <span data-tip="The app name. Every tab calls the Ferrum engine library that the train_transformer and ferrum-serve command-line tools use too, and every model it writes is a GGUF file: byte-level BPE models also run in llama.cpp, Ollama and LM Studio, character-level ones only in Ferrum.">Ferrum <b>SLM Studio</b></span>
     </div>
     <div data-tip="Your hardware as the Studio detected it: CPU threads and cores, total and free RAM, and any GPU found. Ferrum is CPU-only, so a GPU is listed but never used. Free RAM is refreshed every 5 seconds; the line as it is now, which the top bar may cut short, follows." data-tip-live class="hwline muted" id="hwLine">Detecting your hardware...</div>

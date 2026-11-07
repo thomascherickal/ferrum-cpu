@@ -27,7 +27,16 @@ for (const need of ["icons/icon.ico", "icons/icon.icns", "icons/32x32.png", "ico
   assert.ok(listed.includes(need), `bundle.icon must list ${need}`);
 }
 for (const f of listed) assert.ok(fs.existsSync(path.join(root, f)), `${f} is listed but missing`);
-assert.ok(fs.existsSync(path.join(root, "icons/icon.svg")), "the vector source icons/icon.svg is kept in the repo");
+assert.ok(!fs.existsSync(path.join(root, "icons/icon.svg")), "the legacy icons/icon.svg was removed with the logo refresh");
+
+// ── Favicon: ui/favicon.ico is an ICO of PNG-or-BMP images, and index.html links it ──
+{
+  const b = read("ui/favicon.ico");
+  assert.deepStrictEqual([b.readUInt16LE(0), b.readUInt16LE(2)], [0, 1], "favicon ICO header");
+  assert.ok(b.readUInt16LE(4) >= 1, "favicon holds at least one image");
+  assert.ok(read("ui/index.html").toString().includes('rel="icon" href="favicon.ico"'), "index.html links the favicon");
+  assert.deepStrictEqual(pngSize(read("../docs/assets/favicon.png")), [32, 32], "docs/assets/favicon.png is 32x32");
+}
 
 // ── PNGs: the size in the name (or in the data, for icon.png) ──
 for (const [f, size] of [["icons/32x32.png", 32], ["icons/128x128.png", 128], ["icons/128x128@2x.png", 256], ["icons/icon.png", 512]]) {

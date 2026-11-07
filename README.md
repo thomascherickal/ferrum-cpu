@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `af90342 (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `71a52cb (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
