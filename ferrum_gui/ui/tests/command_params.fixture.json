@@ -54,7 +54,11 @@
     "threads": 0,
     "resume": null,
     "force": false,
-    "verbose": false
+    "verbose": false,
+    "maxSeconds": null,
+    "sample": false,
+    "temp": 0.8,
+    "sampleTokens": 48
   },
   "generate_slm": {
     "modelPath": "/m.gguf",

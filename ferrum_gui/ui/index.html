@@ -517,6 +517,12 @@
       </div>
       <label class="chk"><input type="checkbox" id="ftQat" /> Quantization-aware (int8) fine-tuning</label>
       <label class="chk"><input type="checkbox" id="ftForce" /> Train even if the estimate exceeds available RAM</label>
+      <div class="row adv-only">
+        <label>Max seconds (empty=off) <input type="text" id="ftMaxSeconds" inputmode="decimal" placeholder="e.g. 3600" /></label>
+        <label>Sample temperature <input type="number" id="ftTemp" value="0.8" step="0.1" min="0" /></label>
+        <label>Sample tokens <input type="number" id="ftSampleTokens" value="48" min="1" /></label>
+      </div>
+      <label class="chk adv-only"><input type="checkbox" id="ftSample" /> Generate a sample from the tuned model afterwards</label>
       <label class="chk adv-only"><input type="checkbox" id="ftVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <span data-tip="Problems with fine-tuning appear here: an empty model, corpus or output path, a number out of range, a RAM estimate above the free memory without the override, a model that cannot be trained, or an engine error during training." class="err" id="errFt" role="alert"></span>
       <div class="row">

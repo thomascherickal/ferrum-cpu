@@ -30,7 +30,14 @@
           resume: resume === "" ? null : resume,
           force: $("ftForce").checked,
           verbose: $("ftVerbose").checked,
+          maxSeconds: null,
+          sample: $("ftSample").checked,
+          temp: Math.max(0, num("ftTemp") ?? 0.8),
+          sampleTokens: Math.max(1, int("ftSampleTokens") || 48),
         };
+        // Empty = no budget; anything else goes to the backend, which refuses what the CLI refuses.
+        const secs = $("ftMaxSeconds").value.trim();
+        if (secs !== "") params.maxSeconds = Number(secs);
       } catch (e) { setErr("errFt", e); return; }
 
       lossHistory = []; drawChart();
@@ -46,6 +53,7 @@
         $("ftResult").textContent = (r.stopped ? `Stopped at step ${r.steps}; the checkpoint so far was saved and can be resumed.\n` : "") +
           `Saved ${r.bytes.toLocaleString()} bytes → ${r.outPath}\n` +
           `epochs=${r.epochs}  first loss=${r.firstLoss.toFixed(6)}  final loss=${r.finalLoss.toFixed(6)}\n` +
+          (r.sample != null ? `── sample ──\n${r.sample}\n────────────\n` : "") +
           `tokens=${r.tokens.toLocaleString()}  steps=${r.steps}  time=${r.seconds.toFixed(2)}s\n` +
           `Run it: GGUF tab → set "Fine-tune checkpoint" to ${r.outPath}`;
         toast(r.stopped ? `Fine-tune stopped at step ${r.steps}; checkpoint saved` : "Fine-tune complete", "ok");

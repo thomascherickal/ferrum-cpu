@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `01f716a (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `c6f1827 (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,8 +338,8 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **93,280** lines (114,139 total across 399 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,868** pure code lines | 266 Rust files (80,026 total physical lines) |
+| **Total Tracked Code Lines** | **93,439** lines (114,321 total across 400 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,982** pure code lines | 267 Rust files (80,156 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -352,17 +352,17 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 266 | 65,525 | 9,493 | 5,008 | 80,026 | 70.2% |
+| **Rust (.rs)** | 267 | 65,633 | 9,510 | 5,013 | 80,156 | 70.2% |
 | **Markdown (.md)** | 31 | 11,975 | 1,419 | 3,012 | 16,406 | 12.8% |
-| **JavaScript (.js)** | 55 | 7,302 | 700 | 548 | 8,550 | 7.8% |
-| **JSON (.json)** | 11 | 5,174 | 0 | 0 | 5,174 | 5.5% |
+| **JavaScript (.js)** | 55 | 7,343 | 701 | 548 | 8,592 | 7.9% |
+| **JSON (.json)** | 11 | 5,178 | 0 | 0 | 5,178 | 5.5% |
 | **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.1% |
-| **HTML (.html)** | 2 | 800 | 0 | 34 | 834 | 0.9% |
+| **HTML (.html)** | 2 | 806 | 0 | 34 | 840 | 0.9% |
 | **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
 | **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **399** | **93,280** | **11,860** | **8,999** | **114,139** | **100.0%** |
+| **Total Repository** | **400** | **93,439** | **11,878** | **9,004** | **114,321** | **100.0%** |
 
 ### Rust Crate Breakdown
 
@@ -372,9 +372,9 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
-| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 48 | 12,489 | 1,165 | 842 | 14,496 | **0** (`forbid`) |
+| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 49 | 12,603 | 1,176 | 847 | 14,626 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **266** | **67,868** | **7,150** | **5,008** | **80,026** | **0** |
+| **Total Rust** | **Workspace & GUI** | **267** | **67,982** | **7,161** | **5,013** | **80,156** | **0** |
 
 ### Test Coverage & Verification
 

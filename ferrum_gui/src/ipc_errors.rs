@@ -655,3 +655,60 @@ mod tests {
         }
     }
 }
+
+/// M14: `--max-seconds`, `--sample`, `--temp` and `--max` reach the fine-tune run. A bad value is
+/// refused with the CLI's text before any training; a tiny budget stops the run (checkpoint kept);
+/// a sample comes back only when asked for.
+#[test]
+fn finetune_budget_and_sample_reach_the_run() {
+    let (_app, w) = app();
+    let dir = tmp("ft_budget_sample");
+    std::fs::write(dir.join("base.gguf"), Tiny::default().build()).unwrap();
+    std::fs::write(
+        dir.join("corpus.txt"),
+        "hi abc hi abc hi abc hi abc hi abc hi abc ".repeat(4),
+    )
+    .unwrap();
+    let with = |extra: Value| {
+        let mut p = ft_params(&dir, "base.gguf", "corpus.txt", "out.flck");
+        for (k, v) in extra.as_object().unwrap() {
+            p["params"][k] = v.clone();
+        }
+        p
+    };
+    for (extra, want) in [
+        (json!({"maxSeconds": 0}), "--max-seconds must be a positive"),
+        (
+            json!({"maxSeconds": -2.5}),
+            "--max-seconds must be a positive",
+        ),
+        (
+            json!({"sample": true, "temp": -1}),
+            "--temp must be a finite number >= 0 (0 = greedy), got -1",
+        ),
+    ] {
+        let e = call(&w, "finetune_gguf", with(extra)).unwrap_err();
+        assert!(msg(&e).contains(want), "{want}: {e}");
+    }
+    let off = call(&w, "finetune_gguf", with(json!({"temp": -1}))).unwrap();
+    assert!(
+        off["sample"].is_null(),
+        "a bad temp is ignored without sample"
+    );
+    let on = call(
+        &w,
+        "finetune_gguf",
+        with(json!({"sample": true, "temp": 0, "sampleTokens": 3})),
+    )
+    .unwrap();
+    assert!(on["sample"].is_string(), "{on}");
+    let r = call(
+        &w,
+        "finetune_gguf",
+        with(json!({"epochs": 1_000_000, "maxSeconds": 0.05, "sample": true})),
+    )
+    .unwrap();
+    assert_eq!(r["stopped"], true, "the deadline ended the run");
+    assert!(std::fs::metadata(dir.join("out.flck")).unwrap().len() > 0);
+    let _ = std::fs::remove_dir_all(dir);
+}

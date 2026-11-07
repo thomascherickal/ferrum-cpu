@@ -668,6 +668,30 @@
       how: "Choose it if you will export the result as an int8 or similar quantized file, so the tuned model keeps its quality after rounding. It costs some speed.",
       beginner: "Prepares the model to survive being compressed afterwards.",
     },
+    ftMaxSeconds: {
+      title: "Max seconds (empty = off)",
+      what: "A time budget for the fine-tune, in seconds (fractions allowed). Training stops cleanly after the optimizer step that crosses it. Empty means no budget; 0 or a negative number is refused.",
+      how: "The checkpoint so far is still written, so setting Resume checkpoint to it continues the run later. It is the same as the command-line --max-seconds flag, and the Stop button ends a run the same way.",
+      beginner: "A kitchen timer for training: set 600 and the program stops after about ten minutes and keeps what it learned, instead of running for hours.",
+    },
+    ftSample: {
+      title: "Generate a sample afterwards",
+      what: "After the fine-tune finishes, the tuned model writes a short piece of text, shown in the result box, so you can see at once what training changed.",
+      how: "It starts from the model's start token and uses the temperature and length below. It is skipped when you press Stop. It is the same as the command-line --sample flag and does not change the saved checkpoint.",
+      beginner: "A quick taste test: the freshly trained model says a few words so you can judge whether it learned your style.",
+    },
+    ftTemp: {
+      title: "Sample temperature",
+      what: "How adventurous the sample text is. 0 always picks the most likely next token; higher numbers pick less likely tokens more often. It must be 0 or more and only matters with the sample box ticked.",
+      how: "Around 0.8 is a balanced default; use 0 for a repeatable, greedy sample. It is the command-line --temp flag, and a negative or non-numeric value is refused before training starts.",
+      beginner: "A creativity dial: low is safe and repetitive, high is surprising but sometimes nonsense.",
+    },
+    ftSampleTokens: {
+      title: "Sample tokens",
+      what: "The length of the sample text, counted in tokens (word pieces). The sample may end sooner if the model emits its end-of-text token. It only matters with the sample box ticked.",
+      how: "48 is the default, the same as the command-line --max flag. Longer samples take proportionally longer to generate on the CPU, and the length never affects the checkpoint that is saved.",
+      beginner: "How many word pieces the model may write in its sample; more tokens means a longer passage.",
+    },
     ftVerbose: {
       title: "Verbose",
       what: "Streams the engine's internal diagnostic lines into the Engine log panel at the bottom of the window while this fine-tune runs.",

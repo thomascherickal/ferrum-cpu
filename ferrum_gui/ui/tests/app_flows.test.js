@@ -580,10 +580,20 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.deepStrictEqual(a.of("finetune_gguf")[0].args.params, {
       modelPath: "/g.gguf", corpusPath: "/c.txt", outPath: "/o.flck", epochs: 3, lr: 0.0001, batchSize: 8, seqLen: 64, warmup: 0,
       clip: 1, weightDecay: 0, dropout: 0, qat: false, seed: 1337, threads: 0, resume: null, force: false, verbose: false,
+      maxSeconds: null, sample: false, temp: 0.8, sampleTokens: 48,
     });
     a.$("ftVerbose").checked = true;
     await a.click("ftRun");
     assert.strictEqual(a.of("finetune_gguf")[1].args.params.verbose, true, "the Verbose box is sent");
+    a.set("ftMaxSeconds", " 90.5 "); a.$("ftSample").checked = true; a.set("ftTemp", "0"); a.set("ftSampleTokens", "7");
+    await a.click("ftRun");
+    assert.deepStrictEqual(
+      (({ maxSeconds, sample, temp, sampleTokens }) => ({ maxSeconds, sample, temp, sampleTokens }))(a.of("finetune_gguf")[2].args.params),
+      { maxSeconds: 90.5, sample: true, temp: 0, sampleTokens: 7 }, "budget and sample controls are sent");
+    a.set("ftMaxSeconds", "0");
+    await a.click("ftRun");
+    assert.strictEqual(a.of("finetune_gguf")[3].args.params.maxSeconds, 0, "0 reaches the backend, which refuses it");
+    a.set("ftMaxSeconds", ""); a.$("ftSample").checked = false; a.$("ftVerbose").checked = false;
     assert.ok(a.$("ftResult").textContent.includes("Saved 512 bytes → /o.flck"));
     assert.strictEqual(a.$("ggResume").value, "/o.flck", "the GGUF tab is prefilled with the checkpoint");
     a.emit("finetune-progress", { epoch: 1, total: 3, loss: 3.5, ppl: 33.1 });

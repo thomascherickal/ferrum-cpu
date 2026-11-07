@@ -1,5 +1,6 @@
 //! The Train tab: train a transformer SLM in-process with streamed progress.
 
+use super::stop::stop_condition;
 use crate::infra::error::CmdError;
 use crate::infra::jobs::{Job, JobGuard};
 use crate::infra::paths::checked_path;
@@ -73,25 +74,6 @@ pub struct TrainParams {
     /// Per-step CSV log (the CLI's `--metrics-csv`); empty = off.
     #[serde(default)]
     pub metrics_csv: String,
-}
-
-/// The run's stop condition: `base` (the cancel flag of the job) plus the `--max-seconds` deadline,
-/// validated with the CLI's rule and message.
-fn stop_condition(
-    base: &ferrum_core::StopCondition,
-    max_seconds: Option<f64>,
-) -> Result<ferrum_core::StopCondition, String> {
-    let Some(s) = max_seconds else {
-        return Ok(base.clone());
-    };
-    if s.is_finite() && s > 0.0 {
-        if let Ok(d) = std::time::Duration::try_from_secs_f64(s) {
-            return Ok(base.clone().with_deadline(d));
-        }
-    }
-    Err(format!(
-        "--max-seconds must be a positive, finite number of seconds (got {s})"
-    ))
 }
 
 /// The CLI's output checks for the metrics log: it may not be another file the run uses, and it
@@ -468,24 +450,6 @@ mod tests {
             (p.max_seconds, p.metrics_csv.as_str()),
             (Some(1.5), "m.csv")
         );
-    }
-
-    #[test]
-    fn stop_condition_mirrors_the_cli_budget_rule() {
-        let base = ferrum_core::StopCondition::none();
-        assert_eq!(stop_condition(&base, None).unwrap(), base);
-        assert_ne!(
-            stop_condition(&base, Some(0.25)).unwrap(),
-            base,
-            "a deadline was added"
-        );
-        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e300] {
-            let e = stop_condition(&base, Some(bad)).unwrap_err();
-            assert!(
-                e.starts_with("--max-seconds must be a positive, finite number of seconds (got "),
-                "{e}"
-            );
-        }
     }
 
     #[test]

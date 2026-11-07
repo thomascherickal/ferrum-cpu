@@ -1,11 +1,15 @@
 //! The Fine-tune tab: AdamW-fine-tune an imported GGUF into a `.flck` checkpoint.
 
 use super::guard::{available_memory_bytes, gguf_resident_bytes, ram_guard};
+use super::stop::stop_condition;
 use crate::infra::error::CmdError;
 use crate::infra::jobs::{Job, JobGuard};
 use crate::infra::paths::checked_path;
 use crate::AppState;
-use ferrum_core::{Adam, FinetuneRun, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng};
+use ferrum_core::{
+    Adam, FinetuneRun, Gguf, GgufTokenizer, LlamaTrainer, LrSchedule, Rng, SamplingParams,
+    StopCause,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
@@ -29,6 +33,26 @@ pub struct FinetuneParams {
     pub resume: Option<String>,
     pub force: bool,
     pub verbose: bool,
+    /// Stop after the optimizer step that crosses this many seconds (the CLI's `--max-seconds`).
+    #[serde(default)]
+    pub max_seconds: Option<f64>,
+    /// Generate a sample from the tuned model afterwards (the CLI's `--sample`).
+    #[serde(default)]
+    pub sample: bool,
+    /// Sample temperature (`--temp`), used with `sample`.
+    #[serde(default = "default_temp")]
+    pub temp: f32,
+    /// Sample length in tokens (`--max`), used with `sample`.
+    #[serde(default = "default_sample_tokens")]
+    pub sample_tokens: usize,
+}
+
+fn default_temp() -> f32 {
+    0.8
+}
+
+fn default_sample_tokens() -> usize {
+    48
 }
 
 #[derive(Serialize, Clone)]
@@ -44,6 +68,8 @@ pub struct FinetuneResult {
     pub bytes: u64,
     /// A cancel ended the run early; the checkpoint so far was saved and resumes.
     pub stopped: bool,
+    /// The `--sample` text (`None` unless asked for, and not after a Stop).
+    pub sample: Option<String>,
 }
 
 /// AdamW-fine-tune an imported llama/qwen2 GGUF on a text corpus and write a
@@ -88,6 +114,14 @@ fn finetune_inner<R: Runtime>(
     }
     if !(p.lr.is_finite() && p.lr > 0.0) {
         return Err("learning rate must be a positive number".into());
+    }
+    // Before hours of training, not after (the CLI's checks and messages).
+    let stop = stop_condition(job.stop(), p.max_seconds)?;
+    if p.sample && !(p.temp.is_finite() && p.temp >= 0.0) {
+        return Err(format!(
+            "--temp must be a finite number >= 0 (0 = greedy), got {}",
+            p.temp
+        ));
     }
     ferrum_core::set_verbose(p.verbose);
     fn clean<T, E: std::fmt::Display>(r: Result<T, E>, prefix: &str) -> Result<T, String> {
@@ -215,11 +249,18 @@ fn finetune_inner<R: Runtime>(
     let total_steps = base + steps_per_epoch * p.epochs as u64;
     let mut epochs_run = 0;
     let mut stopped = false;
+    let mut cancelled = false;
     for e in 0..p.epochs {
         // A cancel ends the epoch after a step (never the last step of the run).
         let (loss, halted) =
             match tr.finetune_epoch_until(&tokens, seq, batch, &mut rng, threads, &mut |step| {
-                step < total_steps && job.cancelled()
+                let cause = if step < total_steps {
+                    stop.should_stop()
+                } else {
+                    None
+                };
+                cancelled |= cause == Some(StopCause::Cancelled);
+                cause.is_some()
             }) {
                 Ok(r) => r,
                 Err(err) => {
@@ -245,6 +286,29 @@ fn finetune_inner<R: Runtime>(
     }
     let seconds = t0.elapsed().as_secs_f64();
 
+    // Optional sample from the tuned model (not after a Stop), like the CLI.
+    let sample = if p.sample && !cancelled {
+        let mut prompt: Vec<usize> = tok.bos().into_iter().collect();
+        if prompt.is_empty() {
+            prompt.push(tokens[0]);
+        }
+        let stops: Vec<usize> = tok.eos().into_iter().collect();
+        let mut grng = Rng::new(super::time_seed());
+        let params = SamplingParams::with_temperature(p.temp);
+        match tr
+            .model
+            .generate(&prompt, p.sample_tokens, &params, &stops, &mut grng)
+        {
+            Ok(out) => Some(tok.decode(&out)),
+            Err(e) => {
+                cleanup();
+                return Err(format!("sample generation failed: {e}"));
+            }
+        }
+    } else {
+        None
+    };
+
     // 6. Save the checkpoint.
     let bytes = tr.save_checkpoint(&rng);
     write_atomic(&p.out_path, &bytes).map_err(|e| {
@@ -263,6 +327,7 @@ fn finetune_inner<R: Runtime>(
         steps: tr.step_count(),
         bytes: bytes.len() as u64,
         stopped,
+        sample,
     };
     let _ = app.emit("finetune-done", result.clone());
     Ok(result)

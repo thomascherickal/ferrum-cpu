@@ -16,6 +16,7 @@ mod generate;
 mod gguf;
 mod gguf_stream;
 mod guard;
+mod stop;
 mod system;
 mod text;
 mod train;
