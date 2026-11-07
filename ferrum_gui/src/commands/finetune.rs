@@ -132,11 +132,7 @@ fn finetune_inner<R: Runtime>(
         cleanup();
         return Err(format!("corpus {} is empty", p.corpus_path));
     }
-    let mut tokens: Vec<usize> = Vec::new();
-    if let Some(bos) = tok.bos() {
-        tokens.push(bos);
-    }
-    tokens.extend(tok.encode(&text));
+    let tokens = corpus_tokens(&tok, &text);
     // The corpus identity the checkpoint records and a resume checks (the CLI's rule).
     let corpus_id = clean(
         slm_cli::hash::file_id(&p.corpus_path),
@@ -272,9 +268,43 @@ fn finetune_inner<R: Runtime>(
     Ok(result)
 }
 
+/// The corpus token stream, identical to the CLI's: BOS only when the GGUF asks for it.
+fn corpus_tokens(tok: &GgufTokenizer, text: &str) -> Vec<usize> {
+    let mut tokens: Vec<usize> = tok.prefix_bos().into_iter().collect();
+    tokens.extend(tok.encode(text));
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression (M14): the old code used `tok.bos()`, which prepended BOS even when the
+    /// GGUF says `add_bos_token = false`; the CLI uses `prefix_bos()`.
+    #[test]
+    fn corpus_tokens_follow_add_bos_token_like_the_cli() {
+        let tk = |flag: Option<bool>| {
+            let t = crate::test_support::Tiny {
+                add_bos: flag,
+                ..Default::default()
+            };
+            let path = std::env::temp_dir().join(format!(
+                "ferrum_gui_bos_{}_{:?}.gguf",
+                std::process::id(),
+                flag
+            ));
+            std::fs::write(&path, t.build()).unwrap();
+            let g = Gguf::open(path.to_str().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&path);
+            GgufTokenizer::from_gguf(&g).unwrap()
+        };
+        let off = tk(Some(false));
+        assert_eq!(off.bos(), Some(0));
+        assert_eq!(corpus_tokens(&off, "hi"), off.encode("hi"));
+        let on = tk(Some(true));
+        assert_eq!(corpus_tokens(&on, "hi")[0], 0);
+        assert_eq!(corpus_tokens(&on, "hi").len(), on.encode("hi").len() + 1);
+    }
 
     #[test]
     fn write_atomic_replaces_and_never_leaves_a_temp_file() {

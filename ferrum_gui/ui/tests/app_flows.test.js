@@ -562,6 +562,9 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
       modelPath: "/g.gguf", corpusPath: "/c.txt", outPath: "/o.flck", epochs: 3, lr: 0.0001, batchSize: 8, seqLen: 64, warmup: 0,
       clip: 1, weightDecay: 0, dropout: 0, qat: false, seed: 1337, threads: 0, resume: null, force: false, verbose: false,
     });
+    a.$("ftVerbose").checked = true;
+    await a.click("ftRun");
+    assert.strictEqual(a.of("finetune_gguf")[1].args.params.verbose, true, "the Verbose box is sent");
     assert.ok(a.$("ftResult").textContent.includes("Saved 512 bytes → /o.flck"));
     assert.strictEqual(a.$("ggResume").value, "/o.flck", "the GGUF tab is prefilled with the checkpoint");
     a.emit("finetune-progress", { epoch: 1, total: 3, loss: 3.5, ppl: 33.1 });
@@ -580,6 +583,9 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     await a.click("exExport");
     captured.export_gguf = a.of("export_gguf")[0].args.params;
     assert.deepStrictEqual(a.of("export_gguf")[0].args.params, { modelPath: "/g.gguf", outPath: "/out.gguf", quant: "q8_0", resume: "/t.flck", force: false, verbose: false });
+    a.$("exVerbose").checked = true;
+    await a.click("exExport");
+    assert.strictEqual(a.of("export_gguf")[1].args.params.verbose, true, "the Verbose box is sent");
     assert.ok(a.$("exResult").textContent.includes("tensors: 3× Q8_0, 2× F32"));
     a.emit("export-progress", "encoding + writing (q8_0)…");
     assert.strictEqual(a.$("exStatus").textContent, "encoding + writing (q8_0)…");

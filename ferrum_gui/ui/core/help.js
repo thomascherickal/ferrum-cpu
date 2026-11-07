@@ -668,6 +668,12 @@
       how: "Choose it if you will export the result as an int8 or similar quantized file, so the tuned model keeps its quality after rounding. It costs some speed.",
       beginner: "Prepares the model to survive being compressed afterwards.",
     },
+    ftVerbose: {
+      title: "Verbose",
+      what: "Streams the engine's internal diagnostic lines into the Engine log panel at the bottom of the window while this fine-tune runs.",
+      how: "This is the engine's internal trace, so it can be chatty and slightly slows the run. The progress bar and result summary do not need it. It does not change the produced model or file.",
+      beginner: "'Verbose' means chatty. Handy to see that the job is alive and what it is doing.",
+    },
     ftForce: {
       title: "Train even if the estimate exceeds available RAM",
       what: "Skips the guard that refuses to start when the estimated training memory is above 90 percent of free RAM.",
@@ -699,6 +705,12 @@
       what: "Where the exported model is written.",
       how: "The write is atomic: a temporary file is renamed at the end, so a failed export leaves no broken file. After writing, the file is re-opened to prove it is valid and the tensor types are listed.",
       beginner: "Pick a new file name; do not overwrite your source model.",
+    },
+    exVerbose: {
+      title: "Verbose",
+      what: "Streams the engine's internal diagnostic lines into the Engine log panel at the bottom of the window while this export runs.",
+      how: "This is the engine's internal trace, so it can be chatty and slightly slows the run. The progress bar and result summary do not need it. It does not change the produced model or file.",
+      beginner: "'Verbose' means chatty. Handy to see that the job is alive and what it is doing.",
     },
     exForce: {
       title: "Export even if the estimate exceeds available RAM",

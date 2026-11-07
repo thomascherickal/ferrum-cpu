@@ -34,7 +34,7 @@
           quant: $("exQuant").value,
           resume: resume === "" ? null : resume,
           force: $("exForce").checked,
-          verbose: false,
+          verbose: $("exVerbose").checked,
         };
       } catch (e) { setErr("errExport", e); return; }
 

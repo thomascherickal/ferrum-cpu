@@ -516,6 +516,7 @@
       </div>
       <label class="chk"><input type="checkbox" id="ftQat" /> Quantization-aware (int8) fine-tuning</label>
       <label class="chk"><input type="checkbox" id="ftForce" /> Train even if the estimate exceeds available RAM</label>
+      <label class="chk adv-only"><input type="checkbox" id="ftVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <span data-tip="Problems with fine-tuning appear here: an empty model, corpus or output path, a number out of range, a RAM estimate above the free memory without the override, a model that cannot be trained, or an engine error during training." class="err" id="errFt" role="alert"></span>
       <div class="row">
         <button id="ftRun" class="primary">Fine-tune</button>
@@ -566,6 +567,7 @@
         <button class="ghost browse-save" id="exOutBrowse" data-target="exOut">Save as…</button>
       </div>
       <label class="chk"><input type="checkbox" id="exForce" /> Export even if the estimate exceeds available RAM</label>
+      <label class="chk adv-only"><input type="checkbox" id="exVerbose" /> Verbose (stream engine internals to the terminal)</label>
       <span data-tip="Problems with exporting appear here: an empty source or output path, a model too big for the free RAM without the override, an architecture that cannot be exported, or a file that cannot be read or written." class="err" id="errExport" role="alert"></span>
       <div class="row">
         <button id="exExport" class="primary">Export</button>

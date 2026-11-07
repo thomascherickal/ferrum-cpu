@@ -29,7 +29,7 @@
           threads: Math.max(0, int("ftThreads") || 0),
           resume: resume === "" ? null : resume,
           force: $("ftForce").checked,
-          verbose: false,
+          verbose: $("ftVerbose").checked,
         };
       } catch (e) { setErr("errFt", e); return; }
 
