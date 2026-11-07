@@ -5,7 +5,6 @@
 //! fallback when the key is absent. `render` returns text/special segments so
 //! the runner can map each special token to its exact vocab id instead of
 //! letting byte-BPE shred it. Single-turn only, by design.
-#![warn(missing_docs)]
 
 use crate::gguf_tokenizer::GgufTokenizer;
 

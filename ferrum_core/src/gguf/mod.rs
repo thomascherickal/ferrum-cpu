@@ -23,8 +23,6 @@
 //! converts only models whose GGUF `*.architecture` Ferrum can actually execute,
 //! and returns a clear error otherwise rather than producing wrong output.
 
-#![warn(missing_docs)]
-
 mod cursor;
 mod dequant;
 mod format;

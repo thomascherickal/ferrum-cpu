@@ -23,8 +23,11 @@ use std::any::Any;
 /// Everything a layer must provide. `as_any` allows the loader to downcast
 /// a trait object back to its concrete type for serialisation.
 pub trait Layer {
+    /// Run the layer on `input` and return its output tensor.
     fn forward(&self, input: &Tensor) -> Result<Tensor>;
+    /// Human-readable layer name, for logs and summaries.
     fn name(&self) -> String;
+    /// The layer as `&dyn Any`, so callers can downcast to the concrete type.
     fn as_any(&self) -> &dyn Any;
     /// Trainable parameters held by this layer (weights + biases).
     fn num_params(&self) -> usize {

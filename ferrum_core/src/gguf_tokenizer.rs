@@ -20,7 +20,6 @@
 //! and attaches a single leading space to the following word. For typical
 //! prompts this matches; for exotic whitespace it can differ. Where exactness
 //! matters, the CLI also accepts explicit token IDs (`--ids`).
-#![warn(missing_docs)]
 
 use crate::error::{InferError, Result};
 use crate::gguf::{Gguf, MetaValue};

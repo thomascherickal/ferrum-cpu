@@ -19,7 +19,9 @@ use std::sync::Arc;
 /// quantization error already baked in at save time).
 #[derive(Clone, Debug)]
 pub struct Linear {
+    /// Weight matrix, shape `[in_features, out_features]`; an empty placeholder when quantized weights are held.
     pub weight: Tensor,
+    /// Bias vector of length `out_features` (all zeros for a bias-free layer).
     pub bias: Tensor,
     qweight: Option<Arc<QWeight>>,
     in_f: usize,
@@ -33,6 +35,7 @@ pub struct Linear {
 }
 
 impl Linear {
+    /// Build from a row-major `[in_f, out_f]` weight and an `out_f`-long bias; errors if the lengths do not match.
     pub fn new(in_f: usize, out_f: usize, weight: Vec<f32>, bias: Vec<f32>) -> Result<Self> {
         if bias.len() != out_f {
             return Err(InferError::DimMismatch(format!(
@@ -153,9 +156,11 @@ impl Linear {
             None => self.weight.data.clone(),
         }
     }
+    /// Input width of the layer.
     pub fn in_features(&self) -> usize {
         self.in_f
     }
+    /// Output width of the layer.
     pub fn out_features(&self) -> usize {
         self.out_f
     }

@@ -7,14 +7,17 @@ use std::any::Any;
 
 /// Embedding table mapping token IDs and positional indices to continuous vectors.
 pub struct Embedding {
+    /// Token embedding table.
     pub token_weight: Tensor, // Shape [vocab_size, embedding_dim]
-    pub pos_weight: Tensor,   // Shape [max_seq_len, embedding_dim]
+    /// Learned positional embedding table.
+    pub pos_weight: Tensor, // Shape [max_seq_len, embedding_dim]
     vocab_size: usize,
     max_seq_len: usize,
     embedding_dim: usize,
 }
 
 impl Embedding {
+    /// Build from row-major `[vocab_size, embedding_dim]` token and `[max_seq_len, embedding_dim]` position weights; errors with `ShapeMismatch` if either length is wrong.
     pub fn new(
         vocab_size: usize,
         max_seq_len: usize,
@@ -49,12 +52,15 @@ impl Embedding {
         })
     }
 
+    /// Number of token rows in the table.
     pub fn vocab_size(&self) -> usize {
         self.vocab_size
     }
+    /// Number of positional rows (the longest sequence supported).
     pub fn max_seq_len(&self) -> usize {
         self.max_seq_len
     }
+    /// Width of each embedding vector.
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
     }

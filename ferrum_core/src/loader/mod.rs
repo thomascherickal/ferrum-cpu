@@ -26,7 +26,6 @@
 //! Quantization: matrices whose GGML row length is a multiple of 32 are
 //! stored as Q8_0 / Q4_0 when requested; vectors are always F32. The pre-GGUF
 //! `.bin` model format is no longer readable.
-#![warn(missing_docs)]
 
 mod consistency;
 mod decode;

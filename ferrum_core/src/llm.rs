@@ -37,15 +37,18 @@ use crate::tensor::Tensor;
 /// [`crate::layer::LayerNorm`] there is no mean subtraction and no bias.
 #[derive(Clone, Debug)]
 pub struct RmsNorm {
+    /// Per-channel scale, one value per model dimension.
     pub weight: Vec<f32>,
     eps: f32,
 }
 
 impl RmsNorm {
+    /// Build from the scale `weight` and the epsilon added to the mean square.
     pub fn new(weight: Vec<f32>, eps: f32) -> Self {
         Self { weight, eps }
     }
 
+    /// Width the norm expects (the length of `weight`).
     pub fn dim(&self) -> usize {
         self.weight.len()
     }
@@ -194,6 +197,7 @@ pub struct KvLayer {
 }
 
 impl KvLayer {
+    /// Drop all cached positions of this layer.
     pub fn clear(&mut self) {
         self.k.clear();
         self.v.clear();
@@ -204,9 +208,13 @@ impl KvLayer {
 /// shared by `n_heads / n_kv_heads` query heads.
 #[derive(Clone, Debug)]
 pub struct Attention {
+    /// Query projection (`n_heads * head_dim` outputs).
     pub wq: Linear,
+    /// Key projection (`n_kv_heads * head_dim` outputs).
     pub wk: Linear,
+    /// Value projection (`n_kv_heads * head_dim` outputs).
     pub wv: Linear,
+    /// Attention output projection.
     pub wo: Linear,
     n_heads: usize,
     n_kv_heads: usize,
@@ -218,6 +226,7 @@ pub struct Attention {
 }
 
 impl Attention {
+    /// Build a GQA attention layer with unscaled RoPE; errors if `n_heads` is not a multiple of `n_kv_heads`, or `rope_dim` is odd or larger than `head_dim`. Use [`LlamaModel::set_rope_scaling`] to change the scaling.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         wq: Linear,
@@ -390,16 +399,21 @@ impl Attention {
 /// SwiGLU gated FFN: `down( silu(gate(x)) ⊙ up(x) )`.
 #[derive(Clone, Debug)]
 pub struct FeedForward {
+    /// Gate projection, passed through SiLU.
     pub gate: Linear,
+    /// Up projection, multiplied element-wise with the activated gate.
     pub up: Linear,
+    /// Down projection back to the model width.
     pub down: Linear,
 }
 
 impl FeedForward {
+    /// Assemble the FFN from its three projections.
     pub fn new(gate: Linear, up: Linear, down: Linear) -> Self {
         Self { gate, up, down }
     }
 
+    /// Apply the FFN to every row of a `[rows, model_dim]` tensor.
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let g = self.gate.forward(x)?;
         let u = self.up.forward(x)?;
@@ -422,9 +436,13 @@ impl FeedForward {
 /// `h = x + attn(rmsnorm(x))`, then `out = h + ffn(rmsnorm(h))`.
 #[derive(Clone, Debug)]
 pub struct LlamaBlock {
+    /// RMS norm applied before attention.
     pub attn_norm: RmsNorm,
+    /// Grouped-query attention sub-layer.
     pub attn: Attention,
+    /// RMS norm applied before the FFN.
     pub ffn_norm: RmsNorm,
+    /// SwiGLU feed-forward sub-layer.
     pub ffn: FeedForward,
 }
 
@@ -471,20 +489,32 @@ impl LlamaBlock {
 /// Shape/hyperparameters of a [`LlamaModel`].
 #[derive(Clone, Debug)]
 pub struct LlamaConfig {
+    /// Number of tokens in the vocabulary.
     pub vocab_size: usize,
+    /// Width of the residual stream.
     pub model_dim: usize,
+    /// Number of decoder blocks.
     pub n_layers: usize,
+    /// Number of query heads.
     pub n_heads: usize,
+    /// Number of key/value heads (divides `n_heads`).
     pub n_kv_heads: usize,
+    /// Width of one attention head.
     pub head_dim: usize,
+    /// Hidden width of the SwiGLU FFN.
     pub ffn_dim: usize,
+    /// Number of leading dimensions of each head that RoPE rotates (even, at most `head_dim`).
     pub rope_dim: usize,
+    /// RoPE frequency base.
     pub rope_base: f32,
+    /// RoPE pairing convention (NORM or NEOX).
     pub rope_type: RopeType,
     /// Frequency scaling from the GGUF (unscaled by default). Set it with
     /// [`LlamaModel::set_rope_scaling`], which keeps every block's attention in step.
     pub rope_scaling: RopeScaling,
+    /// Epsilon of every RMS norm.
     pub norm_eps: f32,
+    /// Maximum context length in tokens.
     pub context_len: usize,
 }
 
@@ -495,18 +525,21 @@ pub struct LlamaCache {
 }
 
 impl LlamaCache {
+    /// An empty cache for a model with `n_layers` blocks, positioned at 0.
     pub fn new(n_layers: usize) -> Self {
         Self {
             layers: vec![KvLayer::default(); n_layers],
             pos: 0,
         }
     }
+    /// Drop every cached position and reset the position to 0.
     pub fn clear(&mut self) {
         for l in &mut self.layers {
             l.clear();
         }
         self.pos = 0;
     }
+    /// Absolute position of the next token to be processed.
     pub fn pos(&self) -> usize {
         self.pos
     }
@@ -514,10 +547,13 @@ impl LlamaCache {
 
 /// A runnable Llama/Qwen-family decoder model (standalone — not a [`crate::model::Sequential`]).
 pub struct LlamaModel {
+    /// Hyperparameters the model was built with.
     pub cfg: LlamaConfig,
     /// Token embedding table, `[vocab, model_dim]` row-major (kept f32 in memory).
     pub tok_emb: Vec<f32>,
+    /// The decoder blocks, in order.
     pub blocks: Vec<LlamaBlock>,
+    /// Final RMS norm applied before the LM head.
     pub final_norm: RmsNorm,
     /// LM head `[model_dim, vocab]` (may be tied to the embedding).
     pub lm_head: Linear,

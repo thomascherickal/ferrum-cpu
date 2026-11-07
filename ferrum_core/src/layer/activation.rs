@@ -7,10 +7,12 @@ use std::any::Any;
 
 /// Parameter-free activation wrapper so it lives in the same layer list.
 pub struct ActivationLayer {
+    /// The element-wise activation this layer applies.
     pub kind: Activation,
 }
 
 impl ActivationLayer {
+    /// Wrap `kind` in a layer.
     pub fn new(kind: Activation) -> Self {
         Self { kind }
     }
@@ -37,6 +39,7 @@ impl Layer for ActivationLayer {
 pub struct Flatten;
 
 impl Flatten {
+    /// Create the (stateless) flatten layer.
     pub fn new() -> Self {
         Self
     }

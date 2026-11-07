@@ -2,7 +2,6 @@
 //! stop file and a shared cancel flag. Trainers poll [`StopCondition::should_stop`]
 //! once per optimizer step and, when it answers, finish the step, checkpoint and
 //! return, so an interrupted run resumes instead of being lost.
-#![warn(missing_docs)]
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

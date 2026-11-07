@@ -29,7 +29,6 @@
 //!   training/inference stay deterministic.
 //!
 //! GPUs are never used: all parallelism is plain CPU threads.
-#![warn(missing_docs)]
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::panic::{catch_unwind, AssertUnwindSafe};

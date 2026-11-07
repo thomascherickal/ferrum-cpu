@@ -1,5 +1,4 @@
 //! The fundamental data structure: a flat `Vec<f32>` with a shape.
-#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 
 #[derive(Clone, Debug, PartialEq)]

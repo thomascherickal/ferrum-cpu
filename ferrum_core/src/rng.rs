@@ -1,5 +1,4 @@
 //! Seeded xorshift64* PRNG — deterministic, dependency-free.
-#![warn(missing_docs)]
 
 /// A seeded xorshift64* generator: the same seed gives the same sequence on every platform.
 pub struct Rng {

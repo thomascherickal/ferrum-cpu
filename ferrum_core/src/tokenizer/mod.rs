@@ -14,7 +14,6 @@
 //! let ids = tok.encode("lowest");
 //! assert_eq!(tok.decode(&ids), "lowest");
 //! ```
-#![warn(missing_docs)]
 
 mod encode;
 mod gguf_io;

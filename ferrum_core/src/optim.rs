@@ -1,6 +1,5 @@
 //! SGD with optional momentum. Stateless — each trainable layer owns its
 //! own velocity buffers and calls `step` once per parameter tensor.
-#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;

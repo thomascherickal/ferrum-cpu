@@ -34,7 +34,6 @@
 //! on small models. It does **not** make training a 1B model on a CPU feasible —
 //! that stays bounded by compute and RAM (see Manual.md §13.5). It adds
 //! the missing capability (gradients + a real optimizer), not a claim about scale.
-#![warn(missing_docs)]
 
 mod blocks;
 mod buffers;

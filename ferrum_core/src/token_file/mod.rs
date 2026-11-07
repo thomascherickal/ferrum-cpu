@@ -10,7 +10,6 @@
 //!
 //! Output is [`write_token_file`] (one pass, atomic, ids pushed into a [`TokenSink`]); the reader
 //! is [`TokenFile`] (`Read` + `Seek` on the tensor data, no whole-file read, no mmap).
-#![warn(missing_docs)]
 
 mod reader;
 mod writer;

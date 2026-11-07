@@ -7,12 +7,15 @@ use std::any::Any;
 
 /// Layer Normalization: y = (x - mean) / sqrt(var + eps) * gamma + beta.
 pub struct LayerNorm {
+    /// Scale (gamma), shape `[dim]`.
     pub gamma: Tensor, // scale, shape [dim]
-    pub beta: Tensor,  // shift, shape [dim]
+    /// Shift (beta), shape `[dim]`.
+    pub beta: Tensor, // shift, shape [dim]
     dim: usize,
 }
 
 impl LayerNorm {
+    /// Build from `gamma` and `beta`, both of length `dim`; errors if either length differs.
     pub fn new(dim: usize, gamma: Vec<f32>, beta: Vec<f32>) -> Result<Self> {
         if gamma.len() != dim || beta.len() != dim {
             return Err(InferError::DimMismatch(format!(
@@ -29,6 +32,7 @@ impl LayerNorm {
             dim,
         })
     }
+    /// Width of each normalised row.
     pub fn dim(&self) -> usize {
         self.dim
     }

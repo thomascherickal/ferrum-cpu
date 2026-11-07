@@ -1,5 +1,4 @@
 //! Sequential model: an ordered pipeline of layers.
-#![warn(missing_docs)]
 use crate::error::Result;
 use crate::layer::Layer;
 use crate::tensor::Tensor;

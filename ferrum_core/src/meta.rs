@@ -6,8 +6,6 @@
 //! tokenizer state. It serialises to compact JSON and is stored inside the GGUF
 //! model file, so a model never needs a separate config file.
 
-#![warn(missing_docs)]
-
 use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;

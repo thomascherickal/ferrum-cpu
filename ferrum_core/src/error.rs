@@ -1,5 +1,4 @@
 //! Single error type used by every module in ferrum_core.
-#![warn(missing_docs)]
 use std::fmt;
 
 /// Every error `ferrum_core` returns.

@@ -5,7 +5,6 @@
 //! text wins, the stop string itself is not part of the output, and a stop that spans token
 //! boundaries still matches. Pair it with [`crate::LlamaModel::generate_until`]: call
 //! [`StopMatcher::check`] from the hook, then [`StopMatcher::cut`] for the text.
-#![warn(missing_docs)]
 
 use crate::gguf_tokenizer::GgufTokenizer;
 

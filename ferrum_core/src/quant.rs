@@ -7,7 +7,6 @@
 //! forward and backward passes see exactly the weights an int8-serialized
 //! model will run with, while the optimizer keeps updating full-precision
 //! master weights (straight-through estimator).
-#![warn(missing_docs)]
 
 /// Tensors shorter than this stay f32 both in quantized GGUF files and during
 /// QAT: biases and LayerNorm parameters are small (no size win) and

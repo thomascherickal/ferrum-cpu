@@ -4,7 +4,6 @@
 //! The reader in [`crate::gguf`] is the specification: every block encoder here
 //! is the exact inverse of the matching `dequant_*` decoder, and is verified by
 //! round-tripping through [`crate::gguf::Gguf`].
-#![warn(missing_docs)]
 
 mod blocks;
 mod builder;

@@ -1,5 +1,4 @@
 //! Activation functions as a serialisable enum.
-#![warn(missing_docs)]
 use crate::error::Result;
 use crate::ops;
 use crate::tensor::Tensor;

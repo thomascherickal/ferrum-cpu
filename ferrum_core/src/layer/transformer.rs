@@ -31,15 +31,19 @@ impl KvCache {
             dim,
         }
     }
+    /// Number of positions currently cached.
     pub fn len(&self) -> usize {
         self.len
     }
+    /// True when no position is cached.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+    /// True when the cache holds `capacity` positions.
     pub fn is_full(&self) -> bool {
         self.len >= self.capacity
     }
+    /// Maximum number of positions the cache was sized for.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -55,22 +59,32 @@ impl KvCache {
 ///   LayerNorm -> Causal Multi-Head Self-Attention -> Residual
 ///   -> LayerNorm -> Feed-Forward Network -> Residual
 pub struct TransformerBlock {
+    /// Pre-attention layer norm.
     pub ln1: LayerNorm,
+    /// Query projection.
     pub q_proj: Linear,
+    /// Key projection.
     pub k_proj: Linear,
+    /// Value projection.
     pub v_proj: Linear,
+    /// Attention output projection.
     pub out_proj: Linear,
+    /// Pre-FFN layer norm.
     pub ln2: LayerNorm,
+    /// First feed-forward projection (`embedding_dim` to `hidden_dim`).
     pub ffn1: Linear,
+    /// Second feed-forward projection (`hidden_dim` to `embedding_dim`).
     pub ffn2: Linear,
     context_len: usize,
     num_heads: usize,
     embedding_dim: usize,
+    /// Attention weights of the last full forward pass, flat `[batch, heads, t, t]` row-major; empty before the first pass. Kept for visualisation.
     pub last_attention: RefCell<Vec<f32>>,
 }
 
 impl TransformerBlock {
     #[allow(clippy::too_many_arguments)]
+    /// Build a block from its flat weights; errors if `context_len` is 0 or `embedding_dim` is not divisible by `num_heads`. The FFN hidden width is the length of `ffn1_b`.
     pub fn new(
         context_len: usize,
         num_heads: usize,
@@ -176,15 +190,19 @@ impl TransformerBlock {
         })
     }
 
+    /// Context length the block was built for.
     pub fn context_len(&self) -> usize {
         self.context_len
     }
+    /// Number of attention heads.
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
+    /// Width of the residual stream.
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
     }
+    /// Width of the feed-forward hidden layer.
     pub fn hidden_dim(&self) -> usize {
         self.ffn1.out_features()
     }

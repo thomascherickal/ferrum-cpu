@@ -4,7 +4,6 @@
 //! struct (`TransformerNet`) that exports to an inference `Sequential` whose
 //! layers (`Embedding`, `TransformerBlock`, `LayerNorm`, `Linear`) serialize
 //! to GGUF and run in WASM.
-#![warn(missing_docs)]
 
 mod backward;
 mod block;

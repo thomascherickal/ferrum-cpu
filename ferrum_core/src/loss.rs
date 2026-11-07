@@ -2,7 +2,6 @@
 //!
 //! The gradient of cross-entropy(softmax(z)) w.r.t. z is simply (p - onehot(t))
 //! divided by batch size. This clean form is why we fuse the two operations.
-#![warn(missing_docs)]
 use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;

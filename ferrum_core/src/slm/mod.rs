@@ -1,5 +1,4 @@
 //! Generic offline Edge Generative SLM Library Engine.
-#![warn(missing_docs)]
 
 mod cached;
 mod config;
