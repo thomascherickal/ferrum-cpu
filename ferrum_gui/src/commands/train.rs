@@ -299,6 +299,9 @@ fn train_inner<R: Runtime>(
                 ferrum_core::set_verbose(false);
                 return Err("vocab must be 0 (character-level) or ≥ 256 (byte-level BPE)".into());
             }
+            // Backward compatibility (CLAUDE.md): new TransformerConfig fields default via
+            // `..default()` even while every current field is listed.
+            #[allow(clippy::needless_update)]
             let cfg = TransformerConfig {
                 context_len: p.context_len,
                 embed_dim: p.embed_dim,
@@ -328,6 +331,7 @@ fn train_inner<R: Runtime>(
                 skip_memory_check: p.force,
                 // The same identity the CLI records, so a checkpoint resumes from either.
                 corpus_id,
+                ..TransformerConfig::default()
             };
             let val = ValidationConfig {
                 val_fraction: p.val_fraction,

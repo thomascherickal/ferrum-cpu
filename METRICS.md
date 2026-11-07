@@ -1,6 +1,6 @@
 # Ferrum SLM Studio — Comprehensive Software & Repository Metrics Report
 
-_Generated: 2026-11-07 · Commit: `e8e1128 (2026-11-07)` · Branch: `main` · Total Commits: 437_
+_Generated: 2026-11-07 · Commit: `83572b4 (2026-11-07)` · Branch: `main` · Total Commits: 438_
 
 This report provides comprehensive software engineering metrics, source code breakdown, test coverage measurements, safety invariants, memory bounds, and architectural characteristics for the Ferrum SLM engine and GUI.
 
@@ -12,8 +12,8 @@ This report provides comprehensive software engineering metrics, source code bre
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **99,090** lines (121,759 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,723** pure code lines | 265 Rust files (79,853 total physical lines) |
+| **Total Tracked Code Lines** | **99,091** lines (121,763 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,725** pure code lines | 265 Rust files (79,857 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -30,7 +30,7 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,386 | 9,470 | 4,997 | 79,853 | 66.0% |
+| **Rust (.rs)** | 265 | 65,387 | 9,473 | 4,997 | 79,857 | 66.0% |
 | **Markdown (.md)** | 107 | 17,503 | 2,095 | 4,182 | 23,780 | 17.7% |
 | **JavaScript (.js)** | 55 | 7,256 | 699 | 546 | 8,501 | 7.3% |
 | **JSON (.json)** | 13 | 5,618 | 0 | 0 | 5,618 | 5.7% |
@@ -40,7 +40,7 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 | **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **478** | **99,090** | **12,513** | **10,156** | **121,759** | **100.0%** |
+| **Total Repository** | **478** | **99,091** | **12,516** | **10,156** | **121,763** | **100.0%** |
 
 ---
 
@@ -54,9 +54,9 @@ The Ferrum engine is split across independent modular crates enforcing separatio
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, runtime-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`, `/v1/chat/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker execution | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
-| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, job queue, sizing) | 47 | 12,344 | 1,148 | 831 | 14,323 | **0** (`forbid`) |
+| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, job queue, sizing) | 47 | 12,346 | 1,150 | 831 | 14,327 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, hostile input, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **265** | **67,723** | **7,133** | **4,997** | **79,853** | **0** |
+| **Total Rust** | **Workspace & GUI** | **265** | **67,725** | **7,135** | **4,997** | **79,857** | **0** |
 
 ---
 
