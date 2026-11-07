@@ -1671,7 +1671,7 @@ Rules for both commands:
   `slm_cli/tests/tiny_gguf_e2e.rs`. No test runs a real Ollama (removed 2026-11-04
   by user decision): `export-ollama` is tested for its refusals, its usage errors
   and `--modelfile-only`, and the library's `ollama create` call and its
-  `ollama serve` hint run against fake scripts (`slm_cli/src/runtime_export.rs`).
+  `ollama serve` hint run against fake scripts (`slm_cli/src/runtime_export/`).
   `export_lmstudio_then_generate` needs a real LM Studio install (`lms`, its
   daemon, `~/.lmstudio`) and a GPT-2 GGUF outside the repository
   (`FERRUM_TEST_GGUF`); it skips without them.
@@ -2238,6 +2238,40 @@ which the top bar may cut short. How to add a tip, and the exact list of exempt
 elements (options, inline text, wrappers), is in the tutorial
 [docs/GUI-TOOLTIPS.md](docs/GUI-TOOLTIPS.md).
 
+**Beginner and Expert mode.** The top bar's *Mode* selector (`#uiMode`) switches
+the window between *Beginner* (the default on first start) and *Expert*
+(`ui/core/mode.js`). The choice is stored in the browser's local storage under
+`ferrum.ui.mode` (an older stored value `advanced` reads as Expert; if storage
+is blocked the app starts in Beginner). In Beginner mode every element with
+class `adv-only` is hidden by CSS (`body[data-mode="beginner"] .adv-only`): the
+Prepare, Models, Fine-tune, Export, Serve and System tabs, and the detailed
+fields on Datasets, Train, Generate, Evaluate and GGUF (on Train: context,
+embed dim, heads, blocks, hidden, learning rate, batch, vocab, threads, seed
+and the other advanced fields). Nothing is removed; Expert shows it all again.
+If an Expert-only tab is open when you switch to Beginner, the app goes to
+Datasets. The **Model size preset** box on Train (`#trPreset`: Custom, Tiny
+about 0.2M parameters, Small about 1.5M, Medium about 7M, as the labels say)
+fills the context, embed, heads, blocks, hidden, vocab, batch, epochs and
+learning-rate fields and re-runs the pre-flight; editing a field by hand does
+not switch the box back to Custom (not implemented). The preset values in
+`mode.js` are not checked against `slm_cli/src/preset.rs` in this section.
+*Next step* buttons carry a path forward and switch tab: **Continue to Train**
+on Datasets (fills the Train corpus from the Save-to or file path),
+**Generate text with this model** and **Evaluate this model** on Train (fill
+the model path from the Train model field). They are plain always-visible
+buttons, not banners shown after a job finishes. The **Engine log** dock at
+the bottom has a *Hide log* / *Show log* button (`#btnToggleLog`); it starts
+collapsed in Beginner and open in Expert, and switching mode resets it.
+
+**Mode-aware tooltips.** A control's bubble shows different sections per
+mode (`contentFromHelp` in `ui/core/tooltip.js`, called from `live.js` with the
+body's `data-mode`). Beginner: *New to AI?*, then *What it is* (or *What it
+does* for buttons); *How it works* is left out when the entry has beginner
+text. Expert: *What it is* (or *What it does*), then *How it works*; *New to
+AI?* is left out. The live estimate ("Now") is inserted right after the first
+section. Covered by the Node tests `mode.test.js`, `tooltip.test.js` and
+`live.test.js`; not verified: the bubble was not opened in a running app.
+
 **Live estimates on every button.** A button's tooltip also says what it does
 and an *estimated time* and *RAM need* computed by `estimate_job` from your
 current form values and hardware, for example "about 4 min on your 8 CPU
@@ -2334,7 +2368,7 @@ src/lib.rs        Tauri builder, shared state, verbose → event sink, command r
 src/commands/     #[tauri::command]s calling ferrum_core directly, one file per area: mod.rs (re-exports, shared helpers), text.rs (download, clean, save, read), train.rs, generate.rs, gguf.rs (model_info, gguf_info, run_gguf), guard.rs (quant parsing and the RAM-guard estimates), finetune.rs, export.rs, system.rs; each with its tests
 src/evaluate.rs   the Evaluate tab: Ferrum models and imported GGUFs, the `eval --json` numbers
 src/sizing/       hardware.rs (hardware_info: CPU, RAM and GPU detection, pure parsers tested with fixtures), estimate.rs + estimate/tests.rs (pure time/RAM estimates per button, the cost model), estimate_cmd.rs (resolves files and serves estimate_job), preflight.rs (the Train tab's pre-flight panel: parameter count, peak RAM, llama.cpp verdict), capable.rs (machine micro-benchmark + capability bounds)
-src/data/         datasets.rs (corpus catalog + HTTP / Hugging Face / Kaggle downloads), prepare.rs (the Prepare tab: `prepare_dataset` over `slm_cli::prepare`, progress events, cancel), tokenize.rs (Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`; `train_slm` itself accepts a token file)
+src/data/         datasets/ (corpus catalog + HTTP / Hugging Face / Kaggle downloads), prepare.rs (the Prepare tab: `prepare_dataset` over `slm_cli::prepare`, progress events, cancel), tokenize.rs (Tokenize corpus: `tokenize_corpus` over `slm_cli::tokenize`; `train_slm` itself accepts a token file)
 src/serving/      serve.rs (the Serve tab: `serve_start` / `serve_stop` / `serve_status` over `slm_server::bind`, the HTTP server runs in-process, `serve-log` events), runtime_export.rs (the Export tab's Ollama / LM Studio block over `slm_cli::runtime_export`)
 src/infra/        error.rs (CmdError {code, message, hint} and the blocking-task helper), jobs.rs (one running slot per kind of long job + the cancel_job command), paths.rs (validation of every file path the webview sends: no empty / NUL / over-long paths, no /dev /proc /sys, no directory or FIFO as a file), http.rs (the one HTTP client every download uses), progress.rs (throttled `download-progress` and Clean progress events)
 tauri.conf.json   window + bundle config (frontendDist = "ui") + Content-Security-Policy (no inline script or style)

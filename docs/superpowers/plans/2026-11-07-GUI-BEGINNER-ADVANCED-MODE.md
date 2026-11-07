@@ -88,12 +88,12 @@ export function initMode() { ... }
 *Note on default mode for existing tests:* When `localStorage.getItem(MODE_KEY)` is unset, default to `"beginner"` in interactive browser sessions or `"advanced"` if needed by legacy flow tests, **or** since `.adv-only` only sets CSS `display: none` (which the headless stub DOM in `testdom.js` ignores when dispatching clicks), defaulting to `"beginner"` works seamlessly across all existing `app_flows.test.js` tests! Verify this explicitly in Step 1.
 
 **Steps:**
-- [ ] **Step 1: Write `ferrum_gui/ui/tests/mode.test.js`** (per rule 19, every new file gets unit tests in the same commit):
+- [x] **Step 1: Write `ferrum_gui/ui/tests/mode.test.js` (done; test names differ, mode values are `beginner`/`expert`)** (per rule 19, every new file gets unit tests in the same commit):
   - `mode_switches_body_dataset_and_persists_to_local_storage`
   - `switching_to_beginner_on_adv_only_tab_redirects_to_datasets`
   - `switching_to_beginner_collapses_terminal_and_toggle_reopens_it`
-- [ ] **Step 2: Create `ferrum_gui/ui/core/mode.js`** implementing `getMode`, `setMode`, `toggleLogDock`, and `initMode`.
-- [ ] **Step 3: Update `ferrum_gui/ui/index.html` and `ferrum_gui/ui/styles.css`:**
+- [x] **Step 2: Create `ferrum_gui/ui/core/mode.js` (done as a `FerrumMode.create(env)` plain script, not ES-module exports)** implementing `getMode`, `setMode`, `toggleLogDock`, and `initMode`.
+- [x] **Step 3: Update `ferrum_gui/ui/index.html` and `ferrum_gui/ui/styles.css`: (done; Expert, not Advanced, label; collapse via `#terminal.collapsed`)**
   - Add `<select id="uiMode" aria-label="Interface mode"><option value="beginner">Beginner mode</option><option value="advanced">Advanced mode</option></select>` in `.topbar`.
   - Add `<button type="button" id="btnToggleLog" class="btn-small">Hide / Show</button>` in `.term-bar`.
   - Add `class="tab adv-only"` to `prepare`, `models`, `finetune`, `export`, `serve`, `system` tab buttons.
@@ -103,7 +103,7 @@ export function initMode() { ... }
     body.log-collapsed #app { grid-template-rows: 52px 1fr 32px; }
     body.log-collapsed #logOutput { display: none; }
     ```
-- [ ] **Step 4: Add help entries for `uiMode` and `btnToggleLog` in `ferrum_gui/ui/core/help.js`** (`>= 30` words each) and document them in `docs/GUI-TOOLTIPS.md`.
+- [x] **Step 4: Add help entries for `uiMode` and `btnToggleLog` (help.js entries exist; the `docs/GUI-TOOLTIPS.md` part is NOT done) in `ferrum_gui/ui/core/help.js`** (`>= 30` words each) and document them in `docs/GUI-TOOLTIPS.md`.
 - [ ] **Step 5: Run all JS checks and tests:**
   - `cd ferrum_gui && for f in $(find ui -name '*.js'); do node --check "$f" || exit 1; done && for t in ui/tests/*.test.js; do node "$t" || exit 1; done`
   - `cd ferrum_gui && CARGO_BUILD_JOBS=3 cargo test`
@@ -128,12 +128,12 @@ export function initMode() { ... }
 | `medium` | `Medium (~7M params — 1–2 days on CPU)` | `256` | `256` | `8` | `6` | `1024` | `4096` | `0.001` |
 
 **Steps:**
-- [ ] **Step 1: Write unit/flow tests** in `ferrum_gui/ui/tests/mode.test.js` and `app_flows.test.js`:
+- [x] **Step 1: Write unit/flow tests (partly: `app_flows.test.js` covers the preset; `mode.test.js` item 6 covers presets; the Custom-switch-on-edit test is missing)** in `ferrum_gui/ui/tests/mode.test.js` and `app_flows.test.js`:
   - `selecting_train_preset_populates_architecture_fields_and_updates_preflight`
   - `editing_embed_dim_switches_preset_select_to_custom`
   - `every_panel_has_minimal_visible_controls_in_beginner_mode` (verifies the exact `.adv-only` tagging on `#panel-datasets`, `#panel-train`, `#panel-generate`, `#panel-evaluate`, `#panel-gguf`).
-- [ ] **Step 2: Add `#trPreset` and `.adv-only` classes in `ferrum_gui/ui/index.html`** according to the Per-Tab Field Curation Matrix above.
-- [ ] **Step 3: Wire `#trPreset` in `ferrum_gui/ui/tabs/train_tab.js`** and add `trPreset` to `ferrum_gui/ui/core/help.js` and `docs/GUI-TOOLTIPS.md`.
+- [x] **Step 2: Add `#trPreset` and `.adv-only` classes in `ferrum_gui/ui/index.html`** according to the Per-Tab Field Curation Matrix above.
+- [x] **Step 3: Wire `#trPreset` (help.js entry done; `GUI-TOOLTIPS.md` not) in `ferrum_gui/ui/tabs/train_tab.js`** and add `trPreset` to `ferrum_gui/ui/core/help.js` and `docs/GUI-TOOLTIPS.md`.
 - [ ] **Step 4: Refresh fixtures if needed and run all JS + Rust tests.**
 - [ ] **Step 5: Commit:** `feat(gui): add model size presets on Train tab and curate Beginner mode forms`.
 
@@ -151,11 +151,11 @@ export function initMode() { ... }
 - Modify: `ferrum_gui/ui/tests/app_flows.test.js`
 
 **Steps:**
-- [ ] **Step 1: Write flow tests** in `ferrum_gui/ui/tests/app_flows.test.js`:
+- [x] **Step 1: Write flow tests (one combined flow in `app_flows.test.js`)** in `ferrum_gui/ui/tests/app_flows.test.js`:
   - `saving_corpus_reveals_next_step_button_that_switches_to_train_with_corpus_filled`
   - `finishing_train_reveals_next_step_buttons_for_generate_and_evaluate`
-- [ ] **Step 2: Add the banner HTML in `index.html`, styling in `styles.css`, and event handlers in `datasets_tab.js` and `train_tab.js`.**
-- [ ] **Step 3: Add help entries for `btnGoTrain`, `btnGoGenerate`, and `btnGoEvaluate` in `help.js`** (`>= 30` words each) and update `docs/GUI-TOOLTIPS.md`.
+- [x] **Step 2: Add the banner HTML (done as always-visible buttons, no banners/hidden state) in `index.html`, styling in `styles.css`, and event handlers in `datasets_tab.js` and `train_tab.js`.**
+- [x] **Step 3: Add help entries for `btnGoTrain`, `btnGoGenerate`, and `btnGoEvaluate` in `help.js`** (`>= 30` words each) and update `docs/GUI-TOOLTIPS.md`.
 - [ ] **Step 4: Run all Node and Rust tests.**
 - [ ] **Step 5: Commit:** `feat(gui): add guided Next Step workflow buttons across Datasets, Train, Generate, and Evaluate`.
 
@@ -188,5 +188,5 @@ export function initMode() { ... }
   - `tooltip_in_advanced_mode_includes_technical_how_it_works`
 - [x] **Step 2: Update `renderCard` in `ferrum_gui/ui/core/tooltip.js`.**
 - [ ] **Step 3: Run all Node tests (`help.test.js`, `tooltips_guard.test.js`, `mode.test.js`, `app_flows.test.js`) and `cargo test` in `ferrum_gui/`.**
-- [ ] **Step 4: Update `docs/GUI-TOOLTIPS.md`, `MANUAL.md` §10.3, and `STATUS.md` §5/§6.2.** Commit: `feat(gui): tailor tooltip sections to Beginner and Advanced mode`.
+- [ ] **Step 4: Update `docs/GUI-TOOLTIPS.md`, `MANUAL.md` §10.3, and `STATUS.md` §5/§6.2.** (MANUAL §10.3 done 2026-11-07; GUI-TOOLTIPS.md and STATUS.md not.) Commit: `feat(gui): tailor tooltip sections to Beginner and Advanced mode`.
 
