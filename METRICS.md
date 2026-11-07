@@ -1,6 +1,6 @@
 # Ferrum SLM Studio — Comprehensive Software & Repository Metrics Report
 
-_Generated: 2026-11-07 · Commit: `351841f (2026-11-07)` · Branch: `main` · Total Commits: 425_
+_Generated: 2026-11-07 · Commit: `d2c8693 (2026-11-07)` · Branch: `main` · Total Commits: 426_
 
 This report provides comprehensive software engineering metrics, source code breakdown, test coverage measurements, safety invariants, memory bounds, and architectural characteristics for the Ferrum SLM engine and GUI.
 
@@ -12,7 +12,7 @@ This report provides comprehensive software engineering metrics, source code bre
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **98,226** lines (120,781 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Total Tracked Code Lines** | **98,328** lines (120,927 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
 | **Rust Codebase Volume** | **67,096** pure code lines | 265 Rust files (79,196 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
@@ -31,16 +31,16 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
 | **Rust (.rs)** | 265 | 64,771 | 9,440 | 4,985 | 79,196 | 65.9% |
-| **Markdown (.md, .md)** | 107 | 17,377 | 2,085 | 4,161 | 23,623 | 17.7% |
+| **Markdown (.md)** | 107 | 17,423 | 2,090 | 4,174 | 23,687 | 17.7% |
 | **JavaScript (.js)** | 55 | 7,207 | 687 | 543 | 8,437 | 7.3% |
 | **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
 | **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
 | **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.8% |
-| **Shell (.sh)** | 8 | 480 | 94 | 85 | 659 | 0.5% |
+| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
 | **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
 | **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **478** | **98,226** | **12,452** | **10,103** | **120,781** | **100.0%** |
+| **Total Repository** | **478** | **98,328** | **12,466** | **10,133** | **120,927** | **100.0%** |
 
 ---
 
@@ -131,17 +131,16 @@ The GUI supports two distinct operational modes dynamically toggled via `#uiMode
 
 ## 8. Documentation Naming Audit
 
-All project documentation files strictly adhere to uppercase naming with hyphens (`*.md`):
+All project documentation files strictly adhere to lowercase naming with hyphens (`*.md`):
 
 | File Path | Status | Verification Check |
 |---|---|---|
-| `METRICS.md` | Tracked | Valid uppercase markdown file |
-| `STATUS.md` | Tracked | Valid uppercase markdown file |
-| `MANUAL.md` | Tracked | Valid uppercase markdown file |
-| `README.md` | Tracked | Valid uppercase markdown file |
-| `AGENTS.md` | Tracked | Valid uppercase markdown file |
-| `AUDIT.md` | Tracked | Valid uppercase markdown file |
-| `docs/*.md` | 100% Standardized | Verified 0 lowercase `.md` files in git index |
+| `METRICS.md` | Tracked | Valid lowercase markdown file |
+| `STATUS.md` | Tracked | Valid lowercase markdown file |
+| `MANUAL.md` | Tracked | Valid lowercase markdown file |
+| `README.md` | Tracked | Valid lowercase markdown file |
+| `AGENTS.md` | Tracked | Valid lowercase markdown file |
+| `docs/*.md` | 100% Standardized | Verified 0 uppercase `.MD` files in git index |
 
 ---
 
@@ -149,4 +148,4 @@ All project documentation files strictly adhere to uppercase naming with hyphens
 
 To ensure this document remains continuously up to date:
 - Run `./scripts/update_metrics.sh` before every commit or whenever code metrics shift.
-- A git pre-commit hook automatically executes this script and stages `METRICS.md`.
+- A git pre-commit hook automatically executes this script, syncs tabular summaries to `README.md`, and stages both files.

@@ -327,6 +327,70 @@ otherwise not in CI.
 
 ---
 
+<!-- METRICS-SUMMARY-START -->
+## Project Metrics & Verification Summary
+
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `d2c8693 (2026-11-07)`_
+
+### Repository & Codebase Overview
+
+| Metric Dimension | Value / Measurement | Description / Invariant |
+|---|---|---|
+| **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
+| **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
+| **Total Tracked Code Lines** | **98,328** lines (120,927 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,096** pure code lines | 265 Rust files (79,196 total physical lines) |
+| **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
+| **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
+| **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
+| **Rust Line Coverage** | **99.89%** (34,967 / 35,007 lines) | LLVM-cov gated floor: 99.00% |
+| **GUI Backend Line Coverage**| **100.00%** (6,472 / 6,472 lines) | Tauri IPC backend coverage floor: 100.00% |
+| **Frontend Line Coverage** | **100.00%** (14 / 14 UI files) | Node.js DOM unit, flow, accessibility & streaming suites |
+| **Python Coverage** | **100.00%** (153 / 153 statements) | LightEval adapter stubs & evaluation scaffolding |
+
+### Source Code Distribution
+
+| Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
+|---|---|---|---|---|---|---|
+| **Rust (.rs)** | 265 | 64,771 | 9,440 | 4,985 | 79,196 | 65.9% |
+| **Markdown (.md)** | 107 | 17,423 | 2,090 | 4,174 | 23,687 | 17.7% |
+| **JavaScript (.js)** | 55 | 7,207 | 687 | 543 | 8,437 | 7.3% |
+| **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
+| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
+| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.8% |
+| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
+| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
+| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
+| **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
+| **Total Repository** | **478** | **98,328** | **12,466** | **10,133** | **120,927** | **100.0%** |
+
+### Rust Crate Breakdown
+
+| Crate Name | Purpose / Role | Files | Code Lines | Comments | Blank Lines | Total Lines | Unsafe Blocks |
+|---|---|---|---|---|---|---|---|
+| **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE | 116 | 32,352 | 4,273 | 2,492 | 39,117 | **0** (`forbid`) |
+| **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 12,997 | 845 | 895 | 14,737 | **0** (`forbid`) |
+| **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,458 | 337 | 339 | 5,134 | **0** (`forbid`) |
+| **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,167 | 184 | 122 | 1,473 | **0** (`forbid`) |
+| **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 47 | 11,990 | 1,135 | 823 | 13,948 | **0** (`forbid`) |
+| **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,132 | 341 | 314 | 4,787 | **0** (`forbid`) |
+| **Total Rust** | **Workspace & GUI** | **265** | **67,096** | **7,115** | **4,985** | **79,196** | **0** |
+
+### Test Coverage & Verification
+
+| Test Suite | Target Scope | Line Coverage | Function Coverage | Region / Branch Coverage | Suite Duration | Gate Status |
+|---|---|---|---|---|---|---|
+| **Rust Workspace** | `scripts/coverage.sh --rust` | **99.89%** (34,967 / 35,007) | **99.92%** (3,813 / 3,816) | 99.00% (68,795 / 69,489) | ~4m 15s | **PASS** (Floor: 99.0%) |
+| **Ferrum GUI Backend** | `scripts/coverage.sh --gui` | **100.00%** (6,472 / 6,472) | **100.00%** (711 / 711) | 99.11% (11,539 / 11,643) | ~21s | **PASS** (Floor: 100.0%) |
+| **Frontend UI (DOM / Node)** | `scripts/coverage.sh --js` | **100.00%** (14 / 14 files) | **100.00%** | 93.81% (branch) | ~6s | **PASS** (Floor: 100.0%) |
+| **Evaluation Suite (Python)**| `scripts/coverage.sh --py` | **100.00%** (153 / 153 stmts) | **100.00%** | 100.00% | ~6s | **PASS** (Floor: 100.0%) |
+| **Combined Full Suite** | `scripts/coverage.sh --all` | **> 99.9% Overall** | **> 99.9% Overall** | **> 98.9% Overall** | **~4m 50s** | **ALL GATES PASS** |
+
+_For comprehensive details, memory bounds, and modularization logs, see [METRICS.md](METRICS.md)._
+
+<!-- METRICS-SUMMARY-END -->
+---
+
 ## License
 
 MIT. See [LICENSE](LICENSE). The default corpus (TinyStories V2) is
