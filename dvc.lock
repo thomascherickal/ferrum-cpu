@@ -34,14 +34,14 @@ stages:
       size: 22502601
     - path: ferrum_core/src
       hash: md5
-      md5: 7aab1fe775112456508ae3636b712e8f.dir
-      size: 1400426
-      nfiles: 115
+      md5: 8608a5a2da7b5d19c7ede0aa2c2467b9.dir
+      size: 1485553
+      nfiles: 116
     - path: slm_cli/src
       hash: md5
-      md5: 42799586a8d6de5bc0d52d0f04b8babc.dir
-      size: 255827
-      nfiles: 30
+      md5: a45b7ff6d1b016d58dc18a7722f4bcbe.dir
+      size: 317806
+      nfiles: 35
     params:
       params.yaml:
         prepare:
@@ -80,14 +80,14 @@ stages:
       size: 20190677
     - path: ferrum_core/src
       hash: md5
-      md5: 1159e0130a3acd7bd415ebbb963a57bb.dir
-      size: 1144038
-      nfiles: 96
+      md5: 8608a5a2da7b5d19c7ede0aa2c2467b9.dir
+      size: 1485553
+      nfiles: 116
     - path: slm_cli/src
       hash: md5
-      md5: 4703ab7358b7b106e40d2e69166a2d53.dir
-      size: 176073
-      nfiles: 16
+      md5: a45b7ff6d1b016d58dc18a7722f4bcbe.dir
+      size: 317806
+      nfiles: 35
     params:
       params.yaml:
         model:
@@ -110,12 +110,12 @@ stages:
     outs:
     - path: models/slm.gguf
       hash: md5
-      md5: e387fa48f0990e54c603c61015de710f
+      md5: abcf5ff4f6068c26f7e5753baa97901a
       size: 620320
     - path: models/tokenizer.gguf
       hash: md5
-      md5: c2ebc991dc85594541ad9852e92db99b
-      size: 32896
+      md5: 23c1ea5b5eeaebb16b6f386a2f6857af
+      size: 32864
   eval:
     cmd: cargo run --release -q -p slm_cli -- eval models/slm.gguf 
       data/prepared/val.txt --json metrics/val.json && cargo run --release -q -p
@@ -132,14 +132,14 @@ stages:
       size: 1129150
     - path: models/slm.gguf
       hash: md5
-      md5: e387fa48f0990e54c603c61015de710f
+      md5: abcf5ff4f6068c26f7e5753baa97901a
       size: 620320
     outs:
     - path: metrics/test.json
       hash: md5
-      md5: 41f3fa0c4e844dee9eaa0bf5b32333a2
-      size: 225
+      md5: e2789f13a1372cc08b87ecc66ce919df
+      size: 226
     - path: metrics/val.json
       hash: md5
-      md5: f522535bca950433599da89fafa1dc9a
+      md5: 1a40f3387667d8b258a57e0c2803ed8b
       size: 227
