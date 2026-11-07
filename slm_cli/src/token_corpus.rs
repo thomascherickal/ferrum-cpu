@@ -12,7 +12,7 @@ pub fn open_token_file(
     tokenizer: Option<&str>,
     char_level: bool,
 ) -> Result<(TokenFile, ByteBpeTokenizer), String> {
-    let file = TokenFile::open(path).map_err(|e| e.to_string())?;
+    let file = crate::util::err_str(TokenFile::open(path))?;
     let tok_path = tokenizer.ok_or(
         "training from a token file needs --tokenizer <tok.gguf>, the file `tokenize` used",
     )?;
@@ -21,8 +21,10 @@ pub fn open_token_file(
             "a token file is BPE-tokenized; --vocab 0 (character-level) cannot be used".into(),
         );
     }
-    let bytes =
-        std::fs::read(tok_path).map_err(|e| format!("cannot read tokenizer {tok_path}: {e}"))?;
+    let bytes = crate::util::fmt_err(
+        std::fs::read(tok_path),
+        &format!("cannot read tokenizer {tok_path}"),
+    )?;
     let sha = sha256_hex(&bytes);
     if sha != file.tokenizer_sha256() {
         return Err(format!(
@@ -31,7 +33,7 @@ pub fn open_token_file(
             file.tokenizer_sha256()
         ));
     }
-    let tok = ByteBpeTokenizer::from_gguf_bytes(&bytes).map_err(|e| e.to_string())?;
+    let tok = crate::util::err_str(ByteBpeTokenizer::from_gguf_bytes(&bytes))?;
     if tok.vocab_size() != file.vocab_size() {
         return Err(format!(
             "{tok_path} has a vocabulary of {} but {path} was made with {}",

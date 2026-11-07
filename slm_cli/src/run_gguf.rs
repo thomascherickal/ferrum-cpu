@@ -75,17 +75,17 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
             est as f64 / 1e9
         );
     }
-    if let Some(avail) = available_memory_bytes() {
+    if let Some(e) = available_memory_bytes().and_then(|avail| {
         eprintln!("  available memory   ≈ {:.2} GB", avail as f64 / 1e9);
-        if let Some(e) = memory_error(
+        memory_error(
             "resident memory",
             est,
             avail,
             args.has("force"),
             "try a smaller --quant, or pass --force to attempt it anyway.",
-        ) {
-            return Err(e.into());
-        }
+        )
+    }) {
+        return Err(e.into());
     }
 
     // Tokenizer is optional; without one, the prompt must be raw token IDs.
@@ -104,9 +104,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 
     eprintln!("Loading weights…");
     let t0 = Instant::now();
-    let mut model = g
-        .load_llama_prec(prec)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let mut model = crate::util::fmt_err(g.load_llama_prec(prec), "cannot load model")?;
     eprintln!(
         "  loaded in {:.2}s: {} layers, dim {}, vocab {}, ctx {}",
         t0.elapsed().as_secs_f32(),
@@ -118,10 +116,8 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        ferrum_core::apply_checkpoint_weights(&mut model, bytes)
-            .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
+        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        crate::util::fmt_err(ferrum_core::apply_checkpoint_weights(&mut model, bytes), &format!("cannot apply checkpoint {ckpt}"))?;
         eprintln!("  applied fine-tuned checkpoint {ckpt}");
     }
 
@@ -195,14 +191,7 @@ pub(crate) fn cmd_run_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error>
             &text_stops,
         )
     });
-    let out_ids = model.generate_until(
-        &prompt_ids,
-        max_new,
-        &params,
-        &stops,
-        &mut rng,
-        &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
-    )?;
+    let out_ids = model.generate_until(&prompt_ids, max_new, &params, &stops, &mut rng, &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)))?;
     let dt = t1.elapsed().as_secs_f32();
 
     // stdout carries only the generated text, so `run-gguf ... > out.txt` is clean.
@@ -284,6 +273,9 @@ mod tests {
             run(&[&model, "abc", "--quant", quant, "--max", "3", "--temp", "0"]).unwrap();
         }
         // --stop with a tokenizer, and more tokens than the context holds.
-        run(&[&model, "abc", "--stop", "zz", "--max", "40", "--temp", "0"]).unwrap();
+        run(&[&model, "abc", "--stop", "zz", "--max", "40", "--temp", "0", "--raw"]).unwrap();
+
+        let e = crate::memory::with_available_memory_override(10, || err(run(&[&model, "abc"])));
+        assert!(e.contains("resident memory"));
     }
 }

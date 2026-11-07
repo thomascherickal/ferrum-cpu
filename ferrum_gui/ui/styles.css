@@ -1,5 +1,6 @@
 /* Ferrum SLM Studio — dark theme, rust-orange accent. Vanilla CSS, no frameworks. */
 :root {
+  color-scheme: dark;
   --bg: #0f172a;
   --bg2: #1e293b;
   --bg3: #273449;
@@ -70,6 +71,11 @@ label.narrow { max-width: 150px; }
 input[type=text], input[type=number], textarea, select {
   background: var(--bg2); color: var(--fg); border: 1px solid var(--field-line);
   border-radius: 6px; padding: 8px 10px; font: inherit;
+  color-scheme: dark;
+}
+select option, select optgroup {
+  background: var(--bg2);
+  color: #ffffff;
 }
 ::placeholder { color: var(--muted); opacity: 1; }
 

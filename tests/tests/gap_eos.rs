@@ -7,26 +7,36 @@ use ferrum_core::{
 use std::path::Path;
 
 fn corpus() -> String {
-    (0..60)
+    (0..20)
         .map(|i| format!("The cat sat on mat {}.", i % 4))
         .collect::<Vec<_>>()
         .join("\n<|endoftext|>\n")
 }
 
+use std::sync::OnceLock;
+
+static MODEL_BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+
 fn train() -> GenerativeSLM {
-    let cfg = TransformerConfig {
-        context_len: 16,
-        embed_dim: 32,
-        num_heads: 2,
-        num_blocks: 1,
-        hidden_dim: 64,
-        epochs: 60,
-        lr: 0.01,
-        batch_size: 8,
-        vocab_size: 300,
-        ..TransformerConfig::default()
-    };
-    GenerativeSLM::train_transformer_config(&corpus(), &cfg, &mut Rng::new(7), |_, _| {}).unwrap()
+    let bytes = MODEL_BYTES.get_or_init(|| {
+        let cfg = TransformerConfig {
+            context_len: 16,
+            embed_dim: 16,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 32,
+            epochs: 20,
+            lr: 0.02,
+            batch_size: 8,
+            vocab_size: 300,
+            ..TransformerConfig::default()
+        };
+        GenerativeSLM::train_transformer_config(&corpus(), &cfg, &mut Rng::new(7), |_, _| {})
+            .unwrap()
+            .to_bytes()
+            .unwrap()
+    });
+    GenerativeSLM::from_bytes(bytes).unwrap()
 }
 
 #[test]
@@ -37,7 +47,7 @@ fn separator_trains_as_eos_token_and_generation_stops_there() {
     let ids = tok.encode_docs(&corpus());
     assert_eq!(
         ids.iter().filter(|&&i| i == eos).count(),
-        59,
+        19,
         "one EOS per separator"
     );
     // the literal separator never survives as byte pieces

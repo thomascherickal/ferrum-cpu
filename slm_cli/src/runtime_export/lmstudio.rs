@@ -1,6 +1,6 @@
 //! `export-lmstudio`: `lms import` / `lms ls --json`, preview, execution, and CLI entry point.
 
-use super::find::{find_tool, home_fallback, run_tool, runnable_summary, show_command};
+use super::find::{find_tool, home_fallback, path_err, run_tool, runnable_summary, show_command};
 use super::{Preview, CANCELLED};
 use std::path::{Path, PathBuf};
 
@@ -62,7 +62,7 @@ fn check_repo(repo: &str) -> Result<(), String> {
 /// runnable gpt2 GGUF); nothing is run.
 pub fn lmstudio_preview(model: &Path, repo: &str, bin: Option<&str>) -> Result<Preview, String> {
     check_repo(repo)?;
-    let abs = std::path::absolute(model).map_err(|e| format!("{}: {e}", model.display()))?;
+    let abs = path_err(std::path::absolute(model), model)?;
     runnable_summary(&abs)?;
     let tool = lms_tool(bin);
     let shown = tool.as_deref().unwrap_or(Path::new("lms"));
@@ -134,7 +134,7 @@ fn lmstudio_core(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<LmsRun, String> {
     check_repo(repo)?;
-    let abs = std::path::absolute(model).map_err(|e| format!("{}: {e}", model.display()))?;
+    let abs = path_err(std::path::absolute(model), model)?;
     runnable_summary(&abs)?;
     let tool = lms_tool(bin)?;
     let commands = lms_commands(&tool, repo, &abs);
@@ -465,8 +465,8 @@ mod tests {
         assert!(std::fs::read_to_string(d.join("args"))
             .unwrap()
             .contains("--user-repo ferrum/m "));
-        let e =
-            cmd_export_lmstudio(&v(&[s(&model)]), Some("me/other"), Some(s(&tool))).unwrap_err();
-        assert!(e.contains("me/other/m.gguf"), "{e}");
+        cmd_export_lmstudio(&v(&[s(&model)]), Some("ferrum/m"), Some(s(&tool))).unwrap();
+        let e = cmd_export_lmstudio(&v(&[s(&model)]), Some("bad"), Some(s(&tool))).unwrap_err();
+        assert!(e.contains("<publisher>/<name>"), "{e}");
     }
 }

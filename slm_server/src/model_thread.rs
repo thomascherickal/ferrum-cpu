@@ -117,7 +117,7 @@ pub(crate) fn spawn(
     let alive = Arc::new(());
     let weak = Arc::downgrade(&alive);
     let (ready_tx, ready_rx) = mpsc::channel::<Result<Info, String>>();
-    std::thread::Builder::new()
+    let spawn_res = std::thread::Builder::new()
         .name("ferrum-model".into())
         .spawn(move || {
             let _alive = alive;
@@ -134,8 +134,8 @@ pub(crate) fn spawn(
             for job in rx {
                 handle(&model, job);
             }
-        })
-        .map_err(|e| format!("cannot spawn model thread: {e}"))?;
+        });
+    crate::fmt_err(spawn_res, "cannot spawn model thread")?;
     let info = ready_rx
         .recv()
         .map_err(|_| "model thread died while loading".to_string())??;

@@ -280,7 +280,7 @@ where
     let drain = || loop {
         // The lock is released before the kernel runs, so a panicking kernel
         // cannot poison it.
-        let next = work.lock().unwrap_or_else(|e| e.into_inner()).pop();
+        let next = work.lock().expect("lock").pop();
         match next {
             Some((r0, r1, block)) => kernel(r0, r1, block),
             None => break,
@@ -290,12 +290,7 @@ where
         // ponytail: a failed spawn just means fewer helpers; the caller's own
         // `drain()` below finishes whatever they did not take.
         for _ in 0..helpers {
-            if std::thread::Builder::new()
-                .spawn_scoped(scope, drain)
-                .is_err()
-            {
-                break;
-            }
+            let _ = std::thread::Builder::new().spawn_scoped(scope, drain);
         }
         drain();
     });

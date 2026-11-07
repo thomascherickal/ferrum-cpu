@@ -331,9 +331,7 @@ mod tests {
                 &mut Rng::new(0),
             )
             .unwrap();
-        if want.last() == Some(&(llama::EOS as usize)) {
-            want.pop();
-        }
+        want.retain(|&t| t != llama::EOS as usize);
         assert_eq!((g.n_tokens, g.text), (want.len(), m.tok.decode(&want)));
         // max_tokens beyond the window still answers.
         assert!(m.generate(&req(&long, 99, &[])).is_ok());
@@ -395,9 +393,7 @@ mod tests {
             )
             .unwrap();
         let g = m.generate(&req("ab", 6, &[])).unwrap();
-        if want.last() == Some(&(llama::EOS as usize)) {
-            want.pop();
-        }
+        want.retain(|&t| t != llama::EOS as usize);
         assert_eq!(g.n_tokens, want.len());
         assert_eq!(g.text, m.tok.decode(&want));
     }
@@ -424,9 +420,7 @@ mod tests {
             .model
             .generate(&prompt, 6, &params, &stops, &mut Rng::new(0))
             .unwrap();
-        if want.last().is_some_and(|t| stops.contains(t)) {
-            want.pop();
-        }
+        want.retain(|&t| !stops.contains(&t));
         let chat = GenRequest {
             chat: true,
             ..req("ab", 6, &[])
@@ -450,9 +444,7 @@ mod tests {
                 &mut Rng::new(0),
             )
             .unwrap();
-        if raw.last() == Some(&(llama::EOS as usize)) {
-            raw.pop();
-        }
+        raw.retain(|&t| t != llama::EOS as usize);
         let got = m.generate(&req("ab", 6, &[])).unwrap();
         assert_eq!(
             (got.n_tokens, got.text),

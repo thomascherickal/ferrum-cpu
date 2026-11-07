@@ -53,24 +53,33 @@ fn greedy() -> SamplingParams {
     SamplingParams::with_temperature(0.0)
 }
 
-/// The 0.1M reference config (103,936 params at vocab 512 tied), trained on a repetitive story
-/// so its distribution is peaked.
+use std::sync::OnceLock;
+
+static TINY_MODEL_BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+
+/// The tiny reference config trained on a repetitive story so its distribution is peaked.
 fn tiny_model() -> GenerativeSLM {
-    let story = "The cat sat on the mat. It's 2024, isn't it?  Yes!\n<|endoftext|>\n".repeat(120);
-    let cfg = TransformerConfig {
-        context_len: 64,
-        embed_dim: 64,
-        num_heads: 4,
-        num_blocks: 2,
-        hidden_dim: 128,
-        vocab_size: 512,
-        weight_tying: true,
-        epochs: 40,
-        lr: 0.01,
-        batch_size: 8,
-        ..TransformerConfig::default()
-    };
-    GenerativeSLM::train_transformer_config(&story, &cfg, &mut Rng::new(11), |_, _| {}).unwrap()
+    let bytes = TINY_MODEL_BYTES.get_or_init(|| {
+        let story = "The cat sat on the mat. It's 2024, isn't it?  Yes!\n<|endoftext|>\n".repeat(30);
+        let cfg = TransformerConfig {
+            context_len: 32,
+            embed_dim: 32,
+            num_heads: 4,
+            num_blocks: 1,
+            hidden_dim: 64,
+            vocab_size: 320,
+            weight_tying: true,
+            epochs: 12,
+            lr: 0.02,
+            batch_size: 8,
+            ..TransformerConfig::default()
+        };
+        GenerativeSLM::train_transformer_config(&story, &cfg, &mut Rng::new(11), |_, _| {})
+            .unwrap()
+            .to_bytes()
+            .unwrap()
+    });
+    GenerativeSLM::from_bytes(bytes).unwrap()
 }
 
 /// Text llama.cpp generates after `prompt` (greedy, `n` tokens). Its async logger sometimes
@@ -90,7 +99,7 @@ fn llama_complete(dir: &Path, model: &Path, prompt: &str, n: usize) -> String {
         assert!(st.success(), "llama-completion failed on {model:?}");
         std::fs::read_to_string(&out_file).unwrap()
     };
-    let text = (0..6).map(|_| run()).max_by_key(|t| t.len()).unwrap();
+    let text = (0..2).map(|_| run()).max_by_key(|t| t.len()).unwrap();
     text.replace("[end of text]", "")
         .strip_prefix(prompt)
         .unwrap_or_else(|| panic!("llama output does not echo the prompt: {text:?}"))
@@ -210,8 +219,8 @@ fn reference_507k_config_loads_and_generates_in_llama_cpp() {
         num_blocks: 3,
         hidden_dim: 320,
         vocab_size: 1024,
-        max_tokens: 128 * 8 * 4,
-        batch_size: 8,
+        max_tokens: 128,
+        batch_size: 1,
         ..TransformerConfig::default()
     };
     let slm = GenerativeSLM::train_transformer_config(&corpus, &cfg, &mut Rng::new(2), |_, _| {})

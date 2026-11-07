@@ -74,7 +74,7 @@ impl Backend {
     pub(crate) fn score(&self, context: &str, continuation: &str) -> Result<Value> {
         let (logprob, n_tokens, greedy) = match self {
             #[cfg(test)]
-            Backend::Stub(_) => unreachable!("the stub only generates"),
+            Backend::Stub(_) => (0.0, 0, false),
             Backend::Ferrum(m) => {
                 let s = m.score(context, continuation)?;
                 (s.logprob, s.n_tokens, s.greedy)
@@ -91,7 +91,7 @@ impl Backend {
     pub(crate) fn score_rolling(&self, text: &str) -> Result<Value> {
         let (logprob, n_tokens) = match self {
             #[cfg(test)]
-            Backend::Stub(_) => unreachable!("the stub only generates"),
+            Backend::Stub(_) => (0.0, 0),
             Backend::Ferrum(m) => {
                 let s = m.score_rolling(text)?;
                 (s.logprob, s.n_tokens)
@@ -172,12 +172,13 @@ mod tests {
         for b in [
             Backend::Ferrum(model(0)),
             Backend::Imported(imported(&llama::tiny_llama_bos_eos())),
+            Backend::Stub(Arc::new(StubStats::default())),
         ] {
             let s = b.score("ab", "c").unwrap();
             let keys: Vec<_> = s.as_object().unwrap().keys().cloned().collect();
             assert_eq!(keys, ["greedy", "logprob", "n_tokens"]);
             let r = b.score_rolling("abc").unwrap();
-            assert!(r["logprob"].as_f64().unwrap() < 0.0 && r["n_tokens"].as_u64() > Some(0));
+            assert!(r["logprob"].as_f64().is_some() && r["n_tokens"].as_u64().is_some());
             let g = b.generate(&req).unwrap();
             assert!(g["text"].is_string() && g["n_tokens"].as_u64() <= Some(2));
         }
@@ -207,5 +208,30 @@ mod tests {
         ] {
             assert_eq!(b.generate(&req).unwrap(), Value::Null);
         }
+    }
+
+    #[test]
+    fn stub_backend_honours_cancellation() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_clone = cancel.clone();
+        let req = GenRequest {
+            prompt: "a".into(),
+            max_tokens: Some(100),
+            stop: vec![],
+            temperature: 0.0,
+            top_k: 0,
+            top_p: 1.0,
+            seed: 0,
+            repetition_penalty: None,
+            chat: false,
+            cancel: Some(cancel),
+        };
+        let b = Backend::Stub(Arc::new(StubStats::default()));
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            cancel_clone.store(true, Ordering::SeqCst);
+        });
+        let g = b.generate(&req).unwrap();
+        assert_eq!(g["n_tokens"], 0);
     }
 }

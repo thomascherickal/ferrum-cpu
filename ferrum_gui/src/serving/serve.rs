@@ -26,7 +26,10 @@ use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 /// How long `serve_stop` waits for in-flight requests before it cuts the server off.
+#[cfg(not(test))]
 const STOP_WAIT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+const STOP_WAIT: Duration = Duration::from_millis(80);
 
 /// The form of the Serve tab.
 #[derive(Deserialize)]
@@ -86,7 +89,7 @@ pub struct Serve(Mutex<Option<Running>>);
 
 impl Serve {
     fn slot(&self) -> std::sync::MutexGuard<'_, Option<Running>> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        crate::infra::lock(&self.0)
     }
 }
 
@@ -147,10 +150,7 @@ fn display_url(addr: SocketAddr) -> String {
 
 /// The last `serve-log` line of a server that ended.
 fn stopped_line<E: std::fmt::Display>(result: Result<(), E>) -> String {
-    match result {
-        Ok(()) => "ferrum-serve: stopped".to_string(),
-        Err(e) => format!("ferrum-serve: stopped with an error: {e}"),
-    }
+    match result { Ok(()) => "ferrum-serve: stopped".to_string(), Err(e) => format!("ferrum-serve: stopped with an error: {e}") }
 }
 
 /// Wait up to `wait` for the server task to end; cut it off when a request keeps it busy.
@@ -222,7 +222,7 @@ pub async fn serve_start<R: Runtime>(
 /// Stop the server (in-flight requests finish first) and wait until the model is released.
 /// Answers `running: false` also when none was running.
 #[tauri::command]
-pub async fn serve_stop(state: State<'_, AppState>) -> Result<ServeStatus, CmdError> {
+pub fn serve_stop(state: State<'_, AppState>) -> Result<ServeStatus, CmdError> {
     let running = state.serve.slot().take();
     let Some(r) = running else {
         return Ok(ServeStatus::default());
@@ -230,13 +230,8 @@ pub async fn serve_stop(state: State<'_, AppState>) -> Result<ServeStatus, CmdEr
     let requests = r.requests.load(Ordering::Relaxed);
     let Running { stop, task, .. } = r;
     let _ = stop.send(());
-    blocking(move || wait_for_end(&task, STOP_WAIT)).await?;
-    Ok(ServeStatus {
-        running: false,
-        url: None,
-        requests,
-        auth: false,
-    })
+    wait_for_end(&task, STOP_WAIT)?;
+    Ok(ServeStatus { running: false, url: None, requests, auth: false })
 }
 
 /// Is a server running, where, and how many requests has it answered.

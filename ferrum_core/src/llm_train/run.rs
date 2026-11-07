@@ -127,9 +127,7 @@ impl LlamaTrainer {
             }));
         };
         let note = was.compare(now)?;
-        if let Some(w) = self.run.window {
-            refuse_changed("seq", w, seq)?;
-        }
+        if let Some(w) = self.run.window { refuse_changed("seq", w, seq)?; }
         Ok(note)
     }
 
@@ -525,5 +523,21 @@ mod tests {
             .unwrap();
         assert_eq!(t.step_count(), 12);
         assert_eq!(t.run.epoch_start.map(|e| (e.step, e.epoch)), Some((3, 1)));
+
+        // Test resume_check with epoch_start Some(_) and settings None
+        t.run.resumed = true;
+        t.run.settings = None;
+        let s = super::RunSettings {
+            batch: 4, stride: 1, lr: 0.02, cosine: false, warmup: 0, clip: 1.0, weight_decay: 0.0, dropout: 0.0,
+        };
+        let note = t.resume_check(&s, 6, Some("sha256:aa")).unwrap();
+        assert!(note.unwrap().contains("no recorded corpus or training settings"));
+
+        // Test window mismatch refusal and matching window
+        t.run.settings = Some(s.clone());
+        t.run.window = Some(10);
+        assert!(t.resume_check(&s, 6, Some("sha256:aa")).is_err());
+        t.run.window = Some(6);
+        assert!(t.resume_check(&s, 6, Some("sha256:aa")).is_ok());
     }
 }

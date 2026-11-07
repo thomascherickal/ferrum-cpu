@@ -376,4 +376,17 @@ fn a_server_that_ended_by_itself_is_forgotten_by_the_next_status() {
         json!({"running": false, "url": null, "requests": 0, "auth": false})
     );
     assert!(state.serve.slot().is_none());
+
+    // And a server task that refuses to finish when `serve_stop` is called returns an IPC error.
+    let (stop2, _stopped2) = tokio::sync::oneshot::channel::<()>();
+    let stuck = tauri::async_runtime::spawn(std::future::pending::<()>());
+    *state.serve.slot() = Some(Running {
+        url: "http://127.0.0.1:1".into(),
+        auth: false,
+        requests: Arc::new(AtomicU64::new(0)),
+        stop: stop2,
+        task: stuck,
+    });
+    let err = call(&w, "serve_stop", json!({})).unwrap_err();
+    assert!(msg(&err).contains("was cut off"), "{err}");
 }

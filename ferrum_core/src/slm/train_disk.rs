@@ -80,9 +80,7 @@ fn encode_reader_docs<R: BufRead>(
                 }
             }
             ids.extend(tok.encode(part).into_iter().map(|id| id as u32));
-            if !ids.is_empty() {
-                push(&ids)?;
-            }
+            push(&ids)?;
         }
         Ok(())
     };
@@ -90,18 +88,12 @@ fn encode_reader_docs<R: BufRead>(
         line.clear();
         let n = reader.read_line(&mut line)?;
         if n == 0 {
-            if !buf.is_empty() {
-                emit_segment(&buf)?;
-            }
+            if !buf.is_empty() { emit_segment(&buf)?; }
             break;
         }
         buf.push_str(&line);
         if buf.len() >= (1 << 16) && !line.trim_end_matches(['\r', '\n']).is_empty() {
-            let split = if buf.ends_with('\n') {
-                buf.len() - 1
-            } else {
-                buf.len()
-            };
+            let split = buf.len().saturating_sub(usize::from(buf.ends_with('\n')));
             emit_segment(&buf[..split])?;
             buf.drain(..split);
         }
@@ -131,9 +123,7 @@ pub fn stream_text_to_token_file(
     } else {
         let tok = ByteBpeTokenizer::train_from_file(corpus_path, cfg.vocab_size)?;
         if !cfg.tokenizer_path.is_empty() {
-            if let Some(parent) = tok_path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::create_dir_all(parent)?;
-            }
+            if let Some(parent) = tok_path.parent().filter(|p| !p.as_os_str().is_empty()) { std::fs::create_dir_all(parent)?; }
             crate::fs_atomic::atomic_write(&cfg.tokenizer_path, &tok.to_gguf_bytes())?;
         }
         tok
@@ -373,6 +363,14 @@ mod tests {
         assert!(stream_text_to_token_file(&short_path, &tok_file, &long_ctx).is_err());
 
         // Error: nonexistent file
+        assert!(GenerativeSLM::train_transformer_from_path(
+            &f.dir.join("missing.txt"),
+            &cfg(),
+            1,
+            &mut Rng::new(1),
+            ignore_progress,
+        )
+        .is_err());
         assert!(GenerativeSLM::train_transformer_from_path_validated(
             &f.dir.join("missing.txt"),
             &cfg(),

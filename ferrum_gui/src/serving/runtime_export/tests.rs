@@ -295,13 +295,9 @@ fn cancel_before_the_tool_starts_and_form_validation() {
             name: name.into(),
             ..ollama(&model, &tool)
         };
-        assert!(
-            do_preview(&p)
-                .unwrap_err()
-                .contains("not a usable model name")
-                || name.trim().is_empty(),
-            "{name:?}"
-        );
+        let err = do_preview(&p).unwrap_err();
+        let ok = err.contains("not a usable model name") || name.trim().is_empty();
+        assert!(ok, "{name:?}: {err}");
         assert!(do_export(&p, &|| false).is_err(), "{name:?}");
     }
     for ok in ["ferrum", "me/ferrum:latest", "a.b_c-d"] {

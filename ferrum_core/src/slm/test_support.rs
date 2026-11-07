@@ -159,14 +159,15 @@ pub(super) fn greedy() -> SamplingParams {
 
 /// Trained on short documents so greedy decoding reaches EOS.
 pub(super) fn tiny_eos_slm() -> GenerativeSLM {
-    let corpus = "the cat sat.<|endoftext|>".repeat(60);
+    let corpus = "the cat sat.<|endoftext|>".repeat(25);
     let cfg = TransformerConfig {
         context_len: 16,
         embed_dim: 16,
         num_heads: 2,
         num_blocks: 1,
         hidden_dim: 32,
-        epochs: 30,
+        epochs: 15,
+        lr: 0.02,
         vocab_size: 270,
         ..TransformerConfig::default()
     };
@@ -176,14 +177,15 @@ pub(super) fn tiny_eos_slm() -> GenerativeSLM {
 /// Byte-level model (no merges) trained on a two-byte UTF-8 character, so
 /// generation emits partial UTF-8 sequences token by token.
 pub(super) fn tiny_utf8_slm() -> GenerativeSLM {
-    let corpus = "\u{e9}".repeat(200);
+    let corpus = "\u{e9}".repeat(80);
     let cfg = TransformerConfig {
         context_len: 8,
-        embed_dim: 16,
+        embed_dim: 8,
         num_heads: 2,
         num_blocks: 1,
-        hidden_dim: 32,
-        epochs: 30,
+        hidden_dim: 16,
+        epochs: 12,
+        lr: 0.03,
         vocab_size: 257,
         ..TransformerConfig::default()
     };

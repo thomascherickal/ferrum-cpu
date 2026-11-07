@@ -7,9 +7,40 @@ pub(crate) mod jobs;
 pub(crate) mod paths;
 pub(crate) mod progress;
 
+/// Lock a mutex, recovering the inner value if an earlier holder panicked.
+pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    }
+}
+
+/// Format an `Err(e)` as `"{prefix}: {e}"` without creating a per-call closure.
+pub(crate) fn fmt_err<T, E: std::fmt::Display>(res: Result<T, E>, prefix: &str) -> Result<T, String> {
+    match res {
+        Ok(v) => Ok(v),
+        Err(e) => Err(format!("{prefix}: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_and_fmt_err_handle_ok_and_err_cases() {
+        let m = std::sync::Arc::new(std::sync::Mutex::new(7));
+        assert_eq!(*lock(&m), 7);
+        let m2 = m.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = m2.lock().unwrap();
+            panic!("poison");
+        })
+        .join();
+        assert_eq!(*lock(&m), 7);
+        assert_eq!(fmt_err::<i32, &str>(Ok(3), "p"), Ok(3));
+        assert_eq!(fmt_err::<i32, &str>(Err("bad"), "p"), Err("p: bad".into()));
+    }
 
     #[test]
     fn the_group_exposes_the_shared_plumbing() {

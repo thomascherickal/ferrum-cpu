@@ -692,6 +692,7 @@ mod tests {
         // A "special" string absent from the vocab falls back to plain-text
         // encoding — degraded (2 ids for "hi") but still functional.
         assert_eq!(encode_segments(&tk, &[Segment::Special("hi")]), vec![1, 2]);
+        assert_eq!(encode_segments(&tk, &[Segment::Text("hi".into())]), vec![1, 2]);
     }
 
     #[test]

@@ -463,11 +463,8 @@ fn generate_and_evaluate_use_the_model_facts() {
     );
     assert!(tokens(10) < tokens(0), "10 tokens cost less than 200 chars");
     // ~ Manual §13.2: 0.26-0.29 ms/token for the 0.5M model (+ load): 600 chars is ~257 tokens.
-    assert!(
-        (0.03..0.4).contains(&(gen(396_960, 600) - 0.05 - 2e6 / 200e6)),
-        "{}",
-        gen(396_960, 600)
-    );
+    let g = gen(396_960, 600);
+    assert!((0.03..0.4).contains(&(g - 0.05 - 2e6 / 200e6)), "{g}");
     let ev = |bytes: u64, t: usize| {
         secs(&estimate(
             JobKind::Evaluate,
@@ -741,12 +738,8 @@ fn a_token_file_corpus_has_no_tokenizing_time_and_uses_its_own_vocabulary() {
     );
     // Same tokens trained; only the tokenizer time differs.
     let tokenizer_s = 1_000_000.0 / 1024.0 * TOKENIZE_MS_PER_KB / 1000.0;
-    assert!(
-        (secs(&t) - secs(&f) - tokenizer_s).abs() < 0.01,
-        "{} {}",
-        secs(&t),
-        secs(&f)
-    );
+    let (st, sf) = (secs(&t), secs(&f));
+    assert!((st - sf - tokenizer_s).abs() < 0.01, "{st} {sf}");
     assert!(f
         .notes
         .iter()

@@ -300,11 +300,7 @@ mod tests {
             down[i] -= eps;
             let num = (loss(&up) - loss(&down)) / (2.0 * eps);
             let tol = 1e-2 + 1e-2 * num.abs();
-            assert!(
-                (num - analytic[i]).abs() < tol,
-                "{what}[{i}]: numeric {num} vs analytic {}",
-                analytic[i]
-            );
+            assert!((num - analytic[i]).abs() < tol);
         }
     }
 

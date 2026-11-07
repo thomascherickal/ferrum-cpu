@@ -213,4 +213,13 @@ mod tests {
         assert!(got.iter().any(|l| l == "should-appear 2"));
         assert!(!got.iter().any(|l| l.contains("should-not-appear")));
     }
+
+    #[test]
+    fn sink_slot_recovers_from_poison() {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = SINK.lock().unwrap();
+            panic!("poison sink");
+        }));
+        drop(sink_slot());
+    }
 }

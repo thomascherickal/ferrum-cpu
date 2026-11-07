@@ -391,13 +391,14 @@ fn unservable_files_and_bad_flags_are_refused_at_startup() {
 }
 
 /// The real SmolLM2-135M (Q8_0, `add_bos_token = false` but a BOS id): greedy generation and
-/// both loglikelihoods equal the library at the default int8.
+/// both loglikelihoods equal the library at the default int8. Opt-in via `FERRUM_TEST_SMOLLM2=1`
+/// so instrumented coverage runs do not execute 135M-parameter forward passes.
 #[test]
 fn smollm2_135m_over_http_matches_the_library_when_present() {
     let path = Path::new(DEV).join("models/smollm2-135m-q8_0.gguf");
-    if !path.is_file() {
+    if std::env::var("FERRUM_TEST_SMOLLM2").as_deref() != Ok("1") || !path.is_file() {
         eprintln!(
-            "SKIPPED smollm2_135m_over_http_matches_the_library_when_present: {} is absent",
+            "SKIPPED smollm2_135m_over_http_matches_the_library_when_present: {} (set FERRUM_TEST_SMOLLM2=1)",
             path.display()
         );
         return;

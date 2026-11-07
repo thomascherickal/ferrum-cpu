@@ -138,12 +138,7 @@ mod tests {
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&d);
         // ponytail: a process that bypasses permissions (root) can write there anyway.
-        if let Err(e) = r {
-            assert!(
-                e.starts_with("cannot write ") && e.contains("m.gguf"),
-                "{e}"
-            );
-        }
+        if let Err(e) = r { assert!(e.starts_with("cannot write ") && e.contains("m.gguf")); }
     }
 
     #[test]

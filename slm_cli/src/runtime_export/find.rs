@@ -6,6 +6,13 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub fn path_err<T>(res: std::io::Result<T>, p: &Path) -> Result<T, String> {
+    match res {
+        Ok(v) => Ok(v),
+        Err(e) => Err(format!("{}: {e}", p.display())),
+    }
+}
+
 pub struct GgufSummary {
     pub context_len: u32,
 }
@@ -311,12 +318,7 @@ mod tests {
         assert!(std::env::var_os(unset).is_none());
         let e = find_tool(None, unset, "nope-xyz", None).unwrap_err();
         assert!(e.contains("nope-xyz") && e.contains(unset), "{e}");
-        if let Some(cargo) = std::env::var_os("CARGO")
-            .map(PathBuf::from)
-            .filter(|c| c.is_file())
-        {
-            assert_eq!(find_tool(None, "CARGO", "nope-xyz", None).unwrap(), cargo);
-        }
+        if let Some(cargo) = std::env::var_os("CARGO").map(PathBuf::from).filter(|c| c.is_file()) { assert_eq!(find_tool(None, "CARGO", "nope-xyz", None).unwrap(), cargo); }
         assert!(find_tool(None, unset, "sh", None).is_ok(), "sh is on PATH");
     }
 
@@ -343,6 +345,8 @@ mod tests {
 
     #[test]
     fn show_command_quotes_only_what_needs_it() {
+        assert_eq!(path_err(Ok(1), Path::new("p")), Ok(1));
+        assert_eq!(path_err::<i32>(Err(std::io::Error::other("x")), Path::new("p")), Err("p: x".into()));
         let c = show_command(
             Path::new("/bin/ollama"),
             &[

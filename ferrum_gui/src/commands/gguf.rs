@@ -67,8 +67,8 @@ pub fn model_info(path: String) -> Result<ModelInfo, CmdError> {
             });
         }
     }
-    let raw = std::fs::read(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    let slm = GenerativeSLM::from_bytes(&raw).map_err(|e| format!("not a valid model: {e}"))?;
+    let raw = crate::infra::fmt_err(std::fs::read(&path), &format!("cannot read {path}"))?;
+    let slm = crate::infra::fmt_err(GenerativeSLM::from_bytes(&raw), "not a valid model")?;
     let m = &slm.meta;
     let (tokenizer, merges) = if m.tokenizer_state.is_empty() {
         (
@@ -86,8 +86,7 @@ pub fn model_info(path: String) -> Result<ModelInfo, CmdError> {
     Ok(ModelInfo {
         path: path.clone(),
         bytes: raw.len() as u64,
-        format: ferrum_core::loader::gguf_format(&raw)
-            .map_err(|e| format!("not a valid model: {e}"))?,
+        format: crate::infra::fmt_err(ferrum_core::loader::gguf_format(&raw), "not a valid model")?,
         name: m.dataset_name.clone(),
         task: format!("{:?}", m.task),
         input_dim: m.input_dim,
@@ -139,7 +138,7 @@ pub async fn gguf_info(path: String) -> Result<GgufSummary, CmdError> {
     crate::infra::error::blocking(move || {
         checked_path("GGUF path", &path, true)?;
         let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        let g = Gguf::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
+        let g = crate::infra::fmt_err(Gguf::open(&path), &format!("cannot open {path}"))?;
         let arch = g.architecture().unwrap_or("?").to_string();
         let meta_usize = |k: &str| g.meta(k).and_then(|v| v.as_usize()).unwrap_or(0);
         let dim = meta_usize(&format!("{arch}.embedding_length"));
@@ -272,18 +271,12 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     } else {
         parse_quant(&p.quant)?
     };
-    let g = Gguf::open(&p.model_path).map_err(|e| format!("cannot open {}: {e}", p.model_path))?;
+    let g = crate::infra::fmt_err(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
 
     // Memory guard before the (potentially large) load.
     let est = gguf_resident_bytes(&g, prec);
-    ram_guard(
-        "resident memory",
-        "",
-        est,
-        available_memory_bytes(),
-        p.force,
-        "choose a smaller quant or enable 'load anyway'",
-    )?;
+    let hint = "choose a smaller quant or enable 'load anyway'";
+    ram_guard("resident memory", "", est, available_memory_bytes(), p.force, hint)?;
 
     let tok = GgufTokenizer::from_gguf(&g).ok();
     let text_stops = parse_stops(&p.stop);
@@ -291,18 +284,14 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
         return Err("stop strings need a tokenizer; this GGUF has none (enter token IDs without stop strings)".into());
     }
     not_cancelled(&job)?;
-    let mut model = g
-        .load_llama_prec(prec)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let mut model = crate::infra::fmt_err(g.load_llama_prec(prec), "cannot load model")?;
     not_cancelled(&job)?;
 
     // Overlay fine-tuned weights from a checkpoint, if requested.
     if let Some(ckpt) = &resume {
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_from_vec(bytes)
-            .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
+        let bytes = crate::infra::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        let mut tr = crate::infra::fmt_err(LlamaTrainer::new(model), "cannot wrap model")?;
+        crate::infra::fmt_err(tr.load_checkpoint_from_vec(bytes), &format!("cannot apply checkpoint {ckpt}"))?;
         model = tr.model;
     }
 
@@ -319,7 +308,7 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
             ferrum_core::chat_format::detect(
                 g.meta("tokenizer.chat_template").and_then(|v| v.as_str()),
                 g.architecture(),
-                |piece| tok.as_ref().and_then(|t| t.token_id(piece)).is_some(),
+                |piece| t.token_id(piece).is_some(),
             )
         };
         let mut v = Vec::new();
@@ -361,21 +350,20 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     let mut matcher = tok
         .as_ref()
         .map(|t| StopMatcher::new(t, prompt_ids.last().copied().unwrap_or(0), &text_stops));
-    let out = model
-        .generate_until_cancellable(
-            &prompt_ids,
-            p.max_new,
-            &params,
-            &stops,
-            &mut rng,
-            &|| {
-                let c = job.cancelled();
-                stopped.set(stopped.get() || c);
-                c
-            },
-            &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
-        )
-        .map_err(|e| format!("generation failed: {e}"))?;
+    let res = model.generate_until_cancellable(
+        &prompt_ids,
+        p.max_new,
+        &params,
+        &stops,
+        &mut rng,
+        &|| {
+            let c = job.cancelled();
+            stopped.set(stopped.get() || c);
+            c
+        },
+        &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
+    );
+    let out = crate::infra::fmt_err(res, "generation failed")?;
     let seconds = t0.elapsed().as_secs_f32();
 
     let text = match &tok {
@@ -524,7 +512,7 @@ mod tests {
         let p = |max_new: usize| -> GgufRunParams {
             serde_json::from_value(serde_json::json!({
                 "modelPath": src, "prompt": "hi", "quant": "int8", "maxNew": max_new, "temp": 0.0,
-                "genSeed": 1, "ids": null, "force": false, "resume": null, "raw": true
+                "genSeed": 1, "ids": null, "force": false, "resume": null, "raw": false
             }))
             .unwrap()
         };

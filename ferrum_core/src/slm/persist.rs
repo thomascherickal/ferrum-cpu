@@ -149,10 +149,8 @@ impl GenerativeSLM {
 
 /// Create the parent directories of `model_path`, then write `bytes` atomically.
 fn write_model(model_path: &str, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = std::path::Path::new(model_path).parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = std::path::Path::new(model_path).parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
     }
     crate::fs_atomic::atomic_write(model_path, bytes)
 }
@@ -174,7 +172,7 @@ mod tests {
         // dim 32 / 1 block keeps the test cheap while the [32,32] projections are
         // still well above QUANT_MIN_LEN, so int4 packing genuinely engages.
         let slm =
-            GenerativeSLM::train_transformer(&corpus, 8, 32, 4, 1, 64, 8, 0.01, 8, 0, &mut rng)
+            GenerativeSLM::train_transformer(&corpus, 8, 32, 4, 1, 64, 1, 0.01, 8, 0, &mut rng)
                 .unwrap();
 
         let bytes = slm.to_bytes_quantized_int4().unwrap();
@@ -346,7 +344,38 @@ mod tests {
                 !std::path::Path::new(&format!("{p}.tmp")).exists(),
                 "{name}"
             );
+            let p_nested = dir.join("nested/subdir/m.gguf");
+            let p_nested_str = p_nested.to_str().unwrap();
+            save(&slm, p_nested_str).unwrap();
+            let _ = std::fs::remove_file(&p_nested);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_or_train_trains_first_then_loads() {
+        let dir = std::env::temp_dir().join(format!("ferrum_lot_{}", std::process::id()));
+        let p = dir.join("model.gguf");
+        let p_str = p.to_str().unwrap();
+        let corpus = "the cat sat on the mat. ".repeat(20);
+        let cfg = TransformerConfig {
+            context_len: 4,
+            embed_dim: 8,
+            num_heads: 2,
+            num_blocks: 1,
+            hidden_dim: 16,
+            epochs: 1,
+            batch_size: 4,
+            ..TransformerConfig::default()
+        };
+        let mut rng = Rng::new(1);
+        let (slm1, loaded) = GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
+        assert!(!loaded);
+        assert!(p.exists());
+
+        let (slm2, loaded) = GenerativeSLM::load_or_train(p_str, &corpus, &cfg, &mut rng, |_, _| {}).unwrap();
+        assert!(loaded);
+        assert_eq!(slm1.to_bytes().unwrap(), slm2.to_bytes().unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

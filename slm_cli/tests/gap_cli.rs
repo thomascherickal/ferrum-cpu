@@ -110,7 +110,7 @@ fn bpe_generate_accepts_short_seed_and_is_deterministic() {
 fn cli_generate_stops_at_eos() {
     let d = tmp("eosgen");
     let corpus = d.join("c.txt");
-    let docs: Vec<String> = (0..60)
+    let docs: Vec<String> = (0..30)
         .map(|i| format!("The cat sat on mat {}.", i % 4))
         .collect();
     std::fs::write(&corpus, docs.join("\n<|endoftext|>\n")).unwrap();
@@ -120,21 +120,21 @@ fn cli_generate_stops_at_eos() {
         corpus.to_str().unwrap(),
         model.to_str().unwrap(),
         "--epochs",
-        "60",
+        "18",
         "--context",
         "16",
         "--embed",
-        "32",
+        "16",
         "--heads",
         "2",
         "--blocks",
         "1",
         "--hidden",
-        "64",
+        "32",
         "--vocab",
-        "300",
+        "280",
         "--lr",
-        "0.01",
+        "0.02",
         "--batch",
         "8",
     ]);

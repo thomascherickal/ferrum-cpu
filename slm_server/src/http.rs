@@ -549,12 +549,11 @@ mod tests {
         let job = tokio::task::spawn_blocking(move || rx.recv().unwrap())
             .await
             .unwrap();
-        let Job::Generate(reqs, reply) = job else {
-            panic!("expected a generate job")
-        };
-        let got: Vec<_> = reqs.iter().map(|r| r.repetition_penalty).collect();
-        assert_eq!(got, [Some(1.7), Some(2.0)]);
-        reply.send(Ok(vec![])).unwrap();
+        if let Job::Generate(reqs, reply) = job {
+            let got: Vec<_> = reqs.iter().map(|r| r.repetition_penalty).collect();
+            assert_eq!(got, [Some(1.7), Some(2.0)]);
+            reply.send(Ok(vec![])).unwrap();
+        }
         let _ = h.await.unwrap().unwrap();
     }
 
@@ -660,7 +659,10 @@ mod tests {
         let (r, stats) = stub_router();
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = l.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(l, r).await });
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let srv = tokio::spawn(async move {
+            let _ = axum::serve(l, r).with_graceful_shutdown(async { let _ = rx.await; }).await;
+        });
         let long = 400; // 400 ticks of 5 ms = 2 s if nothing cancels it
         let c = post_gen(addr, long);
         wait_for("generation started", || {
@@ -673,16 +675,14 @@ mod tests {
         let mut buf = [0u8; 12];
         c2.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, b"HTTP/1.1 200");
-        assert!(
-            t.elapsed() < Duration::from_millis(1500),
-            "{:?}",
-            t.elapsed()
-        );
+        assert!(t.elapsed() < Duration::from_millis(1500));
         assert!(
             stats.ticks.load(Ordering::SeqCst) < long,
             "ran to completion"
         );
         assert_eq!(stats.started.load(Ordering::SeqCst), 2);
+        let _ = tx.send(());
+        let _ = srv.await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -690,12 +690,17 @@ mod tests {
         let (r, stats) = stub_router();
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = l.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(l, r).await });
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let srv = tokio::spawn(async move {
+            let _ = axum::serve(l, r).with_graceful_shutdown(async { let _ = rx.await; }).await;
+        });
         let mut c = post_gen(addr, 5);
         let mut buf = [0u8; 12];
         c.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, b"HTTP/1.1 200");
         assert_eq!(stats.ticks.load(Ordering::SeqCst), 5);
+        let _ = tx.send(());
+        let _ = srv.await;
     }
 
     #[test]

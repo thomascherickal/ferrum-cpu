@@ -1,8 +1,31 @@
 //! Memory estimates and budgets for `run-gguf`, `finetune-gguf` and `export-gguf`.
 
 pub(crate) use ferrum_core::memory::{
-    available_memory_bytes, memory_error, resident_bytes as estimate_resident_bytes,
+    memory_error, resident_bytes as estimate_resident_bytes,
 };
+
+#[cfg(test)]
+thread_local! {
+    static TEST_AVAIL_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_available_memory_override<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
+    TEST_AVAIL_OVERRIDE.with(|cell| {
+        cell.set(Some(bytes));
+        let res = f();
+        cell.set(None);
+        res
+    })
+}
+
+pub(crate) fn available_memory_bytes() -> Option<usize> {
+    #[cfg(test)]
+    if let Some(v) = TEST_AVAIL_OVERRIDE.with(|c| c.get()) {
+        return Some(v);
+    }
+    ferrum_core::memory::available_memory_bytes()
+}
 
 /// Peak resident bytes of applying a fine-tune checkpoint (`--resume`) to an f32 model of size
 /// `est` with `apply_checkpoint_weights`: the model, the checkpoint's raw bytes (parsed in

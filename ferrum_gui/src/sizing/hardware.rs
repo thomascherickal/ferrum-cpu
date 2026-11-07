@@ -246,15 +246,8 @@ pub fn detect() -> HardwareInfo {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     sys.refresh_cpu_all();
-    let cpu_model = sys
-        .cpus()
-        .first()
-        .map(|c| c.brand().trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unknown CPU".to_string());
-    let logical_cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or_else(|_| sys.cpus().len().max(1));
+    let cpu_model = sys.cpus().first().map(|c| c.brand().trim()).filter(|s| !s.is_empty()).unwrap_or("unknown CPU").to_string();
+    let logical_cores = std::thread::available_parallelism().map(std::num::NonZeroUsize::get).unwrap_or(sys.cpus().len().max(1));
     HardwareInfo {
         cpu_model,
         physical_cores: sys.physical_core_count(),

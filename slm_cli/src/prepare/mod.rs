@@ -133,9 +133,11 @@ pub fn prepare(
     }
     let out = Path::new(&o.out);
     // An input that is one of this run's own outputs is refused here, untouched.
-    let files = expand_inputs(&o.inputs, out).map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(out)
-        .map_err(|e| format!("cannot create directory {}: {e}", out.display()))?;
+    let files = crate::util::err_str(expand_inputs(&o.inputs, out))?;
+    crate::util::fmt_err(
+        std::fs::create_dir_all(out),
+        &format!("cannot create directory {}", out.display()),
+    )?;
     // Everything is written to `*.part` and renamed into place only after every input was read
     // and validated, so a failed run leaves the previous outputs untouched.
     let r = build(o, out, files, progress);
@@ -165,8 +167,10 @@ fn commit_outputs(
     }
     for n in OUTPUTS {
         let (from, to) = (part(out, n), out.join(n));
-        rename(&from, &to)
-            .map_err(|e| format!("cannot rename {} to {}: {e}", from.display(), to.display()))?;
+        crate::util::fmt_err(
+            rename(&from, &to),
+            &format!("cannot rename {} to {}", from.display(), to.display()),
+        )?;
     }
     Ok(())
 }
@@ -356,11 +360,8 @@ fn build(
         manifest["lossy_repaired"] = json!(lossy_repaired);
     }
     let mpart = part(out, "manifest.json");
-    std::fs::write(
-        &mpart,
-        serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n",
-    )
-    .map_err(|e| format!("cannot write {}: {e}", mpart.display()))?;
+    let content = serde_json::to_string_pretty(&manifest).unwrap_or_default() + "\n";
+    write_manifest(&mpart, &content)?;
     commit_outputs(out, &|from, to| std::fs::rename(from, to))?;
     Ok(PrepareReport {
         out: out.to_path_buf(),
@@ -373,6 +374,13 @@ fn build(
         lossy_repaired,
         manifest,
     })
+}
+
+fn write_manifest(mpart: &Path, content: &str) -> Result<(), String> {
+    match std::fs::write(mpart, content) {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("cannot write {}: {e}", mpart.display())),
+    }
 }
 
 #[cfg(test)]

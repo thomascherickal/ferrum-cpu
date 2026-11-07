@@ -1,18 +1,30 @@
+#![allow(dead_code)]
 //! Small helpers shared by several subcommands.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(crate) fn fmt_err<T, E: std::fmt::Display>(res: Result<T, E>, prefix: &str) -> Result<T, String> {
+    match res {
+        Ok(v) => Ok(v),
+        Err(e) => Err(format!("{prefix}: {e}")),
+    }
+}
+
+pub(crate) fn err_str<T, E: std::fmt::Display>(res: Result<T, E>) -> Result<T, String> {
+    match res {
+        Ok(v) => Ok(v),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub(crate) fn time_seed() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0xC0FFEE)
-        | 1
+        .map_or(0xC0FFEE, |d| d.as_nanos() as u64) | 1
 }
 
 pub(crate) fn read_corpus(path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let corpus =
-        std::fs::read_to_string(path).map_err(|e| format!("cannot read corpus {path}: {e}"))?;
+    let corpus = fmt_err(std::fs::read_to_string(path), &format!("cannot read corpus {path}"))?;
     if corpus.trim().is_empty() {
         return Err(format!("corpus {path} is empty").into());
     }
@@ -26,11 +38,9 @@ pub(crate) fn read_corpus_prefix(
     max_bytes: usize,
 ) -> Result<String, Box<dyn std::error::Error>> {
     use std::io::Read;
-    let f = std::fs::File::open(path).map_err(|e| format!("cannot read corpus {path}: {e}"))?;
+    let f = fmt_err(std::fs::File::open(path), &format!("cannot read corpus {path}"))?;
     let mut buf = Vec::with_capacity(max_bytes.min(1 << 16));
-    f.take(max_bytes as u64)
-        .read_to_end(&mut buf)
-        .map_err(|e| format!("cannot read corpus {path}: {e}"))?;
+    fmt_err(f.take(max_bytes as u64).read_to_end(&mut buf), &format!("cannot read corpus {path}"))?;
     let valid = match std::str::from_utf8(&buf) {
         Ok(s) => s,
         Err(e) => std::str::from_utf8(&buf[..e.valid_up_to()]).unwrap_or(""),
@@ -44,6 +54,10 @@ mod tests {
 
     #[test]
     fn time_seed_is_never_zero() {
+        assert_eq!(fmt_err::<i32, &str>(Ok(1), "p"), Ok(1));
+        assert_eq!(fmt_err::<i32, &str>(Err("boom"), "p"), Err("p: boom".into()));
+        assert_eq!(err_str::<i32, &str>(Ok(1)), Ok(1));
+        assert_eq!(err_str::<i32, &str>(Err("boom")), Err("boom".into()));
         // `| 1` keeps an RNG seeded from it away from the all-zero state.
         assert_eq!(time_seed() & 1, 1);
     }

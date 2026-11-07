@@ -38,6 +38,12 @@ pub fn detect(
     template: Option<&str>,
     arch: Option<&str>,
     has_token: impl Fn(&str) -> bool,
+) -> Option<ChatFormat> { detect_dyn(template, arch, &has_token) }
+
+fn detect_dyn(
+    template: Option<&str>,
+    arch: Option<&str>,
+    has_token: &dyn Fn(&str) -> bool,
 ) -> Option<ChatFormat> {
     if let Some(t) = template {
         if t.contains("<|im_start|>") {
@@ -54,7 +60,8 @@ pub fn detect(
         }
     }
     match arch {
-        Some("qwen2") | Some("qwen3") if has_token("<|im_start|>") => Some(ChatFormat::ChatMl),
+        Some("qwen2") if has_token("<|im_start|>") => Some(ChatFormat::ChatMl),
+        Some("qwen3") if has_token("<|im_start|>") => Some(ChatFormat::ChatMl),
         Some("llama") if has_token("<|start_header_id|>") => Some(ChatFormat::Llama3),
         _ => None,
     }
@@ -149,7 +156,12 @@ mod tests {
             detect(None, Some("qwen2"), |p| p == "<|im_start|>"),
             Some(ChatFormat::ChatMl)
         );
+        assert_eq!(
+            detect(None, Some("qwen3"), |p| p == "<|im_start|>"),
+            Some(ChatFormat::ChatMl)
+        );
         assert_eq!(detect(None, Some("qwen2"), |_| false), None); // base model: never wrap
+        assert_eq!(detect(None, Some("qwen3"), |_| false), None);
         assert_eq!(
             detect(None, Some("llama"), |p| p == "<|start_header_id|>"),
             Some(ChatFormat::Llama3)

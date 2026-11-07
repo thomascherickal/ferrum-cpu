@@ -48,7 +48,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 1. Open + f32-load the base model (training needs full-precision masters).
     println!("Opening {gguf_path} (streamed)…");
-    let g = Gguf::open(gguf_path).map_err(|e| format!("cannot open GGUF {gguf_path}: {e}"))?;
+    let g = crate::util::fmt_err(Gguf::open(gguf_path), &format!("cannot open GGUF {gguf_path}"))?;
     println!(
         "  GGUF v{}   architecture = {}",
         g.version,
@@ -56,16 +56,16 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     );
     let est = estimate_resident_bytes(&g, None); // f32
     println!("  estimated resident (f32) ≈ {:.2} GB", est as f64 / 1e9);
-    if let Some(avail) = available_memory_bytes() {
+    if let Some(e) = available_memory_bytes().and_then(|avail| {
         println!("  available memory         ≈ {:.2} GB", avail as f64 / 1e9);
         let train_est = finetune_peak_bytes(est);
         println!(
             "  estimated training RAM   ≈ {:.2} GB (weights + grad + Adam m/v + checkpoint save)",
             train_est as f64 / 1e9
         );
-        if let Some(e) = finetune_memory_error(train_est, avail, args.has("force")) {
-            return Err(e.into());
-        }
+        finetune_memory_error(train_est, avail, args.has("force"))
+    }) {
+        return Err(e.into());
     }
 
     let tok = GgufTokenizer::from_gguf(&g)
@@ -78,9 +78,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     println!("Loading weights (f32)…");
     let t0 = Instant::now();
-    let model = g
-        .load_llama_prec(None)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let model = crate::util::fmt_err(g.load_llama_prec(None), "cannot load model")?;
     println!(
         "  loaded in {:.2}s: {} layers, dim {}, vocab {}, ctx {}",
         t0.elapsed().as_secs_f32(),
@@ -91,16 +89,14 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     );
 
     // 2. Read + tokenize the corpus.
-    let text = std::fs::read_to_string(corpus_path)
-        .map_err(|e| format!("cannot read corpus {corpus_path}: {e}"))?;
+    let text = crate::util::fmt_err(std::fs::read_to_string(corpus_path), &format!("cannot read corpus {corpus_path}"))?;
     let mut tokens: Vec<usize> = Vec::new();
     if let Some(bos) = tok.prefix_bos() {
         tokens.push(bos);
     }
     tokens.extend(tok.encode(&text));
     // The corpus identity the checkpoint records and a resume checks.
-    let corpus_id = slm_cli::hash::file_id(corpus_path)
-        .map_err(|e| format!("cannot read corpus {corpus_path}: {e}"))?;
+    let corpus_id = crate::util::fmt_err(slm_cli::hash::file_id(corpus_path), &format!("cannot read corpus {corpus_path}"))?;
     println!("  corpus: {} chars → {} tokens", text.len(), tokens.len());
 
     // 3. Hyperparameters.
@@ -131,7 +127,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     }
 
     // 4. Build + configure the trainer.
-    let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot build trainer: {e}"))?;
+    let mut tr = crate::util::fmt_err(LlamaTrainer::new(model), "cannot build trainer")?;
     tr.set_optimizer(Adam::new(lr));
     tr.set_weight_decay(weight_decay);
     tr.set_dropout(dropout);
@@ -143,11 +139,8 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
 
     // 5. Resume optimizer state if requested (continues where a prior run stopped).
     let mut rng = if let Some(ckpt) = args.value("resume") {
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        let r = tr
-            .load_checkpoint_from_vec(bytes)
-            .map_err(|e| format!("cannot resume from {ckpt}: {e}"))?;
+        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        let r = crate::util::fmt_err(tr.load_checkpoint_from_vec(bytes), &format!("cannot resume from {ckpt}"))?;
         println!("  resumed from {ckpt} at step {}", tr.step_count());
         r
     } else {
@@ -234,7 +227,7 @@ pub(crate) fn cmd_finetune_gguf(args: &Args) -> Result<(), Box<dyn std::error::E
     // 7. Save the checkpoint (weights + optimizer moments + RNG + step).
     let bytes = tr.save_checkpoint(&rng);
     // Atomic: a second Ctrl-C (which exits at once) never leaves a torn checkpoint behind.
-    ferrum_core::atomic_write(out_path, &bytes).map_err(|e| e.to_string())?;
+    crate::util::fmt_err(ferrum_core::atomic_write(out_path, &bytes), "cannot write")?;
     println!(
         "\nSaved fine-tune checkpoint → {out_path} ({:.2} MB)\n  \
          run it with:  train_transformer run-gguf {gguf_path} \"<prompt>\" --resume {out_path}",
@@ -358,9 +351,34 @@ mod tests {
         crate::run_gguf::cmd_run_gguf(&args(
             "run-gguf",
             &[
-                &model, "abc", "--resume", &out2, "--max", "2", "--temp", "0",
+                &model, "abc", "--resume", &out2, "--max", "2", "--temp", "0", "--quant", "int8",
             ],
         ))
         .unwrap();
+        crate::eval_gguf::cmd_eval_gguf(&args(
+            "eval-gguf",
+            &[&model, &corpus, "--resume", &out2, "--quant", "int8", "--ctx", "6"],
+        ))
+        .unwrap();
+        crate::export::cmd_export_gguf(&args(
+            "export-gguf",
+            &[&model, &t.path("exp.gguf"), "--resume", &out2, "--quant", "f32"],
+        ))
+        .unwrap();
+
+        // RAM refusal
+        let e = crate::memory::with_available_memory_override(10, || err(finetune(&raw)));
+        assert!(e.contains("training memory"));
+
+        // No tokenizer refusal
+        let no_tok = t.write("no_tok.gguf", tiny_llama_gguf(None, &[]));
+        let e = err(finetune(&[&no_tok, &corpus, &out, "--epochs", "1", "--batch", "2", "--seq", "6", "--threads", "1"]));
+        assert!(e.contains("this GGUF has no tokenizer"), "{e}");
+
+        // Thread capping note
+        let mut raw_threads = raw.clone();
+        raw_threads.retain(|&s| s != "--threads" && s != "1");
+        raw_threads.extend_from_slice(&["--threads", "16", "--force"]);
+        crate::memory::with_available_memory_override(100_000, || finetune(&raw_threads).unwrap());
     }
 }

@@ -575,11 +575,7 @@ mod tests {
             .unwrap()
             .encode(&out["the cat".len()..])
             .len();
-        assert!(
-            feeds() <= 2 * tokens + 16,
-            "too many feeds: {} for {tokens} tokens",
-            feeds()
-        );
+        assert!(feeds() <= 2 * tokens + 16);
     }
 
     #[test]

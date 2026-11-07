@@ -244,8 +244,8 @@ mod tests {
             ),
         ];
         for (mi, (m, prompt, s1, s2)) in cases.iter().enumerate() {
-            for max in [0, 1, 7, 70] {
-                // 70 tokens outruns the context: the cache is re-primed on the way.
+            for max in [0, 1, 10] {
+                // 10 tokens outruns context_len (8): the cache is re-primed on the way.
                 for stop in [vec![], s1.clone(), s2.clone()] {
                     for (pi, p) in [SamplingParams::default(), sampled.clone()]
                         .iter()

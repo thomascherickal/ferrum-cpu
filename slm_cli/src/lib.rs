@@ -15,6 +15,7 @@ pub mod prepare;
 pub mod runtime_export;
 pub mod token_corpus;
 pub mod tokenize;
+pub(crate) mod util;
 
 /// The library is the surface `ferrum_gui` builds on: these pin that every promised module is
 /// public and that its entry points keep their shape.

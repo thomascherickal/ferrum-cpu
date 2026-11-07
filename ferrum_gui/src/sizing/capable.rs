@@ -224,20 +224,15 @@ fn assemble_report(
 /// Micro-benchmark the host and return capability bounds. Polled on demand by
 /// the "Capable" tab.
 #[tauri::command]
-pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport, CmdError> {
+pub fn capability_report(state: State<'_, AppState>) -> Result<CapabilityReport, CmdError> {
     // Snapshot machine facts under the shared sysinfo lock, then release it.
     let (cpu, cores, mem_total, mem_avail) = {
-        let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sys = crate::infra::lock(&state.sys);
         // Ensure the CPU list is populated before reading it; otherwise `cpus()`
         // can be empty (→ cores = 0 → all GFLOP-derived bounds collapse to 0).
         sys.refresh_cpu_all();
         sys.refresh_memory();
-        let cpu = sys
-            .cpus()
-            .first()
-            .map(|c| c.brand().trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "unknown CPU".to_string());
+        let cpu = sys.cpus().first().map(|c| c.brand().trim()).filter(|s| !s.is_empty()).unwrap_or("unknown CPU").to_string();
         (
             cpu,
             sys.cpus().len(),
@@ -249,25 +244,10 @@ pub async fn capability_report(state: State<'_, AppState>) -> Result<CapabilityR
     // parallel pool size (`ferrum_core::num_threads()`) — the two can differ.
     let threads = ferrum_core::num_threads();
 
-    // Run the blocking benchmark off the async runtime thread.
-    let (bw, gemm_single) =
-        crate::infra::error::blocking_ok(|| (measure_mem_bandwidth(), measure_gemm_gflops()))
-            .await
-            .map_err(|e| format!("benchmark task error: {e}"))?;
-
-    // Debug builds run the benchmark loops unoptimized (~60x too slow), so only a
-    // release-build measurement may scale the GUI's time estimates.
+    let (bw, gemm_single) = (measure_mem_bandwidth(), measure_gemm_gflops());
+    let r = assemble_report(cpu, cores, threads, mem_total, mem_avail, bw, gemm_single);
     record_bench(&state.bench, gemm_single, bw, !cfg!(debug_assertions));
-
-    Ok(assemble_report(
-        cpu,
-        cores,
-        threads,
-        mem_total,
-        mem_avail,
-        bw,
-        gemm_single,
-    ))
+    Ok(r)
 }
 
 /// Keep a measurement for the time estimates, if `trusted` (an optimized build measured it).
@@ -278,7 +258,7 @@ fn record_bench(
     trusted: bool,
 ) {
     if trusted {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) =
+        *crate::infra::lock(slot) =
             Some(crate::sizing::estimate::Throughput {
                 gemm_single_gflops: gemm_single,
                 mem_bw_gbps: bw_bytes_per_s / 1e9,

@@ -16,6 +16,13 @@ pub(crate) enum Input<'a> {
 
 /// True when `corpus_path` is a BPE text file whose byte size is at least `threshold`, so it
 /// should be streamed from disk instead of loaded into RAM.
+pub(crate) fn stream_threshold() -> u64 {
+    std::env::var("FERRUM_STREAM_THRESHOLD")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(ferrum_core::STREAM_CORPUS_THRESHOLD)
+}
+
 pub(crate) fn should_stream_text_corpus(
     corpus_path: &str,
     vocab_size: usize,
@@ -59,10 +66,10 @@ pub(crate) fn train_and_save_input(
     let mut cfg = args.config();
     // Only a run that writes a checkpoint needs the corpus identity.
     if !cfg.checkpoint_path.is_empty() {
-        cfg.corpus_id = Some(
-            slm_cli::hash::file_id(corpus_path)
-                .map_err(|e| format!("cannot read corpus {corpus_path}: {e}"))?,
-        );
+        cfg.corpus_id = Some(crate::util::fmt_err(
+            slm_cli::hash::file_id(corpus_path),
+            &format!("cannot read corpus {corpus_path}"),
+        )?);
     }
     cfg.stop = crate::stop::condition(args, model_path)?;
     check_lr(cfg.lr)?;
@@ -240,21 +247,12 @@ pub(crate) fn train_and_save_input(
             &mut rng,
             &mut on_epoch,
         )?,
-        (Input::DiskText(path), Some(val)) => GenerativeSLM::train_transformer_from_path_validated(
-            path,
-            &cfg,
-            threads,
-            &val,
-            &mut rng,
-            &mut on_val,
-        )?,
-        (Input::DiskText(path), None) => GenerativeSLM::train_transformer_from_path(
-            path,
-            &cfg,
-            threads,
-            &mut rng,
-            &mut on_epoch,
-        )?,
+        (Input::DiskText(path), Some(val)) => {
+            GenerativeSLM::train_transformer_from_path_validated(path, &cfg, threads, &val, &mut rng, &mut on_val)?
+        }
+        (Input::DiskText(path), None) => {
+            GenerativeSLM::train_transformer_from_path(path, &cfg, threads, &mut rng, &mut on_epoch)?
+        }
         (Input::Tokens(file, tok), Some(val)) => GenerativeSLM::train_transformer_tokens_validated(
             file,
             tok,
@@ -301,12 +299,14 @@ pub(crate) fn train_and_save_input(
         );
     }
 
-    match quant {
-        "int8" => slm.save(model_path),
-        "int4" => slm.save_int4(model_path),
-        _ => slm.save_f32(model_path),
-    }
-    .map_err(|e| format!("cannot write {model_path}: {e}"))?;
+    crate::util::fmt_err(
+        match quant {
+            "int8" => slm.save(model_path),
+            "int4" => slm.save_int4(model_path),
+            _ => slm.save_f32(model_path),
+        },
+        &format!("cannot write {model_path}"),
+    )?;
     let size = std::fs::metadata(model_path)?.len();
     println!("Saved {size} bytes → {model_path} ({quant} GGUF)");
     if let Some(w) = slm_cli::runtime_export::plain_gguf_warning(std::path::Path::new(model_path)) {
@@ -362,7 +362,7 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         && should_stream_text_corpus(
             corpus_path,
             args.config().vocab_size,
-            ferrum_core::STREAM_CORPUS_THRESHOLD,
+            stream_threshold(),
         );
     let corpus = if tokens || stream_disk {
         String::new()
@@ -386,12 +386,7 @@ pub(crate) fn cmd_train(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some((file, tok)) = token_input.as_mut() {
         train_and_save_input(Input::Tokens(file, tok), corpus_path, model_path, args)?
     } else if stream_disk {
-        train_and_save_input(
-            Input::DiskText(std::path::Path::new(corpus_path)),
-            corpus_path,
-            model_path,
-            args,
-        )?
+        train_and_save_input(Input::DiskText(std::path::Path::new(corpus_path)), corpus_path, model_path, args)?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
@@ -581,5 +576,19 @@ mod tests {
         )
         .unwrap();
         assert!(std::path::Path::new(&val_model).exists());
+
+        // Test cmd_train on disk text with --sample
+        std::env::set_var("FERRUM_STREAM_THRESHOLD", "10");
+        let mut cmd_raw = vec![corpus.as_str(), disk_model.as_str()];
+        cmd_raw.extend_from_slice(&micro_bpe);
+        cmd_raw.extend_from_slice(&["--force", "--sample"]);
+        train(&cmd_raw).unwrap();
+        std::env::remove_var("FERRUM_STREAM_THRESHOLD");
+        train(&cmd_raw).unwrap();
+
+        // Coverage for save failure and missing corpus with checkpoint
+        let bad_out = "/dev/null/impossible.gguf";
+        assert!(train_and_save_input(Input::Text(&text), &corpus, bad_out, &a_mem).is_err());
+        assert!(train(&["/dev/null/missing.txt", disk_model.as_str(), "--checkpoint", &t.path("c.ckpt")]).is_err());
     }
 }

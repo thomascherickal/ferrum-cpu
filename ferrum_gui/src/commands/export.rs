@@ -92,7 +92,7 @@ pub(crate) fn do_export(
     let resume = p.resume.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
     progress(&format!("opening {} (streamed)…", p.model_path));
-    let g = Gguf::open(&p.model_path).map_err(|e| format!("cannot open {}: {e}", p.model_path))?;
+    let g = crate::infra::fmt_err(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
 
     // Memory guard. Two transient peaks, not additive: applying a checkpoint
     // allocates grads + both Adam moments (≈4× the f32 model — freed before the
@@ -104,46 +104,35 @@ pub(crate) fn do_export(
     } else {
         write_peak
     };
-    ram_guard(
-        "peak memory",
-        if resume.is_some() {
-            ": checkpoint apply needs weights + grads + Adam moments"
-        } else {
-            ": f32 model + output buffer"
-        },
-        est,
-        available_memory_bytes(),
-        p.force,
-        "pick a smaller output type or tick 'Export anyway'",
-    )?;
+    let detail = if resume.is_some() {
+        ": checkpoint apply needs weights + grads + Adam moments"
+    } else {
+        ": f32 model + output buffer"
+    };
+    let hint = "pick a smaller output type or tick 'Export anyway'";
+    ram_guard("peak memory", detail, est, available_memory_bytes(), p.force, hint)?;
 
     check()?;
     let t0 = std::time::Instant::now();
     progress("loading weights (f32)…");
-    let mut model = g
-        .load_llama_prec(None)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let mut model = crate::infra::fmt_err(g.load_llama_prec(None), "cannot load model")?;
     check()?;
 
     if let Some(ckpt) = resume {
         progress(&format!("applying {ckpt}…"));
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        let mut tr = LlamaTrainer::new(model).map_err(|e| format!("cannot wrap model: {e}"))?;
-        tr.load_checkpoint_from_vec(bytes)
-            .map_err(|e| format!("cannot apply checkpoint: {e}"))?;
+        let bytes = crate::infra::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        let mut tr = crate::infra::fmt_err(LlamaTrainer::new(model), "cannot wrap model")?;
+        crate::infra::fmt_err(tr.load_checkpoint_from_vec(bytes), "cannot apply checkpoint")?;
         model = tr.model;
         check()?;
     }
 
     progress(&format!("encoding + writing ({})…", p.quant));
-    ferrum_core::write_llama_gguf(&model, &g, quant, &p.out_path)
-        .map_err(|e| format!("export failed: {e}"))?;
+    crate::infra::fmt_err(ferrum_core::write_llama_gguf(&model, &g, quant, &p.out_path), "export failed")?;
 
     // Per-type summary, read back from the written file (also proves it
     // re-opens as valid GGUF).
-    let gout =
-        Gguf::open(&p.out_path).map_err(|e| format!("written file failed to re-open: {e}"))?;
+    let gout = crate::infra::fmt_err(Gguf::open(&p.out_path), "written file failed to re-open")?;
     let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
     for t in &gout.tensors {
         *counts.entry(t.ggml_type).or_default() += 1;
@@ -255,6 +244,7 @@ mod tests {
             verbose: false,
         };
         let noop = |_: &str| {};
+        noop("");
 
         let mut p = base;
         p.out_path = "  ".into();

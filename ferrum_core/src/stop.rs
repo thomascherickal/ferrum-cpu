@@ -105,18 +105,25 @@ impl StopCondition {
 
     /// Record that a run stopped after `step` optimizer steps.
     pub(crate) fn note_stop(&self, cause: StopCause, step: u64) {
-        *self.stopped.lock().unwrap_or_else(|e| e.into_inner()) = Some((cause, step));
+        *lock_mutex(&self.stopped) = Some((cause, step));
     }
 
     /// Forget a previous stop (a run does this when it starts).
     pub(crate) fn clear_record(&self) {
-        *self.stopped.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *lock_mutex(&self.stopped) = None;
     }
 
     /// Why and at which step the last run using this condition stopped early,
     /// or `None` if it ran to completion.
     pub fn stopped(&self) -> Option<(StopCause, u64)> {
-        *self.stopped.lock().unwrap_or_else(|e| e.into_inner())
+        *lock_mutex(&self.stopped)
+    }
+}
+
+fn lock_mutex<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
     }
 }
 
@@ -188,5 +195,12 @@ mod tests {
         assert_eq!(c, c2);
         assert_ne!(c, StopCondition::none());
         assert_eq!(StopCause::Cancelled.to_string(), "cancelled");
+
+        let m = std::sync::Mutex::new(42);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = m.lock().unwrap();
+            panic!("poisoning");
+        }));
+        assert_eq!(*lock_mutex(&m), 42);
     }
 }

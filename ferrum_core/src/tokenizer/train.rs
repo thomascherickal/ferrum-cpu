@@ -120,11 +120,7 @@ impl ByteBpeTokenizer {
             if buf.len() >= (1 << 16) && !line.trim_end_matches(['\r', '\n']).is_empty() {
                 // Keep the trailing newline in the next buffer so a blank line
                 // following this line still groups `\n\n` together.
-                let split = if buf.ends_with('\n') {
-                    buf.len() - 1
-                } else {
-                    buf.len()
-                };
+                let split = buf.len().saturating_sub(usize::from(buf.ends_with('\n')));
                 add_chunk(&buf[..split]);
                 buf.drain(..split);
             }
@@ -253,6 +249,7 @@ impl ByteBpeTokenizer {
 mod tests {
     use crate::tokenizer::test_support::{docs_corpus, naive_merges, small_tok, CORPUS};
     use crate::tokenizer::{ByteBpeTokenizer, BASE_VOCAB, DOC_SEP, TOK_EOS};
+    use crate::InferError;
 
     #[test]
     fn merges_compress_the_corpus() {
@@ -373,10 +370,8 @@ mod tests {
         let ids = tok.encode("a,b");
         for id in ids {
             let bytes = tok.token_bytes(id).expect("every id has bytes");
-            assert!(
-                !(bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',')),
-                "token {id} spans letter and punctuation: {bytes:?}"
-            );
+            let has_both = bytes.len() > 1 && bytes.contains(&b'a') && bytes.contains(&b',');
+            assert!(!has_both, "token {id} spans letter and punctuation: {bytes:?}");
         }
     }
 
@@ -438,7 +433,9 @@ mod tests {
         assert_eq!(mem.encode_state(), file_tok.encode_state());
 
         assert!(ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(b"abc"), 256).is_err());
+        assert!(ByteBpeTokenizer::train_from_reader(std::io::Cursor::new(b""), 300).is_ok());
         assert!(ByteBpeTokenizer::train_from_docs(std::iter::once(Ok("abc")), 256).is_err());
+        assert!(ByteBpeTokenizer::train_from_docs(vec![Err(InferError::Format("boom".into()))], 300).is_err());
         assert!(ByteBpeTokenizer::train_from_file(
             std::path::Path::new("/nonexistent/ferrum/bpe.txt"),
             300

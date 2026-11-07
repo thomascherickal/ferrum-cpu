@@ -54,8 +54,8 @@ fn test_transformer_slm_training_and_generation_roundtrip() {
         2,    // num_heads
         1,    // num_blocks
         16,   // hidden_dim
-        40,   // epochs
-        0.01, // lr (Adam)
+        15,   // epochs
+        0.03, // lr (Adam)
         8,    // batch_size
         0,    // vocab_size (0 = character-level)
         &mut rng,
@@ -105,7 +105,7 @@ fn test_bpe_handles_non_ascii_corpus() {
         les enfants jouent près de la rivière. élégance, créativité, persévérance — \
         des mots français avec des accents variés résonnent dans le café résumé. ";
     let mut rng = Rng::new(91);
-    let slm = GenerativeSLM::train_transformer(corpus, 6, 16, 2, 1, 32, 25, 0.01, 8, 300, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 4, 0.01, 16, 300, &mut rng)
         .unwrap();
     assert!(!slm.meta.tokenizer_state.is_empty());
 
@@ -141,7 +141,7 @@ fn test_generate_continuation_excludes_seed_and_matches_generate() {
     let corpus = "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc";
     let mut rng = Rng::new(7);
     let slm =
-        GenerativeSLM::train_transformer(corpus, 4, 8, 2, 1, 16, 40, 0.01, 8, 0, &mut rng).unwrap();
+        GenerativeSLM::train_transformer(corpus, 4, 8, 2, 1, 16, 2, 0.01, 8, 0, &mut rng).unwrap();
 
     let seed = "abca";
     // Same RNG seed → generate() and generate_continuation() must agree, with
@@ -172,7 +172,7 @@ fn test_generate_continuation_bpe_path() {
     let corpus = "the quick brown fox jumps over the lazy dog while the calm river \
         flows past green hills and quiet villages. travelers walk along the winding road. ";
     let mut rng = Rng::new(71);
-    let slm = GenerativeSLM::train_transformer(corpus, 8, 16, 2, 1, 32, 30, 0.01, 8, 300, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 8, 8, 2, 1, 16, 4, 0.01, 16, 300, &mut rng)
         .unwrap();
 
     let seed = "the quick brown";
@@ -192,7 +192,7 @@ fn test_generate_stream_concatenates_to_continuation_char_level() {
     let corpus = "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc";
     let mut rng = Rng::new(7);
     let slm =
-        GenerativeSLM::train_transformer(corpus, 4, 8, 2, 1, 16, 40, 0.01, 8, 0, &mut rng).unwrap();
+        GenerativeSLM::train_transformer(corpus, 4, 8, 2, 1, 16, 2, 0.01, 8, 0, &mut rng).unwrap();
 
     let seed = "abca";
     // Drive the streaming API, collecting every fragment.
@@ -225,7 +225,7 @@ fn test_generate_stream_matches_generate_bpe() {
         flows past green hills and quiet villages. travelers walk along the winding road, \
         telling stories of distant lands, bright stars, and the slow turning of the seasons. ";
     let mut rng = Rng::new(71);
-    let slm = GenerativeSLM::train_transformer(corpus, 8, 16, 2, 1, 32, 30, 0.01, 8, 300, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 8, 8, 2, 1, 16, 4, 0.01, 16, 300, &mut rng)
         .unwrap();
 
     let seed = "the quick brown";
@@ -259,7 +259,7 @@ fn test_generate_stream_handles_non_ascii_without_replacement_chars() {
         les enfants jouent près de la rivière. élégance, créativité, persévérance — \
         des mots français avec des accents variés résonnent dans le café résumé. ";
     let mut rng = Rng::new(91);
-    let slm = GenerativeSLM::train_transformer(corpus, 6, 16, 2, 1, 32, 25, 0.01, 8, 300, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 4, 0.01, 16, 300, &mut rng)
         .unwrap();
 
     let seed = "café résumé";
@@ -289,18 +289,18 @@ fn test_threaded_training_single_thread_matches_serial_end_to_end() {
         the winding road at dawn while travelers tell stories of distant lands. ";
 
     let serial =
-        GenerativeSLM::train_transformer(corpus, 8, 16, 2, 1, 32, 40, 0.01, 8, 0, &mut Rng::new(7))
+        GenerativeSLM::train_transformer(corpus, 8, 8, 2, 1, 16, 8, 0.01, 16, 0, &mut Rng::new(7))
             .unwrap();
     let threaded = GenerativeSLM::train_transformer_threaded_with_callback(
         corpus,
         8,
-        16,
+        8,
         2,
         1,
-        32,
-        40,
-        0.01,
+        16,
         8,
+        0.01,
+        16,
         0,
         1,
         &mut Rng::new(7),
@@ -388,7 +388,7 @@ fn test_evaluate_transformer_memorizes_training_corpus() {
     // the ideal 1.0 and cross-entropy approaches 0.
     let corpus = "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc";
     let mut rng = Rng::new(7);
-    let slm = GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 120, 0.01, 8, 0, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 40, 0.03, 8, 0, &mut rng)
         .unwrap();
 
     let eval = slm.evaluate(corpus).unwrap();
@@ -421,7 +421,7 @@ fn test_evaluate_perplexity_beats_uniform_baseline() {
         the old town wakes at dawn as merchants open their shops. ";
     let heldout = "the river flows past the green hills and the quiet town wakes at dawn. ";
     let mut rng = Rng::new(3);
-    let slm = GenerativeSLM::train_transformer(corpus, 8, 24, 4, 2, 48, 80, 0.01, 8, 0, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 8, 16, 2, 1, 32, 25, 0.02, 16, 0, &mut rng)
         .unwrap();
 
     let eval = slm.evaluate(heldout).unwrap();
@@ -444,9 +444,9 @@ fn test_evaluate_works_for_char_and_bpe() {
 
     let mut rng = Rng::new(13);
     let transformer =
-        GenerativeSLM::train_transformer(corpus, 6, 16, 2, 1, 32, 40, 0.01, 8, 0, &mut rng)
+        GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 6, 0.01, 16, 0, &mut rng)
             .unwrap();
-    let bpe = GenerativeSLM::train_transformer(corpus, 6, 16, 2, 1, 32, 40, 0.01, 8, 300, &mut rng)
+    let bpe = GenerativeSLM::train_transformer(corpus, 6, 8, 2, 1, 16, 6, 0.01, 16, 300, &mut rng)
         .unwrap();
 
     for (name, slm) in [("transformer", &transformer), ("bpe", &bpe)] {
@@ -467,7 +467,7 @@ fn test_evaluate_survives_gguf_roundtrip() {
     // A reloaded model must score identically to the in-memory one.
     let corpus = "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc";
     let mut rng = Rng::new(7);
-    let slm = GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 60, 0.01, 8, 0, &mut rng)
+    let slm = GenerativeSLM::train_transformer(corpus, 4, 16, 2, 1, 32, 2, 0.01, 8, 0, &mut rng)
         .unwrap();
 
     let before = slm.evaluate(corpus).unwrap();

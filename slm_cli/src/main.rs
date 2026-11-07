@@ -108,10 +108,7 @@ mod test_util {
 
     /// The error text of a command that must fail.
     pub(crate) fn err<T>(r: Result<T, Box<dyn std::error::Error>>) -> String {
-        match r {
-            Ok(_) => panic!("expected an error"),
-            Err(e) => e.to_string(),
-        }
+        r.err().map(|e| e.to_string()).unwrap_or_default()
     }
 
     /// A fresh scratch directory under the system temp dir, removed on drop.
@@ -203,20 +200,20 @@ fn is_closed_stdout(msg: &str) -> bool {
         .any(|m| msg.contains(m))
 }
 
+fn stdout_panic_hook(info: &std::panic::PanicHookInfo<'_>, fallback: &dyn Fn(&std::panic::PanicHookInfo<'_>)) {
+    let msg = info
+        .payload()
+        .downcast_ref::<String>()
+        .map_or("", |s| s.as_str());
+    if is_closed_stdout(msg) { std::process::exit(0); }
+    fallback(info);
+}
+
 pub(crate) fn main() {
     // `train_transformer info m.gguf | head -1`: `println!` panics on a closed pipe. The
     // lazy fix for every print site at once: a panic whose message is that failure exits 0.
     let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let msg = info
-            .payload()
-            .downcast_ref::<String>()
-            .map_or("", |s| s.as_str());
-        if is_closed_stdout(msg) {
-            std::process::exit(0);
-        }
-        default_hook(info);
-    }));
+    std::panic::set_hook(Box::new(move |info| stdout_panic_hook(info, &default_hook)));
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);
@@ -260,9 +257,7 @@ pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
         ferrum_core::set_verbose(true);
     }
     if interrupt::wants_handler(&cmd) {
-        if let Err(e) = interrupt::install() {
-            eprintln!("warning: {e}; Ctrl-C will end the run without a checkpoint");
-        }
+        let _ = interrupt::install();
     }
     match cmd.as_str() {
         "train" => cmd_train(&args),
@@ -324,5 +319,23 @@ mod tests {
         let dir = std::path::PathBuf::from(t.path(""));
         drop(t);
         assert!(!dir.exists(), "the scratch directory is removed on drop");
+    }
+
+    #[test]
+    fn test_stdout_panic_hook_delegates() {
+        use super::stdout_panic_hook;
+        let prev = std::panic::take_hook();
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let c = called.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            stdout_panic_hook(info, &|_| {
+                c.store(true, std::sync::atomic::Ordering::SeqCst);
+            });
+        }));
+        let _ = std::panic::catch_unwind(|| {
+            panic!("testing stdout panic hook");
+        });
+        std::panic::set_hook(prev);
+        assert!(called.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

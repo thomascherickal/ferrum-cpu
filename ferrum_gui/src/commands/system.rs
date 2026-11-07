@@ -22,7 +22,7 @@ pub struct SysStats {
 #[tauri::command]
 pub fn system_stats(state: State<'_, AppState>) -> Result<SysStats, CmdError> {
     // A poisoned lock only means an earlier poll panicked; sysinfo state is still valid.
-    let mut sys = state.sys.lock().unwrap_or_else(|e| e.into_inner());
+    let mut sys = crate::infra::lock(&state.sys);
     sys.refresh_cpu_usage();
     sys.refresh_memory();
     let per_core: Vec<f32> = sys.cpus().iter().map(|c| c.cpu_usage()).collect();

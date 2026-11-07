@@ -202,12 +202,11 @@ fn train_inner<R: Runtime>(
     let corpus = if token_input.is_some() || stream_disk {
         String::new()
     } else {
-        let corpus = std::fs::read_to_string(&p.corpus_path)
-            .map_err(|e| format!("cannot read corpus {}: {e}", p.corpus_path))?;
+        let corpus = crate::infra::fmt_err(std::fs::read_to_string(&p.corpus_path), &format!("cannot read corpus {}", p.corpus_path))?;
         if corpus.trim().is_empty() {
             return Err(format!("corpus {} is empty", p.corpus_path));
         }
-        validate_for_training(&corpus, p.context_len).map_err(|e| e.to_string())?;
+        if let Err(e) = validate_for_training(&corpus, p.context_len) { return Err(e.to_string()); }
         corpus
     };
 
@@ -500,16 +499,35 @@ mod tests {
         }
         let locked = dir.join("locked");
         std::fs::create_dir_all(&locked).unwrap();
-        let Some(_restore) = crate::test_support::restrict(&locked, 0o500, 0o700) else {
-            return; // root: the directory would still be writable
-        };
-        let e = train(&locked.join("m.gguf"), "int8", true).unwrap_err();
-        assert!(msg(&e).starts_with("cannot save model "), "{e}");
-        assert!(
-            !ferrum_core::is_verbose(),
-            "verbose mode outlived the failed job"
-        );
+        let _restore = crate::test_support::restrict(&locked, 0o500, 0o700);
+        let e = train(&locked.join("m.gguf"), "int8", true);
+        assert!(_restore.is_none() || msg(&e.unwrap_err()).starts_with("cannot save model "));
+        assert!(!ferrum_core::is_verbose(), "verbose mode outlived the failed job");
         drop(_restore);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn large_bpe_corpus_streams_from_disk_with_and_without_validation() {
+        let (_app, w) = app();
+        let dir = tmp("train_stream_disk");
+        let corpus = dir.join("large.txt");
+        let unit = "the quick brown fox jumps over the lazy dog\n";
+        let repeats = (ferrum_core::STREAM_CORPUS_THRESHOLD as usize / unit.len()) + 64;
+        std::fs::write(&corpus, unit.repeat(repeats)).unwrap();
+
+        for (i, val_frac) in [0.0_f32, 0.2_f32].into_iter().enumerate() {
+            let model = dir.join(format!("m{i}.gguf"));
+            let mut p = required();
+            p["corpusPath"] = json!(corpus);
+            p["modelPath"] = json!(model);
+            p["vocabSize"] = json!(264);
+            p["maxTokens"] = json!(64);
+            p["valFraction"] = json!(val_frac);
+            let res = call(&w, "train_slm", json!({ "params": p })).unwrap();
+            assert_eq!(res["tokenizer"], "byte-level BPE");
+            assert!(model.is_file());
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 }

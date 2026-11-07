@@ -326,6 +326,17 @@ mod tests {
     }
 
     #[test]
+    fn gutenberg_stripping_can_be_disabled() {
+        let raw = "*** START OF A ***\nkeep everything\n*** END OF A ***\n";
+        let opts = CleanOptions {
+            strip_gutenberg: false,
+            ..CleanOptions::default()
+        };
+        let cleaned = clean_corpus(raw, &opts);
+        assert!(cleaned.contains("*** START OF A ***"));
+    }
+
+    #[test]
     fn control_chars_stripped_but_tabs_and_newlines_kept() {
         let raw = "a\u{0007}b\tc\nd"; // bell char removed; tab/newline kept
         let cleaned = clean_corpus(raw, &CleanOptions::default());

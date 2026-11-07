@@ -419,10 +419,9 @@ mod tests {
             .unwrap();
         assert!(out.starts_with(seed));
         let n = out.chars().count();
-        // If it stopped before the budget, it must have stopped right after a space.
-        if n < seed.chars().count() + 40 {
-            assert!(out.ends_with(' '), "stopped but not at the boundary");
-        }
+        let stopped = slm.generate_until(seed, 40, "t", &params, &mut Rng::new(3)).unwrap();
+        assert!(stopped.ends_with('t'));
+        assert!(n == seed.chars().count() + 40 || out.ends_with(' '));
         // Deterministic.
         let a = slm
             .generate_until(seed, 40, " ", &params, &mut Rng::new(8))
@@ -885,6 +884,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn generate_continuation_returns_only_continuation() {
+        let slm = tiny_bpe_slm();
+        let mut rng = Rng::new(42);
+        let cont = slm.generate_continuation("the cat", 10, 0.0, &mut rng).unwrap();
+        assert!(!cont.starts_with("the cat"));
+        assert!(!cont.is_empty());
+    }
+
     /// Every generation entry point survives every odd sampling knob and seed shape.
     #[test]
     fn generation_matrix_never_panics_and_honours_budgets() {
@@ -922,7 +930,7 @@ mod tests {
                                     let ctx = format!("{name} {params:?} seed={seed:?} n={n}");
                                     let out = slm
                                         .generate_with(seed, n, &params, &mut rng)
-                                        .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+                                        .expect(&ctx);
                                     assert!(out.starts_with(seed), "{ctx}: {out:?}");
                                     assert!(
                                         out.chars().count() <= seed.chars().count() + n,
@@ -936,7 +944,7 @@ mod tests {
                                             &params,
                                             &mut rng,
                                         )
-                                        .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+                                        .expect(&ctx);
                                     assert!(g.n_tokens <= n, "{ctx}: {g:?}");
                                     if n == 0 {
                                         assert_eq!(g.stop_reason, StopReason::MaxTokens, "{ctx}");

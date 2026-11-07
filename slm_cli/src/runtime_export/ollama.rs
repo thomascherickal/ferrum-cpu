@@ -1,7 +1,7 @@
 //! `export-ollama`: Modelfile generation, preview, execution, and CLI entry point.
 
 use super::find::{
-    find_tool, home_fallback, run_tool, runnable_summary, show_command, GgufSummary,
+    find_tool, home_fallback, path_err, run_tool, runnable_summary, show_command, GgufSummary,
 };
 use super::{Preview, CANCELLED};
 use std::ffi::OsStr;
@@ -22,7 +22,7 @@ pub fn ollama_modelfile(abs_model: &Path, s: &GgufSummary) -> String {
 }
 
 fn absolute_checked(model: &Path) -> Result<PathBuf, String> {
-    let abs = std::path::absolute(model).map_err(|e| format!("{}: {e}", model.display()))?;
+    let abs = path_err(std::path::absolute(model), model)?;
     let s = abs.to_string_lossy();
     if s.contains('"') || s.contains('\n') {
         return Err(format!(
@@ -110,9 +110,9 @@ pub fn ollama_run(
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("ferrum_modelfile_{}_{n}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    path_err(std::fs::create_dir_all(&dir), &dir)?;
     let mf = dir.join(format!("{}.Modelfile", name.replace('/', "_")));
-    std::fs::write(&mf, &modelfile).map_err(|e| format!("{}: {e}", mf.display()))?;
+    path_err(std::fs::write(&mf, &modelfile), &mf)?;
     let args: [&OsStr; 4] = [
         "create".as_ref(),
         name.as_ref(),

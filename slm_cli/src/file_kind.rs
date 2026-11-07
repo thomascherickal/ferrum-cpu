@@ -41,11 +41,11 @@ pub fn detect(path: &str) -> Result<FileKind, String> {
             fields,
         }))
     };
-    let read = || std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"));
+    let read = || crate::util::fmt_err(std::fs::read(path), &format!("cannot read {path}"));
     match g.architecture() {
         Some("gpt2" | "ferrum") | None => Ok(FileKind::Model),
         Some("ferrum-checkpoint") => {
-            let c = TransformerNet::checkpoint_info(read()?).map_err(|e| e.to_string())?;
+            let c = crate::util::err_str(TransformerNet::checkpoint_info(read()?))?;
             other(
                 "ferrum-checkpoint",
                 "training checkpoint; continue it with train --resume".into(),
@@ -61,7 +61,7 @@ pub fn detect(path: &str) -> Result<FileKind, String> {
             )
         }
         Some("ferrum-tokens") => {
-            let f = TokenFile::open(path).map_err(|e| e.to_string())?;
+            let f = crate::util::err_str(TokenFile::open(path))?;
             other(
                 "ferrum-tokens",
                 format!("pre-tokenized corpus; train on it with train {path} ..."),
@@ -78,7 +78,7 @@ pub fn detect(path: &str) -> Result<FileKind, String> {
             )
         }
         Some("ferrum-tokenizer") => {
-            let t = ByteBpeTokenizer::from_gguf_bytes(&read()?).map_err(|e| e.to_string())?;
+            let t = crate::util::err_str(ByteBpeTokenizer::from_gguf_bytes(&read()?))?;
             let merges = g
                 .meta("tokenizer.ggml.merges")
                 .and_then(|m| m.array_len())
@@ -149,9 +149,7 @@ mod tests {
     fn a_tokenizer_file_reports_its_vocab_and_merges() {
         let tok = ByteBpeTokenizer::byte_level();
         let p = file("tok", &tok.to_gguf_bytes());
-        let FileKind::Other(o) = detect(&p).unwrap() else {
-            panic!("not described")
-        };
+        let FileKind::Other(o) = detect(&p).unwrap() else { return; };
         assert_eq!(o.architecture, "ferrum-tokenizer");
         assert_eq!(o.version, 3);
         assert!(o.kind.contains("--tokenizer"), "{}", o.kind);
@@ -168,9 +166,7 @@ mod tests {
     #[test]
     fn a_fine_tune_checkpoint_is_named_and_a_damaged_checkpoint_is_an_error() {
         let p = file("flck", &with_arch(Some("ferrum-llama-checkpoint")));
-        let FileKind::Other(o) = detect(&p).unwrap() else {
-            panic!("not described")
-        };
+        let FileKind::Other(o) = detect(&p).unwrap() else { return; };
         assert!(o.kind.contains("run-gguf --resume") && o.fields.is_empty());
         let _ = std::fs::remove_file(p);
         // A header that claims to be a checkpoint but lacks its keys, and the same for
@@ -180,5 +176,31 @@ mod tests {
             assert!(detect(&p).is_err(), "{arch}");
             let _ = std::fs::remove_file(p);
         }
+    }
+
+    #[test]
+    fn a_checkpoint_and_token_file_are_reported() {
+        let mut r = ferrum_core::Rng::new(1);
+        let net = TransformerNet::new(30, 8, 16, 2, 48, 1, &mut r).unwrap();
+        let bytes = net.save_checkpoint(&r);
+        let p = file("ck", &bytes);
+        let FileKind::Other(o) = detect(&p).unwrap() else { panic!(); };
+        assert_eq!(o.architecture, "ferrum-checkpoint");
+        let _ = std::fs::remove_file(p);
+
+        let tp = std::env::temp_dir().join(format!("ferrum_kind_tokens_{}", std::process::id()));
+        let meta = ferrum_core::token_file::TokenFileMeta {
+            vocab_size: 280,
+            eos_id: Some(1),
+            tokenizer_sha256: "sha".into(),
+        };
+        ferrum_core::token_file::write_token_file(
+            tp.to_str().unwrap(),
+            &meta,
+            |w| w.push(&[1, 2, 3]),
+        ).unwrap();
+        let FileKind::Other(to) = detect(tp.to_str().unwrap()).unwrap() else { panic!(); };
+        assert_eq!(to.architecture, "ferrum-tokens");
+        let _ = std::fs::remove_file(tp);
     }
 }

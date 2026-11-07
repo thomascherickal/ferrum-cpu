@@ -195,19 +195,20 @@ mod tests {
         }
     }
 
+    fn never_run(_: &mut TokenSink) -> Result<()> { Ok(()) }
+
     #[test]
     fn bad_meta_is_rejected_before_any_file_appears() {
+        let p_ok = path("meta_ok");
+        write_token_file(&p_ok, &meta(100, None), never_run).unwrap();
+        let _ = std::fs::remove_file(&p_ok);
         let p = path("meta");
-        let never = |_: &mut TokenSink| -> Result<()> { panic!("produce must not run") };
         for m in [
             meta(0, None),
             meta(i32::MAX as usize + 1, None),
             meta(5, Some(5)),
         ] {
-            assert!(matches!(
-                write_token_file(&p, &m, never),
-                Err(InferError::Format(_))
-            ));
+            assert!(matches!(write_token_file(&p, &m, never_run), Err(InferError::Format(_))));
         }
         assert!(!std::path::Path::new(&p).exists());
     }

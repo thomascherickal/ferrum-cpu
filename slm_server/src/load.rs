@@ -83,7 +83,7 @@ pub(crate) fn open(
     }) {
         return Err(e);
     }
-    let sha256 = sha256_file(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let sha256 = crate::fmt_err(sha256_file(path), &format!("cannot read {path}"))?;
     Ok(ModelFile::Imported { gguf, prec, sha256 })
 }
 
@@ -91,13 +91,13 @@ pub(crate) fn open(
 pub(crate) fn load(file: ModelFile) -> Result<(Backend, Info), String> {
     match file {
         ModelFile::Ferrum(bytes) => {
-            let m = GenerativeSLM::from_bytes(&bytes).map_err(|e| e.to_string())?;
+            let m = crate::str_err(GenerativeSLM::from_bytes(&bytes))?;
             let info = info_for(&m, &bytes);
             Ok((Backend::Ferrum(m), info))
         }
         ModelFile::Imported { gguf, prec, sha256 } => {
-            let tok = GgufTokenizer::from_gguf(&gguf).map_err(|e| e.to_string())?;
-            let model = gguf.load_llama_prec(prec).map_err(|e| e.to_string())?;
+            let tok = crate::str_err(GgufTokenizer::from_gguf(&gguf))?;
+            let model = crate::str_err(gguf.load_llama_prec(prec))?;
             let info = info_for_imported(&gguf, &model, &tok, prec, sha256);
             Ok((Backend::Imported(Imported::new(model, tok, &gguf)), info))
         }
@@ -138,10 +138,7 @@ mod tests {
             assert!(info.params > 0);
         }
         // The Ferrum path holds the very bytes of the file.
-        match open(bpe.path(), None, false, None).unwrap() {
-            ModelFile::Ferrum(b) => assert_eq!(b, std::fs::read(bpe.path()).unwrap()),
-            ModelFile::Imported { .. } => unreachable!(),
-        }
+        if let ModelFile::Ferrum(b) = open(bpe.path(), None, false, None).unwrap() { assert_eq!(b, std::fs::read(bpe.path()).unwrap()); }
     }
 
     #[test]
@@ -208,9 +205,6 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         assert_eq!(sha256_file(f.path()).unwrap(), want);
-        match open(f.path(), None, false, None).unwrap() {
-            ModelFile::Imported { sha256, prec, .. } => assert_eq!((sha256, prec), (want, None)),
-            ModelFile::Ferrum(_) => unreachable!(),
-        }
+        if let ModelFile::Imported { sha256, prec, .. } = open(f.path(), None, false, None).unwrap() { assert_eq!((sha256, prec), (want, None)); }
     }
 }

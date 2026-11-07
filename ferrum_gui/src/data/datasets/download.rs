@@ -75,12 +75,7 @@ pub(super) fn download_to_file(
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("URL must start with http:// or https://".to_string());
     }
-    if let Some(parent) = dest.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {parent:?}: {e}"))?;
-        }
-    }
+    if let Some(p) = dest.parent().filter(|p| !p.as_os_str().is_empty()) { crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?; }
     let mut req = http_agent().get(url);
     if let Some(c) = basic {
         req = req.set("Authorization", &basic_auth_header(&c.username, &c.key));
@@ -90,7 +85,7 @@ pub(super) fn download_to_file(
             req = req.set("Authorization", &format!("Bearer {tok}"));
         }
     }
-    let resp = req.call().map_err(|e| format!("download failed: {e}"))?;
+    let resp = crate::infra::fmt_err(req.call(), "download failed")?;
     let total = resp.header("Content-Length").and_then(|v| v.parse().ok());
     stream_to_dest(
         resp.into_reader(),
@@ -115,19 +110,17 @@ pub(super) fn stream_to_dest(
     part_name.push(".part");
     let part = PathBuf::from(part_name);
     let result = (|| {
-        let mut file =
-            std::fs::File::create(&part).map_err(|e| format!("cannot create {part:?}: {e}"))?;
+        let mut file = crate::infra::fmt_err(std::fs::File::create(&part), &format!("cannot create {part:?}"))?;
         let tap = Tap::new(reader, total, &mut *progress);
-        let n = std::io::copy(&mut tap.take(cap + 1), &mut file)
-            .map_err(|e| format!("write failed: {e}"))?;
+        let n = crate::infra::fmt_err(std::io::copy(&mut tap.take(cap + 1), &mut file), "write failed")?;
         if n > cap {
             return Err(format!("download exceeds the {cap} byte limit"));
         }
         if n == 0 {
             return Err("downloaded resource was empty (check the dataset id / file path)".into());
         }
-        file.sync_all().map_err(|e| format!("write failed: {e}"))?;
-        std::fs::rename(&part, dest).map_err(|e| format!("cannot move into place: {e}"))?;
+        crate::infra::fmt_err(file.sync_all(), "write failed")?;
+        crate::infra::fmt_err(std::fs::rename(&part, dest), "cannot move into place")?;
         progress.finish(n);
         Ok(n)
     })();

@@ -64,9 +64,7 @@ fn check(label: &str, p: &str, must_exist: bool, want: Want) -> Result<PathBuf, 
         .find(|a| !a.as_os_str().is_empty() && a.exists())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let real = anchor
-        .canonicalize()
-        .map_err(|e| format!("{label}: cannot resolve {p}: {e}"))?;
+    let real = crate::infra::fmt_err(anchor.canonicalize(), &format!("{label}: cannot resolve {p}"))?;
     if FORBIDDEN_ROOTS.iter().any(|r| real.starts_with(r)) {
         return Err(format!(
             "{label}: {p} is a device or system path and is not allowed"
@@ -130,10 +128,8 @@ mod tests {
         ] {
             for must_exist in [true, false] {
                 let e = checked_path("p", p, must_exist).unwrap_err();
-                assert!(
-                    e.contains("not allowed") || e.contains("does not exist"),
-                    "{p}: {e}"
-                );
+                let ok = e.contains("not allowed") || e.contains("does not exist");
+                assert!(ok, "{p}: {e}");
             }
         }
         // `..` and symlinks cannot launder a forbidden root.

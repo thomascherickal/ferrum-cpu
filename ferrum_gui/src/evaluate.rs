@@ -131,7 +131,7 @@ impl Stats {
 /// Read a text file for scoring; refuses devices and (unless `lossy`) invalid UTF-8.
 fn read_text(what: &str, path: &str, lossy: bool) -> Result<String, String> {
     checked_path(what, path, true)?;
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let bytes = crate::infra::fmt_err(std::fs::read(path), &format!("cannot read {path}"))?;
     let text = if lossy {
         String::from_utf8_lossy(&bytes).into_owned()
     } else {
@@ -175,15 +175,12 @@ pub(crate) fn evaluate_now(p: &EvalParams) -> Result<Vec<EvalRow>, String> {
     if is_imported(&p.model_path) {
         return score_llama(p, &name, &texts);
     }
-    let slm = GenerativeSLM::load(&p.model_path)
-        .map_err(|e| format!("cannot load model {}: {e}", p.model_path))?;
+    let slm = crate::infra::fmt_err(GenerativeSLM::load(&p.model_path), &format!("cannot load model {}", p.model_path))?;
     texts
         .iter()
         .map(|(label, text)| {
             let t0 = std::time::Instant::now();
-            let ev = slm
-                .evaluate(text)
-                .map_err(|e| format!("evaluation failed: {e}"))?;
+            let ev = crate::infra::fmt_err(slm.evaluate(text), "evaluation failed")?;
             let s = Stats {
                 tokens: ev.num_predictions,
                 cross_entropy: ev.cross_entropy,
@@ -220,9 +217,8 @@ fn score_llama(
     } else {
         parse_quant(&p.quant)?
     };
-    let g = Gguf::open(&p.model_path).map_err(|e| format!("cannot open {}: {e}", p.model_path))?;
-    let tok = GgufTokenizer::from_gguf(&g)
-        .map_err(|_| "this GGUF has no tokenizer; perplexity needs one".to_string())?;
+    let g = crate::infra::fmt_err(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
+    let Ok(tok) = GgufTokenizer::from_gguf(&g) else { return Err("this GGUF has no tokenizer; perplexity needs one".to_string()); };
     let mut est = gguf_resident_bytes(&g, prec);
     if let Some(ckpt) = resume {
         // The model, the checkpoint's bytes and one decoded parameter at a time (as `eval-gguf`).
@@ -230,22 +226,12 @@ fn score_llama(
             std::fs::metadata(ckpt).map_or(0, |m| usize::try_from(m.len()).unwrap_or(usize::MAX));
         est = est.saturating_add(len).saturating_add(est / 2);
     }
-    ram_guard(
-        "resident memory",
-        "",
-        est,
-        available_memory_bytes(),
-        p.force,
-        "choose a smaller precision or tick 'load anyway'",
-    )?;
-    let mut model = g
-        .load_llama_prec(prec)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let hint = "choose a smaller precision or tick 'load anyway'";
+    ram_guard("resident memory", "", est, available_memory_bytes(), p.force, hint)?;
+    let mut model = crate::infra::fmt_err(g.load_llama_prec(prec), "cannot load model")?;
     if let Some(ckpt) = resume {
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        apply_checkpoint_weights(&mut model, bytes)
-            .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
+        let bytes = crate::infra::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        crate::infra::fmt_err(apply_checkpoint_weights(&mut model, bytes), &format!("cannot apply checkpoint {ckpt}"))?;
     }
     let max_window = model.cfg.context_len;
     let window = if p.ctx == 0 {
@@ -270,9 +256,7 @@ fn score_llama(
                 ));
             }
             let t0 = std::time::Instant::now();
-            let score = model
-                .score_rolling(&ids, window)
-                .map_err(|e| format!("evaluation failed: {e}"))?;
+            let score = crate::infra::fmt_err(model.score_rolling(&ids, window), "evaluation failed")?;
             let seconds = t0.elapsed().as_secs_f64();
             let s = Stats::from_nll(-score.logprob, score.n_tokens);
             Ok(row(

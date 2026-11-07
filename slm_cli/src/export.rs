@@ -22,7 +22,7 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
         GgufQuant::from_str(quant_name).ok_or_else(|| format!("unknown --quant '{quant_name}'"))?;
 
     println!("Opening {in_path} (streamed)…");
-    let g = Gguf::open(in_path).map_err(|e| format!("cannot open GGUF {in_path}: {e}"))?;
+    let g = crate::util::fmt_err(Gguf::open(in_path), &format!("cannot open GGUF {in_path}"))?;
     println!(
         "  GGUF v{}   architecture = {}",
         g.version,
@@ -64,22 +64,20 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
             est_out as f64 / 1e9
         );
     }
-    if let Some(avail) = available_memory_bytes() {
-        if let Some(e) = memory_error(
+    if let Some(e) = available_memory_bytes().and_then(|avail| {
+        memory_error(
             "peak memory",
             est,
             avail,
             args.has("force"),
             "pass --force to attempt it anyway.",
-        ) {
-            return Err(e.into());
-        }
+        )
+    }) {
+        return Err(e.into());
     }
 
     println!("Loading weights (f32)…");
-    let mut model = g
-        .load_llama_prec(None)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let mut model = crate::util::fmt_err(g.load_llama_prec(None), "cannot load model")?;
 
     // Optional: apply a fine-tune checkpoint's f32 masters before export.
     if let Some(ckpt) = resume {
@@ -89,13 +87,12 @@ pub(crate) fn cmd_export_gguf(args: &Args) -> Result<(), Box<dyn std::error::Err
     }
 
     println!("Writing {out_path}  (--quant {quant_name})…");
-    ferrum_core::write_llama_gguf(&model, &g, quant, out_path)
-        .map_err(|e| format!("export failed: {e}"))?;
+    crate::util::fmt_err(ferrum_core::write_llama_gguf(&model, &g, quant, out_path), "export failed")?;
 
     // Per-type tensor summary, read back from the written file — this both
     // shows what was actually emitted (block-alignment fallbacks appear as
     // F16 counts) and proves the output re-opens.
-    let gout = Gguf::open(out_path).map_err(|e| format!("written file failed to re-open: {e}"))?;
+    let gout = crate::util::fmt_err(Gguf::open(out_path), "written file failed to re-open")?;
     let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
     for t in &gout.tensors {
         *counts.entry(t.ggml_type).or_default() += 1;
@@ -153,5 +150,17 @@ mod tests {
         for (id, name) in want {
             assert_eq!(ggml_type_name(id), name, "id {id}");
         }
+    }
+
+    #[test]
+    fn ram_guard_refuses_insufficient_memory() {
+        let t = crate::test_util::Tmp::new("export_guard");
+        let model = t.write("m.gguf", crate::test_fixtures::tiny_llama_gguf(None, &[]));
+        let out = t.path("out.gguf");
+        let e = crate::memory::with_available_memory_override(10, || {
+            let a = crate::args::Args::parse_for("export-gguf", &[model.clone(), out], crate::args::spec_for("export-gguf").unwrap()).unwrap();
+            cmd_export_gguf(&a).unwrap_err().to_string()
+        });
+        assert!(e.contains("peak memory"));
     }
 }

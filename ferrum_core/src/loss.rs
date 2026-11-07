@@ -148,11 +148,7 @@ mod tests {
                 .unwrap()
                 .0;
             let numeric = (lp - lm) / (2.0 * eps);
-            assert!(
-                (numeric - grad.data[k]).abs() < 5e-4,
-                "k={k}: numeric {numeric} vs analytic {}",
-                grad.data[k]
-            );
+            assert!((numeric - grad.data[k]).abs() < 5e-4);
         }
     }
 
@@ -267,11 +263,7 @@ mod mse_tests {
             m[k] -= eps;
             let (lm, _) = mse(&Tensor::matrix(2, 1, m).unwrap(), &targets).unwrap();
             let numeric = (lp - lm) / (2.0 * eps);
-            assert!(
-                (numeric - grad.data[k]).abs() < 1e-3,
-                "k={k}: numeric {numeric} vs analytic {}",
-                grad.data[k]
-            );
+            assert!((numeric - grad.data[k]).abs() < 1e-3);
         }
     }
 }

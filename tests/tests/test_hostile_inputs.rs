@@ -330,17 +330,16 @@ fn fuzz_child() {
         let text: String = (0..tr.below(60))
             .map(|_| pieces[tr.below(pieces.len())])
             .collect();
-        let opts = ferrum_core::CleanOptions {
-            strip_gutenberg: tr.below(2) == 0,
-            lowercase: tr.below(2) == 0,
-            collapse_whitespace: tr.below(2) == 0,
-            normalize_punctuation: tr.below(2) == 0,
-            strip_control_chars: tr.below(2) == 0,
-            max_chars: if tr.below(2) == 0 {
-                None
-            } else {
-                Some(tr.below(40))
-            },
+        let mut opts = ferrum_core::CleanOptions::default();
+        opts.strip_gutenberg = tr.below(2) == 0;
+        opts.lowercase = tr.below(2) == 0;
+        opts.collapse_whitespace = tr.below(2) == 0;
+        opts.normalize_punctuation = tr.below(2) == 0;
+        opts.strip_control_chars = tr.below(2) == 0;
+        opts.max_chars = if tr.below(2) == 0 {
+            None
+        } else {
+            Some(tr.below(40))
         };
         if let Err(p) = catch_unwind(AssertUnwindSafe(|| {
             let c = ferrum_core::clean_corpus(&text, &opts);

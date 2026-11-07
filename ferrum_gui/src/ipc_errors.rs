@@ -100,11 +100,7 @@ fn every_argument_of_every_command_is_checked_before_it_runs() {
             body.insert(args[bad].0.into(), json!(true));
             let e = call(&w, cmd, Value::Object(body)).unwrap_err();
             let text = e.to_string();
-            assert!(
-                text.contains(args[bad].0),
-                "{cmd}: argument {} not named in {text}",
-                args[bad].0
-            );
+            assert!(text.contains(args[bad].0), "{cmd}: {text}");
         }
     }
 }

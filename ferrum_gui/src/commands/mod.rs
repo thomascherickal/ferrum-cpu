@@ -40,10 +40,10 @@ fn time_seed() -> u64 {
 }
 
 pub(crate) fn file_name(path: &str) -> String {
-    Path::new(path)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string())
+    match Path::new(path).file_name() {
+        Some(s) => s.to_string_lossy().into_owned(),
+        None => path.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -54,6 +54,7 @@ mod tests {
     fn file_name_extracts_basename() {
         assert_eq!(file_name("/a/b/model.gguf"), "model.gguf");
         assert_eq!(file_name("model.gguf"), "model.gguf");
+        assert_eq!(file_name(""), "");
     }
 
     #[test]

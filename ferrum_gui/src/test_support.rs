@@ -222,10 +222,7 @@ pub fn http_server(
             let mut req = Vec::new();
             let mut buf = [0u8; 1024];
             while !req.windows(4).any(|w| w == b"\r\n\r\n") {
-                match s.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => req.extend_from_slice(&buf[..n]),
-                }
+                match s.read(&mut buf) { Ok(n) if n > 0 => req.extend_from_slice(&buf[..n]), _ => break }
             }
             let _ = tx.send(String::from_utf8_lossy(&req).into_owned());
             let head = format!(
@@ -257,12 +254,7 @@ pub fn running_as_root() -> bool {
 #[cfg(unix)]
 pub fn restrict(path: &std::path::Path, mode: u32, restore: u32) -> Option<Restore> {
     use std::os::unix::fs::PermissionsExt;
-    if running_as_root() {
-        eprintln!("SKIPPED: running as root, permission bits deny nothing");
-        return None;
-    }
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
-    Some(Restore(path.to_path_buf(), restore))
+    (!running_as_root()).then(|| { std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap(); Restore(path.to_path_buf(), restore) })
 }
 
 #[cfg(unix)]

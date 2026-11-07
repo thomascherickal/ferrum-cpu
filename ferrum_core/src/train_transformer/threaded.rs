@@ -202,6 +202,34 @@ mod tests {
 
     /// The sharded path stops on a diverged loss too.
     #[test]
+    fn threaded_early_stop_breaks_step_loop() {
+        let mut rng0 = Rng::new(7);
+        let mut net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng0).unwrap();
+        let tokens: Vec<usize> = (0..200).map(|i| (i * 7) % 6).collect();
+        let adam = Adam::new(0.01);
+        let mut rng = Rng::new(99);
+        let mut steps = 0;
+        let mut on_step = |_: &TransformerNet, _: &Rng| -> crate::error::Result<bool> {
+            steps += 1;
+            Ok(false)
+        };
+        let mut src = tokens.as_slice();
+        let res = super::epoch_sharded(
+            &mut net,
+            &mut src,
+            8,
+            &adam,
+            &mut rng,
+            2,
+            usize::MAX,
+            None,
+            &mut on_step,
+        );
+        assert!(res.is_ok());
+        assert_eq!(steps, 1);
+    }
+
+    #[test]
     fn threaded_diverging_training_returns_an_error() {
         let mut rng0 = Rng::new(7);
         let mut net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng0).unwrap();

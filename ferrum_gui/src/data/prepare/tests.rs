@@ -203,7 +203,8 @@ fn errors_name_the_problem_in_the_guis_words() {
         test_frac: 0.0,
         ..params(&[&bad], &out)
     };
-    let r = do_prepare(&ok, StopCondition::none(), &mut |_| {}).unwrap();
+    let mut noop = |_| {};
+    let r = do_prepare(&ok, StopCondition::none(), &mut noop).unwrap();
     assert_eq!((r.lossy_repaired, r.train.documents), (1, 1));
     assert!(r.summary.ends_with("lossy_repaired=1"), "{}", r.summary);
 
@@ -212,19 +213,19 @@ fn errors_name_the_problem_in_the_guis_words() {
         inputs: vec!["  ".into()],
         ..params(&[], &out)
     };
-    assert!(do_prepare(&none, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&none, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("at least one input"));
     let missing = params(&[&d.join("nope.txt")], &out);
-    assert!(do_prepare(&missing, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&missing, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("does not exist"));
     let dev = params(&[Path::new("/dev/null")], &out);
-    assert!(do_prepare(&dev, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&dev, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("not allowed"));
     let into_file = params(&[&f], &f);
-    assert!(do_prepare(&into_file, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&into_file, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("not a directory"));
     let fr = PrepareParams {
@@ -232,13 +233,13 @@ fn errors_name_the_problem_in_the_guis_words() {
         test_frac: 0.6,
         ..params(&[&f], &out)
     };
-    assert!(do_prepare(&fr, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&fr, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("sum to less than 1"));
     // An input that is one of the run's own outputs is refused.
     let own = params(&[&out.join("train.txt")], &out);
     std::fs::write(out.join("train.txt"), "old output").unwrap();
-    assert!(do_prepare(&own, StopCondition::none(), &mut |_| {})
+    assert!(do_prepare(&own, StopCondition::none(), &mut noop)
         .unwrap_err()
         .contains("inside --out"));
     let _ = std::fs::remove_dir_all(d);

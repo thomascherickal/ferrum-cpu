@@ -357,7 +357,7 @@ mod tests {
             &RESUME_CORPUS.repeat(40),
             &cfg,
             &mut Rng::new(1),
-            |_, _| {},
+            crate::slm::test_support::ignore_progress,
         )
         .unwrap();
         ckpt
@@ -374,7 +374,7 @@ mod tests {
             &RESUME_CORPUS.repeat(40),
             &cfg,
             &mut Rng::new(1),
-            |_, _| {},
+            crate::slm::test_support::ignore_progress,
         )
     }
 
@@ -434,7 +434,7 @@ mod tests {
             &RESUME_CORPUS.repeat(40),
             &cfg,
             &mut Rng::new(1),
-            |_, _| {},
+            crate::slm::test_support::ignore_progress,
         )
     }
 
@@ -529,6 +529,35 @@ mod tests {
     }
 
     #[test]
+    fn resume_refuses_different_vocab_or_context() {
+        let ckpt = short_run("vocab_ctx_refuse", None);
+        let mut cfg = resume_cfg(&ckpt);
+        cfg.resume = true;
+        let mut rng = Rng::new(1);
+        let err = super::prepare_net(&cfg, 999, &mut rng)
+            .err()
+            .expect("err")
+            .to_string();
+        assert!(err.contains("checkpoint has vocab"), "{err}");
+
+        let mut cfg = resume_cfg(&ckpt);
+        cfg.resume = true;
+        cfg.context_len += 2;
+        let err = super::prepare_net(&cfg, 290, &mut rng)
+            .err()
+            .expect("err")
+            .to_string();
+        assert!(err.contains("context"), "{err}");
+
+        // Also test prepare_net on fresh net with invalid config (dim mismatch in TransformerNet::new):
+        let bad_cfg = TransformerConfig {
+            context_len: 0,
+            ..TransformerConfig::default()
+        };
+        assert!(super::prepare_net(&bad_cfg, 10, &mut rng).is_err());
+    }
+
+    #[test]
     fn resume_without_corpus_id_on_either_side_proceeds() {
         // Checkpoint has one, the resuming run gives none: proceeds and keeps the id.
         let ckpt = short_run("corpus_ck_only", Some("sha256:aaaa"));
@@ -578,7 +607,7 @@ mod tests {
                 ..base.clone()
             },
             &mut Rng::new(1),
-            |_, _| {},
+            crate::slm::test_support::ignore_progress,
         )
         .unwrap();
         let mut epochs_seen = Vec::new();
@@ -949,5 +978,13 @@ mod tests {
             ..cfg
         };
         assert_eq!(epoch_ends(&corpus, &budget), vec![6]);
+    }
+
+    #[test]
+    fn write_checkpoint_fails_on_unwritable_path() {
+        let mut rng = Rng::new(1);
+        let net = TransformerNet::new(6, 4, 8, 2, 16, 1, &mut rng).unwrap();
+        let res = super::write_checkpoint("/dev/null/impossible/ckpt.ferrum", &net, &mut rng);
+        assert!(res.is_err());
     }
 }

@@ -26,7 +26,7 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let stream_disk = should_stream_text_corpus(
         corpus_path,
         args.config().vocab_size,
-        ferrum_core::STREAM_CORPUS_THRESHOLD,
+        crate::train::stream_threshold(),
     );
     let corpus = if stream_disk {
         String::new()
@@ -39,12 +39,7 @@ pub(crate) fn cmd_run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         println!("Loaded saved weights from {model_path} — no retraining needed.\n");
         slm
     } else if stream_disk {
-        train_and_save_input(
-            Input::DiskText(std::path::Path::new(corpus_path)),
-            corpus_path,
-            model_path,
-            args,
-        )?
+        train_and_save_input(Input::DiskText(std::path::Path::new(corpus_path)), corpus_path, model_path, args)?
     } else {
         train_and_save(&corpus, corpus_path, model_path, args)?
     };
@@ -65,8 +60,10 @@ pub(crate) fn cmd_generate(args: &Args) -> Result<(), Box<dyn std::error::Error>
     // Join remaining positionals so multi-word seeds work without quoting.
     let seed_text = args.positional[1..].join(" ");
 
-    let slm = GenerativeSLM::load(model_path)
-        .map_err(|e| format!("cannot load model {model_path}: {e}"))?;
+    let slm = crate::util::fmt_err(
+        GenerativeSLM::load(model_path),
+        &format!("cannot load model {model_path}"),
+    )?;
     let out = generate_text(&slm, &seed_text, args)?;
     // Streaming already printed the text live; avoid printing it twice.
     if !args.has("stream") {
@@ -183,6 +180,7 @@ mod tests {
         assert!(e.contains("is a token file"), "{e}");
         let corpus = t.write("c.txt", "abc abd abe ".repeat(8));
         cmd_run(&args("run", &[&corpus, &model, "ab", "--chars", "5"])).unwrap();
+        cmd_run(&args("run", &[&corpus, &model, "ab", "--chars", "5", "--stream"])).unwrap();
         assert_eq!(
             std::fs::read(&model).unwrap(),
             before,
@@ -193,6 +191,12 @@ mod tests {
             &[&model, "a", "b", "--chars", "3", "--stream"],
         ))
         .unwrap();
+
+        let disk_model = t.path("disk_run.gguf");
+        std::env::set_var("FERRUM_STREAM_THRESHOLD", "10");
+        cmd_run(&args("run", &[&corpus, &disk_model, "ab", "--vocab", "280", "--chars", "5"])).unwrap();
+        std::env::remove_var("FERRUM_STREAM_THRESHOLD");
+        assert!(std::path::Path::new(&disk_model).exists());
     }
 
     #[test]

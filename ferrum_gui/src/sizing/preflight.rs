@@ -175,7 +175,7 @@ pub async fn preflight_train(
     state: State<'_, AppState>,
     params: JobParams,
 ) -> Result<Preflight, CmdError> {
-    let bench = *state.bench.lock().unwrap_or_else(|e| e.into_inner());
+    let bench = *crate::infra::lock(&state.bench);
     crate::infra::error::blocking_ok(move || {
         let mut params = params;
         resolve(JobKind::Train, &mut params);

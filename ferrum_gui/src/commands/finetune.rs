@@ -90,38 +90,28 @@ fn finetune_inner<R: Runtime>(
         return Err("learning rate must be a positive number".into());
     }
     ferrum_core::set_verbose(p.verbose);
+    fn clean<T, E: std::fmt::Display>(r: Result<T, E>, prefix: &str) -> Result<T, String> {
+        if r.is_err() {
+            ferrum_core::set_verbose(false);
+        }
+        crate::infra::fmt_err(r, prefix)
+    }
     let cleanup = || ferrum_core::set_verbose(false);
 
     // 1. Open + f32-load the base model.
-    let g = Gguf::open(&p.model_path).map_err(|e| {
-        cleanup();
-        format!("cannot open {}: {e}", p.model_path)
-    })?;
+    let g = clean(Gguf::open(&p.model_path), &format!("cannot open {}", p.model_path))?;
     let est = gguf_resident_bytes(&g, None); // f32
     let train_est = est.saturating_mul(4); // weights + grad + Adam m/v
-    ram_guard(
-        "training memory",
-        "",
-        train_est,
-        available_memory_bytes(),
-        p.force,
-        "fine-tune a smaller model or enable 'train anyway'",
-    )
-    .inspect_err(|_| cleanup())?;
+    let hint = "fine-tune a smaller model or enable 'train anyway'";
+    if let Err(e) = ram_guard("training memory", "", train_est, available_memory_bytes(), p.force, hint) { cleanup(); return Err(e); }
     let tok = GgufTokenizer::from_gguf(&g).map_err(|_| {
         cleanup();
         "this GGUF has no tokenizer; text fine-tuning needs one".to_string()
     })?;
-    let model = g.load_llama_prec(None).map_err(|e| {
-        cleanup();
-        format!("cannot load model: {e}")
-    })?;
+    let model = clean(g.load_llama_prec(None), "cannot load model")?;
 
     // 2. Read + tokenize the corpus.
-    let text = std::fs::read_to_string(&p.corpus_path).map_err(|e| {
-        cleanup();
-        format!("cannot read corpus {}: {e}", p.corpus_path)
-    })?;
+    let text = clean(std::fs::read_to_string(&p.corpus_path), &format!("cannot read corpus {}", p.corpus_path))?;
     if text.trim().is_empty() {
         cleanup();
         return Err(format!("corpus {} is empty", p.corpus_path));
@@ -132,10 +122,7 @@ fn finetune_inner<R: Runtime>(
     }
     tokens.extend(tok.encode(&text));
     // The corpus identity the checkpoint records and a resume checks (the CLI's rule).
-    let corpus_id = slm_cli::hash::file_id(&p.corpus_path).map_err(|e| {
-        cleanup();
-        format!("cannot read corpus {}: {e}", p.corpus_path)
-    })?;
+    let corpus_id = clean(slm_cli::hash::file_id(&p.corpus_path), &format!("cannot read corpus {}", p.corpus_path))?;
 
     let seq = p.seq_len.min(model.cfg.context_len).max(2);
     let batch = p.batch_size.max(1);

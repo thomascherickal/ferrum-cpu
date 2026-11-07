@@ -43,7 +43,7 @@ pub(crate) fn call(
     )
     .map(|r| match r {
         InvokeResponseBody::Json(s) => serde_json::from_str(&s).unwrap(),
-        InvokeResponseBody::Raw(b) => json!(b.len()),
+        InvokeResponseBody::Raw(_) => unreachable!(),
     })
 }
 
@@ -704,8 +704,7 @@ fn arguments_captured_from_app_js_deserialize_into_the_command_types() {
         serde_json::from_str(include_str!("../ui/tests/command_params.fixture.json")).unwrap();
     macro_rules! parses {
         ($key:literal, $ty:ty) => {
-            serde_json::from_value::<$ty>(fixture[$key].clone())
-                .unwrap_or_else(|e| panic!("{}: {e}", $key))
+            serde_json::from_value::<$ty>(fixture[$key].clone()).unwrap()
         };
     }
     let t = parses!("train_slm", TrainParams);
@@ -1232,15 +1231,7 @@ fn download_text_returns_the_text_and_sends_progress_with_the_url_as_id() {
     let text = call(&w, "download_text", json!({"url": url})).unwrap();
     assert_eq!(text, json!("text"));
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !got
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|e| e.contains("\"total\":4"))
-        && std::time::Instant::now() < deadline
-    {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    while !got.lock().unwrap().iter().any(|e| e.contains("\"total\":4")) && std::time::Instant::now() < deadline { std::thread::sleep(std::time::Duration::from_millis(1)); }
     let last: Value = serde_json::from_str(got.lock().unwrap().last().unwrap()).unwrap();
     assert_eq!(last, json!({"id": url, "bytes": 4, "total": 4}));
 }
@@ -1254,9 +1245,7 @@ fn download_progress_events_carry_the_id_bytes_and_total() {
     p.finish(9);
     // Mock-runtime events are delivered on the listener thread; wait for both.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while got.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    while got.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline { std::thread::sleep(std::time::Duration::from_millis(1)); }
     let ev: Vec<Value> = got
         .lock()
         .unwrap()

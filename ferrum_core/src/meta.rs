@@ -496,9 +496,7 @@ mod tests {
 
     #[test]
     fn normalizer_fit_traces_every_column_when_verbose() {
-        let _g = crate::verbose::TEST_GUARD
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::verbose::TEST_GUARD.lock().expect("lock");
         let prev = crate::verbose::is_verbose();
         crate::verbose::set_verbose(true);
         // At most 8 columns: all are traced. More than 8: the rest are summarised.

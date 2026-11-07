@@ -58,7 +58,7 @@ pub struct Jobs(Arc<Mutex<HashMap<Job, StopCondition>>>);
 impl Jobs {
     /// Take the slot of `kind`, or fail if a job of that kind is already running.
     pub fn start(&self, kind: Job) -> Result<JobGuard, String> {
-        let mut slots = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slots = crate::infra::lock(&self.0);
         if slots.contains_key(&kind) {
             return Err(format!("{} is already running", kind.noun()));
         }
@@ -73,7 +73,7 @@ impl Jobs {
 
     /// Ask the running job of `kind` to stop. `false` when none is running.
     pub fn cancel(&self, kind: Job) -> bool {
-        let slots = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let slots = crate::infra::lock(&self.0);
         slots.get(&kind).is_some_and(|stop| {
             stop.cancel_flag()
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -103,11 +103,7 @@ impl JobGuard {
 
 impl Drop for JobGuard {
     fn drop(&mut self) {
-        self.jobs
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&self.kind);
+        crate::infra::lock(&self.jobs.0).remove(&self.kind);
     }
 }
 

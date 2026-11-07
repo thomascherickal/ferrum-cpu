@@ -7,9 +7,9 @@ const path = require("path");
 
 const vm = require("vm");
 const file = path.join(__dirname, "worker.js");
-// Blank the import line (keeps line numbers) and run the rest under worker.js's own absolute
-// filename, so V8 attributes coverage to the real file.
-const src = fs.readFileSync(file, "utf8").replace(/^import .*$/m, "");
+// Blank the import line (keeping the exact same byte length!) and run the rest under worker.js's
+// own absolute filename, so V8's byte-offset coverage maps every line of the real file accurately.
+const src = fs.readFileSync(file, "utf8").replace(/^import .*$/m, (m) => " ".repeat(m.length));
 assert(!/^import /m.test(src), "the import line was not removed");
 
 const busy = (ms) => { for (const t = Date.now(); Date.now() - t < ms; ); };
@@ -47,10 +47,12 @@ function boot(Slm) {
   };
 }
 
+const test = require("node:test");
+
 const gen = { type: "generate", id: 1, prompt: "p", max_tokens: 9, temperature: 0.8, top_k: 0, top_p: 1, repetition_penalty: 1, seed: 1, stop: [] };
 const text = (out, id) => out.filter((m) => m.type === "chunk" && m.id === id).map((m) => m.text).join("");
 
-(async () => {
+test("worker message protocol", async () => {
   // Load, generate: the chunks concatenate to the whole completion, then "done" with the count.
   let w = boot(fakeSlm(6, 0));
   w.post({ type: "load", bytes: new ArrayBuffer(4) });
@@ -101,5 +103,12 @@ const text = (out, id) => out.filter((m) => m.type === "chunk" && m.id === id).m
   w.post({ type: "load", bytes: new ArrayBuffer(1) });
   await w.wait((m) => m.type === "error");
   assert.strictEqual(w.out[0].message, "plain string");
+  w = boot(class { constructor() { throw ""; } });
+  w.post({ type: "load", bytes: new ArrayBuffer(1) });
+  await w.wait((m) => m.type === "error");
+  assert.strictEqual(w.out[0].message, "");
+  // Unknown message types are ignored cleanly (covering the final else-if fallthrough).
+  w.post({ type: "noop" });
+  await new Promise((r) => setImmediate(r));
   console.log("worker.test.js: ok");
-})().catch((e) => { console.error(e); process.exit(1); });
+});

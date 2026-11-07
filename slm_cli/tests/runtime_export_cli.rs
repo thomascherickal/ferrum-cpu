@@ -157,8 +157,10 @@ fn answers(host: &str) -> bool {
 }
 
 fn lms_tool() -> Option<PathBuf> {
-    if std::env::var("FERRUM_SKIP_LMSTUDIO").ok().as_deref() == Some("1") {
-        eprintln!("skip: lm-studio (FERRUM_SKIP_LMSTUDIO=1)");
+    if std::env::var("FERRUM_SKIP_LMSTUDIO").ok().as_deref() == Some("1")
+        || std::env::var("FERRUM_REQUIRE_RUNTIMES").ok().as_deref() != Some("1")
+    {
+        eprintln!("skip: lm-studio (set FERRUM_REQUIRE_RUNTIMES=1 to run against live LM Studio)");
         return None;
     }
     let lms = require_or_skip(tool("FERRUM_LMS", "lms", ".lmstudio/bin/lms"))?;

@@ -22,7 +22,7 @@ fn corpus() -> String {
             .wrapping_add(1442695040888963407);
         (state >> 33) as usize % n
     };
-    (0..40)
+    (0..16)
         .map(|_| {
             let body: Vec<&str> = (0..8 + next(7)).map(|_| words[next(words.len())]).collect();
             format!("{}. ", body.join(" "))
@@ -39,7 +39,7 @@ fn cfg(epochs: usize) -> TransformerConfig {
         hidden_dim: 32,
         epochs,
         vocab_size: 280,
-        batch_size: 8,
+        batch_size: 16,
         ..TransformerConfig::default()
     }
 }

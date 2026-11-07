@@ -309,22 +309,22 @@ pub(super) fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// The reference tiny config (0.1M params), trained briefly.
+/// A compact GPT-2-codec config with multiple of 32 dims, trained briefly.
 pub(super) fn trained_slm(qat: bool) -> GenerativeSLM {
     let cfg = TransformerConfig {
-        context_len: 64,
-        embed_dim: 64,
+        context_len: 16,
+        embed_dim: 32,
         num_heads: 4,
-        num_blocks: 2,
-        hidden_dim: 128,
-        vocab_size: 512,
+        num_blocks: 1,
+        hidden_dim: 64,
+        vocab_size: 270,
         weight_tying: true,
-        max_tokens: 8 * 16 * 64, // 8 optimizer steps: enough to move every weight
+        max_tokens: 16 * 8,
         qat,
         ..TransformerConfig::default()
     };
     GenerativeSLM::train_transformer_config(
-        &gguf_corpus(),
+        &gguf_corpus()[..800],
         &cfg,
         &mut crate::rng::Rng::new(1),
         |_, _| {},

@@ -76,7 +76,7 @@ pub async fn bind(cfg: Config, request_log: Option<RequestLog>) -> Result<Bound,
     let listener = tokio::net::TcpListener::bind((cfg.host.as_str(), cfg.port))
         .await
         .map_err(|e| format!("cannot bind {}:{}: {e}", cfg.host, cfg.port))?;
-    let addr = listener.local_addr().map_err(|e| e.to_string())?;
+    let addr = crate::str_err(listener.local_addr())?;
     let auth = match (&cfg.token, is_loopback(&cfg.host)) {
         (Some(_), _) => "ON (bearer token required, except GET /health)",
         (None, true) => "OFF (loopback only)",
@@ -105,10 +105,9 @@ impl Bound {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), String> {
-        axum::serve(self.listener, self.router)
+        crate::str_err(axum::serve(self.listener, self.router)
             .with_graceful_shutdown(shutdown)
-            .await
-            .map_err(|e| e.to_string())
+            .await)
     }
 }
 

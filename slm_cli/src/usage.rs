@@ -195,7 +195,7 @@ mod tests {
                 let line = text
                     .lines()
                     .find(|l| l.split_whitespace().next() == Some(&format!("--{name}")))
-                    .unwrap_or_else(|| panic!("{cmd}: --{name} missing"));
+                    .expect("missing");
                 let want = match kind {
                     Kind::Bool => format!("  --{name}"),
                     Kind::Usize | Kind::U64 => format!("  --{name} <N>"),

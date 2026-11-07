@@ -127,7 +127,7 @@ fn generate_once(
     } else {
         slm.generate_stream_with(&p.seed_text, p.num_chars, &params, &mut rng, |f| on_text(f))
     };
-    out.map_err(|e| format!("generation failed: {e}"))
+    crate::infra::fmt_err(out, "generation failed")
 }
 
 /// [`generate_once`] that ends as soon as `cancelled()` answers true after a fragment, returning
@@ -140,12 +140,13 @@ pub(crate) fn run_generation(
     on_text: &mut dyn FnMut(&str),
 ) -> Result<(String, bool), String> {
     let flag = Arc::new(AtomicBool::new(false));
-    let text = generate_once(slm, p, flag.clone(), &mut |frag| {
+    let mut cb = |frag: &str| {
         on_text(frag);
         if cancelled() {
             flag.store(true, Ordering::Relaxed);
         }
-    })?;
+    };
+    let text = generate_once(slm, p, flag.clone(), &mut cb)?;
     Ok((text, flag.load(Ordering::Relaxed)))
 }
 
@@ -166,8 +167,7 @@ pub async fn generate_slm<R: Runtime>(
 fn gen_inner<R: Runtime>(app: AppHandle<R>, p: GenParams, job: JobGuard) -> Result<String, String> {
     sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?; // fail before the model loads
     checked_path("model path", &p.model_path, true)?;
-    let slm = GenerativeSLM::load(&p.model_path)
-        .map_err(|e| format!("cannot load model {}: {e}", p.model_path))?;
+    let slm = crate::infra::fmt_err(GenerativeSLM::load(&p.model_path), &format!("cannot load model {}", p.model_path))?;
 
     ferrum_core::set_verbose(p.verbose);
     let cancelled = || job.cancelled();

@@ -404,6 +404,7 @@ fn legacy_config(
 
 #[cfg(test)]
 mod tests {
+    use crate::InferError;
     use crate::rng::Rng;
     use crate::slm::config::{TransformerConfig, ValidationConfig};
     use crate::slm::corpus::{tokenize_for_lm, tokenize_for_lm_cfg};
@@ -412,6 +413,44 @@ mod tests {
     use crate::slm::test_support::{ignore_progress, ignore_validation, t5_cfg, tiny_bpe_slm};
     use crate::slm::GenerativeSLM;
     use crate::tokenizer::ByteBpeTokenizer;
+
+    #[test]
+    fn validated_training_refuses_zero_epochs() {
+        let corpus: String = "abcd".repeat(80);
+        let vcfg = ValidationConfig {
+            val_fraction: 0.2,
+            patience: 0,
+        };
+        let mut rng = Rng::new(7);
+        let res = GenerativeSLM::train_transformer_config_validated(
+            &corpus,
+            &t5_cfg(0),
+            1,
+            &vcfg,
+            &mut rng,
+            crate::slm::test_support::ignore_validation,
+        );
+        assert!(matches!(res, Err(InferError::DimMismatch(msg)) if msg.contains("training ran zero epochs")));
+    }
+
+    #[test]
+    fn validated_training_threads_zero_auto() {
+        let corpus: String = "abcd".repeat(80);
+        let vcfg = ValidationConfig {
+            val_fraction: 0.2,
+            patience: 0,
+        };
+        let mut rng = Rng::new(7);
+        let slm = GenerativeSLM::train_transformer_config_validated(
+            &corpus,
+            &t5_cfg(1),
+            0,
+            &vcfg,
+            &mut rng,
+            crate::slm::test_support::ignore_validation,
+        );
+        assert!(slm.is_ok());
+    }
 
     /// The returned model is the best-by-validation checkpoint, not the last
     /// epoch's. Re-scoring the returned model on the reconstructed validation

@@ -33,6 +33,7 @@ fn run(o: &PrepareOptions) -> Result<PrepareReport, String> {
 
 #[test]
 fn rejected_summary_lists_nonzero_reasons_in_key_order() {
+    assert!(write_manifest(Path::new("/nonexistent_dir_12345/m.json"), "").is_err());
     let mut r: BTreeMap<String, u64> = BTreeMap::new();
     r.insert("duplicate".into(), 0);
     r.insert("empty".into(), 0);

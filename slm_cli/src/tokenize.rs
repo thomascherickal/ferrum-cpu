@@ -85,11 +85,7 @@ pub fn tokenize_files(
     .map_err(|e| {
         let text = e.to_string();
         // The library wraps the callback's message; a stop keeps its own plain text.
-        if text.ends_with(CANCELLED) {
-            CANCELLED.to_string()
-        } else {
-            text
-        }
+        if text.ends_with(CANCELLED) { CANCELLED.to_string() } else { text }
     })?;
     Ok((stats.tokens, stats.documents, bytes_in, stats.bytes))
 }
@@ -285,8 +281,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    fn dummy_progress(_: TokenizeProgress) {}
+
     #[test]
     fn errors_name_the_problem_and_a_stop_writes_nothing() {
+        dummy_progress(TokenizeProgress { file: 0, files: 0, path: String::new(), bytes_done: 0, bytes_total: 0, tokens: 0 });
         let d = tmp("errors");
         let docs = docs(4);
         let text = d.join("c.txt");
@@ -296,35 +295,37 @@ mod tests {
 
         let mut missing = options(&d, &text);
         missing.tokenizer = d.join("nope.gguf").to_string_lossy().into();
-        assert!(tokenize(&missing, &mut |_| {})
-            .unwrap_err()
-            .starts_with("cannot read tokenizer "));
+        assert!(tokenize(&missing, &mut dummy_progress).unwrap_err().starts_with("cannot read tokenizer "));
         let mut same = options(&d, &text);
         same.out = same.input.clone();
-        assert!(tokenize(&same, &mut |_| {})
-            .unwrap_err()
-            .contains("are the same file"));
+        assert!(tokenize(&same, &mut dummy_progress).unwrap_err().contains("are the same file"));
         let empty = d.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
-        assert!(tokenize(&options(&d, &empty), &mut |_| {})
-            .unwrap_err()
-            .starts_with("no files found under"));
+        assert!(tokenize(&options(&d, &empty), &mut dummy_progress).unwrap_err().starts_with("no files found under"));
+        let mut unwrite = options(&d, &text);
+        unwrite.out = "/nonexistent_dir_12345/out.tokens".into();
+        assert!(tokenize(&unwrite, &mut dummy_progress).is_err());
 
         // Invalid UTF-8: the file and the byte.
         let bad = d.join("bad.txt");
         std::fs::write(&bad, b"fine text\xff").unwrap();
-        let e = tokenize(&options(&d, &bad), &mut |_| {}).unwrap_err();
+        let e = tokenize(&options(&d, &bad), &mut dummy_progress).unwrap_err();
         assert!(
             e.contains("bad.txt") && e.contains("invalid UTF-8 at byte 9"),
             "{e}"
         );
         assert!(!Path::new(&o.out).exists(), "a failed run writes nothing");
 
+        let empty = d.join("empty.txt");
+        std::fs::write(&empty, "").unwrap();
+        let e = tokenize(&options(&d, &empty), &mut dummy_progress).unwrap_err();
+        assert!(e.contains("corpus is empty"), "{e}");
+
         // A stop requested at the first document.
         o.stop
             .cancel_flag()
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(tokenize(&o, &mut |_| {}).unwrap_err(), CANCELLED);
+        assert_eq!(tokenize(&o, &mut dummy_progress).unwrap_err(), CANCELLED);
         assert!(!Path::new(&o.out).exists() && tokp.exists());
         let _ = std::fs::remove_dir_all(d);
     }
@@ -340,14 +341,14 @@ mod tests {
             ByteBpeTokenizer::byte_level().to_gguf_bytes(),
         )
         .unwrap();
-        let e = tokenize(&options(&d, &text), &mut |_| {}).unwrap_err();
+        let e = tokenize(&options(&d, &text), &mut dummy_progress).unwrap_err();
         assert!(e.contains("no <|endoftext|> id"), "{e}");
         // A file that is not a tokenizer.
         std::fs::write(d.join("tok.gguf"), b"not a gguf at all").unwrap();
-        assert!(tokenize(&options(&d, &text), &mut |_| {}).is_err());
+        assert!(tokenize(&options(&d, &text), &mut dummy_progress).is_err());
         // A tokenizer that is fine, with an input that does not exist.
         tokenizer(&d, "some text to learn from");
-        let e = tokenize(&options(&d, &d.join("missing.txt")), &mut |_| {}).unwrap_err();
+        let e = tokenize(&options(&d, &d.join("missing.txt")), &mut dummy_progress).unwrap_err();
         assert!(e.contains("missing.txt"), "{e}");
         let _ = std::fs::remove_dir_all(d);
     }

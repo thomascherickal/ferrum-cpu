@@ -150,6 +150,7 @@ fn tokenize_chars(corpus: &str, context_len: usize) -> Result<(Vec<char>, Vec<u3
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::slm::config::TransformerConfig;
     use crate::slm::corpus::tokenize_for_lm_cfg;
 
@@ -197,5 +198,11 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         assert!(created);
         assert_eq!(first.unwrap().tokens, again.unwrap().tokens);
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn narrow_ids_rejects_overflow() {
+        assert!(narrow_ids(vec![usize::MAX]).is_err());
     }
 }

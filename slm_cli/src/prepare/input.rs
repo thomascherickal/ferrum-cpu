@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 /// inside `--input`) is skipped when found by walking a directory and an error
 /// when named directly: re-ingesting the outputs would feed them back in.
 pub fn expand_inputs(inputs: &[String], outdir: &Path) -> std::io::Result<Vec<PathBuf>> {
-    let outdir = std::fs::canonicalize(outdir).unwrap_or_else(|_| outdir.to_path_buf());
+    let outdir = std::fs::canonicalize(outdir).unwrap_or(outdir.to_path_buf());
     let inside_out = |p: &Path| std::fs::canonicalize(p).is_ok_and(|c| c.starts_with(&outdir));
     fn walk(
         p: &Path,
@@ -88,8 +88,10 @@ pub fn for_each_raw_doc(
     total: &mut u64,
     mut f: impl FnMut(&[u8], u64) -> Result<(), String>,
 ) -> Result<(), String> {
-    let mut file =
-        std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let mut file = crate::util::fmt_err(
+        std::fs::File::open(path),
+        &format!("cannot open {}", path.display()),
+    )?;
     let sep = sep.as_bytes();
     let mut doc: Vec<u8> = Vec::new();
     let mut doc_start = 0u64;
@@ -219,8 +221,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    fn noop_doc(_: &[u8], _: u64) -> Result<(), String> { Ok(()) }
+
     #[test]
     fn callback_errors_and_missing_files_propagate() {
+        assert!(noop_doc(&[], 0).is_ok());
         let d = tmpdir("err");
         let p = d.join("f.txt");
         std::fs::write(&p, b"a<|endoftext|>b").unwrap();
@@ -230,10 +235,10 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(e, "stop");
-        let e = for_each_raw_doc(&d.join("nope"), "", &mut h, &mut t, |_, _| Ok(())).unwrap_err();
+        let e = for_each_raw_doc(&d.join("nope"), "", &mut h, &mut t, noop_doc).unwrap_err();
         assert!(e.contains("cannot open"), "{e}");
         // A directory opens on Linux but cannot be read: a clean error, not a hang.
-        let e = for_each_raw_doc(&d, "", &mut h, &mut t, |_, _| Ok(()));
+        let e = for_each_raw_doc(&d, "", &mut h, &mut t, noop_doc);
         assert!(e.is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -280,10 +285,7 @@ mod tests {
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&d);
         // ponytail: a process that bypasses permissions (root) reads the directory anyway.
-        if let Err(e) = r {
-            assert!(e.to_string().contains("cannot read "), "{e}");
-            assert!(e.to_string().contains("locked"), "{e}");
-        }
+        if let Err(e) = r { assert!(e.to_string().contains("cannot read ") && e.to_string().contains("locked")); }
     }
 
     #[test]

@@ -246,5 +246,12 @@ mod tests {
             EpochStart::read(&g, 3).is_err(),
             "a start after the checkpoint"
         );
+
+        // Test RunSettings::read when lr_settings is absent
+        let mut b2 = ckpt::begin("ferrum-test");
+        ckpt::put_u64s(&mut b2, "batch_size", &[4]);
+        ckpt::put_u64s(&mut b2, "window_stride", &[1]);
+        let g2 = ckpt::open(&b2.into_bytes(), b"NONE", "ferrum-test").unwrap();
+        assert_eq!(super::RunSettings::read(&g2).unwrap(), None);
     }
 }

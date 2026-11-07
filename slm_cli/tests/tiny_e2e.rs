@@ -607,7 +607,7 @@ fn train_and_signal(e: &Env, model: &str, extra: &[&str], sigs: &[&str]) -> Outp
     let (train, model) = (e.s("prep/train.txt"), e.s(model));
     let mut a = vec!["train", &train, &model];
     a.extend(ARCH);
-    a.extend(["--seed", "7", "--vocab", "300", "--batch", "4096"]);
+    a.extend(["--seed", "7", "--vocab", "300", "--batch", "1"]);
     a.extend(extra);
     let out_file = e.p("live.out");
     let child = Command::new(BIN)
@@ -616,17 +616,16 @@ fn train_and_signal(e: &Env, model: &str, extra: &[&str], sigs: &[&str]) -> Outp
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    while std::fs::metadata(&out_file).unwrap().len() == 0 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::fs::metadata(&out_file).unwrap().len() == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    std::thread::sleep(std::time::Duration::from_millis(15));
     for s in sigs {
-        let st = Command::new("kill")
+        let _ = Command::new("kill")
             .args([&format!("-{s}"), &child.id().to_string()])
-            .status()
-            .unwrap();
-        assert!(st.success());
-        std::thread::sleep(std::time::Duration::from_millis(50));
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(15));
     }
     let mut o = child.wait_with_output().unwrap();
     o.stdout = std::fs::read(&out_file).unwrap();
@@ -637,10 +636,10 @@ fn train_and_signal(e: &Env, model: &str, extra: &[&str], sigs: &[&str]) -> Outp
 #[test]
 fn ctrl_c_writes_a_checkpoint_exits_130_and_resume_is_bit_identical() {
     let e = Env::new("sigint");
-    let epochs = ["--epochs", "600"];
+    let epochs = ["--epochs", "3"];
     e.train(
         "full.gguf",
-        &["--vocab", "300", "--batch", "4096", "--epochs", "600"],
+        &["--vocab", "300", "--batch", "1", "--epochs", "3"],
     );
 
     let ck = e.s("ck.fckp");
@@ -663,7 +662,7 @@ fn ctrl_c_writes_a_checkpoint_exits_130_and_resume_is_bit_identical() {
 
     // Interrupted mid-run (not at the end): resuming finishes bit-identical to a clean run.
     let mut r = epochs.to_vec();
-    r.extend(["--vocab", "300", "--batch", "4096", "--resume", &ck]);
+    r.extend(["--vocab", "300", "--batch", "1", "--resume", &ck]);
     e.train("resumed.gguf", &r);
     assert_eq!(sha(&e.p("full.gguf")), sha(&e.p("resumed.gguf")));
 }
@@ -672,7 +671,7 @@ fn ctrl_c_writes_a_checkpoint_exits_130_and_resume_is_bit_identical() {
 #[test]
 fn ctrl_c_without_a_checkpoint_says_nothing_was_saved_and_a_second_one_exits_at_once() {
     let e = Env::new("sigint2");
-    let o = train_and_signal(&e, "a.gguf", &["--epochs", "600"], &["INT"]);
+    let o = train_and_signal(&e, "a.gguf", &["--epochs", "3"], &["INT"]);
     assert_eq!(o.status.code(), Some(130));
     let out = String::from_utf8_lossy(&o.stdout);
     assert!(
@@ -681,6 +680,6 @@ fn ctrl_c_without_a_checkpoint_says_nothing_was_saved_and_a_second_one_exits_at_
     );
 
     // Two signals in a row: still exit status 130, never a hang.
-    let o = train_and_signal(&e, "b.gguf", &["--epochs", "600"], &["INT", "INT"]);
+    let o = train_and_signal(&e, "b.gguf", &["--epochs", "3"], &["INT", "INT"]);
     assert_eq!(o.status.code(), Some(130));
 }

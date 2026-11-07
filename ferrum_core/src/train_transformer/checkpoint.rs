@@ -706,7 +706,7 @@ mod tests {
         for (why, edit) in cases {
             let e = TransformerNet::load_checkpoint(&mangled(&bytes, &edit))
                 .err()
-                .unwrap_or_else(|| panic!("{why} must be rejected"));
+                .expect("must be rejected");
             assert!(
                 e.to_string().contains("does not match its tensors"),
                 "{why}: {e}"

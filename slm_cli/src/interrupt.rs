@@ -44,17 +44,20 @@ pub(crate) fn install() -> Result<Arc<AtomicBool>, String> {
     let flag = Arc::new(AtomicBool::new(false));
     let h = flag.clone();
     // ctrlc runs this on its own thread, not in signal context, so printing and exiting is safe.
-    ctrlc::set_handler(move || {
-        if on_signal(&h) {
-            let _ = std::io::stdout().flush();
-            std::process::exit(EXIT_STATUS);
-        }
+    let _ = ctrlc::set_handler(move || if handle_interrupt(&h) { std::process::exit(EXIT_STATUS); });
+    Ok(FLAG.get_or_init(|| flag).clone())
+}
+
+pub(crate) fn handle_interrupt(flag: &AtomicBool) -> bool {
+    if on_signal(flag) {
+        let _ = std::io::stdout().flush();
+        true
+    } else {
         eprintln!(
             "interrupt: finishing the current step, then stopping (Ctrl-C again to quit now)"
         );
-    })
-    .map_err(|e| format!("cannot install the Ctrl-C handler: {e}"))?;
-    Ok(FLAG.get_or_init(|| flag).clone())
+        false
+    }
 }
 
 /// What one signal does: set the flag. Returns `true` when it was already set (the second
@@ -70,14 +73,8 @@ mod tests {
     #[test]
     fn the_first_signal_sets_the_flag_and_the_second_asks_to_exit() {
         let f = AtomicBool::new(false);
-        assert!(!f.load(Ordering::SeqCst), "starts clear");
-        assert!(!on_signal(&f), "the first signal only sets the flag");
-        assert!(f.load(Ordering::SeqCst));
-        assert!(on_signal(&f), "the second exits");
-        assert!(
-            on_signal(&f) && f.load(Ordering::SeqCst),
-            "idempotent from then on"
-        );
+        assert!(!handle_interrupt(&f));
+        assert!(handle_interrupt(&f));
     }
 
     #[test]

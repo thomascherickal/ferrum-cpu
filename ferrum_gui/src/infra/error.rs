@@ -146,10 +146,7 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| CmdError::from(format!("task error: {e}")))?
-        .map_err(CmdError::from)
+    match tauri::async_runtime::spawn_blocking(f).await { Ok(res) => res.map_err(CmdError::from), Err(e) => Err(CmdError::from(format!("task error: {e}"))) }
 }
 
 /// [`blocking`] for work that cannot fail.
@@ -233,5 +230,7 @@ mod tests {
         assert!(e.contains("does not exist"));
         assert_eq!(e.to_string(), "model path: /x does not exist");
         assert_eq!(CmdError::from("x").code, "error");
+        let err = tauri::async_runtime::block_on(blocking::<(), _>(|| panic!("boom"))).unwrap_err();
+        assert_eq!(err.code, "internal");
     }
 }

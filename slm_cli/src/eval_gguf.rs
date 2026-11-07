@@ -49,26 +49,22 @@ pub(crate) fn cmd_eval_gguf(args: &Args) -> Result<(), Box<dyn std::error::Error
     if let Some(ckpt) = resume {
         est = est.max(resume_peak_bytes(est, file_len(ckpt)));
     }
-    if let Some(avail) = available_memory_bytes() {
-        if let Some(e) = memory_error(
+    if let Some(e) = available_memory_bytes().and_then(|avail| {
+        memory_error(
             "resident memory",
             est,
             avail,
             args.has("force"),
             "try --quant int8 or int4, or pass --force to attempt it anyway.",
-        ) {
-            return Err(e.into());
-        }
+        )
+    }) {
+        return Err(e.into());
     }
     eprintln!("Loading weights…");
-    let mut model = g
-        .load_llama_prec(prec)
-        .map_err(|e| format!("cannot load model: {e}"))?;
+    let mut model = crate::util::fmt_err(g.load_llama_prec(prec), "cannot load model")?;
     if let Some(ckpt) = resume {
-        let bytes =
-            std::fs::read(ckpt).map_err(|e| format!("cannot read checkpoint {ckpt}: {e}"))?;
-        ferrum_core::apply_checkpoint_weights(&mut model, bytes)
-            .map_err(|e| format!("cannot apply checkpoint {ckpt}: {e}"))?;
+        let bytes = crate::util::fmt_err(std::fs::read(ckpt), &format!("cannot read checkpoint {ckpt}"))?;
+        crate::util::fmt_err(ferrum_core::apply_checkpoint_weights(&mut model, bytes), &format!("cannot apply checkpoint {ckpt}"))?;
         eprintln!("  applied fine-tuned checkpoint {ckpt}");
     }
     let max_window = model.cfg.context_len;
@@ -184,5 +180,8 @@ mod tests {
         ];
         let with_bos = t.write("bos.gguf", tiny_llama_gguf(Some(&letter_vocab()), &bos));
         assert_eq!(scored(&t, &with_bos, &text, &[]).0, 22);
+
+        let e = crate::memory::with_available_memory_override(10, || err(eval(&[&model, &text])));
+        assert!(e.contains("resident memory"));
     }
 }

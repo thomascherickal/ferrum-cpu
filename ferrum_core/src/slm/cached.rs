@@ -120,8 +120,8 @@ impl<'a> CachedTransformer<'a> {
             }
         }
         self.pos += 1;
-        x.map(|t| t.data)
-            .ok_or_else(|| InferError::DimMismatch("empty model".into()))
+        let out = x.expect("model has layers");
+        Ok(out.data)
     }
 
     /// Reset and feed `ids` (positions 0..ids.len()), returning the

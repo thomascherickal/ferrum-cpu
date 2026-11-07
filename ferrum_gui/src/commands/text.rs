@@ -29,10 +29,8 @@ fn fetch_text(url: &str, cap: usize, progress: &mut Progress) -> Result<String, 
         .and_then(|v| v.parse::<u64>().ok())
         .map(|t| t.min(cap as u64));
     let mut buf = Vec::new();
-    Tap::new(resp.into_reader(), total, progress)
-        .take(cap as u64)
-        .read_to_end(&mut buf)
-        .map_err(|e| format!("read failed: {e}"))?;
+    let mut reader = Tap::new(resp.into_reader(), total, progress).take(cap as u64);
+    crate::infra::fmt_err(reader.read_to_end(&mut buf), "read failed")?;
     if buf.is_empty() {
         return Err("downloaded resource was empty".to_string());
     }
@@ -204,13 +202,8 @@ fn clean_text_with(
 #[tauri::command]
 pub fn save_corpus(text: String, path: String) -> Result<usize, CmdError> {
     checked_path("output file path", &path, false)?;
-    if let Some(parent) = Path::new(&path).parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {parent:?}: {e}"))?;
-        }
-    }
-    std::fs::write(&path, text.as_bytes()).map_err(|e| format!("cannot write {path}: {e}"))?;
+    if let Some(p) = Path::new(&path).parent().filter(|p| !p.as_os_str().is_empty()) { crate::infra::fmt_err(std::fs::create_dir_all(p), &format!("cannot create {p:?}"))?; }
+    crate::infra::fmt_err(std::fs::write(&path, text.as_bytes()), &format!("cannot write {path}"))?;
     Ok(text.len())
 }
 
@@ -220,11 +213,9 @@ pub fn read_text_file(path: String, max_bytes: Option<usize>) -> Result<String, 
     // Devices and FIFOs are refused up front; the cap still bounds huge regular files.
     checked_path("file path", &path, true)?;
     let cap = max_bytes.unwrap_or(16 * 1024 * 1024) as u64;
-    let file = std::fs::File::open(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let file = crate::infra::fmt_err(std::fs::File::open(&path), &format!("cannot read {path}"))?;
     let mut data = Vec::new();
-    file.take(cap)
-        .read_to_end(&mut data)
-        .map_err(|e| format!("cannot read {path}: {e}"))?;
+    crate::infra::fmt_err(file.take(cap).read_to_end(&mut data), &format!("cannot read {path}"))?;
     Ok(String::from_utf8_lossy(&data).into_owned())
 }
 
@@ -452,11 +443,9 @@ mod tests {
         {
             let ro = dir.join("ro");
             std::fs::create_dir(&ro).unwrap();
-            if let Some(_restore) = crate::test_support::restrict(&ro, 0o500, 0o700) {
-                let e = save_corpus("x".into(), ro.join("out.txt").to_str().unwrap().into())
-                    .unwrap_err();
-                assert!(e.contains("cannot write"), "{e}");
-            }
+            let _restore = crate::test_support::restrict(&ro, 0o500, 0o700);
+            let p = ro.join("out.txt").to_str().unwrap().into();
+            assert!(_restore.is_none() || save_corpus("x".into(), p).unwrap_err().contains("cannot write"));
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
