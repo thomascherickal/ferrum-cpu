@@ -136,6 +136,16 @@ skills. When the user states a new rule, add it here.
     behaviour calls for them. Say in the commit message which tiers a change
     added and why any tier was skipped.
 
+21. **One coordinator and one helper at all times (2026-11-07).** The main
+    session is the coordinator: it plans, reviews, integrates, runs the full
+    suite, merges and pushes. Exactly one helper subagent is kept running at
+    every moment, working on the next task of the current plan; when it
+    finishes, the coordinator reviews its result and launches the next helper
+    straight away (until the plans are done or the 98 % trigger of rule 17
+    hits). Never more than one helper, so rule 2 still holds: no parallel
+    subagents. The helper works in its own worktree, one task and one commit
+    per run; only the coordinator merges to `main` and pushes.
+
 ## Hard constraints
 
 Do not break these; they are the product's selling points.

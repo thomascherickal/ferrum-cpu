@@ -1,6 +1,6 @@
 # Ferrum SLM Studio — Comprehensive Software & Repository Metrics Report
 
-_Generated: 2026-11-07 · Commit: `0525955 (2026-11-07)` · Branch: `main` · Total Commits: 429_
+_Generated: 2026-11-07 · Commit: `b798b5b (2026-11-07)` · Branch: `main` · Total Commits: 430_
 
 This report provides comprehensive software engineering metrics, source code breakdown, test coverage measurements, safety invariants, memory bounds, and architectural characteristics for the Ferrum SLM engine and GUI.
 
@@ -12,7 +12,7 @@ This report provides comprehensive software engineering metrics, source code bre
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **98,768** lines (121,379 total across 478 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Total Tracked Code Lines** | **88,079** lines (108,839 total across 394 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
 | **Rust Codebase Volume** | **67,518** pure code lines | 265 Rust files (79,621 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
@@ -30,17 +30,17 @@ Metrics exclude generated artifacts (`target/`), dependencies (`node_modules/`, 
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 265 | 65,193 | 9,443 | 4,985 | 79,621 | 66.0% |
-| **Markdown (.md)** | 107 | 17,434 | 2,092 | 4,179 | 23,705 | 17.7% |
-| **JavaScript (.js)** | 55 | 7,214 | 688 | 544 | 8,446 | 7.3% |
-| **JSON (.json)** | 13 | 5,613 | 0 | 0 | 5,613 | 5.7% |
-| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
-| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.8% |
-| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
-| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
-| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
+| **Rust (.rs)** | 265 | 65,193 | 9,443 | 4,985 | 79,621 | 74.0% |
+| **Markdown (.md)** | 31 | 11,933 | 1,413 | 3,008 | 16,354 | 13.5% |
+| **JavaScript (.js)** | 55 | 7,214 | 688 | 544 | 8,446 | 8.2% |
+| **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.2% |
+| **HTML (.html)** | 2 | 784 | 0 | 34 | 818 | 0.9% |
+| **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
+| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.6% |
+| **JSON (.json)** | 7 | 451 | 0 | 0 | 451 | 0.5% |
+| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.3% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **478** | **98,768** | **12,472** | **10,139** | **121,379** | **100.0%** |
+| **Total Repository** | **394** | **88,079** | **11,792** | **8,968** | **108,839** | **100.0%** |
 
 ---
 
