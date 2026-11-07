@@ -53,7 +53,7 @@ There are two sources, and an element uses exactly one.
    estimate; *New to AI?* is left out. The 30-word guard counts an entry's whole text,
    since each mode shows a subset. The entries added with the mode feature are
    `uiMode` (interface mode switch), `btnToggleLog` (engine log show/hide), `trPreset`
-   (model size preset), and `btnGoTrain`, `btnGoGenerate`, `btnGoEvaluate` (the
+   (model size preset), `trMaxSeconds` (Train time budget), `trMetricsCsv` (Train per-step CSV log), and `btnGoTrain`, `btnGoGenerate`, `btnGoEvaluate` (the
    guided next-step buttons). A button also gets the live time
    and RAM estimate that `live.js` adds. These entries existed before this
    feature, and 31 of them (the 12 tabs and 19 buttons) were extended to reach

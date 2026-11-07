@@ -6,40 +6,12 @@
   const DEFAULT_MODE = "beginner";
   const VALID_MODES = ["beginner", "expert"];
 
+  // Mirrors slm_cli/src/preset.rs (`train --preset`): pinned by ui/tests/mode.test.js.
+  // The CLI preset sets sizes and LR only, so Batch and Epochs keep their form values.
   const PRESETS = {
-    tiny: {
-      trContext: 32,
-      trEmbed: 64,
-      trHeads: 4,
-      trBlocks: 2,
-      trHidden: 128,
-      trVocab: 512,
-      trBatch: 16,
-      trEpochs: 50,
-      trLr: 0.005,
-    },
-    small: {
-      trContext: 64,
-      trEmbed: 128,
-      trHeads: 4,
-      trBlocks: 4,
-      trHidden: 256,
-      trVocab: 1024,
-      trBatch: 16,
-      trEpochs: 50,
-      trLr: 0.003,
-    },
-    medium: {
-      trContext: 128,
-      trEmbed: 256,
-      trHeads: 8,
-      trBlocks: 6,
-      trHidden: 512,
-      trVocab: 2048,
-      trBatch: 16,
-      trEpochs: 50,
-      trLr: 0.001,
-    },
+    tiny: { trContext: 64, trEmbed: 64, trHeads: 4, trBlocks: 2, trHidden: 256, trVocab: 512, trLr: 0.01 },
+    small: { trContext: 128, trEmbed: 128, trHeads: 4, trBlocks: 4, trHidden: 512, trVocab: 2048, trLr: 0.003 },
+    medium: { trContext: 256, trEmbed: 256, trHeads: 8, trBlocks: 6, trHidden: 1024, trVocab: 4096, trLr: 0.001 },
   };
 
   function normalizeMode(mode) {

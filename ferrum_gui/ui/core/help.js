@@ -274,6 +274,18 @@
       how: "Saves time on long runs: a patience of 5 to 10 is typical. The best epoch's weights are kept either way. It does nothing without a validation fraction.",
       beginner: "'Early stopping' means quitting once more studying no longer helps. Patience is how many disappointing rounds you tolerate before you give up.",
     },
+    trMaxSeconds: {
+      title: "Max seconds (empty = off)",
+      what: "A time budget for the run, in seconds (fractions allowed). Training stops cleanly after the optimizer step that crosses it. Empty means no budget; 0 or a negative number is refused.",
+      how: "The model trained so far is saved, and the checkpoint is written if a Checkpoint file is set, so ticking Resume continues the run later. It is the same as the command-line --max-seconds flag. The Stop button ends a run the same way.",
+      beginner: "A kitchen timer for training: set 600 and the program stops after about ten minutes and keeps what it learned, instead of running for hours.",
+    },
+    trMetricsCsv: {
+      title: "Metrics CSV file",
+      what: "Optional path of a spreadsheet-style CSV log with one row per optimizer step: step, epoch, loss, learning rate, gradient norm, tokens per second and elapsed seconds.",
+      how: "Open it in any spreadsheet or plotting tool to see how training went. The path must be writable and must differ from the model, checkpoint, tokenizer and corpus files. A resumed run appends. Logging does not change the trained weights.",
+      beginner: "A diary of the training run. Each line records how well the model was doing at that moment, so you can draw a graph of its progress afterwards.",
+    },
     trTokenizer: {
       title: "Tokenizer file",
       what: "Optional path of a saved BPE tokenizer (a GGUF file) to reuse. If the file does not exist yet, the tokenizer is trained and saved there.",
@@ -1276,7 +1288,7 @@
     trPreset: {
       title: "Model size preset",
       what: "Fills the architecture and training fields with a balanced configuration: Tiny (about 0.2M parameters), Small (about 1.5M parameters), Medium (about 7M parameters), or Custom.",
-      how: "Picking a preset updates Context, Embed dim, Heads, Blocks, Hidden, Vocab, Batch, Epochs, and LR, and triggers a fresh pre-flight RAM and time estimate. Editing any architecture field manually in Expert mode leaves those values as your custom setup.",
+      how: "Picking a preset updates Context, Embed dim, Heads, Blocks, Hidden, Vocab and LR (the same values as the command-line --preset; Batch and Epochs are left alone), and triggers a fresh pre-flight RAM and time estimate. Editing any architecture field manually in Expert mode leaves those values as your custom setup.",
       beginner: "Start with Tiny to verify your corpus and pipeline in under a minute on any CPU, then step up to Small or Medium when you want stronger text generation.",
     },
     btnGoTrain: {

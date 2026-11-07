@@ -120,7 +120,12 @@
           patience: Math.max(0, int("trPatience") || 0),
           force: $("trForce").checked,
           quant: $("trQuant").value,
+          maxSeconds: null,
+          metricsCsv: $("trMetricsCsv").value.trim(),
         };
+        // Empty = no budget; anything else goes to the backend, which refuses what the CLI refuses.
+        const secs = $("trMaxSeconds").value.trim();
+        if (secs !== "") params.maxSeconds = Number(secs);
         if (params.resume && !params.checkpointPath)
           throw new Error("Resume needs a checkpoint file");
         // Client-side guards mirroring the backend, for instant feedback.

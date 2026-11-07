@@ -146,9 +146,18 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
       numBlocks: 2, hiddenDim: 64, epochs: 100, lr: 0.01, batchSize: 16, vocabSize: 512, seed: 1337, threads: 0, verbose: false,
       windowStride: 0, maxTokens: 50000000, weightDecay: 0, dropout: 0, gradClip: 0, warmupSteps: 0, cosineLr: true,
       weightTying: false, qat: true, tokenizerPath: "", checkpointPath: "", checkpointEvery: 0, resume: false,
-      valFraction: 0.1, patience: 0, force: false, quant: "int8",
+      valFraction: 0.1, patience: 0, force: false, quant: "int8", maxSeconds: null, metricsCsv: "",
     });
     assert.strictEqual(a.$("trStatus").textContent, "done");
+    // Max seconds and the metrics CSV are sent as typed (empty seconds = null), trimmed.
+    a.set("trMaxSeconds", " 90.5 "); a.set("trMetricsCsv", " run.csv ");
+    await a.click("trStart");
+    const extra = a.of("train_slm").pop().args.params;
+    assert.deepStrictEqual([extra.maxSeconds, extra.metricsCsv], [90.5, "run.csv"]);
+    a.set("trMaxSeconds", "0");
+    await a.click("trStart");
+    assert.strictEqual(a.of("train_slm").pop().args.params.maxSeconds, 0, "0 reaches the backend, which refuses it like the CLI");
+    a.set("trMaxSeconds", ""); a.set("trMetricsCsv", "");
     // The precision select offers the CLI's three values and is sent as chosen.
     a.set("trQuant", "int4");
     await a.click("trStart");
@@ -1185,7 +1194,7 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     a.$("trPreset").dispatch("change");
     await settle(6);
     assert.strictEqual(a.$("trEmbed").value, "128");
-    assert.strictEqual(a.$("trContext").value, "64");
+    assert.strictEqual(a.$("trContext").value, "128");
     a.$("trPreset").value = "custom";
     a.$("trPreset").dispatch("change");
 

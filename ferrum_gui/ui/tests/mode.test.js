@@ -133,18 +133,32 @@ function makeEnv(initialStore = {}) {
 {
   const { doc, $, mode } = makeEnv();
   assert.strictEqual(mode.applyPreset("small"), true);
-  assert.strictEqual($("trContext").value, "64");
+  assert.strictEqual($("trContext").value, "128");
   assert.strictEqual($("trEmbed").value, "128");
   assert.strictEqual($("trHeads").value, "4");
   assert.strictEqual($("trBlocks").value, "4");
-  assert.strictEqual($("trHidden").value, "256");
-  assert.strictEqual($("trVocab").value, "1024");
+  assert.strictEqual($("trHidden").value, "512");
+  assert.strictEqual($("trVocab").value, "2048");
   assert.strictEqual(mode.applyPreset("medium"), true);
   assert.strictEqual($("trEmbed").value, "256");
   assert.strictEqual(mode.applyPreset("tiny"), true);
   assert.strictEqual($("trEmbed").value, "64");
   assert.strictEqual(mode.applyPreset("unknown"), false);
   assert.strictEqual(Mode.applyPreset(null, "tiny"), false);
+}
+
+// 6b. The presets are the CLI's (slm_cli/src/preset.rs): sizes and LR only
+{
+  const want = {
+    tiny: [64, 64, 4, 2, 256, 512, 0.01],
+    small: [128, 128, 4, 4, 512, 2048, 0.003],
+    medium: [256, 256, 8, 6, 1024, 4096, 0.001],
+  };
+  const ids = ["trContext", "trEmbed", "trHeads", "trBlocks", "trHidden", "trVocab", "trLr"];
+  for (const [name, vals] of Object.entries(want)) {
+    assert.deepStrictEqual(Object.keys(Mode.PRESETS[name]), ids, name);
+    assert.deepStrictEqual(ids.map((i) => Mode.PRESETS[name][i]), vals, name);
+  }
 }
 
 // 7. Tooltip cards follow the mode (plan Task 4)

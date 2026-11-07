@@ -66,6 +66,50 @@ pub struct TrainParams {
     /// Saved precision: "f32", "int8" or "int4" (the CLI's `--quant`); absent means int8.
     #[serde(default = "default_quant")]
     pub quant: String,
+    /// Stop after the optimizer step that crosses this many seconds (the CLI's `--max-seconds`);
+    /// absent = no budget, `0` or a negative or non-finite number is refused.
+    #[serde(default)]
+    pub max_seconds: Option<f64>,
+    /// Per-step CSV log (the CLI's `--metrics-csv`); empty = off.
+    #[serde(default)]
+    pub metrics_csv: String,
+}
+
+/// The run's stop condition: `base` (the cancel flag of the job) plus the `--max-seconds` deadline,
+/// validated with the CLI's rule and message.
+fn stop_condition(
+    base: &ferrum_core::StopCondition,
+    max_seconds: Option<f64>,
+) -> Result<ferrum_core::StopCondition, String> {
+    let Some(s) = max_seconds else {
+        return Ok(base.clone());
+    };
+    if s.is_finite() && s > 0.0 {
+        if let Ok(d) = std::time::Duration::try_from_secs_f64(s) {
+            return Ok(base.clone().with_deadline(d));
+        }
+    }
+    Err(format!(
+        "--max-seconds must be a positive, finite number of seconds (got {s})"
+    ))
+}
+
+/// The CLI's output checks for the metrics log: it may not be another file the run uses, and it
+/// must be writable before hours of training. Empty path = off.
+fn check_metrics_csv(p: &TrainParams) -> Result<(), String> {
+    let csv = p.metrics_csv.trim();
+    if csv.is_empty() {
+        return Ok(());
+    }
+    let ck_label = if p.resume { "--resume" } else { "--checkpoint" };
+    slm_cli::outputs::check_distinct_paths(&[
+        ("the model output", &p.model_path),
+        (ck_label, p.checkpoint_path.trim()),
+        ("--tokenizer", p.tokenizer_path.trim()),
+        ("the corpus", &p.corpus_path),
+        ("--metrics-csv", csv),
+    ])?;
+    slm_cli::outputs::check_writable(csv)
 }
 
 fn default_quant() -> String {
@@ -171,6 +215,8 @@ fn train_inner<R: Runtime>(
             checked_path(label, v, false)?;
         }
     }
+    let stop = stop_condition(job.stop(), p.max_seconds)?;
+    check_metrics_csv(&p)?;
     if p.context_len == 0 {
         return Err("context length must be ≥ 1".into());
     }
@@ -277,11 +323,11 @@ fn train_inner<R: Runtime>(
                 checkpoint_every: p.checkpoint_every,
                 resume: p.resume,
                 log_every_steps: 0,
-                stop: job.stop().clone(),
+                stop,
+                metrics_csv: p.metrics_csv.trim().to_string(),
                 skip_memory_check: p.force,
                 // The same identity the CLI records, so a checkpoint resumes from either.
                 corpus_id,
-                ..TransformerConfig::default()
             };
             let val = ValidationConfig {
                 val_fraction: p.val_fraction,
@@ -407,6 +453,94 @@ mod tests {
         assert!(!p.resume && !p.force && p.val_fraction == 0.0);
         let p = params(json!({"qat": false, "quant": "f32"}));
         assert!(!p.qat && p.quant == "f32");
+    }
+
+    #[test]
+    fn max_seconds_and_metrics_csv_default_off() {
+        let p = params(json!({}));
+        assert_eq!((p.max_seconds, p.metrics_csv.as_str()), (None, ""));
+        let p = params(json!({"maxSeconds": 1.5, "metricsCsv": "m.csv"}));
+        assert_eq!(
+            (p.max_seconds, p.metrics_csv.as_str()),
+            (Some(1.5), "m.csv")
+        );
+    }
+
+    #[test]
+    fn stop_condition_mirrors_the_cli_budget_rule() {
+        let base = ferrum_core::StopCondition::none();
+        assert_eq!(stop_condition(&base, None).unwrap(), base);
+        assert_ne!(
+            stop_condition(&base, Some(0.25)).unwrap(),
+            base,
+            "a deadline was added"
+        );
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e300] {
+            let e = stop_condition(&base, Some(bad)).unwrap_err();
+            assert!(
+                e.starts_with("--max-seconds must be a positive, finite number of seconds (got "),
+                "{e}"
+            );
+        }
+    }
+
+    #[test]
+    fn metrics_csv_is_checked_like_the_cli() {
+        let dir = tmp("train_metrics_check");
+        let s = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        let with = |csv: String, extra: Value| {
+            let mut e =
+                json!({"metricsCsv": csv, "modelPath": s("m.gguf"), "corpusPath": s("c.txt")});
+            for (k, v) in extra.as_object().unwrap() {
+                e[k] = v.clone();
+            }
+            check_metrics_csv(&params(e))
+        };
+        assert_eq!(
+            with(String::new(), json!({})),
+            Ok(()),
+            "off needs no checks"
+        );
+        assert_eq!(with(s("sub/log.csv"), json!({})), Ok(()));
+        let e = with(s("m.gguf"), json!({})).unwrap_err();
+        assert!(
+            e.contains("the model output and --metrics-csv are the same file"),
+            "{e}"
+        );
+        let e = with(s("k"), json!({"checkpointPath": s("k")})).unwrap_err();
+        assert!(e.contains("--checkpoint and --metrics-csv"), "{e}");
+        let e = with(s("k"), json!({"checkpointPath": s("k"), "resume": true})).unwrap_err();
+        assert!(e.contains("--resume and --metrics-csv"), "{e}");
+        let e = with(dir.to_string_lossy().into_owned(), json!({})).unwrap_err();
+        assert!(e.contains("is a directory"), "{e}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Non-default values reach the engine: the CSV is written, and a tiny budget stops the run.
+    #[test]
+    fn metrics_csv_and_max_seconds_reach_the_training_config() {
+        let (_app, w) = app();
+        let dir = tmp("train_budget_csv");
+        let corpus = dir.join("c.txt");
+        std::fs::write(&corpus, "abc abd abe ".repeat(8)).unwrap();
+        let csv = dir.join("log.csv");
+        let mut p = required();
+        p["corpusPath"] = json!(corpus);
+        p["modelPath"] = json!(dir.join("m.gguf"));
+        p["metricsCsv"] = json!(csv);
+        call(&w, "train_slm", json!({ "params": p.clone() })).unwrap();
+        let log = std::fs::read_to_string(&csv).unwrap();
+        assert!(log.starts_with("step,epoch,loss"), "{log}");
+        assert!(log.lines().count() >= 2, "a row per step: {log}");
+        p["epochs"] = json!(100000);
+        p["maxSeconds"] = json!(0.05);
+        let r = call(&w, "train_slm", json!({ "params": p.clone() })).unwrap();
+        assert_eq!(r["stopped"], true, "the deadline ended the run");
+        let mut bad = p;
+        bad["maxSeconds"] = json!(0);
+        let e = call(&w, "train_slm", json!({ "params": bad })).unwrap_err();
+        assert!(msg(&e).starts_with("--max-seconds must be"), "{}", msg(&e));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

@@ -163,6 +163,8 @@
     "valFraction": 0.1,
     "patience": 0,
     "force": false,
-    "quant": "int8"
+    "quant": "int8",
+    "maxSeconds": null,
+    "metricsCsv": ""
   }
 }

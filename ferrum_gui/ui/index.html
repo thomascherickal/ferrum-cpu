@@ -251,6 +251,8 @@
         <label class="adv-only">Tokenizer file <input type="text" id="trTokenizer" placeholder="optional, e.g. tok.gguf" /></label>
         <label class="adv-only">Checkpoint file <input type="text" id="trCkpt" placeholder="optional, e.g. run.fckp" /></label>
         <label class="adv-only">Checkpoint every <input type="number" id="trCkptEvery" value="0" min="0" /></label>
+        <label class="adv-only">Max seconds (empty=off) <input type="text" id="trMaxSeconds" inputmode="decimal" placeholder="e.g. 3600" /></label>
+        <label class="adv-only">Metrics CSV file <input type="text" id="trMetricsCsv" placeholder="optional, e.g. run.csv" /></label>
       </div>
       <div class="row adv-only">
         <label class="chk"><input type="checkbox" id="trCosine" /> Cosine LR (with warmup)</label>

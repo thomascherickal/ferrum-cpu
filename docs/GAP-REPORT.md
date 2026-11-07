@@ -9,7 +9,7 @@ Date 2026-11-03 · commit `e4c457a` (`master`, clean tree) · **Updated 2026-11-
 | Severity | Count |
 |---|---|
 | Critical (documented claim the code does not meet) | 0 |
-| High (feature in one front end, missing in another, user-visible) | 0 open from 2026-11-03 (H1, H2, H3 closed); **2 new in 2026-11-07** (H4 Serve tab parity, closed; H5 Train tab presets & beginner UX, open) |
+| High (feature in one front end, missing in another, user-visible) | 0 open from 2026-11-03 (H1, H2, H3 closed); **2 new in 2026-11-07** (H4 Serve tab parity, closed; H5 Train tab presets & beginner UX, closed 2026-11-07) |
 | Medium (declared ceiling or parity gap with no plan) | 5 open from 2026-11-03 (M5, M6, M9, M11, M12; M13 partly); **3 new in 2026-11-07** (M14 Fine-tune BOS & controls parity, M15 GGUF tab streaming, M16 Windows `.exe` tool lookup) |
 | Low (polish) | 16 from 2026-11-03 (L11 partly open; rest closed/decided); **2 new in 2026-11-07** (L17 Export tab verbose toggle, L18 `STATUS.md` snapshot staleness) |
 | **Total** | **39** (10 open or partly open: H5, M5, M6, M9, M11, M12, M14, M15, L11, L17; M16 closed; L18 closed in this commit) |
@@ -74,7 +74,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 
 ## GUI Beginner Usability Gaps (2026-11-07 Analysis)
 
-**Status, reconciled 2026-11-07 against `main` at `af90342` (commit `92988f2`, written outside Claude Code): UX1-UX5 are implemented in the code (`#uiMode`, `.adv-only`, `#trPreset`, `#btnGoTrain`/`#btnGoGenerate`/`#btnGoEvaluate`, `#btnToggleLog`, `ui/core/mode.js`, `ui/tests/mode.test.js`; the Node suite passes); UX6 is implemented (`tooltip.js` `contentFromHelp(entry, mode)`: Beginner shows `New to AI?` + `What it is`, Expert shows `What it is` + `How it works`; `help.js` and `docs/GUI-TOOLTIPS.md` cover `uiMode`, `btnToggleLog`, `trPreset`, `btnGo*`; Node tests pass). Nothing was click-tested in a real GUI window. Still open in H5: `--max-seconds` and `--metrics-csv` controls on the Train tab.**
+**Status, reconciled 2026-11-07 against `main` at `af90342` (commit `92988f2`, written outside Claude Code): UX1-UX5 are implemented in the code (`#uiMode`, `.adv-only`, `#trPreset`, `#btnGoTrain`/`#btnGoGenerate`/`#btnGoEvaluate`, `#btnToggleLog`, `ui/core/mode.js`, `ui/tests/mode.test.js`; the Node suite passes); UX6 is implemented (`tooltip.js` `contentFromHelp(entry, mode)`: Beginner shows `New to AI?` + `What it is`, Expert shows `What it is` + `How it works`; `help.js` and `docs/GUI-TOOLTIPS.md` cover `uiMode`, `btnToggleLog`, `trPreset`, `btnGo*`; Node tests pass). Nothing was click-tested in a real GUI window. H5 is closed 2026-11-07: Expert-mode `#trMaxSeconds` and `#trMetricsCsv` (validated like the CLI in `ferrum_gui/src/commands/train.rs`), and the `mode.js` presets, which had differed from `slm_cli/src/preset.rs` (context, hidden and vocab of every preset, tiny LR, and a Batch/Epochs write the CLI does not make), now equal the CLI and are pinned by `ui/tests/mode.test.js`. Unit and Node tested; nothing was click-tested in a real GUI window.**
 
 An audit of `ferrum_gui/ui/` (`index.html`, `styles.css`, `core/*.js`, `tabs/*.js`) for first-time user experience identified six structural barriers for beginners (planned in `docs/superpowers/plans/2026-11-07-GUI-BEGINNER-ADVANCED-MODE.md`):
 
@@ -146,7 +146,7 @@ yes / no / partial, with the file that decides it. "CLI" is `train_transformer`/
 
 | Feature | CLI | GUI | Server | wasm `Slm` | wasm `TokenModel` |
 |---|---|---|---|---|---|
-| train (from scratch) | yes (`train.rs`) | partial: Save precision select (H1, `aa69624`); no `--preset/--metrics-csv/--max-seconds/--sample/--debug` (CLI-only, Manual §10.3; H5) | no | no | no |
+| train (from scratch) | yes (`train.rs`) | partial: Save precision select (H1, `aa69624`); Expert-mode Max seconds and Metrics CSV (H5, 2026-11-07), `#trPreset`; no `--sample/--debug` (CLI-only, Manual §10.3) | no | no | no |
 | resume (train) | yes (`--resume`) | yes (`resume` checkbox, `train_tab.js:95`) | n/a | n/a | n/a |
 | resume (finetune / apply `.flck`) | yes (`finetune-gguf`, `run-gguf`, `export-gguf`, `eval-gguf --resume`) | partial: `resume` in finetune/run/export/evaluate params, but `finetune_inner` uses `tok.bos()` vs CLI `tok.prefix_bos()` so `add_bos_token=false` models differ by 1 token (M14) | no | no | no |
 | exact mid-epoch resume | yes (train, Manual §6.6; finetune, Manual §9.2, M3 closed) | yes (same engine) | n/a | n/a | n/a |

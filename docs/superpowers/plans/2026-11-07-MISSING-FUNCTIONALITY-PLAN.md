@@ -216,7 +216,7 @@
 Verified by grepping `ferrum_gui/ui/index.html` and the Rust sources on 2026-11-07; Tasks 1-7 above are all still open except where noted.
 
 1. **H4, Serve tab:** `quant`, `force` and `repetition_penalty` controls (hard-coded `Int4`, no force, `1.0`).
-2. **H5, Train tab:** `--max-seconds` and `--metrics-csv` controls (the `#trPreset` selector landed in `92988f2`).
+2. ~~**H5, Train tab:** `--max-seconds` and `--metrics-csv` controls~~ done 2026-11-07 (and `mode.js` presets corrected to `slm_cli/src/preset.rs`).
 3. **M14 / L17:** Fine-tune BOS parity with the CLI (`prefix_bos()`), `Verbose` checkboxes on Fine-tune and Export (no `ftVerbose`/`exVerbose` ids exist).
 4. **M15:** streaming and a progress bar for the GGUF tab's `run_gguf`.
 5. **GUI beginner-mode leftovers:** mode-aware `tooltip.js` (Task 4), help and tooltip-guard entries for the new controls, a real click-test of Beginner/Expert mode and the new logo/favicon.
