@@ -15,6 +15,12 @@
     </div>
     <div data-tip="Your hardware as the Studio detected it: CPU threads and cores, total and free RAM, and any GPU found. Ferrum is CPU-only, so a GPU is listed but never used. Free RAM is refreshed every 5 seconds; the line as it is now, which the top bar may cut short, follows." data-tip-live class="hwline muted" id="hwLine">Detecting your hardware...</div>
     <div class="mini-stats" id="miniStats">
+      <label class="mode-switch">Mode
+        <select id="uiMode">
+          <option value="beginner">Beginner</option>
+          <option value="expert">Expert</option>
+        </select>
+      </label>
       <span data-tip="Total CPU load of the whole machine in percent, counting every program, not only Ferrum. It is refreshed by the system monitor, every 1.5 seconds by default, and freezes when monitoring is switched off on the System tab." class="mini">CPU <b id="miniCpu">–</b></span>
       <span data-tip="Share of this machine's memory in use, in percent, counting every program. Training, fine-tuning and serving a model raise it. It is refreshed by the system monitor and freezes when monitoring is switched off on the System tab." class="mini">MEM <b id="miniMem">–</b></span>
       <span data-tip="Number of worker threads Ferrum's matrix kernels use, taken from the FERRUM_NUM_THREADS environment variable or, when that is not set, the detected core count. Generation and evaluation give identical results at any thread count; only speed changes." class="mini">THREADS <b id="miniThreads">–</b></span>
@@ -26,16 +32,16 @@
   <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
   <div id="tabs" role="tablist" aria-label="Studio sections">
     <button class="tab active" id="tab-datasets" data-tab="datasets" role="tab" aria-controls="panel-datasets" aria-selected="true" tabindex="0">Datasets</button>
-    <button class="tab" id="tab-prepare" data-tab="prepare" role="tab" aria-controls="panel-prepare" aria-selected="false" tabindex="-1">Prepare</button>
+    <button class="tab adv-only" id="tab-prepare" data-tab="prepare" role="tab" aria-controls="panel-prepare" aria-selected="false" tabindex="-1">Prepare</button>
     <button class="tab" id="tab-train" data-tab="train" role="tab" aria-controls="panel-train" aria-selected="false" tabindex="-1">Train</button>
     <button class="tab" id="tab-generate" data-tab="generate" role="tab" aria-controls="panel-generate" aria-selected="false" tabindex="-1">Generate</button>
     <button class="tab" id="tab-evaluate" data-tab="evaluate" role="tab" aria-controls="panel-evaluate" aria-selected="false" tabindex="-1">Evaluate</button>
-    <button class="tab" id="tab-models" data-tab="models" role="tab" aria-controls="panel-models" aria-selected="false" tabindex="-1">Models</button>
+    <button class="tab adv-only" id="tab-models" data-tab="models" role="tab" aria-controls="panel-models" aria-selected="false" tabindex="-1">Models</button>
     <button class="tab" id="tab-gguf" data-tab="gguf" role="tab" aria-controls="panel-gguf" aria-selected="false" tabindex="-1">GGUF</button>
-    <button class="tab" id="tab-finetune" data-tab="finetune" role="tab" aria-controls="panel-finetune" aria-selected="false" tabindex="-1">Fine-tune</button>
-    <button class="tab" id="tab-export" data-tab="export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
-    <button class="tab" id="tab-serve" data-tab="serve" role="tab" aria-controls="panel-serve" aria-selected="false" tabindex="-1">Serve</button>
-    <button class="tab" id="tab-system" data-tab="system" role="tab" aria-controls="panel-system" aria-selected="false" tabindex="-1">System</button>
+    <button class="tab adv-only" id="tab-finetune" data-tab="finetune" role="tab" aria-controls="panel-finetune" aria-selected="false" tabindex="-1">Fine-tune</button>
+    <button class="tab adv-only" id="tab-export" data-tab="export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
+    <button class="tab adv-only" id="tab-serve" data-tab="serve" role="tab" aria-controls="panel-serve" aria-selected="false" tabindex="-1">Serve</button>
+    <button class="tab adv-only" id="tab-system" data-tab="system" role="tab" aria-controls="panel-system" aria-selected="false" tabindex="-1">System</button>
     <button class="tab" id="tab-capable" data-tab="capable" role="tab" aria-controls="panel-capable" aria-selected="false" tabindex="-1">Capable</button>
   </div>
 
@@ -71,7 +77,7 @@
         </div>
         <div data-tip="The dataset list: one card per entry with its name, source, approximate size, format and a short description, and a Download button that saves the file into the folder above. The list is built into the app; Refresh list reloads it." id="dsCatalog" class="catalog"></div>
 
-        <div class="row">
+        <div class="row adv-only">
           <label>HuggingFace repo
             <input type="text" id="dsHfRepo" placeholder="owner/name (e.g. roneneldan/TinyStories)" />
           </label>
@@ -83,7 +89,7 @@
           </label>
           <button id="dsHfDownload">Fetch HF</button>
         </div>
-        <div class="row">
+        <div class="row adv-only">
           <label>Kaggle owner/slug
             <input type="text" id="dsKgRepo" placeholder="owner/dataset" />
           </label>
@@ -117,7 +123,7 @@
         <textarea id="dsRaw" rows="6" placeholder="Downloaded / loaded / pasted text appears here. You can also paste directly."></textarea>
       </label>
 
-      <fieldset>
+      <fieldset class="adv-only">
         <legend data-tip="These switches decide what Clean and preview does to the raw text: drop Project Gutenberg headers and footers, collapse blank lines, turn smart punctuation into ASCII, remove control characters, lowercase, and cap the length. The Raw text box itself is never changed.">Cleaning options</legend>
         <label class="chk"><input type="checkbox" id="optGutenberg" checked /> Strip Project Gutenberg boilerplate</label>
         <label class="chk"><input type="checkbox" id="optCollapse" checked /> Collapse blank lines / trailing spaces</label>
@@ -145,6 +151,7 @@
         </label>
         <button class="ghost browse-save" id="dsOutBrowse" data-target="dsOut">Browse…</button>
         <button id="dsSave" class="primary">Save corpus</button>
+        <button id="btnGoTrain" class="ghost">Continue to Train →</button>
       </div>
       <span data-tip="Errors from Save corpus appear here: nothing cleaned yet, an empty Save to path, or a folder or file the app cannot create or write. Missing parent folders are created automatically, so a brand-new path is fine." class="err" id="errDsSave" role="alert"></span>
     </section>
@@ -210,38 +217,48 @@
         <label>Model output <input type="text" id="trModel" placeholder="/path/to/model.gguf" /></label>
         <button class="ghost browse-save" id="trModelBrowse" data-target="trModel">Browse…</button>
       </div>
+      <div class="row">
+        <label>Model size preset
+          <select id="trPreset">
+            <option value="custom" selected>Custom</option>
+            <option value="tiny">Tiny (~0.2M params — fastest)</option>
+            <option value="small">Small (~1.5M params — balanced)</option>
+            <option value="medium">Medium (~7M params — stronger)</option>
+          </select>
+        </label>
+      </div>
 
       <div class="grid">
-        <label>Context <input type="number" id="trContext" value="16" min="1" /></label>
-        <label>Embed dim <input type="number" id="trEmbed" value="32" min="1" /></label>
-        <label>Heads <input type="number" id="trHeads" value="4" min="1" /></label>
-        <label>Blocks <input type="number" id="trBlocks" value="2" min="1" /></label>
-        <label>Hidden <input type="number" id="trHidden" value="64" min="1" /></label>
+        <label class="adv-only">Context <input type="number" id="trContext" value="16" min="1" /></label>
+        <label class="adv-only">Embed dim <input type="number" id="trEmbed" value="32" min="1" /></label>
+        <label class="adv-only">Heads <input type="number" id="trHeads" value="4" min="1" /></label>
+        <label class="adv-only">Blocks <input type="number" id="trBlocks" value="2" min="1" /></label>
+        <label class="adv-only">Hidden <input type="number" id="trHidden" value="64" min="1" /></label>
         <label>Epochs <input type="number" id="trEpochs" value="100" min="1" /></label>
-        <label>LR <input type="number" id="trLr" value="0.01" step="0.001" min="0" /></label>
-        <label>Batch <input type="number" id="trBatch" value="16" min="1" /></label>
-        <label>Vocab (0/≥256) <input type="number" id="trVocab" value="512" min="0" /></label>
-        <label>Threads (0=auto) <input type="number" id="trThreads" value="0" min="0" /></label>
-        <label>Seed <input type="number" id="trSeed" value="1337" min="0" /></label>
-        <label>Stride (0=ctx) <input type="number" id="trStride" value="0" min="0" /></label>
-        <label>Token budget (0=off) <input type="text" id="trTokens" value="0" /></label>
-        <label>Weight decay <input type="number" id="trWd" value="0" step="0.01" min="0" /></label>
-        <label>Dropout <input type="number" id="trDropout" value="0" step="0.05" min="0" max="0.95" /></label>
-        <label>Grad clip (0=off) <input type="number" id="trClip" value="0" step="0.1" min="0" /></label>
-        <label>Warmup steps <input type="number" id="trWarmup" value="0" min="0" /></label>
-        <label>Val fraction (0=off) <input type="number" id="trVal" value="0" step="0.05" min="0" max="0.5" /></label>
-        <label>Patience <input type="number" id="trPatience" value="0" min="0" /></label>
-        <label>Tokenizer file <input type="text" id="trTokenizer" placeholder="optional, e.g. tok.gguf" /></label>
-        <label>Checkpoint file <input type="text" id="trCkpt" placeholder="optional, e.g. run.fckp" /></label>
-        <label>Checkpoint every <input type="number" id="trCkptEvery" value="0" min="0" /></label>
+        <label class="adv-only">LR <input type="number" id="trLr" value="0.01" step="0.001" min="0" /></label>
+        <label class="adv-only">Batch <input type="number" id="trBatch" value="16" min="1" /></label>
+        <label class="adv-only">Vocab (0/≥256) <input type="number" id="trVocab" value="512" min="0" /></label>
+        <label class="adv-only">Threads (0=auto) <input type="number" id="trThreads" value="0" min="0" /></label>
+        <label class="adv-only">Seed <input type="number" id="trSeed" value="1337" min="0" /></label>
+        <label class="adv-only">Stride (0=ctx) <input type="number" id="trStride" value="0" min="0" /></label>
+        <label class="adv-only">Token budget (0=off) <input type="text" id="trTokens" value="0" /></label>
+        <label class="adv-only">Weight decay <input type="number" id="trWd" value="0" step="0.01" min="0" /></label>
+        <label class="adv-only">Dropout <input type="number" id="trDropout" value="0" step="0.05" min="0" max="0.95" /></label>
+        <label class="adv-only">Grad clip (0=off) <input type="number" id="trClip" value="0" step="0.1" min="0" /></label>
+        <label class="adv-only">Warmup steps <input type="number" id="trWarmup" value="0" min="0" /></label>
+        <label class="adv-only">Val fraction (0=off) <input type="number" id="trVal" value="0" step="0.05" min="0" max="0.5" /></label>
+        <label class="adv-only">Patience <input type="number" id="trPatience" value="0" min="0" /></label>
+        <label class="adv-only">Tokenizer file <input type="text" id="trTokenizer" placeholder="optional, e.g. tok.gguf" /></label>
+        <label class="adv-only">Checkpoint file <input type="text" id="trCkpt" placeholder="optional, e.g. run.fckp" /></label>
+        <label class="adv-only">Checkpoint every <input type="number" id="trCkptEvery" value="0" min="0" /></label>
       </div>
-      <div class="row">
+      <div class="row adv-only">
         <label class="chk"><input type="checkbox" id="trCosine" /> Cosine LR (with warmup)</label>
         <label class="chk"><input type="checkbox" id="trTie" /> Tie embedding + head</label>
         <label class="chk"><input type="checkbox" id="trQat" checked /> Int8 QAT</label>
         <label class="chk"><input type="checkbox" id="trResume" /> Resume from checkpoint</label>
       </div>
-      <div class="grid">
+      <div class="grid adv-only">
         <label>Save precision
           <select id="trQuant">
             <option value="f32">f32 (full precision)</option>
@@ -250,8 +267,8 @@
           </select>
         </label>
       </div>
-      <label class="chk"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
-      <fieldset>
+      <label class="chk adv-only"><input type="checkbox" id="trVerbose" /> Verbose (stream engine internals to the terminal)</label>
+      <fieldset class="adv-only">
         <legend data-tip="This optional block turns a corpus too big for memory into a token file once, using an existing tokenizer file. Training then streams the tokens from disk, so RAM does not grow with the corpus, and the model comes out the same.">Tokenize a large corpus first (optional)</legend>
         <p class="hint" data-tip="Tokenize corpus writes a ferrum-tokens GGUF file of token ids. When it finishes, the Train Corpus field is set to that file and the pre-flight check runs again, which then shows the file's token, document and vocabulary counts.">For text too big to hold in memory: turn it into a token file once, then put
           that file in the <strong>Corpus</strong> field above. Training streams it from disk, so RAM
@@ -293,6 +310,10 @@
       </div>
       <canvas data-tip="The training loss curve: one point per reported epoch, only the latest 1000 kept, scaled between the lowest and the highest of the plotted points, whose values are printed on the chart. A falling line means the model is learning." id="trChart" width="900" height="140" role="img" aria-label="Training loss curve"></canvas>
       <pre data-tip="The result of the last training run: bytes written and model path, method, final loss and seconds, input and output dimensions, tokenizer and layer count. A run ended by Stop still saves the model trained so far." id="trResult" class="result"></pre>
+      <div class="row">
+        <button id="btnGoGenerate" class="ghost">Generate text with this model →</button>
+        <button id="btnGoEvaluate" class="ghost">Evaluate this model →</button>
+      </div>
     </section>
 
     <!-- ── Generate ──────────────────────────────────────────────────────── -->
@@ -308,17 +329,17 @@
       <div class="grid">
         <label>Chars <input type="number" id="genChars" value="200" min="1" /></label>
         <label>Temperature (0 = greedy) <input type="number" id="genTemp" value="0.8" step="0.05" min="0" /></label>
-        <label>Gen seed (blank=random) <input type="number" id="genSeedNum" placeholder="random" /></label>
-        <label>Max tokens (0 = use chars) <input type="number" id="genMaxTokens" value="0" min="0" step="1" /></label>
-        <label>Top-k (0 = off) <input type="number" id="genTopK" value="0" min="0" step="1" /></label>
-        <label>Top-p (1.0 = off) <input type="number" id="genTopP" value="1.0" min="0.01" max="1" step="0.05" /></label>
-        <label>Repetition penalty (1.0 = off) <input type="number" id="genRep" value="1.0" min="0" step="0.05" /></label>
+        <label class="adv-only">Gen seed (blank=random) <input type="number" id="genSeedNum" placeholder="random" /></label>
+        <label class="adv-only">Max tokens (0 = use chars) <input type="number" id="genMaxTokens" value="0" min="0" step="1" /></label>
+        <label class="adv-only">Top-k (0 = off) <input type="number" id="genTopK" value="0" min="0" step="1" /></label>
+        <label class="adv-only">Top-p (1.0 = off) <input type="number" id="genTopP" value="1.0" min="0.01" max="1" step="0.05" /></label>
+        <label class="adv-only">Repetition penalty (1.0 = off) <input type="number" id="genRep" value="1.0" min="0" step="0.05" /></label>
       </div>
-      <label>Stop strings (one per line)
+      <label class="adv-only">Stop strings (one per line)
         <textarea id="genStop" rows="2" placeholder="e.g. a full stop and space, or \n for a new line"></textarea>
       </label>
       <label class="chk"><input type="checkbox" id="genStream" checked /> Stream output live</label>
-      <label class="chk"><input type="checkbox" id="genVerbose" /> Verbose</label>
+      <label class="chk adv-only"><input type="checkbox" id="genVerbose" /> Verbose</label>
       <span data-tip="Problems with generating appear here: no model path, a number out of range such as Top-p above 1 or Chars below 1, a file that is not a Ferrum model, or an engine error while writing." class="err" id="errGen" role="alert"></span>
       <div class="row">
         <button id="genStart" class="primary">Generate</button>
@@ -345,12 +366,12 @@
       <label>…or paste held-out text
         <textarea id="evText" rows="3" placeholder="Paste held-out text to score against"></textarea>
       </label>
-      <div class="row">
+      <div class="row adv-only">
         <label>Test text file (optional) <input type="text" id="evTestFile" placeholder="/path/to/test.txt — scored as a second row" /></label>
         <button class="ghost browse" id="evTestFileBrowse" data-target="evTestFile">Browse…</button>
       </div>
-      <label class="chk"><input type="checkbox" id="evLossy" /> Decode invalid UTF-8 lossily (replace bad bytes instead of refusing the file)</label>
-      <fieldset>
+      <label class="chk adv-only"><input type="checkbox" id="evLossy" /> Decode invalid UTF-8 lossily (replace bad bytes instead of refusing the file)</label>
+      <fieldset class="adv-only">
         <legend data-tip="These settings apply only when the model is an imported Llama or Qwen GGUF, which is then scored like the eval-gguf command: precision, window length, an optional fine-tune checkpoint and the RAM override. Ferrum models ignore them.">Imported Llama/Qwen GGUF only</legend>
         <p class="hint" data-tip="Precision chooses how the imported weights are held in memory: f32 is exact, int8 and int4 are smaller and lossy. A fine-tune checkpoint forces f32. Window tokens 0 lets the scorer choose the window, and the RAM box skips the memory check.">A Ferrum model needs none of these. For a Llama or Qwen
           <code>.gguf</code> the model is scored like <code>eval-gguf</code>.</p>
@@ -430,23 +451,23 @@
         </label>
         <label>Max new tokens <input type="number" id="ggMax" value="64" min="1" /></label>
         <label>Temperature (0 = greedy) <input type="number" id="ggTemp" value="0.8" step="0.05" min="0" /></label>
-        <label>Top-k (0 = off) <input type="number" id="ggTopK" value="0" min="0" step="1" /></label>
-        <label>Top-p (1.0 = off) <input type="number" id="ggTopP" value="1.0" min="0.01" max="1" step="0.05" /></label>
-        <label>Repetition penalty (1.0 = off) <input type="number" id="ggRep" value="1.0" min="0" step="0.05" /></label>
-        <label>Gen seed (blank=random) <input type="number" id="ggSeed" placeholder="random" /></label>
+        <label class="adv-only">Top-k (0 = off) <input type="number" id="ggTopK" value="0" min="0" step="1" /></label>
+        <label class="adv-only">Top-p (1.0 = off) <input type="number" id="ggTopP" value="1.0" min="0.01" max="1" step="0.05" /></label>
+        <label class="adv-only">Repetition penalty (1.0 = off) <input type="number" id="ggRep" value="1.0" min="0" step="0.05" /></label>
+        <label class="adv-only">Gen seed (blank=random) <input type="number" id="ggSeed" placeholder="random" /></label>
       </div>
-      <label>Stop strings (one per line)
+      <label class="adv-only">Stop strings (one per line)
         <textarea id="ggStop" rows="2" placeholder="e.g. a full stop and space, or \n for a new line"></textarea>
       </label>
-      <label>Token IDs (only if the file has no tokenizer)
+      <label class="adv-only">Token IDs (only if the file has no tokenizer)
         <input type="text" id="ggIds" placeholder="e.g. 1 234 56" />
       </label>
-      <div class="row">
+      <div class="row adv-only">
         <label>Fine-tune checkpoint (optional) <input type="text" id="ggResume" placeholder="/path/to/finetune.flck — overlays trained weights (forces f32)" /></label>
         <button class="ghost browse" id="ggResumeBrowse" data-target="ggResume">Browse…</button>
       </div>
       <label class="chk"><input type="checkbox" id="ggChatFmt" checked /> Chat format (auto)</label>
-      <label class="chk"><input type="checkbox" id="ggForce" /> Load even if it may exceed available RAM</label>
+      <label class="chk adv-only"><input type="checkbox" id="ggForce" /> Load even if it may exceed available RAM</label>
       <span data-tip="Problems with the GGUF tab appear here: no file, neither a prompt nor token IDs, a sampler value out of range, a model too big for the free RAM without the override, or an architecture or tensor type that cannot be run." class="err" id="errGguf" role="alert"></span>
       <div class="row">
         <button id="ggRun" class="primary">Run</button>
@@ -689,6 +710,7 @@
     <div class="term-head">
       <span data-tip="The engine log dock: verbose engine output, for example from Train or Generate with Verbose ticked, plus messages from the Studio itself. It is shared by every tab and stays visible whichever tab is open.">Engine log — <code>--verbose</code> output</span>
       <div class="term-actions">
+        <button id="btnToggleLog" class="ghost small" aria-expanded="true">Hide log</button>
         <button id="termClear" class="ghost small">Clear</button>
       </div>
     </div>
@@ -727,6 +749,7 @@
   <script src="core/errors.js"></script>
   <script src="core/common.js"></script>
   <script src="core/settings.js"></script>
+  <script src="core/mode.js"></script>
   <script src="core/shell.js"></script>
   <script src="tabs/datasets_tab.js"></script>
   <script src="tabs/prepare_tab.js"></script>

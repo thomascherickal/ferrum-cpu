@@ -49,17 +49,23 @@
   }
 
   // Help entry (field or button) -> renderable content.
-  function contentFromHelp(entry) {
+  // In beginner mode (`mode === "beginner"`), `New to AI?` is placed first so
+  // plain-English guidance leads the tooltip, while all sections stay visible.
+  function contentFromHelp(entry, mode) {
     if (!entry) return null;
+    const isBeginner = mode === "beginner";
     const sections = [];
+    if (isBeginner && entry.beginner) {
+      sections.push({ label: "New to AI?", text: entry.beginner });
+    }
     if (typeof entry.does === "string") {
       sections.push({ label: "What it does", text: entry.does });
       if (entry.how) sections.push({ label: "How it works", text: entry.how });
     } else {
       sections.push({ label: "What it is", text: entry.what });
-      sections.push({ label: "How it works", text: entry.how });
+      if (entry.how) sections.push({ label: "How it works", text: entry.how });
     }
-    if (entry.beginner) sections.push({ label: "New to AI?", text: entry.beginner });
+    if (!isBeginner && entry.beginner) sections.push({ label: "New to AI?", text: entry.beginner });
     return { title: entry.title, sections };
   }
 

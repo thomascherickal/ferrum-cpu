@@ -76,7 +76,8 @@
 
     function content(el) {
       const entry = help.helpFor(helpKey(el));
-      const base = tooltip.contentFromHelp(entry);
+      const mode = doc && doc.body && doc.body.getAttribute ? doc.body.getAttribute("data-mode") : undefined;
+      const base = tooltip.contentFromHelp(entry, mode);
       if (!base || !help.isButton(entry) || entry.kind === undefined) return base;
       const id = helpKey(el);
       let extra;

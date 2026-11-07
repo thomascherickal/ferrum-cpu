@@ -1151,6 +1151,49 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.strictEqual(a.$("trStart").disabled, false);
   }
 
+  // ── Beginner / Expert mode, presets, log toggle & guided CTAs ───────────
+  {
+    const a = await start();
+    // Default mode is beginner, with collapsed terminal log
+    assert.strictEqual(a.doc.body.getAttribute("data-mode"), "beginner");
+    assert.ok(a.$("terminal").classList.contains("collapsed"));
+    await a.click("btnToggleLog");
+    assert.ok(!a.$("terminal").classList.contains("collapsed"));
+    await a.click("btnToggleLog");
+    assert.ok(a.$("terminal").classList.contains("collapsed"));
+
+    // Switch to expert mode via #uiMode
+    a.$("uiMode").value = "expert";
+    a.$("uiMode").dispatch("change");
+    assert.strictEqual(a.doc.body.getAttribute("data-mode"), "expert");
+    assert.ok(!a.$("terminal").classList.contains("collapsed"));
+
+    // Dataset -> Train CTA
+    a.set("dsOut", "/data/clean.txt");
+    await a.click("btnGoTrain");
+    assert.ok(a.$("panel-train").classList.contains("active"));
+    assert.strictEqual(a.$("trCorpus").value, "/data/clean.txt");
+
+    // Preset selector on Train tab
+    a.$("trPreset").value = "small";
+    a.$("trPreset").dispatch("change");
+    await settle(6);
+    assert.strictEqual(a.$("trEmbed").value, "128");
+    assert.strictEqual(a.$("trContext").value, "64");
+    a.$("trPreset").value = "custom";
+    a.$("trPreset").dispatch("change");
+
+    // Train -> Generate & Evaluate CTAs
+    a.set("trModel", "/models/my.gguf");
+    await a.click("btnGoGenerate");
+    assert.ok(a.$("panel-generate").classList.contains("active"));
+    assert.strictEqual(a.$("genModel").value, "/models/my.gguf");
+    await a.click("tab-train");
+    await a.click("btnGoEvaluate");
+    assert.ok(a.$("panel-evaluate").classList.contains("active"));
+    assert.strictEqual(a.$("evModel").value, "/models/my.gguf");
+  }
+
   // Pin the captured arguments to the fixture the Rust tests read.
   {
     const file = require("node:path").join(__dirname, "command_params.fixture.json");

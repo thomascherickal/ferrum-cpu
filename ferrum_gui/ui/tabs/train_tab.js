@@ -48,6 +48,29 @@
       el.addEventListener("input", schedulePreflight);
       el.addEventListener("change", schedulePreflight);
     });
+    if ($("trPreset")) {
+      $("trPreset").addEventListener("change", () => {
+        const v = $("trPreset").value;
+        if (v !== "custom" && global.FerrumMode) {
+          global.FerrumMode.applyPreset(doc, v);
+          schedulePreflight();
+        }
+      });
+    }
+    if ($("btnGoGenerate")) {
+      $("btnGoGenerate").addEventListener("click", () => {
+        const path = $("trModel").value.trim();
+        if (path) $("genModel").value = path;
+        $("tab-generate").click();
+      });
+    }
+    if ($("btnGoEvaluate")) {
+      $("btnGoEvaluate").addEventListener("click", () => {
+        const path = $("trModel").value.trim();
+        if (path) $("evModel").value = path;
+        $("tab-evaluate").click();
+      });
+    }
     $("trForce").addEventListener("change", updateStartGate);
     // A finished token file becomes the Train corpus, and the pre-flight is asked again.
     const tokenizeTab = global.FerrumTokenizeTab.create({

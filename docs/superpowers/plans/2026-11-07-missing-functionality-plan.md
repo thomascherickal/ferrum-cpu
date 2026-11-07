@@ -205,3 +205,4 @@
 - [ ] **Step 2: Promote `#![warn(missing_docs)]` to `ferrum_core/src/lib.rs`** and remove redundant inner attributes.
 - [ ] **Step 3: Verify with `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`** and `cargo test --workspace --release` (ensuring any new doc-tests compile and pass).
 - [ ] **Step 4: Update `Status.md` and `docs/gap-report.md` L11.** Commit: `docs(core): document all public items and enable warn(missing_docs) crate-wide`.
+

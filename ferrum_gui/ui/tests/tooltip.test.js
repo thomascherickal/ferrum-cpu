@@ -50,9 +50,13 @@ const VP = { width: 1000, height: 700 };
 {
   const field = contentFromHelp(HELP.trEpochs);
   assert.deepStrictEqual(field.sections.map((s) => s.label), ["What it is", "How it works", "New to AI?"]);
+  const begField = contentFromHelp(HELP.trEpochs, "beginner");
+  assert.deepStrictEqual(begField.sections.map((s) => s.label), ["New to AI?", "What it is", "How it works"]);
   const button = contentFromHelp(HELP.trStart);
   assert.strictEqual(button.sections[0].label, "What it does");
   assert.ok(button.sections.some((s) => s.label === "New to AI?"));
+  const begButton = contentFromHelp(HELP.trStart, "beginner");
+  assert.deepStrictEqual(begButton.sections.map((s) => s.label), ["New to AI?", "What it does"]);
   assert.strictEqual(contentFromHelp(null), null);
   assert.strictEqual(plainText(null), "");
   const t = plainText(field);

@@ -1240,6 +1240,48 @@
     exResumeBrowse: browse("fine-tune checkpoint"),
     exOutBrowse: browse("output GGUF file", "save"),
     svModelBrowse: browse("model to serve"),
+
+    // ── Beginner / Expert mode, presets, log toggle & guided CTAs ─────────
+    uiMode: {
+      title: "Interface mode",
+      what: "Switches Ferrum SLM Studio between Beginner mode and Expert mode, remembering your choice across restarts.",
+      how: "Beginner mode shows the core tabs (Datasets, Train, Generate, Evaluate, GGUF, Capable), offers model size presets on the Train tab, collapses the bottom engine log by default, and puts plain-English tips first. Expert mode reveals all twelve tabs and every hyperparameter, checkpoint, quantization, and server setting.",
+      beginner: "Keep this on Beginner while you are learning the workflow from dataset to trained model. Switch to Expert whenever you want full control over every architecture and optimizer knob.",
+    },
+    btnToggleLog: {
+      title: "Show or hide engine log",
+      does: "Collapses or expands the bottom engine log dock so you can reclaim vertical space for forms and charts or inspect verbose engine messages when needed.",
+      how: "In Beginner mode the log starts collapsed as a thin header bar; in Expert mode it starts open. Clicking this button toggles the dock at any time without losing any logged lines.",
+      kind: "instant",
+      beginner: "You rarely need the engine log unless you ticked Verbose or want to inspect detailed progress lines.",
+    },
+    trPreset: {
+      title: "Model size preset",
+      what: "Fills the architecture and training fields with a balanced configuration: Tiny (about 0.2M parameters), Small (about 1.5M parameters), Medium (about 7M parameters), or Custom.",
+      how: "Picking a preset updates Context, Embed dim, Heads, Blocks, Hidden, Vocab, Batch, Epochs, and LR, and triggers a fresh pre-flight RAM and time estimate. Editing any architecture field manually in Expert mode leaves those values as your custom setup.",
+      beginner: "Start with Tiny to verify your corpus and pipeline in under a minute on any CPU, then step up to Small or Medium when you want stronger text generation.",
+    },
+    btnGoTrain: {
+      title: "Continue to Train",
+      does: "Copies your saved or loaded corpus file path into the Train tab's Corpus field and switches directly to the Train tab so you can start training.",
+      how: "Uses the Save to path if filled, otherwise the local file path, and triggers the Train pre-flight check immediately.",
+      kind: "instant",
+      beginner: "Click this right after saving your cleaned corpus to move to the next step of the guided workflow.",
+    },
+    btnGoGenerate: {
+      title: "Generate text with this model",
+      does: "Copies the trained model path from the Train tab into the Generate tab's Model field and opens the Generate tab.",
+      how: "Lets you test your newly trained model right away without browsing for the output .gguf file again.",
+      kind: "instant",
+      beginner: "After training finishes, press this button to see what kind of sentences your new model writes.",
+    },
+    btnGoEvaluate: {
+      title: "Evaluate this model",
+      does: "Copies the trained model path from the Train tab into the Evaluate tab's Model field and switches to the Evaluate tab.",
+      how: "Points the evaluator at the model you just trained so you only need to pick or paste held-out text and click Evaluate.",
+      kind: "instant",
+      beginner: "Use this after training to measure how well your model predicts unseen text using perplexity.",
+    },
   };
 
   const helpFor = (id) => HELP[id] || null;

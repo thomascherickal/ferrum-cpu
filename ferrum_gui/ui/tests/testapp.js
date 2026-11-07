@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { documentFromHtml } = require("./testdom.js");
 
-const SCRIPTS = ["core/escape.js", "core/stream.js", "core/help.js", "core/tooltip.js", "core/estimate_view.js", "core/live.js", "core/a11y.js", "core/errors.js", "core/common.js", "core/settings.js", "core/shell.js", "tabs/datasets_tab.js", "tabs/prepare_tab.js", "tabs/tokenize_tab.js", "tabs/train_tab.js", "tabs/generate_tab.js", "tabs/evaluate_tab.js", "tabs/models_tab.js", "tabs/capable_tab.js", "core/gguf_budget.js", "tabs/gguf_tab.js", "tabs/finetune_tab.js", "tabs/runtime_tab.js", "tabs/export_tab.js", "tabs/serve_tab.js", "tabs/system_tab.js", "core/app.js"];
+const SCRIPTS = ["core/escape.js", "core/stream.js", "core/help.js", "core/tooltip.js", "core/estimate_view.js", "core/live.js", "core/a11y.js", "core/errors.js", "core/common.js", "core/settings.js", "core/mode.js", "core/shell.js", "tabs/datasets_tab.js", "tabs/prepare_tab.js", "tabs/tokenize_tab.js", "tabs/train_tab.js", "tabs/generate_tab.js", "tabs/evaluate_tab.js", "tabs/models_tab.js", "tabs/capable_tab.js", "core/gguf_budget.js", "tabs/gguf_tab.js", "tabs/finetune_tab.js", "tabs/runtime_tab.js", "tabs/export_tab.js", "tabs/serve_tab.js", "tabs/system_tab.js", "core/app.js"];
 const ui = path.join(__dirname, "..");
 const read = (f) => fs.readFileSync(path.join(ui, f), "utf8");
 

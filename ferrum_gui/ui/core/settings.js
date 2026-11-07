@@ -14,8 +14,9 @@
   const FOLDER_KINDS = ["open", "save", "dir"];
 
   // Fields that must never be written down: pasted, downloaded or generated text (file contents),
-  // the HuggingFace token, and the "try anyway" switches that skip a safety check.
-  const NEVER = new Set(["dsRaw", "dsPreview", "evText", "rxModelfile", "dsHfToken"]);
+  // the HuggingFace token, the UI mode switch (managed by mode.js), and the "try anyway" switches
+  // that skip a safety check.
+  const NEVER = new Set(["dsRaw", "dsPreview", "evText", "rxModelfile", "dsHfToken", "uiMode"]);
   const isNever = (id) => NEVER.has(id) || /Force$|Token$/.test(id);
 
   // The fields worth remembering on a page: text, number and select inputs, checkboxes and the

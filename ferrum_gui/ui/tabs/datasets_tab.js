@@ -190,6 +190,14 @@
       } catch (e) { setErr("errDsSave", e); }
     });
 
+    if ($("btnGoTrain")) {
+      $("btnGoTrain").addEventListener("click", () => {
+        const path = $("dsOut").value.trim() || $("dsFile").value.trim();
+        if (path) $("trCorpus").value = path;
+        $("tab-train").click();
+      });
+    }
+
     return { onDownloadProgress, onCleanProgress };
   }
 

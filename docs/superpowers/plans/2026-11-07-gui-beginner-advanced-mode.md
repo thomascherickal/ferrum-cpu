@@ -187,3 +187,4 @@ export function initMode() { ... }
 - [ ] **Step 2: Update `renderCard` in `ferrum_gui/ui/core/tooltip.js`.**
 - [ ] **Step 3: Run all Node tests (`help.test.js`, `tooltips_guard.test.js`, `mode.test.js`, `app_flows.test.js`) and `cargo test` in `ferrum_gui/`.**
 - [ ] **Step 4: Update `docs/gui-tooltips.md`, `Manual.md` §10.3, and `Status.md` §5/§6.2.** Commit: `feat(gui): tailor tooltip sections to Beginner and Advanced mode`.
+

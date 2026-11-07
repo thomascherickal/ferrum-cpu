@@ -17,6 +17,7 @@ const common = window.FerrumCommon.create({ $, doc: document, navigator: window.
 // Form values, last-used folders and the Evaluate table survive a restart (settings.js); storage
 // that is missing or blocked just means nothing is remembered.
 const settings = window.FerrumSettings.create({ doc: document, getStorage: () => window.localStorage, win: window });
+const mode = window.FerrumMode.create({ $, doc: document, getStorage: () => window.localStorage });
 const openDialog = (dlg) => window.FerrumA11y.openDialog(dlg, document);
 const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toast: common.toast, errText: common.errText, settings });
 
@@ -24,7 +25,7 @@ const shell = window.FerrumShell.create({ $, doc: document, invoke, dialog, toas
 const env = {
   $, doc: document, invoke, hasTauri, ...common,
   jobRunning: shell.jobRunning, stopAsked: shell.stopAsked,
-  getLive: () => live, openDialog, settings, navigator: window.navigator,
+  getLive: () => live, openDialog, settings, mode, navigator: window.navigator,
 };
 
 const datasetsTab = window.FerrumDatasetsTab.create(env);
@@ -44,6 +45,7 @@ const serveTab = window.FerrumServeTab.create(env);
 const systemTab = window.FerrumSystemTab.create(env);
 
 settings.restore(); // after every tab is built, before the first estimate reads the fields
+mode.init();
 $("resetSettings").addEventListener("click", () => {
   settings.reset();
   evaluateTab.clearTable();

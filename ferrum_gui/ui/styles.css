@@ -227,6 +227,13 @@ dialog.capdlg .capfoot { color: var(--muted); font-size: 11px; margin-top: 12px;
 /* "Your hardware" line in the top bar */
 .hwline { flex: 1; min-width: 0; margin: 0 14px; font-size: 12px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Beginner / Expert mode & collapsible log dock */
+.mode-switch { flex-direction: row; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+.mode-switch select { padding: 3px 8px; font-size: 12px; }
+body[data-mode="beginner"] .adv-only { display: none !important; }
+#terminal.collapsed { height: auto; }
+#terminal.collapsed .term-out { display: none; }
+
 /* Motion: no sliding toasts or animated bars for people who ask for less. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
