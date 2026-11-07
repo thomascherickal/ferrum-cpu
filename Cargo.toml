@@ -4,7 +4,7 @@ members  = ["ferrum_core", "slm_wasm", "slm_cli", "slm_server", "tests"]
 # from this workspace because it pulls in heavy GUI system dependencies
 # (webkit2gtk / wry) that the headless core build must not require. Build it
 # from inside `ferrum_gui/` with `cargo tauri dev`.
-exclude  = ["ferrum_gui"]
+exclude  = ["ferrum_gui", ".claude"]
 resolver = "2"
 
 [workspace.package]
