@@ -509,6 +509,25 @@ const TRAINED = { modelPath: "/m/out.gguf", method: "transformer", seconds: 1.5,
     assert.ok(!html.includes("Layers") && !html.includes("<img") && html.includes("&lt;img"), html);
   }
 
+  // ── GGUF run (live fragments and progress bar) ─────────────────────────
+  {
+    let release;
+    const a = await start({ run_gguf: () => new Promise((res) => { release = res; }) });
+    await a.click("tab-gguf");
+    a.set("ggPath", "/g.gguf"); a.set("ggPrompt", "hi");
+    a.$("ggRun").dispatch("click"); await settle(3);
+    a.emit("gguf-fragment", "a"); a.emit("gguf-fragment", "b");
+    assert.strictEqual(a.$("ggOut").textContent, "ab");
+    a.emit("gguf-progress", { generated: 1, total: 4 });
+    assert.strictEqual(a.$("ggBar").style.width, "25%");
+    release({ text: "hiab!", promptTokens: 1, generated: 3, seconds: 1, tokensPerSec: 3, stopped: false });
+    await settle(6);
+    assert.strictEqual(a.$("ggOut").textContent, "hiab!", "the returned text replaces the stream");
+    assert.strictEqual(a.$("ggBar").style.width, "100%");
+    a.emit("gguf-fragment", "LATE");
+    assert.strictEqual(a.$("ggOut").textContent, "hiab!");
+  }
+
   // ── GGUF run / inspect ──────────────────────────────────────────────────
   {
     const info = { architecture: "llama", runnable: true, version: 3, numTensors: 10, modelDim: 8, nLayers: 2, nHeads: 2, nKvHeads: 2, vocabSize: 32, tokenizer: "t", estInt4Mb: 1, estInt8Mb: 2, estF32Mb: 4, availMb: 4000, note: "n", paramCount: 1000 };

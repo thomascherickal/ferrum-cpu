@@ -476,7 +476,8 @@
         <button id="ggCancel" class="ghost hidden">Stop</button>
         <span class="spinner hidden" id="ggSpin" aria-hidden="true"></span><span data-tip="The run status: inspecting, loading and generating, then done with the tokens generated, seconds, tokens per second and prompt length, or stopped, or cancelled when the size warning was declined, or error." id="ggStatus" class="muted" role="status"></span>
       </div>
-      <div data-tip="The text the imported model generated for your prompt, shown when the run ends rather than streamed. With Chat format on, the prompt was first wrapped in a chat template when one was detected from the file's metadata or architecture; otherwise it was sent as plain text. Select the text to copy it." id="ggOut" class="output" placeholder="Generated text appears here…"></div>
+      <div data-tip="Progress of the running GGUF generation, from 0 to 100 percent: tokens produced out of Max new tokens. It can stop short when the model ends its answer or a stop string matches, and it jumps to 100 percent when the run finishes." class="progress" role="progressbar" aria-label="GGUF generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bar" id="ggBar"></div></div>
+      <div data-tip="The text the imported model generated for your prompt, appearing as it is produced and replaced by the final text when the run ends. With Chat format on, the prompt was first wrapped in a chat template when one was detected from the file's metadata or architecture; otherwise it was sent as plain text. Select the text to copy it." id="ggOut" class="output" placeholder="Generated text appears here…"></div>
     </section>
 
     <!-- ── Fine-tune (GGUF) ──────────────────────────────────────────────── -->

@@ -14,6 +14,7 @@ mod export;
 mod finetune;
 mod generate;
 mod gguf;
+mod gguf_stream;
 mod guard;
 mod system;
 mod text;

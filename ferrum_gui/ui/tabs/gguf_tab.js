@@ -2,7 +2,8 @@
 "use strict";
 (function (global) {
   function create(env) {
-    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, budget, getBounds, errText, isCancelled, busy } = env;
+    const { $, invoke, toast, setErr, clearErr, reqInt, reqStr, samplerParams, jobRunning, stopAsked, budget, getBounds, errText, isCancelled, busy, setBar } = env;
+    let running = false;
     const { ggufInfo } = global.FerrumEscape;
 
     $("ggInspect").addEventListener("click", async () => {
@@ -66,9 +67,13 @@
       busy("ggSpin", true);
       $("ggRun").disabled = true;
       jobRunning("ggCancel", "run", true);
+      setBar("ggBar", 0);
+      running = true;
       try {
         const r = await invoke("run_gguf", { params });
+        running = false; // late fragments must not touch the authoritative text
         $("ggOut").textContent = r.text;
+        setBar("ggBar", 100);
         $("ggStatus").textContent =
           `${r.stopped ? "stopped" : "done"} — ${r.generated} tokens in ${r.seconds.toFixed(1)}s (${r.tokensPerSec.toFixed(1)} tok/s, prompt ${r.promptTokens} tok)`;
       } catch (e) {
@@ -79,8 +84,13 @@
           setErr("errGguf", e);
           toast("Run failed: " + errText(e), "error");
         }
-      } finally { busy("ggSpin", false); $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
+      } finally { running = false; busy("ggSpin", false); $("ggRun").disabled = false; jobRunning("ggCancel", "run", false); }
     });
+
+    return {
+      onFragment: (text) => { if (running) $("ggOut").textContent += text; },
+      onProgress: (p) => { if (running && p.total > 0) setBar("ggBar", Math.min(100, (100 * p.generated) / p.total)); },
+    };
   }
 
   const api = { create };

@@ -38,7 +38,7 @@ const capableTab = window.FerrumCapableTab.create(env);
 const getBounds = capableTab.getBounds;
 const budget = window.FerrumGgufBudget.create({ $, getBounds, openDialog });
 const ggufEnv = { ...env, budget, getBounds };
-window.FerrumGgufTab.create(ggufEnv);
+const ggufTab = window.FerrumGgufTab.create(ggufEnv);
 const finetuneTab = window.FerrumFinetuneTab.create(env);
 const exportTab = window.FerrumExportTab.create(ggufEnv);
 const serveTab = window.FerrumServeTab.create(env);
@@ -55,6 +55,8 @@ $("resetSettings").addEventListener("click", () => {
 // ── Backend event wiring ──────────────────────────────────────────────────────
 async function wireEvents() {
   await listen("engine-log", (e) => shell.termLine(e.payload, "log"));
+  await listen("gguf-fragment", (e) => ggufTab.onFragment(e.payload));
+  await listen("gguf-progress", (e) => ggufTab.onProgress(e.payload));
   await listen("train-progress", (e) => trainTab.onProgress(e.payload));
   await listen("finetune-progress", (e) => finetuneTab.onProgress(e.payload));
   await listen("download-progress", (e) => datasetsTab.onDownloadProgress(e.payload));

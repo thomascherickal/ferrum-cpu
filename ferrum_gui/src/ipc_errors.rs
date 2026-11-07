@@ -461,6 +461,35 @@ fn run_params(model: &std::path::Path, extra: Value) -> Value {
 }
 
 #[test]
+fn gguf_run_streamed_fragments_concatenate_to_the_returned_text() {
+    let (app, w) = app();
+    let dir = tmp("gguf_stream");
+    let model = dir.join("m.gguf");
+    std::fs::write(&model, Tiny::default().build()).unwrap();
+    let frags = crate::ipc_tests::collect(&app, "gguf-fragment");
+    let r = call(&w, "run_gguf", run_params(&model, json!({"maxNew": 12}))).unwrap();
+    let text = r["text"].as_str().unwrap();
+    let want = &text["hi".len()..];
+    // Events are delivered asynchronously: wait until the streamed text is complete.
+    let join = || {
+        frags
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| serde_json::from_str::<String>(p).unwrap())
+            .collect::<String>()
+    };
+    for _ in 0..200 {
+        if join() == want {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(join(), want);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn gguf_run_stop_strings_cut_the_text_and_need_a_tokenizer() {
     let (_app, w) = app();
     let dir = tmp("gguf_stop");

@@ -1,6 +1,7 @@
 //! Inspect saved models and run imported GGUFs (Llama/Qwen checkpoints).
 
 use super::generate::{one_f32, parse_stops, sampling_from};
+use super::gguf_stream::FragmentStream;
 use super::guard::{available_memory_bytes, gguf_resident_bytes, parse_quant, ram_guard};
 use super::time_seed;
 use crate::infra::error::CmdError;
@@ -11,7 +12,7 @@ use ferrum_core::llm_stop::StopMatcher;
 use ferrum_core::{GenerativeSLM, Gguf, GgufTokenizer, LlamaTrainer, QKind, Rng};
 use serde::{Deserialize, Serialize};
 use slm_cli::file_kind::FileKind;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Runtime, State};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -238,12 +239,13 @@ pub struct GgufRunResult {
 /// Import a llama/qwen2 GGUF and generate from it (mirrors `slm_cli run-gguf`).
 /// `cancel_job("run")` stops it before the next prompt or generated token.
 #[tauri::command]
-pub async fn run_gguf(
+pub async fn run_gguf<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     params: GgufRunParams,
 ) -> Result<GgufRunResult, CmdError> {
     let job = state.jobs.start(Job::Run)?;
-    crate::infra::error::blocking(move || gguf_run_inner(params, job)).await
+    crate::infra::error::blocking(move || gguf_run_inner(app, params, job)).await
 }
 
 /// The error of a run that was cancelled before it produced anything.
@@ -258,7 +260,11 @@ fn not_cancelled(job: &JobGuard) -> Result<(), String> {
     }
 }
 
-fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, String> {
+fn gguf_run_inner<R: Runtime>(
+    app: AppHandle<R>,
+    p: GgufRunParams,
+    job: JobGuard,
+) -> Result<GgufRunResult, String> {
     let params = sampling_from(p.temp, p.top_k, p.top_p, p.rep_penalty)?;
     checked_path("model path", &p.model_path, true)?;
     if let Some(r) = p.resume.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -366,6 +372,14 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
     let mut matcher = tok
         .as_ref()
         .map(|t| StopMatcher::new(t, prompt_ids.last().copied().unwrap_or(0), &text_stops));
+    // Live text (`gguf-fragment`) and a step count (`gguf-progress`, throttled); the
+    // returned result is unchanged and stays authoritative.
+    let mut live = tok.as_ref().map(|t| {
+        FragmentStream::new(t, |f| {
+            let _ = app.emit("gguf-fragment", f.to_string());
+        })
+    });
+    let mut throttle = crate::infra::progress::Throttle::wall();
     let res = model.generate_until_cancellable(
         &prompt_ids,
         p.max_new,
@@ -377,7 +391,21 @@ fn gguf_run_inner(p: GgufRunParams, job: JobGuard) -> Result<GgufRunResult, Stri
             stopped.set(stopped.get() || c);
             c
         },
-        &mut |out| matcher.as_mut().is_some_and(|m| m.check(out)),
+        &mut |out| {
+            let hit = matcher.as_mut().is_some_and(|m| m.check(out));
+            if !hit {
+                if let Some(l) = live.as_mut() {
+                    l.push(out);
+                }
+            }
+            if throttle.ready() {
+                let _ = app.emit(
+                    "gguf-progress",
+                    serde_json::json!({ "generated": out.len(), "total": p.max_new }),
+                );
+            }
+            hit
+        },
     );
     let out = crate::infra::fmt_err(res, "generation failed")?;
     let seconds = t0.elapsed().as_secs_f32();
@@ -532,11 +560,16 @@ mod tests {
             }))
             .unwrap()
         };
+        let (app, _w) = crate::ipc_tests::app();
+        let h = || app.handle().clone();
         let jobs = crate::infra::jobs::Jobs::default();
         let job = jobs.start(Job::Run).unwrap();
         assert!(jobs.cancel(Job::Run));
-        assert_eq!(gguf_run_inner(p(6), job).err().unwrap(), CANCELLED_EARLY);
-        let r = gguf_run_inner(p(6), jobs.start(Job::Run).unwrap()).unwrap();
+        assert_eq!(
+            gguf_run_inner(h(), p(6), job).err().unwrap(),
+            CANCELLED_EARLY
+        );
+        let r = gguf_run_inner(h(), p(6), jobs.start(Job::Run).unwrap()).unwrap();
         assert!(!r.stopped && r.generated > 0);
         let _ = std::fs::remove_dir_all(&dir);
     }

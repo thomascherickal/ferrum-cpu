@@ -13,6 +13,8 @@
 //! | `finetune-progress` | `{ epoch, total, loss, ppl }`    | GGUF fine-tune epoch  |
 //! | `finetune-done` | [`commands::FinetuneResult`]         | GGUF fine-tune done   |
 //! | `gen-fragment`  | `String` (streamed text fragment)    | streaming generation  |
+//! | `gguf-fragment` | `String` (streamed text fragment)    | GGUF tab generation   |
+//! | `gguf-progress` | `{ generated, total }`               | GGUF tab generation   |
 //! | `export-progress` | `String` (one phase line)          | GGUF export phase     |
 //! | `tokenize-progress` | `{ file, files, path, bytesDone, bytesTotal, tokens }` | tokenizing a corpus |
 //! | `serve-log`     | `String` (one startup or request line) | the Serve tab's server |
