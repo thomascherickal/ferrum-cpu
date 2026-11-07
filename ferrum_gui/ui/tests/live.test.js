@@ -193,9 +193,9 @@ const show = (doc, live, id) => { const el = doc.getElementById(id); el.rect = {
     assert.ok(text.includes("(likely"), text);
     assert.ok(text.includes("11.2 GB free RAM; GPU detected but not used by Ferrum"), text);
     assert.ok(text.includes("Memory: needs about 450 MB RAM (you have 11.2 GB free)."), text);
-    assert.ok(text.includes("New to AI?"), text);
+    assert.ok(!text.includes("New to AI?"), text); // unset mode = Advanced view
     // The estimate comes right after "What it does".
-    assert.ok(text.indexOf("Estimated time") < text.indexOf("New to AI?") && text.indexOf("What it does") < text.indexOf("Estimated time"));
+    assert.ok(text.indexOf("What it does") < text.indexOf("Estimated time"));
     // A field shows help text only, no estimate.
     text = show(doc, live, "trEpochs");
     assert.ok(text.includes("What it is:") && !text.includes("Estimated time"), text);

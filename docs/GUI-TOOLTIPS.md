@@ -45,8 +45,16 @@ inline styles, and positioning uses CSSOM (`element.style.left`).
 There are two sources, and an element uses exactly one.
 
 1. **Controls** (`input`, `select`, `textarea`, `button` with an id) take their
-   text from their entry in `ui/core/help.js`. A field has *What it is / How it works /
-   New to AI?*. A button has *What it does / How it works*, plus the live time
+   text from their entry in `ui/core/help.js`. The card follows the UI mode
+   (`body[data-mode]`, set by `ui/core/mode.js`). **Beginner:** *New to AI?* then
+   *What it is* (field) or *What it does* (button), then the live estimate; *How it
+   works* is left out (kept only when an entry has no `New to AI?` text). **Expert**
+   (or no mode set): *What it is / What it does*, then *How it works*, then the live
+   estimate; *New to AI?* is left out. The 30-word guard counts an entry's whole text,
+   since each mode shows a subset. The entries added with the mode feature are
+   `uiMode` (interface mode switch), `btnToggleLog` (engine log show/hide), `trPreset`
+   (model size preset), and `btnGoTrain`, `btnGoGenerate`, `btnGoEvaluate` (the
+   guided next-step buttons). A button also gets the live time
    and RAM estimate that `live.js` adds. These entries existed before this
    feature, and 31 of them (the 12 tabs and 19 buttons) were extended to reach
    30 words; `help.test.js` checks them.

@@ -23,7 +23,14 @@ const STRUCTURAL_IDS = new Set(["topbar", "miniStats", "tabs", "content", "svRun
 
 const ancestors = function* (n) { for (let p = n.parent; p && p.tag !== "#root"; p = p.parent) yield p; };
 const directText = (n) => n.children.some((c) => c.text !== undefined && c.text.trim());
-const helpWords = (id) => { const e = id ? helpFor(id) : null; return e ? wordCount(contentFromHelp(e).sections.map((s) => s.text).join(" ")) : 0; };
+// An entry's words are its whole text (what/does, how and beginner): each mode shows a subset of it,
+// the entry as a whole must carry MIN_WORDS.
+const helpWords = (id) => {
+  const e = id ? helpFor(id) : null;
+  if (!e) return 0;
+  const all = [contentFromHelp(e, "beginner"), contentFromHelp(e)].flatMap((c) => c.sections.map((s) => s.text));
+  return wordCount([...new Set(all)].join(" "));
+};
 // Words of the element's own tip (0 = none).
 function tipWords(n) {
   if (CONTROLS.has(n.tag) && helpWords(n.attrs.id)) return helpWords(n.attrs.id);

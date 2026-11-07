@@ -86,7 +86,8 @@
       else if (estimates[id]) extra = view.estimateSections(estimates[id], hardware);
       else extra = [{ label: "Estimated time", text: "calculating..." }];
       const sections = base.sections.slice();
-      sections.splice(1, 0, ...extra); // right after "What it does"
+      const at = sections.findIndex((s) => s.label === "What it does") + 1;
+      sections.splice(at, 0, ...extra); // right after "What it does"
       return { title: base.title, sections };
     }
 

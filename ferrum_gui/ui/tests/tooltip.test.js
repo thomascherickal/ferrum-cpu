@@ -49,14 +49,18 @@ const VP = { width: 1000, height: 700 };
 // ── content ─────────────────────────────────────────────────────────────────
 {
   const field = contentFromHelp(HELP.trEpochs);
-  assert.deepStrictEqual(field.sections.map((s) => s.label), ["What it is", "How it works", "New to AI?"]);
+  assert.deepStrictEqual(field.sections.map((s) => s.label), ["What it is", "How it works"]);
   const begField = contentFromHelp(HELP.trEpochs, "beginner");
-  assert.deepStrictEqual(begField.sections.map((s) => s.label), ["New to AI?", "What it is", "How it works"]);
+  assert.deepStrictEqual(begField.sections.map((s) => s.label), ["New to AI?", "What it is"]);
   const button = contentFromHelp(HELP.trStart);
   assert.strictEqual(button.sections[0].label, "What it does");
-  assert.ok(button.sections.some((s) => s.label === "New to AI?"));
+  assert.ok(!button.sections.some((s) => s.label === "New to AI?"));
   const begButton = contentFromHelp(HELP.trStart, "beginner");
   assert.deepStrictEqual(begButton.sections.map((s) => s.label), ["New to AI?", "What it does"]);
+  // "expert" and an unset mode both give the Advanced view.
+  assert.deepStrictEqual(contentFromHelp(HELP.trEpochs, "expert").sections.map((s) => s.label), ["What it is", "How it works"]);
+  // No `beginner` text: Beginner mode keeps How it works, so nothing is lost.
+  assert.deepStrictEqual(contentFromHelp({ title: "T", what: "w", how: "h" }, "beginner").sections.map((s) => s.label), ["What it is", "How it works"]);
   assert.strictEqual(contentFromHelp(null), null);
   assert.strictEqual(plainText(null), "");
   const t = plainText(field);

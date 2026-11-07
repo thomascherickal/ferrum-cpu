@@ -147,3 +147,13 @@ function makeEnv(initialStore = {}) {
   assert.strictEqual(Mode.applyPreset(null, "tiny"), false);
 }
 
+// 7. Tooltip cards follow the mode (plan Task 4)
+{
+  const { contentFromHelp } = require("../core/tooltip.js");
+  const { HELP } = require("../core/help.js");
+  const labels = (m) => contentFromHelp(HELP.trEpochs, m).sections.map((s) => s.label);
+  assert.deepStrictEqual(labels("beginner"), ["New to AI?", "What it is"]);
+  assert.deepStrictEqual(labels("expert"), ["What it is", "How it works"]);
+  assert.deepStrictEqual(labels(undefined), ["What it is", "How it works"]);
+}
+

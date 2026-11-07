@@ -74,7 +74,7 @@ No Critical finding: every Manual flag table, default, server route and server f
 
 ## GUI Beginner Usability Gaps (2026-11-07 Analysis)
 
-**Status, reconciled 2026-11-07 against `main` at `af90342` (commit `92988f2`, written outside Claude Code): UX1-UX5 are implemented in the code (`#uiMode`, `.adv-only`, `#trPreset`, `#btnGoTrain`/`#btnGoGenerate`/`#btnGoEvaluate`, `#btnToggleLog`, `ui/core/mode.js`, `ui/tests/mode.test.js`; the Node suite passes); UX6 is partial (`tooltip.js` `contentFromHelp(entry, mode)` reorders sections, it does not yet omit `How it works` / `New to AI?`). Nothing was click-tested in a real GUI window. Still open in H5: `--max-seconds` and `--metrics-csv` controls on the Train tab.**
+**Status, reconciled 2026-11-07 against `main` at `af90342` (commit `92988f2`, written outside Claude Code): UX1-UX5 are implemented in the code (`#uiMode`, `.adv-only`, `#trPreset`, `#btnGoTrain`/`#btnGoGenerate`/`#btnGoEvaluate`, `#btnToggleLog`, `ui/core/mode.js`, `ui/tests/mode.test.js`; the Node suite passes); UX6 is implemented (`tooltip.js` `contentFromHelp(entry, mode)`: Beginner shows `New to AI?` + `What it is`, Expert shows `What it is` + `How it works`; `help.js` and `docs/GUI-TOOLTIPS.md` cover `uiMode`, `btnToggleLog`, `trPreset`, `btnGo*`; Node tests pass). Nothing was click-tested in a real GUI window. Still open in H5: `--max-seconds` and `--metrics-csv` controls on the Train tab.**
 
 An audit of `ferrum_gui/ui/` (`index.html`, `styles.css`, `core/*.js`, `tabs/*.js`) for first-time user experience identified six structural barriers for beginners (planned in `docs/superpowers/plans/2026-11-07-GUI-BEGINNER-ADVANCED-MODE.md`):
 

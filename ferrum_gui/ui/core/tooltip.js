@@ -48,24 +48,18 @@
     return { left, top, placement };
   }
 
-  // Help entry (field or button) -> renderable content.
-  // In beginner mode (`mode === "beginner"`), `New to AI?` is placed first so
-  // plain-English guidance leads the tooltip, while all sections stay visible.
+  // Help entry (field or button) -> renderable content, tailored to the UI mode.
+  // Beginner: `New to AI?` then `What it is`/`What it does` (no `How it works`).
+  // Any other mode (expert, unset): `What it is`/`What it does` then `How it works` (no `New to AI?`).
+  // An entry without `beginner` text keeps its `How it works` in Beginner mode, so the card is never thinner than the entry.
   function contentFromHelp(entry, mode) {
     if (!entry) return null;
     const isBeginner = mode === "beginner";
+    const button = typeof entry.does === "string";
     const sections = [];
-    if (isBeginner && entry.beginner) {
-      sections.push({ label: "New to AI?", text: entry.beginner });
-    }
-    if (typeof entry.does === "string") {
-      sections.push({ label: "What it does", text: entry.does });
-      if (entry.how) sections.push({ label: "How it works", text: entry.how });
-    } else {
-      sections.push({ label: "What it is", text: entry.what });
-      if (entry.how) sections.push({ label: "How it works", text: entry.how });
-    }
-    if (!isBeginner && entry.beginner) sections.push({ label: "New to AI?", text: entry.beginner });
+    if (isBeginner && entry.beginner) sections.push({ label: "New to AI?", text: entry.beginner });
+    sections.push({ label: button ? "What it does" : "What it is", text: button ? entry.does : entry.what });
+    if (entry.how && (!isBeginner || !entry.beginner)) sections.push({ label: "How it works", text: entry.how });
     return { title: entry.title, sections };
   }
 

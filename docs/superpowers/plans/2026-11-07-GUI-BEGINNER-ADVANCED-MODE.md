@@ -183,10 +183,10 @@ export function initMode() { ... }
   4. **New to AI?** (`entry.beginner`) — kept in Advanced mode if `help.test.js` asserts all 3 static sections in default DOM, **or** rendered as a compact secondary note so existing `help.test.js` assertions (`What it is`, `How it works`, `New to AI?`) pass in default test mode while Beginner mode streamlines the card.
 
 **Steps:**
-- [ ] **Step 1: Write unit tests** in `ferrum_gui/ui/tests/mode.test.js`:
+- [x] **Step 1: Write unit tests** in `ferrum_gui/ui/tests/mode.test.js`:
   - `tooltip_in_beginner_mode_leads_with_new_to_ai_and_omits_how_it_works`
   - `tooltip_in_advanced_mode_includes_technical_how_it_works`
-- [ ] **Step 2: Update `renderCard` in `ferrum_gui/ui/core/tooltip.js`.**
+- [x] **Step 2: Update `renderCard` in `ferrum_gui/ui/core/tooltip.js`.**
 - [ ] **Step 3: Run all Node tests (`help.test.js`, `tooltips_guard.test.js`, `mode.test.js`, `app_flows.test.js`) and `cargo test` in `ferrum_gui/`.**
 - [ ] **Step 4: Update `docs/GUI-TOOLTIPS.md`, `MANUAL.md` §10.3, and `STATUS.md` §5/§6.2.** Commit: `feat(gui): tailor tooltip sections to Beginner and Advanced mode`.
 
