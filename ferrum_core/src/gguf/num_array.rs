@@ -24,7 +24,7 @@ macro_rules! num_array {
         /// string arrays stay [`MetaValue::Array`].
         #[derive(Clone, Debug, PartialEq)]
         pub enum NumArray {
-            $($V(Vec<$T>),)*
+            $(#[doc = concat!("Elements of type `", stringify!($T), "`.")] $V(Vec<$T>),)*
         }
 
         impl NumArray {
@@ -32,6 +32,7 @@ macro_rules! num_array {
             pub fn len(&self) -> usize {
                 match self { $(NumArray::$V(v) => v.len(),)* }
             }
+            /// True when there are no elements.
             pub fn is_empty(&self) -> bool {
                 self.len() == 0
             }

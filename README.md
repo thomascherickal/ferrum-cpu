@@ -330,7 +330,7 @@ otherwise not in CI.
 <!-- METRICS-SUMMARY-START -->
 ## Project Metrics & Verification Summary
 
-_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `9d5df93 (2026-11-07)`_
+_Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Commit: `ec4aef7 (2026-11-07)`_
 
 ### Repository & Codebase Overview
 
@@ -338,8 +338,8 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 |---|---|---|
 | **Repository Scope** | Pure-Rust SLM Engine & Tauri GUI | Training, inference, GGUF import/export, serving, and evaluation |
 | **Workspace Architecture** | 5 Crates + GUI + Wasm + Python | `ferrum_core`, `slm_cli`, `slm_server`, `slm_wasm`, `ferrum_gui` |
-| **Total Tracked Code Lines** | **99,437** lines (122,249 total across 480 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
-| **Rust Codebase Volume** | **67,990** pure code lines | 267 Rust files (80,239 total physical lines) |
+| **Total Tracked Code Lines** | **88,721** lines (109,762 total across 396 files) | Across Rust, JS, Python, HTML, CSS, Shell, and configuration |
+| **Rust Codebase Volume** | **67,994** pure code lines | 267 Rust files (80,315 total physical lines) |
 | **Memory Safety Invariant** | **100% Safe Rust (`#![forbid(unsafe_code)]`)** | Zero `unsafe` blocks in any crate root or dependency module |
 | **Total Test Suite Volume** | **1,422+ automated tests** | Rust (1,018), GUI (225), Node/DOM (352+), Python (64) |
 | **Test Suite Health** | **100% Pass (0 failed, 2 ignored)** | Automated CI line coverage suites execute in **~4m 50s (< 5m)** |
@@ -352,29 +352,29 @@ _Auto-generated from [METRICS.md](METRICS.md) · Last updated: 2026-11-07 · Com
 
 | Language | Files | Code Lines | Comments | Blank Lines | Total Lines | Code Share |
 |---|---|---|---|---|---|---|
-| **Rust (.rs)** | 267 | 65,633 | 9,593 | 5,013 | 80,239 | 66.0% |
-| **Markdown (.md)** | 107 | 17,503 | 2,095 | 4,182 | 23,780 | 17.6% |
-| **JavaScript (.js)** | 55 | 7,343 | 701 | 548 | 8,592 | 7.4% |
-| **JSON (.json)** | 13 | 5,622 | 0 | 0 | 5,622 | 5.7% |
-| **Python (.py)** | 12 | 1,074 | 25 | 212 | 1,311 | 1.1% |
-| **HTML (.html)** | 2 | 806 | 0 | 34 | 840 | 0.8% |
-| **Shell (.sh)** | 8 | 536 | 103 | 102 | 741 | 0.5% |
-| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.5% |
-| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.2% |
+| **Rust (.rs)** | 267 | 65,633 | 9,667 | 5,015 | 80,315 | 74.0% |
+| **Markdown (.md)** | 31 | 11,975 | 1,419 | 3,012 | 16,406 | 13.5% |
+| **JavaScript (.js)** | 55 | 7,343 | 701 | 548 | 8,592 | 8.3% |
+| **Python (.py)** | 11 | 1,056 | 25 | 212 | 1,293 | 1.2% |
+| **HTML (.html)** | 2 | 806 | 0 | 34 | 840 | 0.9% |
+| **Shell (.sh)** | 7 | 528 | 102 | 102 | 732 | 0.6% |
+| **YAML (.yml, .yaml)** | 5 | 489 | 46 | 17 | 552 | 0.6% |
+| **JSON (.json)** | 7 | 460 | 0 | 0 | 460 | 0.5% |
+| **TOML (.toml)** | 9 | 224 | 42 | 44 | 310 | 0.3% |
 | **CSS (.css)** | 2 | 207 | 33 | 22 | 262 | 0.2% |
-| **Total Repository** | **480** | **99,437** | **12,638** | **10,174** | **122,249** | **100.0%** |
+| **Total Repository** | **396** | **88,721** | **12,035** | **9,006** | **109,762** | **100.0%** |
 
 ### Rust Crate Breakdown
 
 | Crate Name | Purpose / Role | Files | Code Lines | Comments | Blank Lines | Total Lines | Unsafe Blocks |
 |---|---|---|---|---|---|---|---|
-| **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE | 116 | 32,421 | 4,348 | 2,492 | 39,261 | **0** (`forbid`) |
+| **`ferrum_core`** | Core neural tensor math, transformer layers, KV cache, tokenizer, BPE | 116 | 32,425 | 4,418 | 2,494 | 39,337 | **0** (`forbid`) |
 | **`slm_cli`** | CLI subcommands: train, generate, eval, gguf-export, finetune | 53 | 13,176 | 847 | 899 | 14,922 | **0** (`forbid`) |
 | **`slm_server`** | OpenAI-compatible HTTP serving daemon (`/v1/models`, `/v1/completions`) | 20 | 4,479 | 337 | 339 | 5,155 | **0** (`forbid`) |
 | **`slm_wasm`** | WebAssembly bindings for browser-based client inference & web worker | 5 | 1,169 | 184 | 122 | 1,475 | **0** (`forbid`) |
 | **`ferrum_gui`** | Tauri 2.0 desktop frontend & IPC bridge (hardware detection, sizing) | 49 | 12,603 | 1,176 | 847 | 14,626 | **0** (`forbid`) |
 | **`tests`** | Workspace integration, runtime compatibility, and E2E test suite | 24 | 4,142 | 344 | 314 | 4,800 | **0** (`forbid`) |
-| **Total Rust** | **Workspace & GUI** | **267** | **67,990** | **7,236** | **5,013** | **80,239** | **0** |
+| **Total Rust** | **Workspace & GUI** | **267** | **67,994** | **7,306** | **5,015** | **80,315** | **0** |
 
 ### Test Coverage & Verification
 

@@ -6,6 +6,8 @@
 //! tokenizer state. It serialises to compact JSON and is stored inside the GGUF
 //! model file, so a model never needs a separate config file.
 
+#![warn(missing_docs)]
+
 use crate::error::{InferError, Result};
 use crate::tensor::Tensor;
 use crate::verbose;
@@ -17,12 +19,16 @@ use crate::verbose;
 /// Whether the network predicts a class label, a continuous value, or is a generative small language model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskType {
+    /// Predicts a class label (`class_names` gives the labels).
     Classification,
+    /// Predicts one continuous value (`target_name`/`target_range` describe it).
     Regression,
+    /// Generative small language model.
     TransformerSLM,
 }
 
 impl TaskType {
+    /// Stable string stored in the model file (`classification`, `regression`, `transformer_slm`).
     pub fn as_str(&self) -> &'static str {
         match self {
             TaskType::Classification => "classification",
@@ -31,6 +37,7 @@ impl TaskType {
         }
     }
     #[allow(clippy::should_implement_trait)]
+    /// Inverse of [`TaskType::as_str`]; `None` for an unknown string.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "classification" => Some(Self::Classification),
@@ -48,8 +55,11 @@ impl TaskType {
 /// Everything the browser UI needs to build itself for an arbitrary dataset.
 #[derive(Clone, Debug)]
 pub struct ModelMetadata {
+    /// Name of the dataset the model was trained on.
     pub dataset_name: String,
+    /// What the model predicts.
     pub task: TaskType,
+    /// Input feature names, in column order.
     pub feature_names: Vec<String>,
     /// Per-feature [min, max] in the *raw* (un-normalised) dataset.
     pub feature_ranges: Vec<[f32; 2]>,
@@ -59,7 +69,9 @@ pub struct ModelMetadata {
     pub target_name: String,
     /// For regression: [min, max] of raw target values.
     pub target_range: [f32; 2],
+    /// Number of input values per example.
     pub input_dim: usize,
+    /// Number of output values per example.
     pub output_dim: usize,
     /// Serialized BPE tokenizer state (the merge list from
     /// [`ByteBpeTokenizer::encode_state`](crate::ByteBpeTokenizer::encode_state)).
@@ -252,13 +264,18 @@ impl ModelMetadata {
 // Normalizer
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Per-column z-score normalizer (mean and standard deviation per column).
+/// For regression the last entry holds the target's statistics.
 #[derive(Clone, Debug)]
 pub struct Normalizer {
+    /// Per-column means.
     pub means: Vec<f32>,
+    /// Per-column standard deviations (a std below 1e-8 is stored as 1.0).
     pub stds: Vec<f32>,
 }
 
 impl Normalizer {
+    /// Computes per-column mean and (population) std of a matrix; errors on 0 rows.
     pub fn fit(x: &Tensor) -> Result<Self> {
         let (rows, cols) = x.matrix_dims()?;
         vprintln!(
@@ -309,6 +326,7 @@ impl Normalizer {
         Ok(Self { means, stds })
     }
 
+    /// Standardises a matrix; accepts the fitted column count or one fewer (no target column).
     pub fn transform(&self, x: &Tensor) -> Result<Tensor> {
         let (rows, cols) = x.matrix_dims()?;
         vprintln!("[csv::Normalizer::transform] [{},{}]", rows, cols);
@@ -328,6 +346,7 @@ impl Normalizer {
         Tensor::matrix(rows, cols, out)
     }
 
+    /// [`Normalizer::transform`] for a single feature row.
     pub fn transform_row(&self, features: &[f32]) -> Result<Tensor> {
         self.transform(&Tensor::row(features.to_vec())?)
     }
@@ -344,6 +363,7 @@ impl Normalizer {
         v * self.stds[c] + self.means[c]
     }
 
+    /// Serialises as `mean,std` pairs joined by `;`.
     pub fn encode(&self) -> String {
         self.means
             .iter()
@@ -352,6 +372,7 @@ impl Normalizer {
             .collect::<Vec<_>>()
             .join(";")
     }
+    /// Parses the [`Normalizer::encode`] format; errors on a malformed pair.
     pub fn decode(s: &str) -> Result<Self> {
         let mut means = Vec::new();
         let mut stds = Vec::new();

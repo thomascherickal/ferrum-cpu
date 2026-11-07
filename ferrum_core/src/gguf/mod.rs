@@ -23,6 +23,8 @@
 //! converts only models whose GGUF `*.architecture` Ferrum can actually execute,
 //! and returns a clear error otherwise rather than producing wrong output.
 
+#![warn(missing_docs)]
+
 mod cursor;
 mod dequant;
 mod format;
@@ -59,17 +61,29 @@ use std::sync::Mutex;
 /// A typed GGUF metadata value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetaValue {
+    /// A unsigned 8-bit integer.
     U8(u8),
+    /// A signed 8-bit integer.
     I8(i8),
+    /// A unsigned 16-bit integer.
     U16(u16),
+    /// A signed 16-bit integer.
     I16(i16),
+    /// A unsigned 32-bit integer.
     U32(u32),
+    /// A signed 32-bit integer.
     I32(i32),
+    /// A unsigned 64-bit integer.
     U64(u64),
+    /// A signed 64-bit integer.
     I64(i64),
+    /// A 32-bit float.
     F32(f32),
+    /// A 64-bit float.
     F64(f64),
+    /// A boolean.
     Bool(bool),
+    /// A UTF-8 string.
     String(String),
     /// An array of strings (or, when built by hand, of scalars).
     Array(Vec<MetaValue>),
@@ -102,6 +116,7 @@ impl MetaValue {
             _ => self.as_usize().map(|u| u as f32),
         }
     }
+    /// Borrow the string of a [`MetaValue::String`]; `None` for other kinds.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             MetaValue::String(s) => Some(s),
@@ -157,9 +172,11 @@ impl MetaValue {
 /// One tensor's directory entry (name, shape, element type, data offset).
 #[derive(Clone, Debug)]
 pub struct TensorInfo {
+    /// Tensor name.
     pub name: String,
     /// Dimensions in GGML order (`dims[0]` is the fastest-varying axis).
     pub dims: Vec<u64>,
+    /// Raw GGML element-type id.
     pub ggml_type: u32,
     /// Byte offset of this tensor within the tensor-data section.
     pub offset: u64,
@@ -191,8 +208,11 @@ enum Source {
 /// A parsed GGUF file: metadata, tensor directory, and a handle to the tensor
 /// data (in memory or streamed from disk — see `Source`).
 pub struct Gguf {
+    /// GGUF format version from the header.
     pub version: u32,
+    /// Metadata key/value table, sorted by key.
     pub metadata: BTreeMap<String, MetaValue>,
+    /// Tensor directory entries.
     pub tensors: Vec<TensorInfo>,
     /// Absolute byte offset where the (aligned) tensor-data section begins.
     data_offset: usize,
