@@ -28,19 +28,24 @@
   function drawLoss($, id, history) {
     const c = $(id), ctx = c.getContext("2d");
     const w = c.width, h = c.height;
+    const cs = (typeof getComputedStyle === "function" && typeof document !== "undefined")
+      ? getComputedStyle(document.documentElement) : null;
+    const bg = (cs && cs.getPropertyValue("--bg2").trim()) || "#1e293b";
+    const accent = (cs && cs.getPropertyValue("--accent").trim()) || "#ea580c";
+    const muted = (cs && cs.getPropertyValue("--muted").trim()) || "#94a3b8";
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#1e293b"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
     if (history.length < 2) return;
     const max = Math.max(...history), min = Math.min(...history);
     const pad = 8, span = (max - min) || 1;
-    ctx.strokeStyle = "#ea580c"; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
     history.forEach((v, i) => {
       const x = pad + (i / (history.length - 1)) * (w - 2 * pad);
       const y = pad + (1 - (v - min) / span) * (h - 2 * pad);
       i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
     ctx.stroke();
-    ctx.fillStyle = "#94a3b8"; ctx.font = "11px monospace";
+    ctx.fillStyle = muted; ctx.font = "11px monospace";
     ctx.fillText("loss " + max.toFixed(4), pad, 14);
     ctx.fillText(min.toFixed(4), pad, h - 4);
   }
